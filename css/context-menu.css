@@ -1,0 +1,56 @@
+/* Context Menu (Hidden by Default) */
+.context-menu {
+    display: none;
+    position: absolute;
+    background-color: #252525;
+    background-color: var(--bg-medium-color);
+    min-width: 160px;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+    top: 0;
+    left: 0;
+    /*transform: translateY(1px);*/
+    /*border: 1px #2c2c2c solid;*/
+    outline: 1px #1f1f1f solid;
+    outline: 1px var(--last-border-color) solid;
+    z-index: 10;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    font-size: 0.9em;
+}
+
+.context-menu ul {
+    width: 100%;
+}
+
+/* Links inside the context menu */
+.context-menu ul li {    
+    width: 100%;
+    color: #b0b0b0;
+    color: var(--color);
+    text-decoration: none;
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    border-bottom: 1px #1f1f1f solid;
+    border-bottom: 1px var(--last-border-color) solid;
+    /*box-shadow: inset 0 -1px 0 #2c2c2c;*/
+    cursor: pointer;
+}
+
+.context-menu ul li:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+    color: #eee;
+    color: var(--hover-color);
+}
+
+.show {
+    display: flex;
+}
+
+/* Note : rajouter une transition d'apparition */
+
+.context-menu ul li > i {
+    padding: 10px;
+    font-size: 1.2em;
+}

@@ -1,0 +1,10 @@
+#stats {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: none;
+}
+
+#stats.active {
+    display: block;
+}

@@ -1,0 +1,56 @@
+i.delete:after {
+    content: 'delete';
+}
+
+i.delete:hover:after {
+    content: 'delete_forever';
+}
+
+i.edit:after {
+    content: 'edit';
+}
+
+#properties #properties-list li i.edit {
+    right: 35px;
+}
+
+i.visibility:after {
+    content: attr(data-content);
+}
+
+i.lock:after {
+    content: attr(data-content);
+}
+
+.icon-flipped {
+    transform: scaleX(-1);
+    -moz-transform: scaleX(-1);
+    -webkit-transform: scaleX(-1);
+    -ms-transform: scaleX(-1);
+}
+
+/*.visibility:hover:after {
+    content: attr(data-content-hover);
+}*/
+
+/* Icônes des composants */
+/*#properties #properties-list li > i {
+    top: 9px;
+    width: 20px;
+}
+
+#properties-list li > i:after {
+    content: 'settings_input_component';    
+}
+
+#properties-list li i.position:after {
+    content: 'control_camera';
+}
+
+#properties-list li i.size:after {
+    content: 'format_size';
+}
+
+#properties-list li i.appearance:after {
+    content: 'invert_colors';
+}*/

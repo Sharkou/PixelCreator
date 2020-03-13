@@ -1,0 +1,24 @@
+#wrapper {
+    position: relative;
+    transition: 200ms;
+    width: 100%;
+    height: calc(100% - 40px);
+    opacity: 1;
+}
+
+#canvas {
+    opacity: 1;
+}
+
+/*canvas, img {
+    image-rendering: optimizeSpeed;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: optimize-contrast;
+    image-rendering: pixelated;
+    -ms-interpolation-mode: nearest-neighbor;
+}*/
+
+#canvas:hover {
+    /*cursor: url("../images/cursor.png"), default;*/
+}

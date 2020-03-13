@@ -1,0 +1,21 @@
+:root {
+    --bg-light-color: #272727;
+    --bg-medium-color: #252525;
+    --bg-dark-color: #232323;
+    
+    --color: #b0b0b0;
+    --grey-color: #505050;
+    --white-color: #aaa;
+    
+    --bg-selection-color: rgba(30, 140, 255, 0.05);
+    
+    --first-border-color: #2c2c2c;
+    --last-border-color: #1f1f1f;
+    
+    --input-border-color: #202020;
+    
+    --hover-color: #eee;
+    --hover-bg-li-color: #2e2e2e;
+    
+    --main: #339af0;
+}

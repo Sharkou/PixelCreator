@@ -1,0 +1,69 @@
+/*pre {
+    display: block;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    padding-top: 5px;
+    padding-left: 34px;
+    box-sizing: border-box;
+    white-space: pre;
+    line-height: 1.5em;
+    font-size: 0.75em;
+    outline: none;
+    border: none;
+    background-color: transparent;
+    color: #CCC; #888;
+    resize: none;
+    font-family: 'SourceCodePro-Medium', Monaco, monospace;
+}
+
+pre > div {
+    padding: 0 10px;
+}
+
+pre > div:before {
+    content: attr(data-line);
+    font-size: 0.9em;
+    position: absolute;
+    left: 7px;
+    width: 20px;
+    text-align: right;
+    color: rgba(255, 255, 255, 0.4)
+}
+
+pre:before {
+    content: '';
+    display: block;
+    position: absolute;
+    box-sizing: border-box;
+    top: 0;
+    left: 0;
+    width: 34px;
+    height: 100%;
+    background-color: var(--bg-dark-color);    
+    border-top: 1px solid var(--first-border-color);
+    border-bottom: 1px solid var(--first-border-color);
+    box-shadow: inset -1px 0 0 var(--first-border-color);
+    box-shadow: inset 1px 0 0 var(--first-border-color);
+}
+
+pre:after {
+    content: '';
+    display: block;
+    position: absolute;
+    box-sizing: border-box;
+    top: 0;
+    left: 0;
+    width: 34px;
+    height: 100%;
+    box-shadow: inset -1px 0 0 var(--first-border-color);
+    border-right: 1px solid var(--last-border-color);
+}
+
+.highlight {
+    background-color: rgba(103, 169, 255, 0.1);
+}*/
+
+/*.CodeMirror {
+    font-family: 'SourceCodePro-Medium', Monaco, monospace;
+}*/

@@ -1,0 +1,54 @@
+/* Dropdown Content (Hidden by Default) */
+.dropdown-content {
+    display: none;
+    position: absolute;
+    background-color: var(--bg-medium-color);
+    min-width: 160px;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+    right: 1px;
+    z-index: 1;
+    transform: translateY(1px);
+    /*border: 1px #2c2c2c solid;*/
+    outline: 1px var(--last-border-color) solid;
+    z-index: 3;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+/* Links inside the dropdown */
+.dropdown-content ul li {
+    width: 100%;
+    color: #b0b0b0;
+    color: var(--color);
+    padding-right: 15px;
+    text-decoration: none;
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    border-bottom: 1px var(--last-border-color) solid;
+    /*box-shadow: inset 0 -1px 0 #2c2c2c;*/
+    cursor: pointer;
+}
+
+.dropdown-content ul li:last-of-type {
+    border-bottom: none;
+}
+
+/* Change color of dropdown links on hover */
+.dropdown-content ul li:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+    color: #eee;
+    color: var(--hover-color);
+}
+
+/* Show the dropdown menu (use JS to add this class to the .dropdown-content container when the user clicks on the dropdown button) */
+.show {
+    display: flex;
+}
+
+/* Note : rajouter une transition d'apparition */
+
+.dropdown-content ul li > i {
+    padding: 10px;
+}

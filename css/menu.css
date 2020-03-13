@@ -1,0 +1,75 @@
+header nav ul
+{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+header nav li {
+    transition: 200ms;
+    /*text-shadow: 1px 1px 6px black;*/
+    height: calc(100% - 2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+}
+
+header nav li:hover {
+    color: var(--hover-color);
+    background-color: var(--hover-bg-li-color);
+    cursor: pointer;
+}
+
+header nav li:last-of-type:hover {
+    /*background-color: rgba(255, 0, 0, 0.8);*/
+}
+
+header #menu {
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Bouton Play */
+#playButton {
+    /*background-color: #1c64ea;
+    color: white;*/
+    background-color: #252525;
+    -webkit-box-shadow: inset 0px 0px 0px 1px #2c2c2c;
+    -webkit-box-shadow: inset 0px 0px 0px 1px var(--first-border-color);
+    -moz-box-shadow: inset 0px 0px 0px 1px #2c2c2c;
+    -moz-box-shadow: inset 0px 0px 0px 1px var(--first-border-color);
+    box-shadow: inset 0px 0px 0px 1px #2c2c2c;
+    box-shadow: inset 0px 0px 0px 1px var(--first-border-color);
+    border-radius: 5px;
+    text-align: center;
+    transition: 200ms;
+    border: 1px solid #1f1f1f;
+    border: 1px solid var(--last-border-color);
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center; 
+    padding: 3px 10px;
+}
+
+/* Icône Play */
+#playButton i {
+    position: relative;
+    font-size: 23px;
+}
+
+#playButton:hover {
+    /*background-color: #3c7ffb;*/
+    border: 1px solid var(--main);
+    color: #eee;
+    box-shadow: 0 0 10px 0px var(--main);
+    cursor: pointer;
+}
+
+#playButton:active {
+    box-shadow: 0 0 10px 0px var(--main);
+    box-shadow: inset 0 0 10px 0px var(--main);
+}

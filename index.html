@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <meta name="robots" content="noindex">
+
+    <link rel="icon" type="image/png" href="images/favicon.png" />
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Work+Sans" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Josefin+Sans:400,600,700" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet">
+
+    <!-- Google Icons -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+    <!-- Font Awesome -->
+    <link href="css/all.min.css" rel="stylesheet"> <!--load all styles -->
+    <!-- <script src="https://kit.fontawesome.com/ac8c8047d4.js" crossorigin="anonymous"></script> -->
+
+    <!-- Styles Sheets -->
+    <link rel="stylesheet" href="css/variables.css" />
+    <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/canvas.css" />
+    <link rel="stylesheet" href="css/toolbar.css" />
+    <link rel="stylesheet" href="css/ruler.css" />
+    <link rel="stylesheet" href="css/menu.css" />
+    <link rel="stylesheet" href="css/world.css" />
+    <!--<link rel="stylesheet" href="css/objects.css" />-->
+    <link rel="stylesheet" href="css/properties.css" />
+    <link rel="stylesheet" href="css/resources.css" />
+    <link rel="stylesheet" href="css/form.css" />
+    <link rel="stylesheet" href="css/scrollbar.css" />
+    <link rel="stylesheet" href="css/tooltip.css" />
+    <link rel="stylesheet" href="css/dnd.css" />
+    <link rel="stylesheet" href="css/dropdown.css" />
+    <link rel="stylesheet" href="css/overlay.css" />
+    <link rel="stylesheet" href="css/code.css" />
+    <link rel="stylesheet" href="css/icons.css" />
+    <link rel="stylesheet" href="css/context-menu.css" />
+    <link rel="stylesheet" href="css/stats.css" />
+    
+    <!-- Code Mirror -->    
+    <!--<link rel="stylesheet" href="/src/lib/codemirror/lib/codemirror.css" />
+    <link rel="stylesheet" href="/src/lib/codemirror/theme/brackets.css" />
+    <script src="/src/lib/codemirror/lib/codemirror.js"></script>
+    <script src="/src/lib/codemirror/mode/javascript/javascript.js"></script>
+    <script src="/src/lib/codemirror/addon/selection/active-line.js"></script>
+    <script src="/src/lib/codemirror/addon/edit/matchbrackets.js"></script>
+    <script src="/src/lib/codemirror/addon/edit/closebrackets.js"></script>-->
+    
+    <!-- Core Engine -->
+    <script async type="module" src="app.js"></script>
+
+    <title>Pixel Creator · Editor</title>
+</head>
+
+<body id="editor">
+
+    <!-- Collaboration -->
+    <!--<canvas id="collab"></canvas>-->
+
+    <!-- Menu principal -->
+    <header>
+
+        <!-- Navbar -->
+        <!--<nav>
+            <ul>
+                <img id="logo" src="images/logo.png" alt="logo" width="45" height="45">
+                <li title="Home"><i class="material-icons">home</i></li>
+                <li title="Upload"><i class="material-icons tooltip">publish</i></li>
+                <li title="Save"><i class="material-icons tooltip">save</i></li>
+            </ul>
+        </nav>-->
+
+        <h1><i class="far fa-sword"></i>Pixel Creator v0.1.38-beta
+            <!-- - Project Name -->
+        </h1>
+
+        <!-- Menu -->
+        <div id="menu">
+            <ul>
+                <li title="Play" id="playButton"><i class="material-icons">play_arrow</i></li>
+                <!--
+                  <li><i class="material-icons tooltip">create<span class="tooltiptext">Edit</span></i></li>
+                  <li><i class="material-icons tooltip">open_with<span class="tooltiptext">Move</span></i></li>
+                  <li><i class="material-icons tooltip">sync<span class="tooltiptext">Rotate</span></i></li>
+                  <li><i class="material-icons tooltip">zoom_out_map<span class="tooltiptext">Resize</span></i></li>
+                -->
+            </ul>
+        </div>
+
+        <!-- Settings -->
+        <nav>
+            <ul>
+                <li title="Settings"><i class="fas fa-cog"></i></li>
+                <li title="Fullscreen" id="fullscreen"><i class="fas fa-expand"></i></li>
+                <li title="Close" onclick="close()"><i class="fas fa-times"></i></li>
+                <!--<li><i class="material-icons tooltip">settings_input_hdmi<span class="tooltiptext">Online</span></i></li>
+                <li title="Settings"><i class="material-icons">settings</i></li>-->
+
+            </ul>
+        </nav>
+
+    </header>
+
+    <!-- Main Content -->
+    <main>
+
+        <aside id="left">
+
+            <!--<div class="tab">
+                    <h2><i class="fas fa-vector-square"></i>Objects</h2>
+                </div>
+
+                <ul id="objects-list">
+                    <li id="circle" class="draggable">
+                        <i class="material-icons">format_shapes</i><span class="object-text">Shape</span>
+                    </li>
+
+                    <li id="light" class="disabled">
+                        <i class="material-icons">flare</i><span class="object-text">Light</span>
+                    </li>
+
+                    <li id="particle" class="disabled">
+                        <i class="material-icons">blur_on</i><span class="object-text">Particle</span>
+                    </li>
+                    
+                    <li id="image" class="disabled">
+                        <i class="material-icons">wallpaper</i><span class="object-text">Image</span>
+                    </li>
+                    
+                    <li id="sound" class="disabled">
+                        <i class="material-icons">music_note</i><span class="object-text">Sound</span>
+                    </li>-->
+
+            <!--<li id="button" class="draggable">
+                        <i class="material-icons">radio_button_checked</i><span class="object-text">Button</span>
+                    </li>-->
+
+            <!--
+                    <li id="sprite">
+                        <i class="material-icons">accessibility</i><span class="object-text">Sprite</span>
+                    </li>
+                    
+                    <li id="animation">
+                        <i class="material-icons">directions_run</i><span class="object-text">Animation</span>
+                    </li>
+                </ul>-->
+
+            <!-- Objects Window -->
+            <!--<aside id="project">
+
+                <div class="tab">
+                    <h2><i class="fas fa-folder-open"></i>Project</h2>                    
+                </div>
+
+                <ul>
+                    
+                </ul>
+
+            </aside>-->
+
+            <!-- Toolbar -->
+            <ul id="toolbar">
+
+                <!--<li id="save" title="Save">
+                    <i class="fas fa-save"></i>
+                </li>-->
+                
+                <!--<li id="wifi" title="Collaboration">
+                    <i class="fas fa-wifi"></i>
+                </li>-->
+
+                <!--<hr />-->
+
+                <!--<li id="Selection" title="Selection" class="active tool">
+                    <i class="fas fa-arrows-alt"></i>
+                </li>-->
+
+                <!--<li id="rotate" title="Rotate" onclick="rotate(this)"><i class="fas fa-sync-alt"></i></li>
+                <li id="scale" title="Scale" onclick="scale(this)"><i class="fas fa-expand-arrows-alt"></i></li>-->
+
+                <!--<hr />-->
+                
+                <!--<li draggable="true" id="Object" title="Object" class="tool">
+                    <i class="fal fa-draw-square"></i>
+                </li>-->
+
+                <li draggable="true" id="Circle" title="Circle" class="tool">
+                    <i class="far fa-circle"></i>
+                </li>
+
+                <li draggable="true" id="Rectangle" title="Rectangle" class="tool">
+                    <i class="far fa-square"></i>
+                </li>
+
+                <li draggable="true" id="Light" title="Light" class="tool">
+                    <i class="fas fa-lightbulb"></i>
+                </li>
+                
+                <li draggable="true" id="Camera" title="Camera" class="tool">
+                    <i class="far fa-video"></i>
+                </li>
+
+                <li draggable="true" id="Particle" title="Particle" class="tool">
+                    <i class="material-icons">blur_on</i>
+                </li>
+
+                <!--<hr />
+
+                <li title="Zoom in"><i class="fas fa-search-plus"></i></li>
+                <li title="Zoom out"><i class="fas fa-search-minus"></i></li>-->
+
+                <!--<hr />
+
+                <li title="Undo"><i class="fas fa-undo"></i></li>
+                <li title="Redo"><i class="fas fa-redo-alt"></i></li>-->
+                
+                <div class="bottom">
+                    <li id="save" title="Save">
+                        <i class="fas fa-save"></i>
+                    </li>
+
+                    <li id="layers" title="Layers">
+                        <i class="fas fa-layer-group"></i>
+                    </li>
+                </div>
+
+            </ul>
+
+        </aside>
+
+        <!-- Center : Scene and Resources Windows -->
+        <section id="center">
+
+            <section id="scene">
+
+                <div class="tab">
+                    <h2 id="scene-btn" class="tab-link active"><i class="far fa-video"></i>Scene</h2>
+                    <!--<h2 id="blueprint-btn" class="tab-link"><i class="fas fa-columns"></i>Blueprint</h2>-->
+                    <!--<h2 id="code-btn" class="tab-link"><i class="fas fa-code"></i>Scripting</h2>-->
+                    <!--<h2 class="tab-link" onclick="openTab(event, 'drawing')"><i class="fas fa-paint-brush"></i>Drawing</h2>-->
+                    <ul class="end">                        
+                        <li style="display: none;" id="rulerBtn" class="active" title="Ruler"><i class="fal fa-ruler-combined"></i></li>
+                        &nbsp;
+                        <li style="display: none;" id="gridBtn" class="active" title="Grid"><i class="fal fa-th"></i></li>
+                        &nbsp;
+                        <li id="statsBtn" title="Stats"><i class="fas fa-chart-bar"></i></li>
+                    </ul>
+                </div>
+
+                <!-- Scene -->
+                <div id="wrapper" class="tab-content">
+                    <!-- <canvas id="canvas" moz-opaque></canvas> -->
+                </div>
+
+                <!-- Events Window -->
+                <div id="overlay" class="overlay tab-content">
+
+                    <section class="overlay-content">
+
+                        <!-- Events Buttons -->
+                        <aside id="events">
+
+                            <div class="tab">
+                                <h2>Events</h2>
+                            </div>
+
+                            <ul>
+
+                                <li id="mouseEvent">
+                                    <i class="material-icons">mouse</i><span class="object-text">Mouse</span>
+                                </li>
+
+                                <li id="keyboardEvent">
+                                    <i class="material-icons">keyboard</i><span class="object-text">Keyboard</span>
+                                </li>
+
+                                <li id="collisionEvent">
+                                    <i class="material-icons">vertical_align_center</i><span class="object-text">Collision</span>
+                                </li>
+                                
+                                <li id="updateEvent">
+                                    <i class="material-icons">low_priority</i>
+                                    <span class="object-text">Update</span>
+                                </li>
+                                
+                                <li id="timerEvent">
+                                    <i class="material-icons">timer</i><span class="object-text">Timer</span>
+                                </li>
+
+                            </ul>
+
+                        </aside>
+
+                        <!-- Main Events Window -->
+                        <section id="blueprint">
+
+                            <div class="box">
+                                <h3>Object Name</h3>
+                                <p>Name</p>
+                                <!--<input type="text" id="eventName">-->
+                            </div>
+
+                        </section>
+
+                        <!-- Actions Buttons -->
+                        <aside id="actions">
+
+                            <div class="tab">
+                                <h2>Actions</h2>
+                            </div>
+
+                            <ul>
+                                <li id="moveAction">
+                                    <i class="material-icons">open_with</i><span class="object-text">Move</span>
+                                </li>
+
+                                <li id="editVariableAction">
+                                    <i class="material-icons">edit</i><span class="object-text">Edit Variable</span>
+                                </li>
+
+                                <li id="createObjectAction">
+                                    <i class="material-icons">lightbulb_outline</i><span class="object-text">Create Object</span>
+                                </li>
+
+                                <li id="deleteAction">
+                                    <i class="material-icons">delete_forever</i><span class="object-text">Delete</span>
+                                </li>
+
+                                <li id="drawAction">
+                                    <i class="material-icons">wallpaper</i><span class="object-text">Draw</span>
+                                </li>
+
+                                <!--<li id="validate" onclick="closeNav()">
+                                    <i class="material-icons">done</i><span class="object-text">Done&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                                </li>-->
+                            </ul>
+
+                        </aside>
+
+                    </section>
+
+                </div>
+
+                <!-- Scripting Window -->
+                <div id="scripting" class="tab-content overlay">
+                    <!--<pre contenteditable id="code" spellcheck="false"><div><br></div</pre>-->
+                    <form>
+                        <textarea id="code" name="code"></textarea>
+                    </form>
+                </div>
+
+            </section>
+
+            <!-- Project Section -->
+            <section id="resources">
+
+                <div class="tab">
+                    <h2><i class="fad fa-treasure-chest"></i>Project</h2>
+                    <!--<h2><i class="fas fa-film"></i>Timeline</h2>-->
+                    <!--<h2><i class="fas fa-terminal"></i>Console</h2>-->
+                    
+                    <ul class="end">                        
+                        <li id="upload" title="Upload">                            
+                            <label for="upload-input">
+                                <i class="fas fa-upload"></i>
+                            </label>
+                            <input type="file" id="upload-input" multiple/>
+                        </li>
+                    </ul>
+                    
+                </div>
+
+                <div id="resources-container">
+                    <ul id="resources-list">
+                        <!--<li><i class="material-icons">description</i>Script</li>
+                        <li><i class="material-icons">wallpaper</i>Image</li>
+                        <li><i class="material-icons">settings</i>Event</li>-->
+                    </ul>
+                </div>
+
+            </section>
+
+        </section>
+
+        <!-- World Content and Properties -->
+        <section id="right">
+
+            <!-- World Window -->
+            <aside id="world">
+
+                <div class="tab">
+                    <h2><i class="far fa-list-ul"></i>Hierarchy</h2>
+                    
+                    <div id="filter">
+                        <i title="Search" class="material-icons">search</i>
+                        <input spellcheck="false" autocomplete="off" type="text" id="filterInput" placeholder="Search">
+                    </div>
+                </div>
+
+                <ul id="world-list">
+                    <!--<li class="object"><i class="material-icons">keyboard_arrow_right</i>Root node 2<ul>
+                            <li>Child node 1</li>
+                            <li>Child node 2</li>
+                    </ul></li>-->
+                </ul>
+
+            </aside>
+
+            <!-- Properties Window -->
+            <aside id="properties">
+
+                <!-- Properties Title and Dropdown Content -->
+                <div class="tab">
+                    <div>
+                        <h2><i class="fas fa-sliders-h"></i>Properties</h2>
+
+                        <i title="Add Component" class="material-icons" id="add-property">add_box</i>
+                    </div>
+
+                    <div class="dropdown-content">
+                        <ul>
+                            <li id="component">
+                                <i class="material-icons">games</i><span class="object-text">Controller</span>
+                            </li>
+                            
+                            <li id="component">
+                                <i style="transform: rotate(90deg);" class="material-icons">vertical_align_center</i><span class="object-text">Collider</span>
+                            </li>
+
+                            <li id="component">
+                                <i class="material-icons">settings_input_component</i><span class="object-text">Custom Component</span>
+                            </li>
+
+                            <!--<li id="event">
+                                <i class="material-icons">gamepad</i><span class="object-text">Events</span>
+                            </li>
+
+                            <li id="update">
+                                <i class="material-icons">low_priority</i><span class="object-text">Update each frame</span>
+                            </li>
+
+                            <li id="timer">
+                                <i class="material-icons">timer</i><span class="object-text">Timer</span>
+                            </li>-->
+                        </ul>
+                        <!--
+                        <a href="#" id="script">
+                            <i class="material-icons">description</i><span class="object-text">Script</span>
+                        </a>
+                        -->
+
+                        <!--<a href="#" id="system" style="border-bottom: none;">
+                            <i class="material-icons">settings</i><span class="object-text">System</span>
+                        </a>-->
+                    </div>
+                </div>
+
+                <!-- Properties -->
+                <ul id="properties-list">
+
+                </ul>
+
+            </aside>
+
+        </section>
+
+    </main>
+
+    <nav class="context-menu">
+        <ul class="items">
+            <!--<li class="item" id="edit">
+                <i class="material-icons">edit</i><span class="object-text">Edit Object</span>
+            </li>
+            <li class="item" id="copy">
+                <i class="material-icons">file_copy</i><span class="object-text">Copy Object</span>
+            </li>
+            <li class="item" id="delete">
+                <i class="material-icons">delete</i><span class="object-text">Delete Object</span>
+            </li>-->
+            <li class="item" id="folder">
+                <i class="fas fa-folder-plus"></i>
+                <span>New Folder</span>
+            </li>
+            <li class="item" id="script">
+                <i class="material-icons">description</i>
+                <span>New Script</span>
+            </li>
+        </ul>
+    </nav>
+
+</body>
+
+</html>

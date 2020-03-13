@@ -1,0 +1,50 @@
+#objects-list {
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.object-text {
+    position: relative;
+    display: inline-block;
+    padding: 6px 8px;
+}
+
+#objects li {
+    padding: 6px 2px;
+    font-size: 0.9em;
+    width: 100%;
+    box-sizing: border-box;
+    border-left: 2px solid transparent;
+    position: relative;
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    transition: 200ms;
+}
+
+#objects li i {
+    position: relative;
+    left: 5px;
+    margin-right: 6px;
+}
+
+#objects li:hover {
+    color: #eee;
+    color: var(--hover-color);
+    background-color: #2e2e2e;
+    background-color: var(--hover-bg-li-color);
+    border-left: 2px solid var(--main);
+}
+
+/* Disabled objects */
+.disabled {
+    color: #444;
+    color: var(--grey-color);
+}
+
+.disabled:hover {
+    color: #444 !important;
+    color: var(--grey-color) !important;
+    background-color: #272727 !important;
+    background-color: var(--bg-light-color) !important;
+}

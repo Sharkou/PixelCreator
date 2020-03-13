@@ -1,0 +1,113 @@
+#resources {
+    display: flex;
+    flex-direction: column;
+}
+
+#resources-list {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    /*justify-content: space-between;*/
+    align-items: flex-start;
+    width: 100%;
+    height: 100%;
+}
+
+/* Drop Container */
+#resources-list:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    left: 0;
+    border: 2px dashed transparent;
+    transition: 200ms;
+    z-index: 0;
+    pointer-events: none;
+}
+
+#resources .drop_hover:before {
+    border: 2px dashed var(--main);
+}
+
+#resources-container {
+    overflow-y: auto;
+    overflow-x: hidden;
+    height: calc(100% - 45px);
+}
+
+#resources-list li {
+    height: 83px;
+    width: 100px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-direction: column;
+    padding-bottom: 10px;
+    padding-top: 10px;
+    margin: 0px 0px 0px 0px;
+    overflow: hidden;
+    font-size: 0.7em;
+    border: 1px solid transparent;
+    transition: 150ms;
+}
+
+#resources-list li figure, #resources-list li i {
+    height: 80%;
+    display: flex;
+    align-items: center;
+}
+
+#resources-list li figure img {
+    pointer-events: none;
+}
+
+#resources-list li div {
+    text-align: center;
+    width: 90px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: text;
+}
+
+#resources-list li div:focus {
+    text-overflow: clip;
+}
+
+#resources .material-icons {
+    font-size: 400%;
+}
+
+#resources-list li:hover {
+    color: #eee;
+    color: var(--hover-color);
+    background-color: #2e2e2e;
+    background-color: var(--hover-bg-li-color);
+    cursor: pointer;
+}
+
+#resources-list li.active {
+    color: #eee;
+    color: var(--hover-color);
+    background-color: #2e2e2e;
+    background-color: var(--hover-bg-li-color);
+    cursor: pointer;
+    /*border: 1px solid var(--main);*/
+}
+
+#resources #upload-input {
+    opacity: 0;
+    position: absolute;
+    z-index: -1;
+}
+
+#resources label {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+}

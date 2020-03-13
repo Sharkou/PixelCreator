@@ -1,0 +1,9 @@
+#rulerTop {
+    position: absolute;
+    background-color: var(--bg-light-color);
+}
+
+#rulerLeft {
+    position: absolute;
+    background-color: var(--bg-light-color);
+}

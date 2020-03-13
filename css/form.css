@@ -1,0 +1,133 @@
+[contenteditable]:focus {
+    /*outline: 2px solid #6699ff;*/
+}
+
+.label, input {
+    display: inline-block;
+}
+
+.label {
+    width: 35%;
+    text-align: right;
+    margin-top: 3px;
+    margin-bottom: 10px;
+}
+
+/* #properties-list li > div {
+    padding-left: 10px
+} */
+
+#properties-list .label {
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+input[type="text"], input[type="number"], input[type="color"], select {
+    -webkit-user-select: all; /* Safari */        
+    -moz-user-select: all; /* Firefox */
+    -ms-user-select: all; /* IE10+/Edge */
+    user-select: none; /* Standard */
+    background-color: #232323;
+    background-color: var(--bg-dark-color);
+    border: 1px solid #202020;
+    border: 1px solid var(--input-border-color);
+    height: 23px;
+    vertical-align: middle;
+    color: #b0b0b0;
+    color: var(--color);
+    padding-left: 8px;
+    width: 50%;
+    float: right;
+}
+
+#properties input, select {
+    position: relative;
+    box-sizing: border-box;
+    height: 23px;
+    margin-right: 15px;
+    font-family: monospace;
+}
+
+#properties input:hover, #properties select:hover, #properties input:focus, #properties select:focus {
+    color: #DDD;
+}
+
+select {
+    /*-webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;*/
+    padding-left: 3px;
+}
+
+select:hover {
+    cursor: pointer;
+}
+
+select:focus {
+    outline: none;
+    outline: 2px solid var(--main);
+}
+
+.number {
+    width: 14%;
+    margin-right: -20px;
+}
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+    /* display: none; <- Crashes Chrome on hover */
+    -webkit-appearance: none;
+    margin: 0; /* <-- Apparently some margin are still there even though it's hidden */
+}
+
+/* Remove arrows Firefox */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+input[type=number] {
+    -moz-appearance: textfield;
+}
+
+input[type="text"]:focus, input[type="number"]:focus {
+    outline: none;
+    outline: 2px solid var(--main); /*rgba(54, 88, 143, 0.9); /* #7B9DD3 */
+}
+
+input[type="checkbox"] {
+    bottom: 7px;
+    left: 25px;
+}
+
+input[type="color"] {
+    padding: 0 5px;
+}
+
+input[type="color"]::-webkit-color-swatch {
+	border: 2px solid #1f1f1f;
+}
+
+input[type="color"]:hover {
+    cursor: pointer;
+}
+
+input[type="color"]:focus {
+    outline: none;
+}
+
+.axis {
+    position: relative;
+    top: 0.8px;
+    left: 6px;
+    display: inline-block;
+    border: 1px solid #202020;
+    border: 1px solid var(--input-border-color);
+    margin-left: 15px;
+    padding: 3px 6px 3px 6px;
+    background-color: rgba(37, 70, 44, 0.3);
+    color: rgba(176, 176, 176, 0.8);
+    font-size: 0.8em;
+    font-weight: bold;
+}
