@@ -18,7 +18,7 @@ export class Object {
      */
     constructor(name = '', x = 0, y = 0, width = 0, height = 0, layer = 0) {
         
-        this.id = System.createID();        
+        this.id = System.createID();
         this.name = name;
         this.tag = '';
         this.type = '';
