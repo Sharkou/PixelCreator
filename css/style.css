@@ -42,6 +42,7 @@ html, body {
 
 [contenteditable]:focus {
     outline: 2px solid var(--main);
+    outline: none;
 }
 
 #logo {
@@ -73,6 +74,10 @@ li {
 
 i {
     /*padding: 12px;*/
+}
+
+.material-icons {
+    font-size: 22px;
 }
 
 header {

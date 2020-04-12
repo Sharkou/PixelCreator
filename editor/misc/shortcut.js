@@ -8,8 +8,8 @@ document.addEventListener('keydown', (e) => {
         switch (e.key) {
             // Delete current object on suppr key pressed.
             case 'Delete':
-                Scene.remove(Scene.main);
-                Scene.main = null;
+                Scene.main.remove(Scene.main.current);
+                Scene.main.current = null;
                 break;
         }
     }

@@ -1,6 +1,8 @@
 import { Scene } from '/src/core/scene.js';
 
 export class Sorter {
+
+    static draggedElement = null;
     
     static sort(el) {
         el.addEventListener('dragstart', Sorter.dragStart);
@@ -63,6 +65,7 @@ export class Sorter {
     
     static dragOver(e) {
         e.preventDefault();
+        
         //Sorter.draggedElement.classList.add('hidden');
         
         if (e.target.tagName === 'LI') {
@@ -88,7 +91,7 @@ export class Sorter {
     }
     
     static drop(e) {
-        e.preventDefault();
+        e.preventDefault();        
         
         if (e.target.tagName === 'LI') {
             if (Sorter.isBefore(Sorter.draggedElement, e.target)) {
@@ -110,5 +113,3 @@ export class Sorter {
         }
     }
 }
-
-Sorter.draggedElement = null;

@@ -1,26 +1,30 @@
-import { Object } from '/src/core/object.js';
-import { Mouse } from '/src/input/mouse.js';
+import { Graphics } from '/src/graphics/graphics.js';
 
-export class Camera extends Object {
+export class Camera {
     
     /**
-     * Initialize the camera component
+     * Initialize the Camera
      * @constructor
-     * @param {number} maxX - The x-limit for the camera's position
-     * @param {number} maxY - The y-limit for the camera's position
+     * @param {string} name - The name of the camera
+     * @param {number} x - The x-coordinate of the camera
+     * @param {number} y - The y-coordinate of the camera
+     * @param {number} width - The width of the camera
+     * @param {number} height - The height of the camera
+     * @param {boolean} main - Set the camera as main
+     * @param {string} background - The background color
+     * @param {number} max_x - The x-limit for the camera's position
+     * @param {number} max_y - The y-limit for the camera's position
      */
-    constructor(name, x, y, width, height, main = false, maxX = 0, maxY = 0) {
+    constructor(background = '#000000', max_x = 0, max_y = 0) {
 
-        super(name, x, y, width, height);
+        // super(name, x, y, width, height);
 
-        // Set the camera as main
-        if (main) {
-            Camera.main = this;
-        }
+        // Background color
+        this.background = background;
         
         // The limit for the camera's position
-        this.maxX = maxX; // map.cols * map.tsize - width;
-        this.maxY = maxY; // map.rows * map.tsize - height;
+        this.max_x = max_x; // map.cols * map.tsize - width;
+        this.max_y = max_y; // map.rows * map.tsize - height;
 
         // Camera offset
         this.offset = {
@@ -30,8 +34,18 @@ export class Camera extends Object {
             friction: 0.95
         };
         
-        // Zoom viewport
-        this.zoom = 1.0;
+        // Zoom viewport (scale)
+        // this.zoom = 1.0;
+    }
+
+    /**
+     * Draw the component
+     * @draw
+     */
+    draw(self) {
+        
+        Graphics.rect(self.x, self.y, self.width, self.height);
+        Graphics.stroke('rgba(255, 255, 255, 0.6)', 0.8);
     }
     
     /**
@@ -52,3 +66,5 @@ export class Camera extends Object {
         this._main = camera;
     }
 }
+
+window.Camera = Camera;

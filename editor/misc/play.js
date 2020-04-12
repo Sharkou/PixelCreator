@@ -2,10 +2,27 @@ import { Scene } from '/src/core/scene.js';
 import { Camera } from '/src/core/camera.js';
 
 document.getElementById('playButton').addEventListener('click', function() {
-    var width = Camera.main.width;
-    var height = Camera.main.height;
+
+    if (!Scene.main.camera) {
+        console.error('Camera is not defined');
+        return;
+    }
     
-    var app = window.open('/bin/index.html', '_blank', 'directories=no,fullscreen=yes,titlebar=no,toolbar=no,location=no,status=yes,menubar=no,scrollbars=no,resizable=yes,top=' + height / 2.5 + ',left=' + width / 2 + ',width=' + width + ',height=' + height);
+    const scene = Scene.main;
+    const camera = scene.camera;
+    const width = camera.width;
+    const height = camera.height;
+    const centerX = window.innerWidth / 2 + window.screenLeft - width / 2;
+    const centerY = window.innerHeight / 2 + window.screenTop - height / 2;
     
-    app.objects = Scene.main.objects;
+    const app = window.open(
+        '/bin/',
+        '_blank',
+        `directories=no,fullscreen=yes,titlebar=no,toolbar=no,location=no,status=yes,menubar=no,scrollbars=no,resizable=yes,top=${centerY},left=${centerX},width=${width},height=${height}`);
+    
+    app.data = {
+        scene,
+        camera,
+        objects: scene.objects
+    };
 });

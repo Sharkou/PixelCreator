@@ -7,7 +7,7 @@ export class Player extends Object {
     /**
      * Initialize the component
      * @constructor
-     * @param {string} name - The name of the map
+     * @param {string} name - The name of the object
      * @param {number} x - The x-coordinate of the object
      * @param {number} y - The y-coordinate of the object
      * @param {number} width - The width of the object

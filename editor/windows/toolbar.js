@@ -16,6 +16,8 @@ export class Toolbar {
         const tools = document.getElementsByClassName('tool');
         const width = 40;
         const height = 40;
+        const xOffset = width / 2;
+        const yOffset = height / 2;
 
         // Parcourt l'ensemble des outils pour leur attribuer une image de drag
         for (let tool of tools) {
@@ -27,6 +29,7 @@ export class Toolbar {
             let obj = new Object('Empty', 0, 0, width, height);
             
             switch (tool.id) {
+                
                 case 'Circle':
                     obj.addComponent(new Circle('#CC8844', 0.4));
                     break;
@@ -47,7 +50,7 @@ export class Toolbar {
             
             tool.addEventListener('dragstart', function(e) {
                 e.dataTransfer.setData('text', e.target.id);
-                e.dataTransfer.setDragImage(obj.image, width / 2, height / 2);
+                e.dataTransfer.setDragImage(obj.image, xOffset, yOffset);
             });
         }
     }

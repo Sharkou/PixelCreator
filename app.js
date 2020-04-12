@@ -46,8 +46,10 @@ import '/editor/misc/play.js';
 const canvas = document.getElementById('wrapper');
 
 const renderer = new Renderer(canvas.clientWidth, canvas.clientHeight, canvas);
+
 const scene = new Scene('Main Scene');
-const camera = new Camera('Viewport', 0, 0, canvas.clientWidth, canvas.clientHeight, true);
+
+const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHeight).addComponent(new Camera('#272727'));
 
 // const socket = new Socket();
 // const room = new Room(socket);

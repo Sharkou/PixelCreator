@@ -21,8 +21,8 @@ export class Ruler {
         ctx.lineTo(x, 10);
         ctx.stroke();
 
-        const xPos = ~~(x / camera.zoom + camera.x);
-        const yPos = ~~(y / camera.zoom + camera.y);
+        const xPos = ~~(x / camera.scale + camera.x);
+        const yPos = ~~(y / camera.scale + camera.y);
 
         // Add 'x' Text
         ctx.fillText(xPos + 'px', x, 25);
@@ -51,12 +51,12 @@ export class Ruler {
 
             // if (i - camera.x >= 0) {
                 // Right graduations
-                ctx.moveTo(i - camera.x * camera.zoom, 0);
-                ctx.lineTo(i - camera.x * camera.zoom, 5);
+                ctx.moveTo(i - camera.x * camera.scale, 0);
+                ctx.lineTo(i - camera.x * camera.scale, 5);
             
                 // Left graduations
-                ctx.moveTo(0, i - camera.y * camera.zoom);
-                ctx.lineTo(5, i - camera.y * camera.zoom);
+                ctx.moveTo(0, i - camera.y * camera.scale);
+                ctx.lineTo(5, i - camera.y * camera.scale);
 
                 // Add Text
                 // ctx.translate(i - camera.x, 0);

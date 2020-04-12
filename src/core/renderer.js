@@ -96,7 +96,7 @@ export class Renderer {
         
         // Define current objects
         Scene.main = scene;
-        Camera.main = camera;
+        Camera.main = camera; // set the camera as main
         Renderer.main = this;
         
         // Ratio of camera to renderer
@@ -168,13 +168,13 @@ export class Renderer {
         Graphics.initContext(this.ctx);
         
         // Save the entire state of the canvas
-        // this.ctx.save();
+        this.ctx.save();
         
         // Cleaning the canvas
-        this.clear('#272727'); // #333
+        this.clear(camera.components.camera.background); // #272727 // #333
 
         // Straddle the pixels
-        // canvas.ctx.translate(0.5, 0.5);
+        this.ctx.translate(0.5, 0.5);
 
         // Sort objects by layer
         // let objects = Object.values(scene.objects);
@@ -189,11 +189,6 @@ export class Renderer {
             if (obj != undefined && obj != null && obj.active) {
                 
                 obj.update(); // update the object
-
-                // Si l'objet est sélectionné dans l'éditeur
-                if (obj === scene.current) {
-                    obj.select(this.ctx); // affichage de la sélection
-                }
 
                 // Si l'objet n'est pas verrouillé
                 if (!obj.lock) {
@@ -224,18 +219,24 @@ export class Renderer {
 
                 // Zoom
                 this.ctx.translate(camera.x, camera.y);
-                this.ctx.scale(camera.zoom, camera.zoom);
+                this.ctx.scale(camera.scale, camera.scale);
                 this.ctx.translate(- camera.x, - camera.y);
 
                 // Transform the object (apply rotation)
                 this.ctx.translate(obj.width / 2 + obj.x, obj.height / 2 + obj.y);
                 this.ctx.rotate(obj.rotation);
+                this.ctx.scale(obj.scale, obj.scale);
                 this.ctx.translate(-obj.width / 2 - obj.x, -obj.height / 2 - obj.y);
                 
                 obj.draw(); // draw the object
 
                 // Restore the saved state of the canvas
                 this.ctx.restore();
+
+                // Si l'objet est sélectionné dans l'éditeur
+                if (obj === scene.current && !obj.lock) {
+                    // obj.select(this.ctx); // affichage de la sélection
+                }
             }
         }
         
@@ -250,7 +251,7 @@ export class Renderer {
         }*/
         
         // Restore the saved state of the canvas
-        // this.ctx.restore();
+        this.ctx.restore();
 
         // Calculation of delta-time
         Time.deltaTime = (Time.now() - Time.last) / (1000 / 60);

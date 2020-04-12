@@ -10,7 +10,7 @@ export class Grid {
         ctx.save();
 
         // Zoom
-        ctx.scale(camera.zoom, camera.zoom);
+        ctx.scale(camera.scale, camera.scale);
 
         ctx.lineWidth = this.lineWidth;
         ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";

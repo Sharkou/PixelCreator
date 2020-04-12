@@ -92,30 +92,51 @@ export class Handler {
             
             let obj = new Object(
                 'Empty',
-                Mouse.x / camera.zoom + camera.x,
-                Mouse.y / camera.zoom + camera.y,
+                Mouse.x / camera.scale + camera.x,
+                Mouse.y / camera.scale + camera.y,
                 width,
                 height
             );
+
+            obj.type = 'object';
             
             switch (e.dataTransfer.getData('text/plain')) {
 
+                case 'Object':
+                    obj.name = 'Object';
+                    obj.type = 'object';
+                    break;
+
                 case 'Circle':
                     obj.name = 'Circle';
+                    obj.type = 'object';
                     obj.addComponent(new Circle('#CC8844', 0.4));
                     break;
                     
                 case 'Rectangle':
                     obj.name = 'Rectangle';
+                    obj.type = 'object';
                     obj.addComponent(new Rect('#CC8844', 0.4));
                     break;
                     
                 case 'Light':
                     obj.name = 'Light';
+                    obj.type = 'light';
                     obj.addComponent(new Light());
                     break;
                     
+                case 'Camera':
+                    obj.name = 'Camera';
+                    obj.type = 'camera';
+                    obj.width = 320;
+                    obj.height = 180;
+                    obj.addComponent(new Camera('#272727'));
+                    break;
+                
                 case 'Particle':
+                    obj.name = 'Particle';
+                    obj.type = 'particle';
+                    obj.addComponent(new Particle());
                     break;
                     
                 // Drop d'une ressource
@@ -134,6 +155,8 @@ export class Handler {
                     if (resource.type === 'png' || 
                         resource.type === 'jpg' || 
                         resource.type === 'gif') {
+
+                        obj.type = 'image';
                         
                         // Dimensions de l'image
                         obj.width = resource.image.naturalWidth;
@@ -144,6 +167,8 @@ export class Handler {
                     
                     // Instanciation du prefab
                     else if (resource.type === 'prefab') {
+
+                        obj.type = 'prefab';
                         
                         // Dimensions du prefab
                         obj.width = resource.size.width;
@@ -199,7 +224,7 @@ export class Handler {
                         
                         // Quitte la fonction si l'objet est verrouillé
                         if (obj.lock || !obj.active) {
-                            return;
+                            continue;
                         }
                         
                         // Change current object
@@ -221,8 +246,8 @@ export class Handler {
                             this.drag = true; // Start Drag
                             Dnd.setCursor('grabbing');
 
-                            Mouse.offset.x = Mouse.x - scene.current.x - camera.x;
-                            Mouse.offset.y = Mouse.y - scene.current.y - camera.y;
+                            Mouse.offset.x = Mouse.x / camera.scale - scene.current.x - camera.x;
+                            Mouse.offset.y = Mouse.y / camera.scale - scene.current.y - camera.y;
                         }
                     }
                 }
@@ -241,8 +266,8 @@ export class Handler {
                 this.moveCamera = true; // Start moving scene view
                 
                 // Start Mouse Position
-                Mouse.lastPosition.x = Mouse.x + camera.x * camera.zoom;
-                Mouse.lastPosition.y = Mouse.y + camera.y * camera.zoom;
+                Mouse.lastPosition.x = Mouse.x + camera.x * camera.scale;
+                Mouse.lastPosition.y = Mouse.y + camera.y * camera.scale;
                 
                 // camera.offset.x = camera.x;
                 // camera.offset.y = camera.y;
@@ -269,8 +294,8 @@ export class Handler {
             if (scene.current !== null && this.drag) {
                 
                 // Move Object
-                scene.current.x = Mouse.x - camera.x - Mouse.offset.x;
-                scene.current.y = Mouse.y - camera.y - Mouse.offset.y;
+                scene.current.x = Mouse.x / camera.scale - camera.x - Mouse.offset.x;
+                scene.current.y = Mouse.y / camera.scale - camera.y - Mouse.offset.y;
             }
             
             // Resize object
@@ -281,25 +306,25 @@ export class Handler {
                 
                 switch (this.resizeObject) {
                     case 'right':
-                        offset = Mouse.x - (this.lastX + this.lastWidth / 2) + camera.x;
+                        offset = Mouse.x / camera.scale - (this.lastX + this.lastWidth / 2) + camera.x;
                         scene.current.width = Math.abs(~~(this.lastWidth + offset));
                         scene.current.x = ~~(this.lastX + offset / 2);
                         break;
                         
                     case 'left':
-                        offset = Mouse.x - (this.lastX - this.lastWidth / 2) + camera.x;
+                        offset = Mouse.x / camera.scale - (this.lastX - this.lastWidth / 2) + camera.x;
                         scene.current.width = Math.abs(~~(this.lastWidth - offset));
                         scene.current.x = ~~(this.lastX + offset / 2);
                         break;
                         
                     case 'bottom':
-                        offset = Mouse.y - (this.lastY + this.lastHeight / 2) + camera.y;
+                        offset = Mouse.y / camera.scale - (this.lastY + this.lastHeight / 2) + camera.y;
                         scene.current.height = Math.abs(~~(this.lastHeight + offset));
                         scene.current.y = ~~(this.lastY + offset / 2);
                         break;
                         
                     case 'top':
-                        offset = Mouse.y - (this.lastY - this.lastHeight / 2) + camera.y;
+                        offset = Mouse.y / camera.scale - (this.lastY - this.lastHeight / 2) + camera.y;
                         scene.current.height = Math.abs(~~(this.lastHeight - offset));
                         scene.current.y = ~~(this.lastY + offset / 2);
                         break;
@@ -308,8 +333,8 @@ export class Handler {
             
             // Move Camera View
             else if (this.moveCamera) {
-                camera.x = (- Mouse.x + Mouse.lastPosition.x) / camera.zoom;
-                camera.y = (- Mouse.y + Mouse.lastPosition.y) / camera.zoom;
+                camera.x = (- Mouse.x + Mouse.lastPosition.x) / camera.scale;
+                camera.y = (- Mouse.y + Mouse.lastPosition.y) / camera.scale;
             }
         });
 
@@ -363,7 +388,7 @@ export class Handler {
                 } else {
 
                     const zoom = (e.deltaY < 0) ? intensity : (1 / intensity);
-                    const scale = camera.zoom * zoom;
+                    const scale = camera.scale * zoom;
 
                     if (scale <= maxZ && scale >= minZ) {
                         // TODO : Perte de précision
@@ -371,7 +396,7 @@ export class Handler {
                         camera.y -= Mouse.y / (scale * zoom) - Mouse.y / scale;
                     }
 
-                    camera.zoom = (e.deltaY < 0) ? Math.min(maxZ, scale) : Math.max(minZ, scale);
+                    camera.scale = (e.deltaY < 0) ? Math.min(maxZ, scale) : Math.max(minZ, scale);
                 }
 
             }, delay);

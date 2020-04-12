@@ -19,9 +19,11 @@ export class Properties {
 
         System.addEventListener('setProperty', data => {
             // Update properties
-            if (scene.current == data.component) {
-                this.updateObjectProperties();
-                this.updateComponentsProperties();
+            if (scene.current) {
+                if (scene.current == data.component || scene.current.contains(data.component)) {
+                    this.updateObjectProperties(data);
+                    this.updateComponentsProperties(data);
+                }
             }
         });
 
@@ -93,9 +95,9 @@ export class Properties {
     updateCurrentObject(el) {
 
         // Object properties
-        if (el.parentElement.classList.contains('Object')) {
+        if (el.parentElement.classList.contains('object')) {
             let type = typeof this.scene.current[el.id];
-            this.scene.current[el.id] = (type === 'number' ? parseInt(el.value, 10) : el.value);;
+            this.scene.current[el.id] = (type === 'number' ? parseFloat(el.value, 10) : el.value);;
         }
 
         // Component properties
@@ -104,27 +106,29 @@ export class Properties {
             let component = this.scene.current.components[p[0]];
             let type = typeof component[p[1]];
 
-            component[p[1]] = (type === 'number' ? parseInt(el.value, 10) : el.value);
+            component[p[1]] = (type === 'number' ? parseFloat(el.value, 10) : el.value);
         }
     }
     
     /**
      * Update object properties in editor
+     * @param {Object} data - The object data
      */
-    updateObjectProperties() {
-        for (var p in this.scene.current) {
-            var type = typeof this.scene.current[p];
+    updateObjectProperties(data) {
+        // const p = data.prop;
+        for (let p in this.scene.current) {
+            const type = typeof this.scene.current[p];
             if (type === 'number' || type === 'string') {
                 p = (p[0] === '_' ? p.substring(1, p.length) : p);
-                var value = this.scene.current[p];
-                var el = document.getElementsByClassName(this.scene.current.id + '-' + p);
-                for (var i = 0; i < el.length; i++) {
+                const value = this.scene.current[p];
+                const el = document.getElementsByClassName(this.scene.current.id + '-' + p);
+                for (let i = 0; i < el.length; i++) {
                     if (el[i] !== document.activeElement) {
                         if (el[i].nodeName === 'INPUT') {
                             el[i].value = (type === 'string' ? value : parseInt(value, 10));
                         }
                         else {
-                            el[i].innerHTML = (type === 'string' ? value : parseInt(value, 10));
+                            el[i].textContent = (type === 'string' ? value : parseInt(value, 10));
                         }
                     }
                 }
@@ -135,7 +139,7 @@ export class Properties {
     /**
      * Update object components properties in editor
      */
-    updateComponentsProperties() {
+    updateComponentsProperties(data) {
         for (var c in this.scene.current.components) {
             for (var p in this.scene.current.components[c]) {
                 var value = this.scene.current.components[c][p];
@@ -163,96 +167,36 @@ export class Properties {
 
         // if (obj.name) li.classList.add(obj.name);
         
-        li.classList.add('Object');
+        li.classList.add('object');
         
         // For each properties of object
         for (let p in obj) {
             
             if (typeof obj[p] !== 'function') {
 
+                if (p.charAt(0) === '_') continue;
+
                 const id = p;
 
                 switch (p) {
-
-                    case 'name': {
-
-                        let type = 'text';
-                        this.appendElement(li, p, type, p);
-
-                        break;
-                    }
-
-                    case 'tag': {
-
-                        let type = 'text';                                
-                        this.appendElement(li, p, type, id);
-
-                        break;
-                    }
-
-                    case 'x': {
-
-                        /*var props = Object.keys(obj[p]);
-                        var id1 = obj.name + '.' + 'position.' + props[0];
-                        var id2 = obj.name + '.' + 'position.' + props[1];
-                        this.appendTransform(li, 'Position', props[0], props[1], 'axis', 'number', id1, id2);*/
-
-                        let type = 'number';
-                        this.appendElement(li, p, type, id);
-
-                        break;
-                    }
-
-                    case 'y': {
-
-                        let type = 'number';
-                        this.appendElement(li, p, type, id);
-
-                        break;
-                    }
-
-                    case 'width': {
-
-                        let type = 'number';
-                        this.appendElement(li, p, type, id);
-
-                        break;
-                    }
-
-                    case 'height': {
-
-                        let type = 'number';
-                        this.appendElement(li, p, type, id);
-
-                        break;
-                    }
-
-                    case 'rotation': {
-
-                        let type = 'number';
-                        // this.appendElement(li, p, type, id);
-
-                        break;
-                    }
-
-                    case 'scale': {
-
-                        let type = 'number';
-                        // this.appendElement(li, p, type, id);
-
-                        break;
-                    }
-
                     case 'id': break;
+                    // case 'rotation': break;
+                    case 'scale': break;
                     case 'static': break;
                     case 'type': break;
                     case 'active': break;
                     case 'lock': break;
                     case 'image': break;
-                    case 'layer': break;
+                    case 'parent': break;
                     case 'components': break;
                     case 'childs': break;
+                    default: this.createProperty(li, p, obj[p], id);
                 }
+
+                /*var props = Object.keys(obj[p]);
+                var id1 = obj.name + '.' + 'position.' + props[0];
+                var id2 = obj.name + '.' + 'position.' + props[1];
+                this.appendTransform(li, 'Position', props[0], props[1], 'axis', 'number', id1, id2);*/
             }
         }
         
@@ -269,7 +213,7 @@ export class Properties {
         // Component containers
         let li = document.createElement('li');
         // let div = document.createElement('div');
-        
+
         li.classList.add(obj.name);
 
         // Append div in object
@@ -290,90 +234,107 @@ export class Properties {
                 }
 
                 if (p.charAt(0) === '_') continue;
+                
+                const id = obj.name + '.' + p;
 
                 // Create new property
-                const id = obj.name + '.' + p;
-                
-                // Get property type
-                switch (typeof obj[p]) {
+                this.createProperty(li, p, obj[p], id);
+            }
+        }
+        
+        return li;
+    }
 
-                    case 'number': {
-                        let type = 'number';
+    /**
+     * Create Element property
+     * @param {Element} li - The parent element
+     * @param {string} p - The property name
+     * @param {any} value - The property value
+     * @param {string} id - The id of property
+     */
+    createProperty(li, p, value, id) {
+
+        // Prevent some property creation
+        switch (p) {
+            case 'active': return;
+        }
+
+        // Get property type
+        switch (typeof value) {
+
+            case 'number': {
+                let type = 'number';
+                this.appendElement(li, p, type, id);
+                break;
+            }
+                
+            case 'boolean': {
+                let type = 'checkbox';
+                this.appendElement(li, p, type, id);
+                break;
+            }
+                
+            case 'string': {
+                let type = (value[0] === '#') ? 'color' : 'text'; // si c'est une couleur en hexa
+                this.appendElement(li, p, type, id);
+                break;
+            }
+            
+            case 'object': {
+
+                if (!value) break; // null value
+
+                switch (p.constructor.name) {
+
+                    case 'Color': {
+                        let type = 'color';
                         this.appendElement(li, p, type, id);
                         break;
                     }
                         
-                    case 'boolean': {
-                        let type = 'checkbox';
-                        this.appendElement(li, p, type, id);
+                    case 'Range': {
+                        // TODO : Range property
                         break;
                     }
                         
-                    case 'string': {
-                        let type = (obj[p][0] === '#') ? 'color' : 'text'; // si c'est une couleur en hexa
-                        this.appendElement(li, p, type, id);
+                    case 'Array': {
+                        // TODO : Array property
+                        this.appendSelect(li, p, value);
                         break;
                     }
                     
-                    case 'object': {
-
-                        if (!obj[p]) break;
-
-                        switch (obj[p].constructor.name) {
-
-                            case 'Color': {
-                                let type = 'color';
-                                this.appendElement(li, p, type, id);
-                                break;
-                            }
-                                
-                            case 'Range': {
-                                // TODO : Range property
-                                break;
-                            }
-                                
-                            case 'Array': {
-                                // TODO : Array property
-                                this.appendSelect(li, p, obj[p].value);
-                                break;
-                            }
-                            
-                            case 'Enumeration': {
-                                // TODO : Enum property
-                                break;
-                            }
-                                
-                            case 'Image': {
-                                // TODO : Image property
-                                break;
-                            }
-                                
-                            case 'Button': {
-                                // TODO : Button property
-                                break;
-                            }
-                            
-                            default: {
-                                // TODO : Another object property
-                                let type = 'text';
-                                this.appendElement(li, p, type, id);
-                                break;
-                            }
-                        }
-
+                    case 'Enumeration': {
+                        // TODO : Enum property
                         break;
                     }
                         
+                    case 'Image': {
+                        // TODO : Image property
+                        break;
+                    }
+                        
+                    case 'Button': {
+                        // TODO : Button property
+                        break;
+                    }
+                    
                     default: {
+                        // TODO : Another object property
                         let type = 'text';
                         this.appendElement(li, p, type, id);
                         break;
                     }
                 }
+
+                break;
+            }
+                
+            default: {
+                let type = 'text';
+                this.appendElement(li, p, type, id);
+                break;
             }
         }
-        
-        return li;
     }
 
     /**
@@ -432,6 +393,7 @@ export class Properties {
 
         if (type === 'number') {
             input.setAttribute('step', 'any');
+            // input.setAttribute('pattern', '[0-9]+([\.,][0-9]+)?');
             // input.setAttribute('lang', 'en-US');
         }
         
@@ -448,7 +410,7 @@ export class Properties {
         // input.setAttribute('oninput', 'Properties.updateCurrentObject(this)');
         input.addEventListener('input', e => {
             this.updateCurrentObject(e.target);
-            this.updateObjectProperties();
+            // this.updateObjectProperties();
         });
         
         if(_class) {
@@ -496,7 +458,7 @@ export class Properties {
         
         // Suppression du composant
         icon_delete.addEventListener('click', (e) => {
-            let componentName = e.target.parentNode.textContent;
+            let componentName = e.target.parentNode.textContent.toLowerCase();
             scene.current.removeComponent(scene.current.components[componentName]);
             
             // Mise à jour des propriétés

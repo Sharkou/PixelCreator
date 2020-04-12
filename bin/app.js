@@ -17,23 +17,37 @@ import { Collider } from '/src/physics/collider.js';
 // const socket = io('localhost:3000');
 
 const renderer = new Renderer(window.innerWidth, window.innerHeight);
-const scene = new Scene();
-const camera = new Camera('Camera', 0, 0, 480, 270, true);
+
+const scene = new Scene(data.scene.name);
+
+const camera = new Object('Camera',
+                          data.camera.x - data.camera.width / 2,
+                          data.camera.y - data.camera.height / 2,
+                          data.camera.width,
+                          data.camera.height)
+                          .addComponent(new Camera(data.camera.components.camera.background)
+                         );
 
 /* Initialization */
 async function init() {
-    
-    renderer.init(scene, camera);
 
     // Instanciation des objets
-    for (let id in objects) {
+    for (let id in data.objects) {
+        
+        if (data.objects[id].components.camera) {
+            continue;
+        }
 
         let obj = new Object();
 
-        obj.copy(objects[id]);
+        obj.copy(data.objects[id]);
+
+        obj.lock = true; // lock the object from editing
 
         scene.add(obj);
     }
+
+    renderer.init(scene, camera);
 
     // let circle = new Object('Circle', 100, 100, 20, 20, 0);
     // circle.addComponent(new Circle('#CC8844', 0.6));

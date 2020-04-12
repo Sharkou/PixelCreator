@@ -123,17 +123,55 @@ export class Hierarchy {
         
         // Centrer sur l'objet double cliqué
         li.addEventListener('dblclick', () => {
-            Camera.main.x = ~~(scene.current.x - (Renderer.main.width / 2));
-            Camera.main.y = ~~(scene.current.y - (Renderer.main.height / 2));
+            Camera.main.x = ~~(scene.current.x - (Renderer.main.width / 2) / Camera.main.scale);
+            Camera.main.y = ~~(scene.current.y - (Renderer.main.height / 2) / Camera.main.scale);
         });
         
         // li.setAttribute('data-type', obj.type);
 
-        var i = document.createElement('i');
-        i.setAttribute('class', 'material-icons icon');
-        var icon = document.createTextNode('keyboard_arrow_right');
+        // Icon type management
+
+        const icon = document.createElement('i');
+
+        // i.setAttribute('class', 'material-icons icon');
+        // var icon = document.createTextNode('keyboard_arrow_right');
         // var icon = document.createTextNode(obj.icon);
-        i.appendChild(icon);
+        // i.appendChild(icon);
+
+        switch (obj.type) {
+
+            case 'object':
+                icon.setAttribute('class', 'far fa-cube icon');
+                break;
+
+            case 'camera':
+                icon.setAttribute('class', 'fas fa-camera-movie icon');
+                break;
+                
+            case 'prefab':
+                icon.setAttribute('class', 'fad fa-cubes icon');
+                break;
+
+            case 'image':
+                icon.setAttribute('class', 'far fa-image icon');
+                break;
+
+            case 'circle':
+                icon.setAttribute('class', 'far fa-circle icon');
+                break;
+
+            case 'rectangle':
+                icon.setAttribute('class', 'far fa-square icon');
+                break;
+
+            case 'light':
+                icon.setAttribute('class', 'fas fa-lightbulb icon');
+                break;
+
+            case 'particle':
+                icon.setAttribute('class', 'fad fa-sun-dust icon');
+                break;
+        }
         
         var lock = document.createElement('i');
         lock.setAttribute('class', 'material-icons lock');
@@ -194,7 +232,7 @@ export class Hierarchy {
         var name = document.createTextNode(obj.name);
         div.appendChild(name);
 
-        li.appendChild(i);
+        li.appendChild(icon);
         li.appendChild(div);
         li.appendChild(delete_icon);
         li.appendChild(visibility);

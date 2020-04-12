@@ -13,6 +13,7 @@ export class System {
     
     /**
      * Generate random number between a and b
+     * @static
      * @param {number} a - The first number
      * @param {number} b - The second number
      */
@@ -22,6 +23,7 @@ export class System {
     
     /**
      * Synchronize a component
+     * @static
      * @param {Component} component - The component to sync
      */
     static sync(component) {
@@ -78,6 +80,7 @@ export class System {
     
     /**
      * Dispatch event
+     * @static
      * @param {string} e - The event name
      * @param {object} data - The data
      */
@@ -93,6 +96,7 @@ export class System {
     
     /**
      * Listen event
+     * @static
      * @param {string} e - The event name
      * @param {function} fn - The callback function
      */

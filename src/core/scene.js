@@ -10,6 +10,7 @@ export class Scene {
         this.name = name;
         this.objects = {}; // contains all objects
         this.events = {}; // contains all events
+        this.camera = null;
         // this.systems = {}; // contains all systems
     }
     
@@ -20,8 +21,14 @@ export class Scene {
      */
     add(obj, dispatch = true) {
         
-        this.objects[obj.id] = obj;
         this.current = obj;
+
+        // The added object is the camera
+        if (obj.components['camera']) {
+            this.camera = obj;
+        }
+        
+        this.objects[obj.id] = obj;
         
         if (dispatch) {
             this.dispatchEvent('add', obj);

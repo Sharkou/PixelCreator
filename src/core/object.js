@@ -20,13 +20,13 @@ export class Object {
         
         this.id = System.createID();
         this.name = name;
+        this.layer = layer;
         this.tag = '';
         this.type = '';
         this.active = true;
         this.lock = false;
         this.static = false;
         this.image = null;
-        this.layer = layer;
         this.components = {};
         this.childs = {};
         
@@ -39,11 +39,13 @@ export class Object {
         this.height = height;
         
         // Transformations
-        this.rotation = 0;
-        this.scale = 1;
+        this.rotation = 0.0;
+        this.scale = 1.0;
 
         // Synchronization
         System.sync(this);
+
+        return this;
     }
     
     get __x() {
@@ -96,7 +98,7 @@ export class Object {
         
         // Naming the component
         // component.name = component.constructor.name[0].toLowerCase() + component.constructor.name.substr(1);
-        component.name = component.constructor.name;
+        component.name = component.constructor.name.toLowerCase();
         
         component.active = true; // activation of the component        
         // component.self = this; // reference to parent
@@ -105,6 +107,8 @@ export class Object {
         
         // this.components[component.constructor.prototype.name] = component;
         this.components[component.name] = component;
+
+        return this;
     }
     
     /**
@@ -112,7 +116,7 @@ export class Object {
      * @param {Component} component - The component to remove
      */
     removeComponent(component) {
-        delete this.components[component.name];
+        delete this.components[component.name.toLowerCase()];
     }
     
     /**
@@ -131,6 +135,15 @@ export class Object {
     removeChild(child) {
         child.parent = null;
         delete this.childs[child.id];
+    }
+
+    /**
+     * Contains the object component
+     * @param {Component} component - The content component
+     * @return {boolean} - The boolean result
+     */
+    contains(component) {
+        return (this.components[component.name]) ? true : false;
     }
     
     /**
@@ -210,7 +223,7 @@ export class Object {
 
             const component = obj.components[name];
 
-            this.addComponent(new window[name]());
+            this.addComponent(new window[name.charAt(0).toUpperCase() + name.slice(1)]());
 
             // Copie des propriétés du composant
             for (let prop in component) {
@@ -256,12 +269,14 @@ export class Object {
      */
     detectMouse(x, y) {
 
-        // Detect Position
-        if (x <= this.x + this.width / 2 - Camera.main.x &&
-            x >= this.x - this.width / 2 - Camera.main.x) {
+        const camera = Camera.main;
 
-            if (y <= this.y + this.height / 2 - Camera.main.y &&
-            y >= this.y - this.height / 2 - Camera.main.y) {
+        // Detect Position
+        if (x / camera.scale <= this.x + this.width / 2 - camera.x  &&
+            x / camera.scale >= this.x - this.width / 2 - camera.x) {
+
+            if (y / camera.scale <= this.y + this.height / 2 - camera.y &&
+            y / camera.scale >= this.y - this.height / 2 - camera.y) {
 
                 return true;
             }
@@ -276,21 +291,24 @@ export class Object {
      * @param {number} y - The y mouse value
      */
     detectSide(x, y) {
+
+        const camera = Camera.main;
+        const tolerance = 2;
         
         // Right side
-        if (x > this.x + this.width / 2 - Camera.main.x - 5) {
+        if (x / camera.scale >= this.x + this.width / 2 - camera.x - tolerance) {
             return 'right';
         }
         // Left side
-        else if (x < this.x - this.width / 2 - Camera.main.x + 5) {
+        else if (x / camera.scale <= this.x - this.width / 2 - camera.x + tolerance) {
             return 'left';
         }
         // Bottom side
-        else if (y > this.y + this.height / 2 - Camera.main.y - 5) {
+        else if (y / camera.scale >= this.y + this.height / 2 - camera.y - tolerance) {
             return 'bottom';
         }
         // Top side
-        else if (y < this.y - this.height / 2 - Camera.main.y + 5) {
+        else if (y / camera.scale <= this.y - this.height / 2 - camera.y + tolerance) {
             return 'top';
         }
         else {
@@ -308,13 +326,16 @@ export class Object {
 
         const camera = Camera.main;
         
-        let offsetX = (this.width % 2 == 0) ? 0.5 : 0;
-        let offsetY = (this.height % 2 == 0) ? 0.5 : 0;
+        // let offsetX = (this.width % 2 == 0) ? 0.5 : 0;
+        // let offsetY = (this.height % 2 == 0) ? 0.5 : 0;
+
+        const offsetX = 0;
+        const offsetY = 0;
 
         // ctx.save();
 
         // Zoom
-        ctx.scale(camera.zoom, camera.zoom);
+        ctx.scale(camera.scale, camera.scale);
 
         ctx.beginPath();
 
@@ -339,7 +360,7 @@ export class Object {
         ctx.stroke();
 
         // Reset zoom
-        ctx.scale(1 / camera.zoom, 1 / camera.zoom);
+        ctx.scale(1 / camera.scale, 1 / camera.scale);
     }
     
     /**
