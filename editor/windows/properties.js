@@ -87,6 +87,15 @@ export class Properties {
             this.node.removeChild(this.node.firstChild);
         }
     }
+
+    /**
+     * Add component to object properties
+     * @param {Object} component - The component
+     */
+    addComponent(component) {
+
+        
+    }
     
     /**
      * Update current object
@@ -185,6 +194,7 @@ export class Properties {
                     case 'static': break;
                     case 'type': break;
                     case 'active': break;
+                    case 'visible': break;
                     case 'lock': break;
                     case 'image': break;
                     case 'parent': break;
@@ -449,6 +459,10 @@ export class Properties {
         
         // Component reference
         let component = obj; // scene.current.components[li.classList[0]];
+
+        switch (component.name) {
+
+        }
         
         // let icon_component = this.createIcon(name.textContent.toLocaleLowerCase());
         
@@ -457,7 +471,7 @@ export class Properties {
         icon_delete.title = 'Delete';
         
         // Suppression du composant
-        icon_delete.addEventListener('click', (e) => {
+        icon_delete.addEventListener('click', e => {
             let componentName = e.target.parentNode.textContent.toLowerCase();
             scene.current.removeComponent(scene.current.components[componentName]);
             

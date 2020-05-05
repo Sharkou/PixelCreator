@@ -21,13 +21,13 @@ export class Controller {
                 switch (key) {
                     
                     case this.right:
-                        self.components.animator.play('walk');
+                        // self.components.animator.play('walk');
                         self.translate(this.speed, 0);
                         this.direction = 'right';
                         break;
                         
                     case this.left:
-                        self.components.animator.play('walk', true);
+                        // self.components.animator.play('walk', true);
                         self.translate(- this.speed);
                         this.direction = 'left';
                         break;
@@ -42,24 +42,6 @@ export class Controller {
                 }
             }
         }
-        
-        else {
-            
-            switch (this.direction) {
-                
-                case 'right':
-                    self.components.animator.play('idle');
-                    break;
-                    
-                case 'left':
-                    self.components.animator.play('idle', true);
-                    break;
-                    
-                default:
-                    self.components.animator.play('idle');
-                    break;
-            }
-        }
     }
     
     // onCollision(self, other) {
@@ -71,4 +53,4 @@ export class Controller {
     // }
 }
 
-window.controller = Controller;
+window.Controller = Controller;

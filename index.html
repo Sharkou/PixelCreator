@@ -25,6 +25,7 @@
     <!-- Styles Sheets -->
     <link rel="stylesheet" href="css/variables.css" />
     <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/windows.css" />
     <link rel="stylesheet" href="css/canvas.css" />
     <link rel="stylesheet" href="css/toolbar.css" />
     <link rel="stylesheet" href="css/ruler.css" />
@@ -43,6 +44,7 @@
     <link rel="stylesheet" href="css/icons.css" />
     <link rel="stylesheet" href="css/context-menu.css" />
     <link rel="stylesheet" href="css/stats.css" />
+    <link rel="stylesheet" href="css/loading.css" />
     
     <!-- Code Mirror -->    
     <!--<link rel="stylesheet" href="/src/lib/codemirror/lib/codemirror.css" />
@@ -65,7 +67,7 @@
     <!--<canvas id="collab"></canvas>-->
 
     <!-- Menu principal -->
-    <header>
+    <div id="header">
 
         <!-- Navbar -->
         <!--<nav>
@@ -106,7 +108,7 @@
             </ul>
         </nav>
 
-    </header>
+    </div>
 
     <!-- Main Content -->
     <main>
@@ -237,11 +239,14 @@
 
                 <!-- Scene -->
                 <div id="wrapper" class="tab-content">
+                    <!-- <header></header> -->
                     <!-- <canvas id="canvas" moz-opaque></canvas> -->
                 </div>
 
                 <!-- Events Window -->
                 <div id="overlay" class="overlay tab-content">
+
+                    <header></header>
 
                     <section class="overlay-content">
 
@@ -343,9 +348,12 @@
             <section id="resources">
 
                 <div class="tab">
-                    <h2 class="active"><i class="fad fa-treasure-chest"></i>Project</h2>
-                    <h2><i class="fas fa-film"></i>Timeline</h2>
-                    <!-- <h2><i class="fas fa-terminal"></i>Console</h2> -->
+                    <h2 id="project-btn" class="active tab-link"><i class="far fa-folder-tree"></i>Project</h2>
+                    <h2 id="timeline-btn" class="tab-link"><i class="fas fa-film"></i>Timeline</h2>
+                    <!-- <h2 id="code-btn" class="tab-link"><i class="far fa-brackets-curly"></i>Code</h2> -->
+                    <!-- <h2 id="console-btn" class="tab-link"><i class="far fa-terminal"></i>Console</h2> -->
+                    <!-- <h2 id="memory-btn" class="tab-link"><i class="far fa-memory"></i>Memory</h2> -->
+                    <!-- <h2><i class="fas fa-tv-music"></i>Audio Mixer</h2> -->
                     
                     <ul class="end">                        
                         <li id="upload" title="Upload">                            
@@ -358,12 +366,22 @@
                     
                 </div>
 
-                <div id="resources-container">
+                <div id="resources-container" class="tab-content">
+                    <header>
+                        <div id="tree">
+                            Project > Resources > Images
+                        </div>
+                    </header>
                     <ul id="resources-list">
                         <!--<li><i class="material-icons">description</i>Script</li>
                         <li><i class="material-icons">wallpaper</i>Image</li>
                         <li><i class="material-icons">settings</i>Event</li>-->
                     </ul>
+                </div>
+
+                <div id="timeline" class="tab-content">
+                    <header></header>
+                    <aside></aside>
                 </div>
 
             </section>
@@ -401,21 +419,26 @@
                 <div class="tab">
                     <div>
                         <h2><i class="fas fa-sliders-h"></i>Properties</h2>
+                        <!-- <h2><i class="fas fa-lightbulb-on"></i>Lighting</h2> -->
 
                         <i title="Add Component" class="material-icons" id="add-property">add_box</i>
                     </div>
 
                     <div class="dropdown-content">
                         <ul>
-                            <li id="component">
+                            <li class="component">
+                                <i class="fas fa-fill-drip"></i><span class="object-text">Graphics</span>
+                            </li>
+                            
+                            <li class="component" id="controller">
                                 <i class="material-icons">games</i><span class="object-text">Controller</span>
                             </li>
                             
-                            <li id="component">
+                            <li class="component">
                                 <i style="transform: rotate(90deg);" class="material-icons">vertical_align_center</i><span class="object-text">Collider</span>
                             </li>
 
-                            <li id="component">
+                            <li class="component">
                                 <i class="material-icons">settings_input_component</i><span class="object-text">Custom Component</span>
                             </li>
 
@@ -475,6 +498,9 @@
             </li>
         </ul>
     </nav>
+
+    <!-- Loading -->
+    <div class="loading hidden"></div>
 
 </body>
 

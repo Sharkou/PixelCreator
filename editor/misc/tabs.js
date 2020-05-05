@@ -1,5 +1,3 @@
-/*import { Code } from '/src/editor/scripting/code.js';*/
-
 function openTab(e, name) {
     
     // Declare all variables
@@ -22,15 +20,18 @@ function openTab(e, name) {
     e.currentTarget.className += ' active';
 }
 
-/*document.getElementById('scene-btn').addEventListener('click', function(e) {
+document.getElementById('scene-btn').addEventListener('click', function(e) {
     openTab(e, 'wrapper');
 });
 
 document.getElementById('blueprint-btn').addEventListener('click', function(e) {
     openTab(e, 'overlay');
-});*/
+});
 
-/*document.getElementById('code-btn').addEventListener('click', function(e) {
-    openTab(e, 'scripting');
-    Code.refresh();
-});*/
+document.getElementById('project-btn').addEventListener('click', function(e) {
+    openTab(e, 'resources-container');
+});
+
+document.getElementById('timeline-btn').addEventListener('click', function(e) {
+    openTab(e, 'timeline');
+});

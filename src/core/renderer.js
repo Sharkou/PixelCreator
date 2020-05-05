@@ -14,12 +14,13 @@ export class Renderer {
      * @param {number} height - The height
      * @param {Element} parent - The DOM Element parent of renderer
      */
-    constructor(width, height, parent = document.body) {
+    constructor(width, height, parent = document.body, pause = true) {
         
         this.width = width;
         this.height = height;
         this.ratio = 1;
         this.parent = parent;
+        this.pause = pause;
         
         /*// Create canvas layers
         this.layers = {
@@ -188,7 +189,9 @@ export class Renderer {
             
             if (obj != undefined && obj != null && obj.active) {
                 
-                obj.update(); // update the object
+                if (!this.pause) {
+                    obj.update(); // update the object
+                }
 
                 // Si l'objet n'est pas verrouillé
                 if (!obj.lock) {
@@ -227,8 +230,10 @@ export class Renderer {
                 this.ctx.rotate(obj.rotation);
                 this.ctx.scale(obj.scale, obj.scale);
                 this.ctx.translate(-obj.width / 2 - obj.x, -obj.height / 2 - obj.y);
-                
-                obj.draw(); // draw the object
+
+                if (obj.visible) {
+                    obj.draw(); // draw the object
+                }
 
                 // Restore the saved state of the canvas
                 this.ctx.restore();
@@ -271,7 +276,7 @@ export class Renderer {
         
         else {
             this.ctx.clearRect(0, 0, this.width, this.height);
-        }        
+        }
     }
     
     /**

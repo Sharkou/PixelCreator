@@ -7,7 +7,7 @@ document.addEventListener('contextmenu', function(e) {
 });
 
 document.getElementById('resources-list').addEventListener('contextmenu', function(e) {
-    var contextmenu = document.getElementsByClassName('context-menu')[0];
+    let contextmenu = document.getElementsByClassName('context-menu')[0];
     contextmenu.classList.toggle('show');
     contextmenu.style.top = Mouse.editor.y + 'px';
     contextmenu.style.left = Mouse.editor.x + 'px';

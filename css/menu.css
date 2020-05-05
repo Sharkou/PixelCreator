@@ -1,11 +1,11 @@
-header nav ul
+#header nav ul
 {
     display: flex;
     justify-content: center;
     align-items: center;
 }
 
-header nav li {
+#header nav li {
     transition: 200ms;
     /*text-shadow: 1px 1px 6px black;*/
     height: calc(100% - 2px);
@@ -15,17 +15,17 @@ header nav li {
     width: 40px;
 }
 
-header nav li:hover {
+#header nav li:hover {
     color: var(--hover-color);
     background-color: var(--hover-bg-li-color);
     cursor: pointer;
 }
 
-header nav li:last-of-type:hover {
+#header nav li:last-of-type:hover {
     /*background-color: rgba(255, 0, 0, 0.8);*/
 }
 
-header #menu {
+#header #menu {
     height: 100%;
     display: flex;
     justify-content: center;

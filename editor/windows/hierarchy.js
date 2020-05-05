@@ -112,6 +112,7 @@ export class Hierarchy {
         li.setAttribute('id', obj.id);
         // li.setAttribute('onmousedown', 'changeCurrent(obj)');
         li.setAttribute('draggable', 'true');
+        
         li.addEventListener('dragstart', function(e) {
              e.dataTransfer.setData('text', e.target.id);
         });
@@ -212,6 +213,10 @@ export class Hierarchy {
         // div.setAttribute('oninput', 'updateName(obj)');
         div.addEventListener('input', function() {
             scene.updateName(this);
+        });
+
+        div.addEventListener('blur', function(e) {
+            e.target.scrollLeft = 0;
         });
         
         // div.setAttribute('onkeypress', 'validate(obj, event)');

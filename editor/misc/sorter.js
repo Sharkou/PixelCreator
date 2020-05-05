@@ -3,10 +3,11 @@ import { Scene } from '/src/core/scene.js';
 export class Sorter {
 
     static draggedElement = null;
+    static list = document.getElementById('world-list');
     
     static sort(el) {
         el.addEventListener('dragstart', Sorter.dragStart);
-        // el.addEventListener('drag', Sorter.drag);
+        el.addEventListener('drag', Sorter.drag);
         el.addEventListener('dragenter', Sorter.dragEnter);
         el.addEventListener('dragover', Sorter.dragOver);
         el.addEventListener('dragleave', Sorter.dragLeave);
@@ -36,7 +37,8 @@ export class Sorter {
     }
     
     static drag(e) {
-        
+        console.log(e.target.offsetWidth);
+        console.log(e.offsetX);
     }
     
     static dragEnter(e) {
@@ -83,8 +85,8 @@ export class Sorter {
     }
     
     static dragEnd(e) {
-        var nodes = document.getElementsByClassName('hidden');
-        for (var i = 0, l = nodes.length; i < l; i++) {
+        let nodes = Sorter.list.getElementsByClassName('hidden');
+        for (let i = 0, l = nodes.length; i < l; i++) {
             nodes[i].classList.remove('hidden');
         }
         Sorter.draggedElement = null;

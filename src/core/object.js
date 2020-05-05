@@ -24,6 +24,7 @@ export class Object {
         this.tag = '';
         this.type = '';
         this.active = true;
+        this.visible = true;
         this.lock = false;
         this.static = false;
         this.image = null;

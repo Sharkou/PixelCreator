@@ -49,7 +49,8 @@ const renderer = new Renderer(canvas.clientWidth, canvas.clientHeight, canvas);
 
 const scene = new Scene('Main Scene');
 
-const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHeight).addComponent(new Camera('#272727'));
+const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHeight)
+ .addComponent(new Camera('#272727'));
 
 // const socket = new Socket();
 // const room = new Room(socket);
@@ -58,12 +59,19 @@ const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHei
 async function init() {
     
     renderer.init(scene, camera);
-    
+
     const hierarchy = new Hierarchy('world-list', scene);
     const project = new Project('resources-list', scene);
     const properties = new Properties('properties-list', scene);
     const handler = new Handler(scene, camera, renderer, project);
     const toolbar = new Toolbar();
+
+    // Global
+    window.hierarchy = hierarchy;
+    window.project = project;
+    window.properties = properties;
+    window.handler = handler;
+    window.toolbar = toolbar;
 
     // Start loop
     loop();

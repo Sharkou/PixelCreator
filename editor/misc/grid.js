@@ -1,6 +1,12 @@
 import { Camera } from '/src/core/camera.js';
 
 export class Grid {
+
+    static dt = 30;
+    static length = 600;
+    static lineWidth = 1;
+    static gap = (Grid.lineWidth % 2 == 0) ? 0 : 0.5;
+    static active = true;
     
     static draw(ctx) {
 
@@ -15,12 +21,13 @@ export class Grid {
         ctx.lineWidth = this.lineWidth;
         ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
         ctx.beginPath();
+        ctx.setLineDash([4, 2]);
 
-        for (var i = -this._length; i < this._length; i += this.dt) {
-            ctx.moveTo(-this._length + this.gap - camera.x, i + this.gap - camera.y);
-            ctx.lineTo(this._length + this.gap - camera.x, i + this.gap - camera.y);
-            ctx.moveTo(i + this.gap - camera.x, this._length + this.gap - camera.y);
-            ctx.lineTo(i + this.gap - camera.x, -this._length + this.gap - camera.y);
+        for (var i = -this.length; i < this.length; i += this.dt) {
+            ctx.moveTo(-this.length + this.gap - camera.x, i + this.gap - camera.y);
+            ctx.lineTo(this.length + this.gap - camera.x, i + this.gap - camera.y);
+            ctx.moveTo(i + this.gap - camera.x, this.length + this.gap - camera.y);
+            ctx.lineTo(i + this.gap - camera.x, -this.length + this.gap - camera.y);
         }
 
         ctx.stroke();
@@ -29,12 +36,6 @@ export class Grid {
         ctx.restore();
     }
 }
-
-Grid.dt = 30;
-Grid._length = 3000;
-Grid.lineWidth = 1;
-Grid.gap = (Grid.lineWidth % 2 == 0) ? 0 : 0.5;
-Grid.active = true;
 
 const button = document.getElementById('gridBtn');
 

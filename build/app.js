@@ -13,6 +13,7 @@ import { Map } from '/src/graphics/map.js';
 import { Animation } from '/src/anim/animation.js';
 import { Animator } from '/src/anim/animator.js';
 import { Collider } from '/src/physics/collider.js';
+import { Controller } from '/src/physics/controller.js';
 
 // const socket = io('localhost:3000');
 
@@ -20,23 +21,14 @@ const renderer = new Renderer(window.innerWidth, window.innerHeight);
 
 const scene = new Scene(data.scene.name);
 
-const camera = new Object('Camera',
-                          data.camera.x - data.camera.width / 2,
-                          data.camera.y - data.camera.height / 2,
-                          data.camera.width,
-                          data.camera.height)
-                          .addComponent(new Camera(data.camera.components.camera.background)
-                         );
+// const camera = data.camera;
+let camera = null;
 
 /* Initialization */
 async function init() {
 
     // Instanciation des objets
     for (let id in data.objects) {
-        
-        if (data.objects[id].components.camera) {
-            continue;
-        }
 
         let obj = new Object();
 
@@ -44,10 +36,20 @@ async function init() {
 
         obj.lock = true; // lock the object from editing
 
+        // Camera initialization
+        if (data.objects[id].components.camera) {
+            obj.x -= obj.width / 2;
+            obj.y -= obj.height / 2;
+            obj.visible = false;
+            camera = obj;
+        }
+
         scene.add(obj);
     }
 
     renderer.init(scene, camera);
+
+    renderer.pause = false;
 
     // let circle = new Object('Circle', 100, 100, 20, 20, 0);
     // circle.addComponent(new Circle('#CC8844', 0.6));

@@ -3,6 +3,14 @@
     flex-direction: column;
 }
 
+#resources .drop_hover:before {
+    border: 2px dashed var(--main);
+}
+
+#resources-container {
+    height: 100%;
+}
+
 #resources-list {
     position: relative;
     display: flex;
@@ -10,7 +18,9 @@
     /*justify-content: space-between;*/
     align-items: flex-start;
     width: 100%;
-    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    height: calc(100% - 40px);
 }
 
 /* Drop Container */
@@ -25,16 +35,6 @@
     transition: 200ms;
     z-index: 0;
     pointer-events: none;
-}
-
-#resources .drop_hover:before {
-    border: 2px dashed var(--main);
-}
-
-#resources-container {
-    overflow-y: auto;
-    overflow-x: hidden;
-    height: calc(100% - 45px);
 }
 
 #resources-list li {

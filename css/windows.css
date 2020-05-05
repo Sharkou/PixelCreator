@@ -1,0 +1,11 @@
+header {
+    height: 40px;
+    padding: 0 20px;
+    border-bottom: 1px var(--last-border-color) solid;
+    box-shadow: inset 0 -1px 0px 0px var(--first-border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: var(--bg-light-color);
+    box-sizing: border-box;
+}

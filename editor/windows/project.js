@@ -243,8 +243,8 @@ export class Project {
         // div.setAttribute('oninput', 'updateName(obj)');
         
         // div.setAttribute('onblur', 'scrollBack(obj)');
-        div.addEventListener('blur', function() {        
-            obj.scrollLeft = 0;
+        div.addEventListener('blur', function(e) {        
+            e.target.scrollLeft = 0;
         });
         
         // div.setAttribute('onkeypress', 'validate(obj, event)');

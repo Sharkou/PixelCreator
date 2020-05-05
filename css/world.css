@@ -31,7 +31,8 @@
 }
 
 /* Text */
-#world li div {
+#world li div:focus {
+    text-overflow: initial;
 }
 
 #world i {
@@ -53,6 +54,7 @@
 }
 
 #world li .icon {
+    position: absolute;
     left: 10px;
     margin-right: 12px;
     width: 20px;
@@ -150,10 +152,12 @@
     width: 200px;
     /*padding: 4px 8px;
     display: inline-block;*/
-    padding: 6px 8px;
+    padding: 6px 0px;
+    margin-left: 38px;
     cursor: text;
     max-width: calc(100% - 150px);
     text-overflow: ellipsis;
+    white-space: nowrap;
     overflow: hidden;
 }
 
@@ -185,7 +189,7 @@
     border: 2px dashed var(--main);
 }
 
-.hidden {
+#world-list li.hidden {
     color: transparent !important;
     border: 2px dashed var(--main) !important;
     background-color: #272727 !important;
@@ -193,11 +197,11 @@
     position: relative;
 }
 
-.hidden:before, .hidden i {
-    display: none;
+#world-list li.hidden:before, li.hidden i {
+    display: none !important;
 }
 
-/*.hidden:before {
+/*#world-list .hidden:before {
     content: '';
     position: absolute;
     top: 0;
