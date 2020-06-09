@@ -226,10 +226,10 @@ export class Renderer {
                 this.ctx.translate(- camera.x, - camera.y);
 
                 // Transform the object (apply rotation)
-                this.ctx.translate(obj.width / 2 + obj.x, obj.height / 2 + obj.y);
+                this.ctx.translate(obj.x, obj.y);
                 this.ctx.rotate(obj.rotation);
                 this.ctx.scale(obj.scale, obj.scale);
-                this.ctx.translate(-obj.width / 2 - obj.x, -obj.height / 2 - obj.y);
+                this.ctx.translate(-obj.x, -obj.y);
 
                 if (obj.visible) {
                     obj.draw(); // draw the object
