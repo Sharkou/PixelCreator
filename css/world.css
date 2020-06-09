@@ -18,7 +18,7 @@
 #world li {
     padding: 4px 2px;
     font-size: 0.9em;
-    width: 100%;
+    /* width: 100%; */
     box-sizing: border-box;
     border: 2px solid transparent;
     position: relative;

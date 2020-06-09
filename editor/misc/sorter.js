@@ -4,6 +4,7 @@ export class Sorter {
 
     static draggedElement = null;
     static list = document.getElementById('world-list');
+    static x_t0 = 0;
     
     static sort(el) {
         el.addEventListener('dragstart', Sorter.dragStart);
@@ -34,11 +35,30 @@ export class Sorter {
         // var img = Scene.objects[e.target.id].img;
         // e.dataTransfer.setDragImage(img, img.width / 2, img.height / 2);        
         Sorter.draggedElement = e.target;
+        Sorter.x_t0 = e.offsetX;
     }
     
     static drag(e) {
-        console.log(e.target.offsetWidth);
-        console.log(e.offsetX);
+        if (e.offsetX >= Sorter.x_t0 + 20) {
+            if (e.target.previousSibling instanceof HTMLElement) {
+                const parent = e.target.previousSibling;
+                if (!parent.firstChild.classList.contains('unwrap')) {
+                    // e.target.style.marginLeft = '20px';
+                    // parent.classList.add('parent');
+                    // const i = document.createElement('i');
+                    // i.classList.add('unwrap');
+                    // i.classList.add('fas');
+                    // i.classList.add('fa-sort-down');
+                    // parent.insertBefore(i, parent.firstChild);
+                }
+            }
+            // console.log(e.target.previousSibling);
+        }
+        else {
+            if (e.target.previousSibling instanceof HTMLElement) {
+                // e.target.style.marginLeft = '0px';
+            }
+        }
     }
     
     static dragEnter(e) {

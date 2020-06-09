@@ -211,7 +211,7 @@ h2 {
     display: inline-block;
     /*border-top: 2px solid transparent;*/
     box-sizing: border-box;
-    transition: 200ms;
+    /* transition: 200ms; */
     position: relative;
     border-right: 1px solid transparent;
     border-left: 1px solid transparent;
@@ -229,6 +229,7 @@ h2:hover {
     /* color: var(--hover-color); */
     background-color: var(--bg-light-color);
     cursor: pointer;
+    box-shadow: inset 0px -1px 0 var(--first-border-color);
 }
 
 h2.active {
@@ -253,7 +254,7 @@ h2:before {
     top: -2px;
     left: 0;
     width: 100%;
-    transition: 200ms;
+    /* transition: 200ms; */
 }
 
 h2.active:before {
