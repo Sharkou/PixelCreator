@@ -14,6 +14,7 @@ import { Animation } from '/src/anim/animation.js';
 import { Animator } from '/src/anim/animator.js';
 import { Collider } from '/src/physics/collider.js';
 import { Controller } from '/src/physics/controller.js';
+import { Rotator } from '/src/physics/rotator.js';
 
 // const socket = io('localhost:3000');
 
@@ -78,7 +79,7 @@ async function loop() {
 // Initialize on load
 window.onload = init;
 
-// Window resized
+//  Window resized
 window.onresize = function() {
     renderer.resize(window.innerWidth, window.innerHeight);
     renderer.init(scene, camera);

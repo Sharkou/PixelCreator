@@ -20,6 +20,7 @@ import { Map } from '/src/graphics/map.js';
 import { Animation } from '/src/anim/animation.js';
 import { Animator } from '/src/anim/animator.js';
 import { Collider } from '/src/physics/collider.js';
+import { Rotator } from '/src/physics/rotator.js';
 
 /* Editor Modules */
 import { Handler } from '/editor/system/handler.js';
@@ -51,6 +52,7 @@ const scene = new Scene('Main Scene');
 
 const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHeight)
  .addComponent(new Camera('#272727'));
+
 
 // const socket = new Socket();
 // const room = new Room(socket);
