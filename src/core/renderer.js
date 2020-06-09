@@ -240,7 +240,7 @@ export class Renderer {
 
                 // Si l'objet est sélectionné dans l'éditeur
                 if (obj === scene.current && !obj.lock) {
-                    // obj.select(this.ctx); // affichage de la sélection
+                    obj.select(this.ctx); // affichage de la sélection
                 }
             }
         }

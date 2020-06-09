@@ -10,6 +10,7 @@ import { Animation } from '/src/anim/animation.js';
 import { Animator } from '/src/anim/animator.js';
 import { Collider } from '/src/physics/collider.js';
 import { Controller } from '/src/physics/controller.js';
+import { Rotator } from '/src/physics/rotator.js';
 
 // Add Component Button
 document.getElementById('add-property').onclick = function() {    
@@ -36,6 +37,17 @@ document.addEventListener('click', function(event) {
 document.getElementById('controller').addEventListener('click', e => {
 
     const component = new Controller();
+    const current = Scene.main.current;
+
+    current.addComponent(component);
+    window.properties.add(current); // mise à jour des propriétés
+
+    
+});
+
+document.getElementById('rotator').addEventListener('click', e => {
+
+    const component = new Rotator();
     const current = Scene.main.current;
 
     current.addComponent(component);
