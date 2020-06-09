@@ -99,7 +99,7 @@ async function loop() {
     renderer.render(scene, camera);
 
     // Affichage de la règle
-    // Ruler.active ? Ruler.update(renderer.ctx, Mouse.x, Mouse.y) : false;
+    Ruler.active ? Ruler.update(renderer.ctx, Mouse.x, Mouse.y) : false;
 
     // Affichage de la grille
     Grid.active ? Grid.draw(renderer.ctx) : false;

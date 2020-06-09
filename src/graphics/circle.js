@@ -14,6 +14,10 @@ export class Circle {
         this.opacity = opacity;
         this.fill = fill;
     }
+
+    update(self) {
+
+    }
     
     /**
      * Draw the component
