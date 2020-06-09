@@ -9,16 +9,25 @@ export class Components {
      * @static
      * @param {Object} component - The component
      * @param {string} iconClasses - The icon classes
+     * @param {string} category - The component category
      */
-    static add(component, iconClasses) {
+    static add(component, iconClasses, category = '') {
+
+        // Add component to array
+        this.components[component.name] = component;
+
+        // Editor view
+        if (document.getElementById('components')) {
+            this.appendChild(component, iconClasses, category);
+        }
+    }
+
+    static appendChild(component, iconClasses, category) {
 
         const li = document.createElement('li');
         const i = document.createElement('i');
         const span = document.createElement('span');
         const name = component.name;
-
-        // Add component to array
-        this.components[name] = component;
 
         li.classList.add('component');
         li.id = name.toLowerCase();
@@ -41,11 +50,6 @@ export class Components {
             window.properties.add(current); // mise à jour des propriétés
             
         });
-
-        this.appendChild(li);
-    }
-
-    static appendChild(li) {
 
         document.getElementById('components').appendChild(li);
     }

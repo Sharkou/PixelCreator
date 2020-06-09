@@ -2,6 +2,7 @@
 import { System } from '/src/core/system.js';
 import { Scene } from '/src/core/scene.js';
 import { Renderer } from '/src/core/renderer.js';
+// import { Components } from '/src/core/components.js';
 import { Camera } from '/src/core/camera.js';
 import { Object } from '/src/core/object.js';
 import { Time } from '/src/time/time.js';
@@ -26,7 +27,6 @@ import { Rotator } from '/src/physics/rotator.js';
 import { Handler } from '/editor/system/handler.js';
 import { Hierarchy } from '/editor/windows/hierarchy.js';
 import { Properties } from '/editor/windows/properties.js';
-import { Components } from '/editor/windows/components.js';
 import { Project } from '/editor/windows/project.js';
 import { Toolbar } from '/editor/windows/toolbar.js';
 import { Dnd } from '/editor/system/dnd.js';
