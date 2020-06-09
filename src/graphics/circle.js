@@ -1,4 +1,5 @@
 import { Graphics } from '/src/graphics/graphics.js';
+import { Components } from '/editor/windows/components.js';
 
 export class Circle {
     
@@ -40,6 +41,8 @@ export class Circle {
 }
 
 window.Circle = Circle;
+
+Components.add(Circle, 'fad fa-circle');
 
 // Circle.prototype.name = 'Circle Renderer';
 // System[Circle.prototype.name] = Circle.update;

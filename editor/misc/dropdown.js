@@ -27,7 +27,7 @@ document.addEventListener('click', function(event) {
         
             let openDropdown = dropdowns[i];
         
-            if (openDropdown.classList.contains('show')) {          
+            if (openDropdown.classList.contains('show')) {
                 openDropdown.classList.remove('show');
             }
         }
@@ -52,6 +52,5 @@ document.getElementById('rotator').addEventListener('click', e => {
 
     current.addComponent(component);
     window.properties.add(current); // mise à jour des propriétés
-
     
 });
