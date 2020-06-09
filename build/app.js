@@ -78,7 +78,7 @@ async function loop() {
 // Initialize on load
 window.onload = init;
 
-// Window resized
+//  Window resized
 window.onresize = function() {
     renderer.resize(window.innerWidth, window.innerHeight);
     renderer.init(scene, camera);
