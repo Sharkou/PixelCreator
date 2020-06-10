@@ -11,18 +11,18 @@ export class Components {
      * @param {string} iconClasses - The icon classes
      * @param {string} category - The component category
      */
-    static add(component, iconClasses, category = '', alterName = component.name) {
+    static add(component, iconClasses, category = '') {
 
         // Add component to array
         this.components[component.name] = component;
 
         // Editor view
         if (document.getElementById('components')) {
-            this.appendChild(component, iconClasses, category, alterName);
+            this.appendChild(component, iconClasses, category);
         }
     }
 
-    static appendChild(component, iconClasses, category, alterName) {
+    static appendChild(component, iconClasses, category) {
 
         const li = document.createElement('li');
         const i = document.createElement('i');
@@ -46,7 +46,7 @@ export class Components {
             const component = new this.components[name]();
             const current = Scene.main.current;
         
-            current.addComponent(component, alterName);
+            current.addComponent(component);
             window.properties.add(current); // mise à jour des propriétés
             
         });

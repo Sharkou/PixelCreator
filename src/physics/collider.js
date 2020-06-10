@@ -27,19 +27,52 @@ export class Collider {
     }
     
     /**
-     * Update the component
+
      * @update
      */
     update(self) {
         
+        if (self.components.collider)
+        {
+            this.s_collider = self.components.collider;
+        }
+        else if (self.components.rectcollider)
+        {
+            this.s_collider = self.components.rectcollider;
+        }
+        else if (self.components.circlecollider)
+        {
+            this.s_collider = self.components.circlecollider;
+        }
+        else
+        {
+            this.s_collider = 0;
+        }
         for (let id in Scene.main.objects) {
             
             // Store the other object
-            let other = Scene.main.objects[id];            
+            let other = Scene.main.objects[id];
 
-            if (other != undefined && other != null && other != self && other.components.collider) {
+            if (other != undefined && other != null && other != self && other.active) {
 
-                if (other.active && other.components.collider.active) {
+                if (other.components.collider)
+                {
+                    this.o_collider = other.components.collider;
+                }
+                else if (other.components.rectcollider)
+                {
+                    this.o_collider = other.components.rectcollider;
+                }
+                else if (other.components.circlecollider)
+                {
+                    this.o_collider = other.components.circlecollider;
+                }
+                else
+                {
+                    this.o_collider = 0;
+                }
+                
+                if (this.o_collider && this.o_collider.active) {
                     
                     if (this.testCollision(self, other))
                     {
@@ -63,28 +96,28 @@ export class Collider {
      * @testCollision
      */
     testCollision(self, other) {
-        return other.components.collider.testCollisionWithPoint(other, self);
+        return this.o_collider.testCollisionWithPoint(other, self, this.o_collider, this.s_collider);
     }
     
     /**
      * return true if collide with a point
      * @testCollisionWithPoint
      */
-    testCollisionWithPoint(self, other) {
-        return (((self.x + self.components.collider.offsetX) == (other.x + other.components.collider.offsetX)) && ((self.y + self.components.collider.offsetY) == (other.y + other.components.collider.offsetY)));
+    testCollisionWithPoint(self, other, s_collider, o_collider) {
+        return (((self.x + s_collider.offsetX) == (other.x + o_collider.offsetX)) && ((self.y + s_collider.offsetY) == (other.y + o_collider.offsetY)));
     }
     
     /**
      * return true if collide with a rectangle
      * @testCollisionWithRect
      */
-    testCollisionWithRect(self, other) {
-        let collisionX = self.x + self.components.collider.offsetX;
-        let collisionY = self.y + self.components.collider.offsetY;
-        let otherWidth = other.components.collider.width;
-        let otherHeight = other.components.collider.height;
-        let otherX = other.x + other.components.collider.offsetX - otherWidth/2;
-        let otherY = other.y + other.components.collider.offsetY - otherHeight/2;
+    testCollisionWithRect(self, other, s_collider, o_collider) {
+        let collisionX = self.x + s_collider.offsetX;
+        let collisionY = self.y + s_collider.offsetY;
+        let otherWidth = o_collider.width;
+        let otherHeight = o_collider.height;
+        let otherX = other.x + o_collider.offsetX - otherWidth/2.;
+        let otherY = other.y + o_collider.offsetY - otherHeight/2.;
         return (!(collisionX < otherX || collisionX > otherX+otherWidth) && !(collisionY < otherY || collisionY > otherY+otherHeight));
     }
     
@@ -92,12 +125,12 @@ export class Collider {
      * return true if collide with a circle
      * @testCollisionWithCircle
      */
-    testCollisionWithCircle(self, other) {
-        let collisionX = self.x + self.components.collider.offsetX;
-        let collisionY = self.y + self.components.collider.offsetY;
-        let otherX = other.x + other.components.collider.offsetX;
-        let otherY = other.y + other.components.collider.offsetY;
-        let otherWidth = other.components.collider.width;
+    testCollisionWithCircle(self, other, s_collider, o_collider) {
+        let collisionX = self.x + s_collider.offsetX;
+        let collisionY = self.y + s_collider.offsetY;
+        let otherX = other.x + o_collider.offsetX;
+        let otherY = other.y + o_collider.offsetY;
+        let otherWidth = o_collider.width;
         return ((collisionX-otherX)*(collisionX-otherX) + (collisionY-otherY)*(collisionY-otherY) <= otherWidth*otherWidth);
     }
     
@@ -116,7 +149,7 @@ export class Collider {
 
 window.Collider = Collider;
 
-export class ColliderRect extends Collider {
+export class RectCollider extends Collider {
     
     /**
      * Initialize the component
@@ -143,20 +176,20 @@ export class ColliderRect extends Collider {
      * @testCollision
      */
     testCollision(self, other) {
-        return other.components.collider.testCollisionWithRect(other, self);
+        return this.o_collider.testCollisionWithRect(other, self, this.o_collider, this.s_collider);
     }
     
     /**
      * return true if collide with a point
      * @testCollisionWithPoint
      */
-    testCollisionWithPoint(self, other) {
-        let otherX = other.x + other.components.collider.offsetX;
-        let otherY = other.y + other.components.collider.offsetY;
-        let collisionWidth = self.components.collider.width;
-        let collisionHeight = self.components.collider.height;
-        let collisionX = self.x + self.components.collider.offsetX - collisionWidth/2;
-        let collisionY = self.y + self.components.collider.offsetY - collisionHeight/2;
+    testCollisionWithPoint(self, other, s_collider, o_collider) {
+        let otherX = other.x + o_collider.offsetX;
+        let otherY = other.y + o_collider.offsetY;
+        let collisionWidth = s_collider.width;
+        let collisionHeight = s_collider.height;
+        let collisionX = self.x + s_collider.offsetX - collisionWidth/2;
+        let collisionY = self.y + s_collider.offsetY - collisionHeight/2;
         return (!(otherX < collisionX || otherX > collisionX+collisionWidth) && !(otherY < collisionY || otherY > collisionY+collisionHeight));
     }
     
@@ -164,15 +197,15 @@ export class ColliderRect extends Collider {
      * return true if collide with a rectangle
      * @testCollisionWithRect
      */
-    testCollisionWithRect(self, other) {
-        let collisionWidth = self.components.collider.width;
-        let collisionHeight = self.components.collider.height;
-        let collisionX = self.x + self.components.collider.offsetX - collisionWidth/2;
-        let collisionY = self.y + self.components.collider.offsetY - collisionHeight/2;
-        let otherWidth = other.components.collider.width;
-        let otherHeight = other.components.collider.height;
-        let otherX = other.x + other.components.collider.offsetX - otherWidth/2;
-        let otherY = other.y + other.components.collider.offsetY - otherHeight/2;
+    testCollisionWithRect(self, other, s_collider, o_collider) {
+        let collisionWidth = s_collider.width;
+        let collisionHeight = s_collider.height;
+        let collisionX = self.x + s_collider.offsetX - collisionWidth/2;
+        let collisionY = self.y + s_collider.offsetY - collisionHeight/2;
+        let otherWidth = o_collider.width;
+        let otherHeight = o_collider.height;
+        let otherX = other.x + o_collider.offsetX - otherWidth/2;
+        let otherY = other.y + o_collider.offsetY - otherHeight/2;
         return !((otherX >= collisionX + collisionWidth) || (otherX + otherWidth <= collisionX) || (otherY >= collisionY + collisionHeight) || (otherY + otherHeight <= collisionY));
     }
     
@@ -180,14 +213,14 @@ export class ColliderRect extends Collider {
      * return true if collide with a circle
      * @testCollisionWithCircle
      */
-    testCollisionWithCircle(self, other) {
-        let collisionWidth = self.components.collider.width;
-        let collisionHeight = self.components.collider.height;
-        let collisionX = self.x + self.components.collider.offsetX - collisionWidth/2;
-        let collisionY = self.y + self.components.collider.offsetY - collisionHeight/2;
-        let otherX = other.x + other.components.collider.offsetX;
-        let otherY = other.y + other.components.collider.offsetY;
-        let otherWidth = other.components.collider.width;
+    testCollisionWithCircle(self, other, s_collider, o_collider) {
+        let collisionWidth = s_collider.width;
+        let collisionHeight = s_collider.height;
+        let collisionX = self.x + s_collider.offsetX - collisionWidth/2;
+        let collisionY = self.y + s_collider.offsetY - collisionHeight/2;
+        let otherX = other.x + o_collider.offsetX;
+        let otherY = other.y + o_collider.offsetY;
+        let otherWidth = o_collider.width;
         let otherBoxX = otherX - otherWidth;
         let otherBoxY = otherY - otherWidth;
         let otherBoxWidth = otherWidth*2;
@@ -218,9 +251,9 @@ export class ColliderRect extends Collider {
     }
 }
 
-window.Colliderrect = ColliderRect;
+window.Rectcollider = RectCollider;
 
-export class ColliderCircle extends Collider {
+export class CircleCollider extends Collider {
     
     /**
      * Initialize the component
@@ -244,19 +277,19 @@ export class ColliderCircle extends Collider {
      * @testCollision
      */
     testCollision(self, other) {
-        return other.components.collider.testCollisionWithCircle(other, self);
+        return this.o_collider.testCollisionWithCircle(other, self, this.o_collider, this.s_collider);
     }
     
     /**
      * return true if collide with a point
      * @testCollisionWithPoint
      */
-    testCollisionWithPoint(self, other) {
-        let otherX = other.x + other.components.collider.offsetX;
-        let otherY = other.y + other.components.collider.offsetY;
-        let collisionX = self.x + self.components.collider.offsetX;
-        let collisionY = self.y + self.components.collider.offsetY;
-        let collisionWidth = self.components.collider.width;
+    testCollisionWithPoint(self, other, s_collider, o_collider) {
+        let otherX = other.x + o_collider.offsetX;
+        let otherY = other.y + o_collider.offsetY;
+        let collisionX = self.x + s_collider.offsetX;
+        let collisionY = self.y + s_collider.offsetY;
+        let collisionWidth = s_collider.width;
         return ((otherX-collisionX)*(otherX-collisionX) + (otherY-collisionY)*(otherY-collisionY) <= collisionWidth*collisionWidth);
     }
     
@@ -264,17 +297,17 @@ export class ColliderCircle extends Collider {
      * return true if collide with a rectangle
      * @testCollisionWithRect
      */
-    testCollisionWithRect(self, other) {
-        let collisionX = self.x + self.components.collider.offsetX;
-        let collisionY = self.y + self.components.collider.offsetY;
-        let collisionWidth = self.components.collider.width;
+    testCollisionWithRect(self, other, s_collider, o_collider) {
+        let collisionX = self.x + s_collider.offsetX;
+        let collisionY = self.y + s_collider.offsetY;
+        let collisionWidth = s_collider.width;
         let collisionBoxX = collisionX - collisionWidth;
         let collisionBoxY = collisionY - collisionWidth;
         let collisionBoxWidth = collisionWidth*2;
-        let otherWidth = other.components.collider.width;
-        let otherHeight = other.components.collider.height;
-        let otherX = other.x + other.components.collider.offsetX - otherWidth/2;
-        let otherY = other.y + other.components.collider.offsetY - otherHeight/2;
+        let otherWidth = o_collider.width;
+        let otherHeight = o_collider.height;
+        let otherX = other.x + o_collider.offsetX - otherWidth/2;
+        let otherY = other.y + o_collider.offsetY - otherHeight/2;
         
         if (!((collisionBoxX >= otherX + otherWidth) || (collisionBoxX + collisionBoxWidth <= otherX) || (collisionBoxY >= otherY + collisionHeight) || (collisionBoxY + collisionBoxWidth <= otherY)))
             {return false;}
@@ -293,13 +326,13 @@ export class ColliderCircle extends Collider {
      * return true if collide with a circle
      * @testCollisionWithCircle
      */
-    testCollisionWithCircle(self, other) {
-        let collisionX = self.x + self.components.collider.offsetX;
-        let collisionY = self.y + self.components.collider.offsetY;
-        let collisionWidth = self.components.collider.width;
-        let otherX = other.x + other.components.collider.offsetX;
-        let otherY = other.y + other.components.collider.offsetY;
-        let otherWidth = other.components.collider.width;
+    testCollisionWithCircle(self, other, s_collider, o_collider) {
+        let collisionX = self.x + s_collider.offsetX;
+        let collisionY = self.y + s_collider.offsetY;
+        let collisionWidth = s_collider.width;
+        let otherX = other.x + o_collider.offsetX;
+        let otherY = other.y + o_collider.offsetY;
+        let otherWidth = o_collider.width;
         return !((collisionX-otherX)*(collisionX-otherX)+(collisionY-otherY)*(collisionY-otherY) > (collisionWidth+otherWidth)*(collisionWidth+otherWidth))
     }
     
@@ -316,10 +349,10 @@ export class ColliderCircle extends Collider {
     }
 }
 
-window.Collidercircle = ColliderCircle;
+window.Circlecollider = CircleCollider;
 
 Components.add(Collider, 'far fa-arrow-to-right', 'physics');
 
-// TO DELETE
-Components.add(ColliderRect, 'far fa-arrow-to-right', 'physics');
-Components.add(ColliderCircle, 'far fa-arrow-to-right', 'physics');
+// TO REPLACE - by a list
+Components.add(RectCollider, 'far fa-arrow-to-right', 'physics');
+Components.add(CircleCollider, 'far fa-arrow-to-right', 'physics');
