@@ -80,4 +80,4 @@ export class Map {
     }
 }
 
-window.Map = Map;
+window.Mapping = Map;

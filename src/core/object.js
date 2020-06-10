@@ -95,11 +95,12 @@ export class Object {
      * Add the object component
      * @param {Component} component - The component to add
      */
-    addComponent(component) {
+    addComponent(component, name = component.constructor.name) {
         
         // Naming the component
         // component.name = component.constructor.name[0].toLowerCase() + component.constructor.name.substr(1);
-        component.name = component.constructor.name.toLowerCase();
+        name = name.toLowerCase();
+        component.name = name;
         
         component.active = true; // activation of the component        
         // component.self = this; // reference to parent
