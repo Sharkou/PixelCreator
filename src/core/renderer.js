@@ -189,9 +189,9 @@ export class Renderer {
             
             if (obj != undefined && obj != null && obj.active) {
                 
-                if (!this.pause) {
+                // if (!this.pause) {
                     obj.update(); // update the object
-                }
+                // }
 
                 // Si l'objet n'est pas verrouillé
                 if (!obj.lock) {

@@ -43,6 +43,8 @@ export class Object {
         this.rotation = 0.0;
         this.scale = 1.0;
 
+        // this.pivot = 0;
+
         // Synchronization
         System.sync(this);
 
@@ -121,7 +123,7 @@ export class Object {
     }
     
     /**
-     * Add child to list
+     * Add child to object
      * @param {Object} child - The child to add
      */
     addChild(child) {
