@@ -199,8 +199,30 @@ export class Renderer {
                     // Au survol d'un object
                     // if (!handler.drag && !handler.moveCamera) {
 
-                        // Si on détecte l'objet avec la souris
-                        if (obj.detectMouse(Mouse.x, Mouse.y)) {
+                        // S'il est sélectionné et que l'on détecte un de ses composants
+                        if (scene.current == obj)
+                        {
+                            for (let c in obj.components)
+                            {
+                                let component = obj.components[c];
+                                if (typeof component.detectMouse === "function" && typeof component.detectSide === "function")
+                                {
+                                    if (component.detectMouse(obj, Mouse.x, Mouse.y))
+                                    {
+                                        Dnd.hovering = true;
+                                        let value = component.detectSide(obj, Mouse.x, Mouse.y);
+                                        if (value)
+                                        {
+                                            // Si on redimensionne le composant
+                                            Dnd.resize = value;
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        // si on détecte l'objet avec la souris
+                        if (!Dnd.hovering && obj.detectMouse(Mouse.x, Mouse.y)) {
                             
                             // Si on redimensionne l'objet
                             Dnd.resize = obj.detectSide(Mouse.x, Mouse.y);

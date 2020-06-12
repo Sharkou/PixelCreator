@@ -12,6 +12,7 @@ export class Scene {
         this.events = {}; // contains all events
         this.camera = null;
         // this.systems = {}; // contains all systems
+        this.currentComponent = false;
     }
     
     /**

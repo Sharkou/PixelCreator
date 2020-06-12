@@ -217,22 +217,63 @@ export class Handler {
                 for (let id in scene.objects) {
                     
                     let obj = scene.objects[id];
-                        
-                    // Detect Position
-                    // if (o.detectMouse(Mouse.getMousePos(e).x, Mouse.getMousePos(e).y)) {
-                    if (obj.detectMouse(Mouse.x, Mouse.y)) {
-                        
-                        // Quitte la fonction si l'objet est verrouillé
-                        if (obj.lock || !obj.active) {
-                            continue;
+                    
+                    // Quitte la fonction si l'objet est verrouillé
+                    if (obj.lock || !obj.active) {
+                        continue;
+                    }
+                    
+                    // If obj is selected and one of his components is detected
+                    if (scene.current == obj)
+                    {
+                        for (let c in obj.components)
+                        {
+                            let component = obj.components[c];
+                            if (typeof component.detectMouse === "function" && typeof component.detectSide === "function")
+                            {
+                                if (component.detectMouse(obj, Mouse.x, Mouse.y))
+                                {
+                                    
+                                    // Change current component
+                                    scene.currentComponent = component;
+                                    
+                                    let side = component.detectSide(obj, Mouse.x, Mouse.y);
+
+                                    // Resizing
+                                    if (side)
+                                    {
+                                        // Si on redimensionne le composant
+                                        this.resizeObject = side;
+                                        this.lastX = obj.x+component.offsetX;
+                                        this.lastY = obj.y+component.offsetY;
+                                        this.lastWidth = component.width;
+                                        this.lastHeight = component.height;
+                                    }
+
+                                    // Moving
+                                    else {
+                                        this.drag = true; // Start Drag
+                                        Dnd.setCursor('grabbing');
+
+                                        Mouse.offset.x = Mouse.x / camera.scale - scene.current.x - scene.currentComponent.offsetX - camera.x;
+                                        Mouse.offset.y = Mouse.y / camera.scale - scene.current.y - scene.currentComponent.offsetY - camera.y;
+                                    }
+
+                                    break;
+                                }
+                            }
                         }
+                    }
+                    // if the object is detected
+                    // if (o.detectMouse(Mouse.getMousePos(e).x, Mouse.getMousePos(e).y)) {
+                    if (!scene.currentComponent && obj.detectMouse(Mouse.x, Mouse.y)) {
                         
                         // Change current object
                         scene.current = obj;
                         
                         let side = obj.detectSide(Mouse.x, Mouse.y);
                         
-                        // Redimensionnement
+                        // Resizing
                         if (side) {
                             this.resizeObject = side;
                             this.lastX = obj.x;
@@ -241,7 +282,7 @@ export class Handler {
                             this.lastHeight = obj.height;
                         }
                         
-                        // Déplacement
+                        // Moving
                         else {
                             this.drag = true; // Start Drag
                             Dnd.setCursor('grabbing');
@@ -249,12 +290,15 @@ export class Handler {
                             Mouse.offset.x = Mouse.x / camera.scale - scene.current.x - camera.x;
                             Mouse.offset.y = Mouse.y / camera.scale - scene.current.y - camera.y;
                         }
+                        
+                        break;
                     }
                 }
                 
                 // Cancel selection
                 if (!this.drag && !this.resizeObject) {
                     scene.current = null;
+                    scene.currentComponent = null;
                 }
             }
             
@@ -291,44 +335,157 @@ export class Handler {
             }*/
 
             // Drag object
-            if (scene.current !== null && this.drag) {
-                
-                // Move Object
-                scene.current.x = Mouse.x / camera.scale - camera.x - Mouse.offset.x;
-                scene.current.y = Mouse.y / camera.scale - camera.y - Mouse.offset.y;
+            if (this.drag) {
+                if (scene.currentComponent)
+                {
+                    // Move Component
+                    scene.currentComponent.offsetX = Mouse.x / camera.scale - camera.x - Mouse.offset.x - ~~(scene.current.x);
+                    scene.currentComponent.offsetY = Mouse.y / camera.scale - camera.y - Mouse.offset.y - ~~(scene.current.y);
+                }
+                else if (scene.current)
+                {
+                    // Move Object
+                    scene.current.x = Mouse.x / camera.scale - camera.x - Mouse.offset.x;
+                    scene.current.y = Mouse.y / camera.scale - camera.y - Mouse.offset.y;
+                }
             }
             
             // Resize object
-            else if (scene.current !== null && this.resizeObject) {
-                
-                // Décalage pour le redimensionnement
-                let offset = 0;
-                
-                switch (this.resizeObject) {
-                    case 'right':
-                        offset = Mouse.x / camera.scale - (this.lastX + this.lastWidth / 2) + camera.x;
-                        scene.current.width = Math.abs(~~(this.lastWidth + offset));
-                        scene.current.x = ~~(this.lastX + offset / 2);
-                        break;
-                        
-                    case 'left':
-                        offset = Mouse.x / camera.scale - (this.lastX - this.lastWidth / 2) + camera.x;
-                        scene.current.width = Math.abs(~~(this.lastWidth - offset));
-                        scene.current.x = ~~(this.lastX + offset / 2);
-                        break;
-                        
-                    case 'bottom':
-                        offset = Mouse.y / camera.scale - (this.lastY + this.lastHeight / 2) + camera.y;
-                        scene.current.height = Math.abs(~~(this.lastHeight + offset));
-                        scene.current.y = ~~(this.lastY + offset / 2);
-                        break;
-                        
-                    case 'top':
-                        offset = Mouse.y / camera.scale - (this.lastY - this.lastHeight / 2) + camera.y;
-                        scene.current.height = Math.abs(~~(this.lastHeight - offset));
-                        scene.current.y = ~~(this.lastY + offset / 2);
-                        break;
-                }
+            else if (this.resizeObject) {
+                    if (scene.currentComponent)
+                    {
+                        // Décalage pour le redimensionnement
+                        let offset = 0;
+
+                        switch (this.resizeObject) {
+                            case 'right':
+                                offset = Mouse.x / camera.scale - (this.lastX + this.lastWidth / 2) + camera.x;
+                                scene.currentComponent.width = Math.abs(~~(this.lastWidth + offset));
+                                scene.currentComponent.offsetX = ~~(this.lastX + offset / 2 - scene.current.x);
+                                break;
+
+                            case 'left':
+                                offset = Mouse.x / camera.scale - (this.lastX - this.lastWidth / 2) + camera.x;
+                                scene.currentComponent.width = Math.abs(~~(this.lastWidth - offset));
+                                scene.currentComponent.offsetX = ~~(this.lastX + offset / 2 - scene.current.x);
+                                break;
+
+                            case 'bottom':
+                                offset = Mouse.y / camera.scale - (this.lastY + this.lastHeight / 2) + camera.y;
+                                scene.currentComponent.height = Math.abs(~~(this.lastHeight + offset));
+                                scene.currentComponent.offsetY = ~~(this.lastY + offset / 2 - scene.current.y);
+                                break;
+
+                            case 'top':
+                                offset = Mouse.y / camera.scale - (this.lastY - this.lastHeight / 2) + camera.y;
+                                scene.currentComponent.height = Math.abs(~~(this.lastHeight - offset));
+                                scene.currentComponent.offsetY = ~~(this.lastY + offset / 2 - scene.current.y);
+                                break;
+
+                            case 'right-top':
+                                offset = Mouse.x / camera.scale - (this.lastX + this.lastWidth / 2) + camera.x;
+                                scene.currentComponent.width = Math.abs(~~(this.lastWidth + offset));
+                                scene.currentComponent.offsetX = ~~(this.lastX + offset / 2 - scene.current.x);
+                                offset = Mouse.y / camera.scale - (this.lastY - this.lastHeight / 2) + camera.y;
+                                scene.currentComponent.height = Math.abs(~~(this.lastHeight - offset));
+                                scene.currentComponent.offsetY = ~~(this.lastY + offset / 2 - scene.current.y);
+                                break;
+
+                            case 'right-bottom':
+                                offset = Mouse.x / camera.scale - (this.lastX + this.lastWidth / 2) + camera.x;
+                                scene.currentComponent.width = Math.abs(~~(this.lastWidth + offset));
+                                scene.currentComponent.offsetX = ~~(this.lastX + offset / 2 - scene.current.x);
+                                offset = Mouse.y / camera.scale - (this.lastY + this.lastHeight / 2) + camera.y;
+                                scene.currentComponent.height = Math.abs(~~(this.lastHeight + offset));
+                                scene.currentComponent.offsetY = ~~(this.lastY + offset / 2 - scene.current.y);
+                                break;
+
+                            case 'left-top':
+                                offset = Mouse.x / camera.scale - (this.lastX - this.lastWidth / 2) + camera.x;
+                                scene.currentComponent.width = Math.abs(~~(this.lastWidth - offset));
+                                scene.currentComponent.offsetX = ~~(this.lastX + offset / 2 - scene.current.x);
+                                offset = Mouse.y / camera.scale - (this.lastY - this.lastHeight / 2) + camera.y;
+                                scene.currentComponent.height = Math.abs(~~(this.lastHeight - offset));
+                                scene.currentComponent.offsetY = ~~(this.lastY + offset / 2 - scene.current.y);
+                                break;
+
+                            case 'left-bottom':
+                                offset = Mouse.x / camera.scale - (this.lastX - this.lastWidth / 2) + camera.x;
+                                scene.currentComponent.width = Math.abs(~~(this.lastWidth - offset));
+                                scene.currentComponent.offsetX = ~~(this.lastX + offset / 2 - scene.current.x);
+                                offset = Mouse.y / camera.scale - (this.lastY + this.lastHeight / 2) + camera.y;
+                                scene.currentComponent.height = Math.abs(~~(this.lastHeight + offset));
+                                scene.currentComponent.offsetY = ~~(this.lastY + offset / 2 - scene.current.y);
+                                break;
+                        }
+                    }
+                    else if (scene.current)
+                    {
+                        // Décalage pour le redimensionnement
+                        let offset = 0;
+
+                        switch (this.resizeObject) {
+                            case 'right':
+                                offset = Mouse.x / camera.scale - (this.lastX + this.lastWidth / 2) + camera.x;
+                                scene.current.width = Math.abs(~~(this.lastWidth + offset));
+                                scene.current.x = ~~(this.lastX + offset / 2);
+                                break;
+
+                            case 'left':
+                                offset = Mouse.x / camera.scale - (this.lastX - this.lastWidth / 2) + camera.x;
+                                scene.current.width = Math.abs(~~(this.lastWidth - offset));
+                                scene.current.x = ~~(this.lastX + offset / 2);
+                                break;
+
+                            case 'bottom':
+                                offset = Mouse.y / camera.scale - (this.lastY + this.lastHeight / 2) + camera.y;
+                                scene.current.height = Math.abs(~~(this.lastHeight + offset));
+                                scene.current.y = ~~(this.lastY + offset / 2);
+                                break;
+
+                            case 'top':
+                                offset = Mouse.y / camera.scale - (this.lastY - this.lastHeight / 2) + camera.y;
+                                scene.current.height = Math.abs(~~(this.lastHeight - offset));
+                                scene.current.y = ~~(this.lastY + offset / 2);
+                                break;
+
+                            case 'right-top':
+                                offset = Mouse.x / camera.scale - (this.lastX + this.lastWidth / 2) + camera.x;
+                                scene.current.width = Math.abs(~~(this.lastWidth + offset));
+                                scene.current.x = ~~(this.lastX + offset / 2);
+                                offset = Mouse.y / camera.scale - (this.lastY - this.lastHeight / 2) + camera.y;
+                                scene.current.height = Math.abs(~~(this.lastHeight - offset));
+                                scene.current.y = ~~(this.lastY + offset / 2);
+                                break;
+
+                            case 'right-bottom':
+                                offset = Mouse.x / camera.scale - (this.lastX + this.lastWidth / 2) + camera.x;
+                                scene.current.width = Math.abs(~~(this.lastWidth + offset));
+                                scene.current.x = ~~(this.lastX + offset / 2);
+                                offset = Mouse.y / camera.scale - (this.lastY + this.lastHeight / 2) + camera.y;
+                                scene.current.height = Math.abs(~~(this.lastHeight + offset));
+                                scene.current.y = ~~(this.lastY + offset / 2);
+                                break;
+
+                            case 'left-top':
+                                offset = Mouse.x / camera.scale - (this.lastX - this.lastWidth / 2) + camera.x;
+                                scene.current.width = Math.abs(~~(this.lastWidth - offset));
+                                scene.current.x = ~~(this.lastX + offset / 2);
+                                offset = Mouse.y / camera.scale - (this.lastY - this.lastHeight / 2) + camera.y;
+                                scene.current.height = Math.abs(~~(this.lastHeight - offset));
+                                scene.current.y = ~~(this.lastY + offset / 2);
+                                break;
+
+                            case 'left-bottom':
+                                offset = Mouse.x / camera.scale - (this.lastX - this.lastWidth / 2) + camera.x;
+                                scene.current.width = Math.abs(~~(this.lastWidth - offset));
+                                scene.current.x = ~~(this.lastX + offset / 2);
+                                offset = Mouse.y / camera.scale - (this.lastY + this.lastHeight / 2) + camera.y;
+                                scene.current.height = Math.abs(~~(this.lastHeight + offset));
+                                scene.current.y = ~~(this.lastY + offset / 2);
+                                break;
+                        }
+                    }
             }
             
             // Move Camera View
@@ -353,6 +510,7 @@ export class Handler {
             document.body.style.setProperty('cursor', 'default');
             
             if (e.button === 0) { // Left button
+                scene.currentComponent = null;
                 this.drag = false; // Stop dragging
                 this.resizeObject = false; // Stop resize
             }

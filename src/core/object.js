@@ -294,14 +294,26 @@ export class Object {
     detectSide(x, y) {
 
         const camera = Camera.main;
-        const tolerance = 2;
+        const tolerance = 1+2*(1/camera.scale);
         
         // Right side
         if (x / camera.scale >= this.x + this.width / 2 - camera.x - tolerance) {
+            if (y / camera.scale <= this.y - this.height / 2 - camera.y + tolerance) {
+                return 'right-top';
+            }
+            else if (y / camera.scale >= this.y + this.height / 2 - camera.y - tolerance) {
+                return 'right-bottom';
+            }
             return 'right';
         }
         // Left side
         else if (x / camera.scale <= this.x - this.width / 2 - camera.x + tolerance) {
+            if (y / camera.scale <= this.y - this.height / 2 - camera.y + tolerance) {
+                return 'left-top';
+            }
+            else if (y / camera.scale >= this.y + this.height / 2 - camera.y - tolerance) {
+                return 'left-bottom';
+            }
             return 'left';
         }
         // Bottom side
@@ -312,9 +324,8 @@ export class Object {
         else if (y / camera.scale <= this.y - this.height / 2 - camera.y + tolerance) {
             return 'top';
         }
-        else {
+            
             return false;
-        }
     }
     
     /**

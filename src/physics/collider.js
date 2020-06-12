@@ -48,14 +48,14 @@ export class Collider {
                     
                     if (this.testCollision(self, other))
                     {
-                        console.log("On collision !");
+                        console.log("On collision !"); // TO DELETE
                         this.#isOnCollision.set(id, true);
                         this.o_collider.#isOnCollision.set(self.id, true);
                         self.onCollision(other);
                         other.onCollision(self);
                     }
                     else if (this.#isOnCollision.has(id)) {
-                        console.log("Exit collision...");
+                        console.log("Exit collision..."); // TO DELETE
                         this.#isOnCollision.delete(id);
                         this.o_collider.#isOnCollision.delete(self.id);
                         self.onCollisionExit(other);
@@ -223,6 +223,74 @@ export class RectCollider extends Collider {
         if (this.preview) {
             Graphics.rect(self.x + this.offsetX, self.y + this.offsetY, this.width, this.height);
             Graphics.stroke(this.color, this.opacity);
+        }
+    }
+    
+    /**
+     * Detect mouse hover
+     * @param {Object} self - the object
+     * @param {number} x - The x mouse value
+     * @param {number} y - The y mouse value
+     */
+    detectMouse(self, x, y) {
+
+        const camera = Camera.main;
+
+        // Detect Position
+        if (x / camera.scale <= self.x + this.offsetX + this.width / 2 - camera.x  &&
+            x / camera.scale >= self.x + this.offsetX - this.width / 2 - camera.x) {
+
+            if (y / camera.scale <= self.y + this.offsetY + this.height / 2 - camera.y &&
+            y / camera.scale >= self.y + this.offsetY - this.height / 2 - camera.y) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+    
+    /**
+     * Detects sides for editor resizing
+     * @param {Object} self - the object
+     * @param {number} x - The x mouse value
+     * @param {number} y - The y mouse value
+     */
+    detectSide(self, x, y) {
+
+        const camera = Camera.main;
+        const tolerance = 1+2*(1/camera.scale);
+        
+        // Right side
+        if (x / camera.scale >= this.offsetX + self.x + this.width / 2 - camera.x - tolerance) {
+            if (y / camera.scale <= this.offsetY + self.y - this.height / 2 - camera.y + tolerance) {
+                return 'right-top';
+            }
+            else if (y / camera.scale >= this.offsetY + self.y + this.height / 2 - camera.y - tolerance) {
+                return 'right-bottom';
+            }
+            return 'right';
+        }
+        // Left side
+        else if (x / camera.scale <= this.offsetX + self.x - this.width / 2 - camera.x + tolerance) {
+            if (y / camera.scale <= this.offsetY + self.y - this.height / 2 - camera.y + tolerance) {
+                return 'left-top';
+            }
+            else if (y / camera.scale >= this.offsetY + self.y + this.height / 2 - camera.y - tolerance) {
+                return 'left-bottom';
+            }
+            return 'left';
+        }
+        // Bottom side
+        else if (y / camera.scale >= this.offsetY + self.y + this.height / 2 - camera.y - tolerance) {
+            return 'bottom';
+        }
+        // Top side
+        else if (y / camera.scale <= this.offsetY + self.y - this.height / 2 - camera.y + tolerance) {
+            return 'top';
+        }
+        else {
+            return false;
         }
     }
 }
