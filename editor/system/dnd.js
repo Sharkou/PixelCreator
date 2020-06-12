@@ -92,9 +92,17 @@ export class Dnd {
             if (this.resize == 'right' || this.resize == 'left') {
                 this.setCursor('ew-resize');
             }
-            else {
+            else if (this.resize == 'bottom' || this.resize == 'top') {
                 this.setCursor('ns-resize');
             }
+            else if (this.resize == 'right-top' || this.resize == 'left-bottom') {
+                this.setCursor('nesw-resize');
+            }
+            else
+            {
+                this.setCursor('nwse-resize');
+            }
+            
         }
         else if (this.drag) {
             if (this.hovering) {
