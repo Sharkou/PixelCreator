@@ -1,7 +1,7 @@
 
 import { Graphics } from '/src/graphics/graphics.js';
 import { Scene } from '/src/core/scene.js';
-import { Components } from '/src/core/components.js';
+import { Component } from '/src/core/component.js';
 
 export class Collider {
     
@@ -396,8 +396,8 @@ export class CircleCollider extends Collider {
 
 window.Circlecollider = CircleCollider;
 
-Components.add(Collider, 'far fa-arrow-to-right', 'physics');
+Component.add(Collider, 'far fa-arrow-to-right', 'physics');
 
 // TO REPLACE - by a list
-Components.add(RectCollider, 'far fa-arrow-to-right', 'physics');
-Components.add(CircleCollider, 'far fa-arrow-to-right', 'physics');
+Component.add(RectCollider, 'far fa-arrow-to-right', 'physics');
+Component.add(CircleCollider, 'far fa-arrow-to-right', 'physics');

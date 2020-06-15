@@ -1,5 +1,5 @@
 import { Graphics } from '/src/graphics/graphics.js';
-import { Components } from '/src/core/components.js';
+import { Component } from '/src/core/component.js';
 
 export class Circle {
     
@@ -42,4 +42,4 @@ export class Circle {
 
 window.Circle = Circle;
 
-Components.add(Circle, 'fad fa-circle', 'graphics');
+Component.add(Circle, 'fad fa-circle', 'graphics');

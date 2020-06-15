@@ -1,6 +1,6 @@
 import { Scene } from '/src/core/scene.js';
 
-export class Components {
+export class Component {
 
     static components = {};
     
