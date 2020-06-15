@@ -2,6 +2,7 @@
 import { Graphics } from '/src/graphics/graphics.js';
 import { Scene } from '/src/core/scene.js';
 import { Components } from '/src/core/components.js';
+import { System } from '/src/core/system.js';
 
 export class Collider {
     
@@ -26,13 +27,32 @@ export class Collider {
         this.opacity = 1;
         
         this.#isOnCollision = new Map();
+        
+        
+        /*
+        System.addEventListener('setProperty', data => {
+            if (data.object) {
+                if (data.prop === 'offsetX' || data.prop === 'offsetY') {
+                    this.testCollisions(self);
+                }
+            }
+        });
+        */
+        
     }
     
     /**
-
      * @update
      */
     update(self) {
+            this.testCollisions(self);
+    }
+
+    /**
+     * test the collision with every objects concerned
+     * @testCollisions
+     */
+    testCollisions(self) {
         
         this.s_collider = self.components.collider || self.components.rectcollider || self.components.circlecollider;
         for (let id in Scene.main.objects) {
@@ -395,6 +415,19 @@ export class CircleCollider extends Collider {
 }
 
 window.Circlecollider = CircleCollider;
+
+/*
+System.addEventListener('SetProperty', data => {
+    console.log(data.object.components);
+            if (data.object.components) {
+                if (data.object.components.collider || data.object.components.rectcollider || data.object.components.circlecollider) {
+                    if (data.prop === 'x' || data.prop === 'y') {
+                        console.log(data.object.x);
+                    }
+                }
+            }
+        });
+*/
 
 Components.add(Collider, 'far fa-arrow-to-right', 'physics');
 

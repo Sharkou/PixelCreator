@@ -339,8 +339,8 @@ export class Handler {
                 if (scene.currentComponent)
                 {
                     // Move Component
-                    scene.currentComponent.offsetX = Mouse.x / camera.scale - camera.x - Mouse.offset.x - ~~(scene.current.x);
-                    scene.currentComponent.offsetY = Mouse.y / camera.scale - camera.y - Mouse.offset.y - ~~(scene.current.y);
+                    scene.currentComponent.offsetX = ~~(Mouse.x / camera.scale - camera.x - Mouse.offset.x - scene.current.x);
+                    scene.currentComponent.offsetY = ~~(Mouse.y / camera.scale - camera.y - Mouse.offset.y - scene.current.y);
                 }
                 else if (scene.current)
                 {
