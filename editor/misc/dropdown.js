@@ -41,7 +41,6 @@ document.getElementById('controller').addEventListener('click', e => {
 
     current.addComponent(component);
     window.properties.add(current); // mise à jour des propriétés
-
     
 });
 

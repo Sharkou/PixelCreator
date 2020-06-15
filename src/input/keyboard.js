@@ -1,6 +1,6 @@
 export class Keyboard {
     
-    static get down() {
+    static get keyPressed() {
         for (let key in this.keys) {
             if (this.keys[key]) {
                 return true;
@@ -9,7 +9,7 @@ export class Keyboard {
         return false;
     }
     
-    static get up() {
+    static get keyReleased() {
         for (let key in this.keys) {
             if (this.keys[key]) {
                 return false;

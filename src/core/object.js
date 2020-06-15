@@ -43,6 +43,8 @@ export class Object {
         this.rotation = 0.0;
         this.scale = 1.0;
 
+        // this.pivot = 0;
+
         // Synchronization
         System.sync(this);
 
@@ -121,7 +123,7 @@ export class Object {
     }
     
     /**
-     * Add child to list
+     * Add child to object
      * @param {Object} child - The child to add
      */
     addChild(child) {
@@ -200,6 +202,14 @@ export class Object {
      */
     rotate(angle = 0) {
         this.rotation = angle * Math.PI / 180;
+    }
+
+    /**
+     * Set object active
+     * @param {boolean} active - The active boolean
+     */
+    setActive(active) {
+        this.active = active;
     }
     
     /**
@@ -290,6 +300,7 @@ export class Object {
      * Detects sides for editor resizing
      * @param {number} x - The x mouse value
      * @param {number} y - The y mouse value
+     * @return {boolean} side - The detection side
      */
     detectSide(x, y) {
 

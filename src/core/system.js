@@ -24,19 +24,19 @@ export class System {
     /**
      * Synchronize a component
      * @static
-     * @param {Component} component - The component to sync
+     * @param {Object} object - The component to sync
      */
-    static sync(component) {
+    static sync(object) {
         
         // Synchronize each properties of component
-        for (let prop in component) {
+        for (let prop in object) {
             
             if (prop != 'self') {
                 
-                let value = component[prop]; // save value
+                let value = object[prop]; // save value
                 
                 // Getter
-                Object.defineProperty(component, prop, {
+                Object.defineProperty(object, prop, {
                     
                     get: function() {
                         
@@ -47,7 +47,7 @@ export class System {
                 });
                 
                 // Setter
-                Object.defineProperty(component, prop, {
+                Object.defineProperty(object, prop, {
                     
                     set: function(value) {
                         
@@ -55,7 +55,7 @@ export class System {
                         
                         // Dispatch event
                         System.dispatchEvent('setProperty', {
-                            component,
+                            object,
                             prop,
                             value
                         });
@@ -65,7 +65,7 @@ export class System {
                     
                 });
                 
-                component[prop] = value; // restore value
+                object[prop] = value; // restore value
             }
         }
     }

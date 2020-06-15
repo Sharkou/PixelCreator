@@ -69,6 +69,8 @@ export class Renderer {
     
     /**
     * Create canvas from layer
+    * @param {string} id - The Element ID
+    * @param {number} zIndex - The z-index Element
     * @return {HTMLCanvasElement} canvas - The canvas
     */
     createCanvas(id, zIndex) {
@@ -189,9 +191,9 @@ export class Renderer {
             
             if (obj != undefined && obj != null && obj.active) {
                 
-                if (!this.pause) {
+                // if (!this.pause) {
                     obj.update(); // update the object
-                }
+                // }
 
                 // Si l'objet n'est pas verrouillé
                 if (!obj.lock) {
@@ -302,7 +304,7 @@ export class Renderer {
     }
     
     /**
-     * Resize canvas
+     * Resize the canvas
      * @param {number} width - The resize width
      * @param {number} height - The resize height
      */

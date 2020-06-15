@@ -52,7 +52,7 @@ const renderer = new Renderer(canvas.clientWidth, canvas.clientHeight, canvas);
 const scene = new Scene('Main Scene');
 
 const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHeight)
- .addComponent(new Camera('#272727'));
+    .addComponent(new Camera('#272727'));
 
 
 // const socket = new Socket();

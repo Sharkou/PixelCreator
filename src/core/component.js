@@ -1,6 +1,6 @@
 import { Scene } from '/src/core/scene.js';
 
-export class Components {
+export class Component {
 
     static components = {};
     
@@ -54,3 +54,5 @@ export class Components {
         document.getElementById('components').appendChild(li);
     }
 }
+
+window.Component = Component;

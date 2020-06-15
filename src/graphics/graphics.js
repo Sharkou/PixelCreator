@@ -43,6 +43,35 @@ export class Graphics {
         Graphics.ctx.stroke();
         Graphics.ctx.globalAlpha = 1;
     }
+
+    /**
+     * Draw a point
+     * @static
+     * @param {number} x - The x-coordinate
+     * @param {number} y - The y-coordinate
+     */
+    static point(x, y) {
+        
+        Graphics.ctx.beginPath();
+        
+        // TODO: Pixel manipulation
+    }
+
+    /**
+     * Draw a line
+     * @static
+     * @param {number} x1 - The x1-coordinate
+     * @param {number} y1 - The y1-coordinate
+     * @param {number} x2 - The x2-coordinate
+     * @param {number} y2 - The y2-coordinate
+     */
+    static line(x1, y1, x2, y2) {
+        
+        Graphics.ctx.beginPath();
+        
+        Graphics.ctx.moveTo(x1, y1);
+        Graphics.ctx.lineTo(x2, y2);
+    }
     
     /**
      * Draw a circle
@@ -85,7 +114,7 @@ export class Graphics {
     }
     
     /**
-     * Draw a rectangle
+     * Draw an image
      * @static
      * @param {HTMLImageElement} image - The image
      * @param {number} x - The x-coordinate

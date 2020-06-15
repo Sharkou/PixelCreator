@@ -20,7 +20,7 @@ export class Properties {
         System.addEventListener('setProperty', data => {
             // Update properties
             if (scene.current) {
-                if (scene.current == data.component || scene.current.contains(data.component)) {
+                if (scene.current == data.object || scene.current.contains(data.object)) {
                     this.updateObjectProperties(data);
                     this.updateComponentsProperties(data);
                 }
