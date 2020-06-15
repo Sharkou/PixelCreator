@@ -151,6 +151,15 @@ export class Scene {
             }
         }
     }
+
+    /**
+     * Get objects by name
+     * @param {string} name - The object name
+     * @return {Object} object - The objects
+     */
+    getObjectsByName(name) {
+        
+    }
     
     /**
      * Get objects by tag
@@ -162,10 +171,15 @@ export class Scene {
     }
 
     /**
-     * Update name object from HTML Element
-     * @param {HTMLElement} e - The HTML Element
+     * Update object name from HTML Element
+     * @param {HTMLElement} el - The HTML Element
+     * @param {Object} obj - The object to update
      */
-    updateName(e) {
-        this.objects[e.parentNode.id].name = e.textContent;
+    updateName(el, obj = null) {
+        if (obj) {
+            this.objects[obj.id].name = el.textContent;
+        } else {
+            this.objects[el.parentNode.id].name = el.textContent;
+        }
     }
 }

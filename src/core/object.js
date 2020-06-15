@@ -203,6 +203,14 @@ export class Object {
     rotate(angle = 0) {
         this.rotation = angle * Math.PI / 180;
     }
+
+    /**
+     * Set object active
+     * @param {boolean} active - The active boolean
+     */
+    setActive(active) {
+        this.active = active;
+    }
     
     /**
      * Copy the object properties
@@ -292,6 +300,7 @@ export class Object {
      * Detects sides for editor resizing
      * @param {number} x - The x mouse value
      * @param {number} y - The y mouse value
+     * @return {boolean} side - The detection side
      */
     detectSide(x, y) {
 

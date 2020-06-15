@@ -1,4 +1,5 @@
 import { Keyboard } from '/src/input/keyboard.js';
+import { System } from '/src/core/system.js';
 
 export class Controller {
     
@@ -10,11 +11,15 @@ export class Controller {
         this.bottom = 's';
         this.direction = '';
         this.speed = speed;
+
+        System.addEventListener('setProperty', data => {
+            console.log(data);
+        });
     }
     
     update(self) {
         
-        if (Keyboard.down) {
+        if (Keyboard.keyPressed) {
             
             for (let key in Keyboard.keys) {
                 

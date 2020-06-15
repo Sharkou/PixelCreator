@@ -54,3 +54,5 @@ export class Component {
         document.getElementById('components').appendChild(li);
     }
 }
+
+window.Component = Component;
