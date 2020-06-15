@@ -104,7 +104,7 @@ export class Object {
         component.name = component.constructor.name.toLowerCase()
         
         component.active = true; // activation of the component        
-        // component.self = this; // reference to parent
+        component.self = this; // reference to parent
         
         System.sync(component); // Synchronize the component
         

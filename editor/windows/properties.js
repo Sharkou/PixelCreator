@@ -266,6 +266,7 @@ export class Properties {
 
         // Prevent some property creation
         switch (p) {
+            case 'self': return;
             case 'active': return;
         }
 

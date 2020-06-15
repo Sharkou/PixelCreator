@@ -1,6 +1,6 @@
-
 import { Graphics } from '/src/graphics/graphics.js';
 import { Scene } from '/src/core/scene.js';
+import { System } from '/src/core/system.js';
 import { Component } from '/src/core/component.js';
 
 export class Collider {
@@ -395,6 +395,16 @@ export class CircleCollider extends Collider {
 }
 
 window.Circlecollider = CircleCollider;
+
+System.addEventListener('setProperty', data => {
+    if (data.object.components) {
+        if (data.object.components.collider || data.object.components.rectcollider) {
+            if (data.prop === 'x' || data.prop === 'y') {
+                console.log(data.object.x);
+            }
+        }
+    }
+});
 
 Component.add(Collider, 'far fa-arrow-to-right', 'physics');
 
