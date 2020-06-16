@@ -11,10 +11,7 @@ export class Controller {
         this.bottom = 's';
         this.direction = '';
         this.speed = speed;
-
-        System.addEventListener('setProperty', data => {
-            console.log(data);
-        });
+        
     }
     
     update(self) {
