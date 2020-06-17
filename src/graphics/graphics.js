@@ -120,20 +120,54 @@ export class Graphics {
      * @param {number} x - The x-coordinate
      * @param {number} y - The y-coordinate
      */
-    static image(image, x, y) {
+    static image(image, x, y, scaleX = 1, scaleY = 1) {
         
         if (!image) return;
         
         Graphics.ctx.beginPath();
         
         // Dimensions de l'image pour centrer le pivot
-        let width = image.naturalWidth;
-        let height = image.naturalHeight;
+        let width = image.naturalWidth * scaleX;
+        let height = image.naturalHeight * scaleY;
         
         Graphics.ctx.drawImage(
             image,
             x - width / 2,
-            y - height / 2
+            y - height / 2,
+            width,
+            height
+        );
+        
+    }
+    
+    /**
+     * Draw an image scaling from box
+     * @static
+     * @param {HTMLImageElement} image - The image
+     * @param {number} x - The x-coordinate
+     * @param {number} y - The y-coordinate
+     */
+    static imageBox(image, x, y, scaleX = 1, scaleY = 1, boxX = 40, boxY = 40) {
+        
+        if (!image) return;
+        
+        Graphics.ctx.beginPath();
+        
+        // Dimensions de l'image pour centrer le pivot
+        
+        let width = image.naturalWidth;
+        let realScaleX = (boxX / width) * scaleX;
+        width *= realScaleX;
+        let height = image.naturalHeight;
+        let realScaleY = (boxY / height) * scaleY;
+        height *= realScaleY;
+        
+        Graphics.ctx.drawImage(
+            image,
+            x - width / 2,
+            y - height / 2,
+            width,
+            height
         );
         
     }

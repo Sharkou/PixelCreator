@@ -1,3 +1,5 @@
+import { Component } from '/src/core/component.js';
+
 export class Animator {
     
     /**
@@ -5,12 +7,12 @@ export class Animator {
      * @constructor
      * @param {Object} animations - Animations list
      */
-    constructor(animations = {}) {
+    constructor(animations = [], current = null, flip = false, stoppable = true) {
         
         this.animations = animations;
-        this.current = null; // current animation
-        this.flip = false;
-        this.stoppable = true;
+        this.current = current; // current animation
+        this.flip = flip;
+        this.stoppable = stoppable;
     }
     
     /**
@@ -77,3 +79,5 @@ export class Animator {
 }
 
 window.Animator = Animator;
+
+Component.add(Animator, 'far fa-images', 'anim');

@@ -294,7 +294,7 @@ export class Properties {
 
                 if (!value) break; // null value
 
-                switch (p.constructor.name) {
+                switch (value.constructor.name) {
 
                     case 'Color': {
                         let type = 'color';
@@ -302,28 +302,28 @@ export class Properties {
                         break;
                     }
                         
-                    case 'Range': {
+                    case 'TODO Range': {
                         // TODO : Range property
                         break;
                     }
                         
-                    case 'Array': {
+                    case 'TODO Array': {
                         // TODO : Array property
                         this.appendSelect(li, p, value);
                         break;
                     }
                     
-                    case 'Enumeration': {
+                    case 'TODO Enumeration': {
                         // TODO : Enum property
                         break;
                     }
                         
-                    case 'Image': {
+                    case 'TODO Image': {
                         // TODO : Image property
                         break;
                     }
                         
-                    case 'Button': {
+                    case 'TODO Button': {
                         // TODO : Button property
                         break;
                     }
