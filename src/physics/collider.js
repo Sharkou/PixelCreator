@@ -26,13 +26,32 @@ export class Collider {
         this.opacity = 1;
         
         this.#isOnCollision = new Map();
+        
+        
+        /*
+        System.addEventListener('setProperty', data => {
+            if (data.object) {
+                if (data.prop === 'offsetX' || data.prop === 'offsetY') {
+                    this.testCollisions(self);
+                }
+            }
+        });
+        */
+        
     }
     
     /**
-
      * @update
      */
     update(self) {
+            this.testCollisions(self);
+    }
+
+    /**
+     * test the collision with every objects concerned
+     * @testCollisions
+     */
+    testCollisions(self) {
         
         this.s_collider = self.components.collider || self.components.rectcollider || self.components.circlecollider;
         for (let id in Scene.main.objects) {
