@@ -120,13 +120,16 @@ export class Object {
         // component.name = component.constructor.name[0].toLowerCase() + component.constructor.name.substr(1);
         component.name = component.constructor.name.toLowerCase()
         
-        component.active = true; // activation of the component        
-        // component.self = this; // reference to parent
-        
-        System.sync(component); // Synchronize the component
-        
+        component.active = true; // activation of the component   
         // this.components[component.constructor.prototype.name] = component;
         this.components[component.name] = component;
+        // component.self = this; // reference to parent
+        if (component.constructorAfterLink)
+        {
+            component.constructorAfterLink(this);
+        }
+        
+        System.sync(component); // Synchronize the component
 
         return this;
     }
@@ -275,9 +278,23 @@ export class Object {
             }
         }
     }
+    
+    /**
+     * On collision - when start
+     * @param {Object} other - The other colliding object
+     */
+    onCollisionStart(other) {
+        for (let i in this.components) {
+            if (this.components[i].active) {
+                if (this.components[i].onCollisionStart) {
+                    this.components[i].onCollisionStart(this, other);
+                }
+            }
+        }
+    }
 
     /**
-     * On collision
+     * On collision - when exit
      * @param {Object} other - The other colliding object
      */
     onCollisionExit(other) {

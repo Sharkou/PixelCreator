@@ -1,4 +1,5 @@
 import { Graphics } from '/src/graphics/graphics.js';
+import { Component } from '/src/core/component.js';
 
 export class Texture {
     
@@ -7,11 +8,13 @@ export class Texture {
      * @constructor
      * @param {Image} image - The texture to display
      */
-    constructor(image, flip = false, scale = 1) {
+    constructor(image = null, flip = false, scaleX = 1, scaleY = 1, scaleFromBox = true) {
         
         this.image = image;
         this.flip = flip;
-        this.scale = scale;
+        this.scaleX = scaleX;
+        this.scaleY = scaleY;
+        this.scaleFromBox = scaleFromBox;
     }
     
     /**
@@ -25,16 +28,17 @@ export class Texture {
             Graphics.ctx.scale(-1, 1);
         }
 
-        if (this.scale) {
-            if (this.scale.x && this.scale.y) {
-                Graphics.ctx.scale(this.scale.x, this.scale.y);
-            }
-            else {
-                Graphics.ctx.scale(this.scale, this.scale);
-            }
-        }
+        // scale
+        //Graphics.ctx.scale(this.scaleX, this.scaleY);
         
-        Graphics.image(this.image, self.x, self.y);
+        if (this.scaleFromBox)
+        {
+            Graphics.imageBox(this.image, self.x, self.y, this.scaleX, this.scaleY, self.width, self.height);
+        }
+        else
+        {
+            Graphics.image(this.image, self.x, self.y, this.scaleX, this.scaleY);
+        }
     }
     
     /**
@@ -54,3 +58,5 @@ export class Texture {
 }
 
 window.Texture = Texture;
+
+Component.add(Texture, 'far fa-image', 'graphics');

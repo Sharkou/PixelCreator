@@ -26,17 +26,11 @@ export class Collider {
         this.opacity = 1;
         
         this.#isOnCollision = new Map();
+    }
+
+    constructorAfterLink(self) {
         
-        
-        /*
-        System.addEventListener('setProperty', data => {
-            if (data.object) {
-                if (data.prop === 'offsetX' || data.prop === 'offsetY') {
-                    this.testCollisions(self);
-                }
-            }
-        });
-        */
+        this.testCollisions(self);
         
     }
     
@@ -44,7 +38,16 @@ export class Collider {
      * @update
      */
     update(self) {
-            this.testCollisions(self);
+        this.#isOnCollision.forEach((value, id) =>
+        {
+            let other = Scene.main.objects[id];
+            if (other)
+            {
+                self.onCollision(other);
+                other.onCollision(self);
+                console.log("On collision !"); // TO DELETE
+            }
+        });
     }
 
     /**
@@ -53,7 +56,7 @@ export class Collider {
      */
     testCollisions(self) {
         
-        this.s_collider = self.components.collider || self.components.rectcollider || self.components.circlecollider;
+        if (!Scene.main || !self) return;
         for (let id in Scene.main.objects) {
             
             // Store the other object
@@ -67,13 +70,19 @@ export class Collider {
                     
                     if (this.testCollision(self, other))
                     {
-                        console.log("On collision !"); // TO DELETE
-                        this.#isOnCollision.set(id, true);
-                        this.o_collider.#isOnCollision.set(self.id, true);
-                        self.onCollision(other);
-                        other.onCollision(self);
+                        if (!this.#isOnCollision.has(id))
+                        {
+                            console.log("Start collision !"); // TO DELETE
+                            this.#isOnCollision.set(id, true);
+                            this.o_collider.#isOnCollision.set(self.id, true);
+                            self.onCollisionStart(other);
+                            other.onCollisionStart(self);
+                            self.onCollision(other);
+                            other.onCollision(self);
+                        }
                     }
-                    else if (this.#isOnCollision.has(id)) {
+                    else if (this.#isOnCollision.has(id))
+                    {
                         console.log("Exit collision..."); // TO DELETE
                         this.#isOnCollision.delete(id);
                         this.o_collider.#isOnCollision.delete(self.id);
@@ -91,7 +100,7 @@ export class Collider {
      * @testCollision
      */
     testCollision(self, other) {
-        return this.o_collider.testCollisionWithPoint(other, self, this.o_collider, this.s_collider);
+        return this.o_collider.testCollisionWithPoint(other, self, this.o_collider, this);
     }
     
     /**
@@ -171,7 +180,7 @@ export class RectCollider extends Collider {
      * @testCollision
      */
     testCollision(self, other) {
-        return this.o_collider.testCollisionWithRect(other, self, this.o_collider, this.s_collider);
+        return this.o_collider.testCollisionWithRect(other, self, this.o_collider, this);
     }
     
     /**
@@ -253,16 +262,19 @@ export class RectCollider extends Collider {
      */
     detectMouse(self, x, y) {
 
-        const camera = Camera.main;
+        if (this.preview)
+        {
+            const camera = Camera.main;
 
-        // Detect Position
-        if (x / camera.scale <= self.x + this.offsetX + this.width / 2 - camera.x  &&
-            x / camera.scale >= self.x + this.offsetX - this.width / 2 - camera.x) {
+            // Detect Position
+            if (x / camera.scale <= self.x + this.offsetX + this.width / 2 - camera.x  &&
+                x / camera.scale >= self.x + this.offsetX - this.width / 2 - camera.x) {
 
-            if (y / camera.scale <= self.y + this.offsetY + this.height / 2 - camera.y &&
-            y / camera.scale >= self.y + this.offsetY - this.height / 2 - camera.y) {
+                if (y / camera.scale <= self.y + this.offsetY + this.height / 2 - camera.y &&
+                y / camera.scale >= self.y + this.offsetY - this.height / 2 - camera.y) {
 
-                return true;
+                    return true;
+                }
             }
         }
 
@@ -340,7 +352,7 @@ export class CircleCollider extends Collider {
      * @testCollision
      */
     testCollision(self, other) {
-        return this.o_collider.testCollisionWithCircle(other, self, this.o_collider, this.s_collider);
+        return this.o_collider.testCollisionWithCircle(other, self, this.o_collider, this);
     }
     
     /**
