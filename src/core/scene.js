@@ -1,3 +1,5 @@
+import { Object } from '/src/core/object.js';
+
 export class Scene {
     
     /**
@@ -56,19 +58,26 @@ export class Scene {
     
     /**
      * Instanciate an object to scene
-     * @param {object} obj - The object
+     * @param {object} obj - The object to instanciate
      * @param {boolean} dispatch - Dispatch the evenement
      */
     instanciate(obj, dispatch = true) {
-        
-        // this.objects[obj.id] = obj;
 
-        // let obj = new window[resource.type](resource);
-        
-        // let a = Object.assign({}, obj);
+        // let obj = new window[resource.type](resource);        
+        // let obj = Object.assign({}, object);
+
+        let copy = new Object();
+
+        copy.copy(obj);
+
+        copy.id = obj.id;
+
+        // copy.lock = true; // lock the object from editing
+
+        this.add(copy, false);
         
         if (dispatch) {
-            this.dispatchEvent('instanciate', obj);
+            this.dispatchEvent('instanciate', copy);
         }
     }
 

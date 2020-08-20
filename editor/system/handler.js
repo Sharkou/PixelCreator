@@ -529,6 +529,7 @@ export class Handler {
             const maxZ = 10;
             const minZ = 0.2;
             
+            // TODO: faire une interpolation linéaire
             const iterator = (function*() {
                 for (let i = 0; i < iterations; i++) {
                     yield;

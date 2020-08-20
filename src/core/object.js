@@ -92,6 +92,23 @@ export class Object {
         
         this._y = value;
     }
+
+    /**
+     * Get property value of object without call sync
+     * @param {string} value - The property to get
+     */
+    getProperty(prop) {
+        return this['_' + prop];
+    }
+
+    /**
+     * Set property value to object without call sync
+     * @param {string} value - The property to set
+     * @param {number} value - The new value
+     */
+    setProperty(prop, value) {
+        this['_' + prop] = value;
+    }
     
     /**
      * Add the object component
@@ -104,7 +121,7 @@ export class Object {
         component.name = component.constructor.name.toLowerCase()
         
         component.active = true; // activation of the component        
-        component.self = this; // reference to parent
+        // component.self = this; // reference to parent
         
         System.sync(component); // Synchronize the component
         
@@ -394,6 +411,7 @@ export class Object {
     createImage(ctx) {
         
         const canvas = document.createElement('canvas'); // offscreen canvas
+        const camera = Camera.main;
 
         Graphics.initContext(canvas.getContext('2d'));
 
@@ -406,11 +424,11 @@ export class Object {
         this.x = this.width / 2;
         this.y = this.height / 2;
 
-        let dx = Camera.main.x;
-        let dy = Camera.main.y;
+        let dx = camera.x;
+        let dy = camera.y;
 
-        Camera.main.x = canvas.width / 2;
-        Camera.main.y = canvas.height / 2;
+        camera.x = canvas.width / 2;
+        camera.y = canvas.height / 2;
 
         this.draw(); // draw the image
 
@@ -418,8 +436,8 @@ export class Object {
 
         this.x = x;
         this.y = y;
-        Camera.main.x = dx;
-        Camera.main.y = dy;
+        camera.x = dx;
+        camera.y = dy;
 
         var img = document.createElement('img');
         img.setAttribute('src', src);
@@ -433,5 +451,29 @@ export class Object {
         // console.log(img);
 
         return img;
+    }
+
+    /**
+     * Stringify the object
+     * @return {string} JSON string - The object as a JSON string
+     */
+    stringify() {
+        function replacer(key, value) {
+            // console.log(key.charAt(0) + ' : ' + key);
+            // Filtering out properties
+            if (key[0] !== "_") {
+                return value;
+            }
+        }
+        return JSON.stringify(this, replacer);
+    }
+
+    /**
+     * Parse the object JSON string
+     * @param {string} JSON string - The object as a JSON string
+     * @return {Object} JSON string - The object as a JSON string
+     */
+    parse(json) {
+        return this.copy(JSON.parse(json));
     }
 }

@@ -9,6 +9,7 @@ import { Time } from '/src/time/time.js';
 import { Performance } from '/src/time/performance.js';
 import { Mouse } from '/src/input/mouse.js';
 import { Keyboard } from '/src/input/keyboard.js';
+import { Network } from '/src/network/network.js';
 // import { Socket } from '/src/network/socket.js';
 // import { Room } from '/src/network/room.js';
 
@@ -44,37 +45,35 @@ import '/editor/misc/filter.js';
 import '/editor/misc/fullscreen.js';
 import '/editor/misc/shortcut.js';
 import '/editor/misc/play.js';
+import '/editor/misc/save.js';
 
+/* Initialization data */
 const canvas = document.getElementById('wrapper');
-
+const network = new Network('localhost', 80);
 const renderer = new Renderer(canvas.clientWidth, canvas.clientHeight, canvas);
-
 const scene = new Scene('Main Scene');
-
 const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHeight)
     .addComponent(new Camera('#272727'));
 
-
-// const socket = new Socket();
-// const room = new Room(socket);
-
 /* Initialization */
 async function init() {
-    
+
+    // Connect to main scene
+    let data = await network.init(scene, true);
+    let objects = data.objects;
+
     renderer.init(scene, camera);
 
     const hierarchy = new Hierarchy('world-list', scene);
     const project = new Project('resources-list', scene);
     const properties = new Properties('properties-list', scene);
     const handler = new Handler(scene, camera, renderer, project);
-    const toolbar = new Toolbar();
+    const toolbar = new Toolbar(camera);
 
-    // Global
-    window.hierarchy = hierarchy;
-    window.project = project;
-    window.properties = properties;
-    window.handler = handler;
-    window.toolbar = toolbar;
+    // Objects instantiating
+    for (let id in objects) {
+        scene.instanciate(objects[id]);
+    }    
 
     // Start loop
     loop();
@@ -91,7 +90,6 @@ async function loop() {
 
     // Calcul du delta-time
     Time.deltaTime = (Time.now() - Time.last) / (1000 / 60);
-    Time.last = Time.current;
     
     // Calcul des performances
     Performance.update();
@@ -109,6 +107,8 @@ async function loop() {
 
     // Fin de l'analyse des performances
     Stats.end();
+
+    Time.last = Time.current;
 }
 
 // Initialize on load
@@ -122,9 +122,10 @@ window.onresize = function() {
 
 // Debug
 window.scene = scene;
-window.renderer = renderer;
-window.camera = camera;
-window.keyboard = Keyboard;
-window.mouse = Mouse;
-window.system = System;
-window.time = Time;
+// window.renderer = renderer;
+// window.camera = camera;
+// window.keyboard = Keyboard;
+// window.mouse = Mouse;
+// window.system = System;
+// window.time = Time;
+// window.socket = socket;

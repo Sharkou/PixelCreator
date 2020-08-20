@@ -22,6 +22,10 @@ export class Hierarchy {
             this.add(obj);
         });
 
+        this.scene.addEventListener('instanciate', obj => {
+            this.add(obj);
+        });
+
         this.scene.addEventListener('remove', obj => {
             this.remove(obj);
         });
