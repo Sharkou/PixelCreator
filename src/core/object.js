@@ -2,6 +2,7 @@
 import { System } from '/src/core/system.js';
 import { Scene } from '/src/core/scene.js';
 import { Camera } from '/src/core/camera.js';
+import { Component } from '/src/core/component.js';
 import { Graphics } from '/src/graphics/graphics.js';
 
 export class Object {
@@ -114,7 +115,7 @@ export class Object {
      * Add the object component
      * @param {Component} component - The component to add
      */
-    addComponent(component) {
+    addComponent(component, dispatch = true) {
         
         // Naming the component
         // component.name = component.constructor.name[0].toLowerCase() + component.constructor.name.substr(1);
@@ -123,10 +124,18 @@ export class Object {
         component.active = true; // activation of the component   
         // this.components[component.constructor.prototype.name] = component;
         this.components[component.name] = component;
+        
         // component.self = this; // reference to parent
         if (component.constructorAfterLink)
         {
             component.constructorAfterLink(this);
+        }
+
+        if (dispatch) {
+            System.dispatchEvent('addComponent', {
+                object: this,
+                component: component
+            });
         }
         
         System.sync(component); // Synchronize the component
@@ -254,15 +263,21 @@ export class Object {
 
             const component = obj.components[name];
 
-            this.addComponent(new window[name.charAt(0).toUpperCase() + name.slice(1)]());
+            this.addComponent(new Component.components[name.charAt(0).toUpperCase() + name.slice(1)]());
 
             // Copie des propriétés du composant
             for (let prop in component) {
-
                 this.components[name][prop] = component[prop];
             }
 
         }
+
+        // if (dispatch) {
+        //     System.dispatchEvent('copy', {
+        //         obj: this,
+        //         component: component
+        //     });
+        // }
     }
 
     /**

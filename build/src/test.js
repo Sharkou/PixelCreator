@@ -1,4 +1,4 @@
-// import { Graphics } from '/src/graphics/graphics.js';
+import { Graphics } from '/src/graphics/graphics.js';
 
 class Test {
 
@@ -22,5 +22,3 @@ class Test {
         Graphics.stroke('red');
     }
 }
-
-window.Test = Test;

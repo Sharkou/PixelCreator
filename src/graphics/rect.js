@@ -8,7 +8,7 @@ export class Rect {
      * @param {string} color - The color
      * @param {number} opacity - The opacity
      */
-    constructor(color = '#000', opacity = 1, fill = true) {
+    constructor(color = '#000000', opacity = 1, fill = true) {
         
         this.color = color;
         this.opacity = opacity;
@@ -33,5 +33,3 @@ export class Rect {
         }
     }
 }
-
-window.Rect = Rect;

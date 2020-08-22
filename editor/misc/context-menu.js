@@ -44,7 +44,7 @@ document.getElementById('script').addEventListener('click', function() {
     // Code.refresh();
 });
 
-window.updateScript = function(id, code) {
+const updateScript = function(id, code) {
     let script = Project.resources[id];
     script.data = Compiler.compile(code);
     Compiler.update(script);

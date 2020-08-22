@@ -1,7 +1,6 @@
 import { Graphics } from '/src/graphics/graphics.js';
 import { Scene } from '/src/core/scene.js';
 import { System } from '/src/core/system.js';
-import { Component } from '/src/core/component.js';
 
 export class Collider {
     
@@ -150,8 +149,6 @@ export class Collider {
         }
     }
 }
-
-window.Collider = Collider;
 
 export class RectCollider extends Collider {
     
@@ -326,8 +323,6 @@ export class RectCollider extends Collider {
     }
 }
 
-window.Rectcollider = RectCollider;
-
 export class CircleCollider extends Collider {
     
     /**
@@ -425,8 +420,6 @@ export class CircleCollider extends Collider {
     }
 }
 
-window.Circlecollider = CircleCollider;
-
 System.addEventListener('setProperty', data => {
     if (data.object.components) {
         if (data.object.components.collider || data.object.components.rectcollider) {
@@ -436,9 +429,3 @@ System.addEventListener('setProperty', data => {
         }
     }
 });
-
-Component.add(Collider, 'far fa-arrow-to-right', 'physics');
-
-// TO REPLACE - by a list
-Component.add(RectCollider, 'far fa-arrow-to-right', 'physics');
-Component.add(CircleCollider, 'far fa-arrow-to-right', 'physics');

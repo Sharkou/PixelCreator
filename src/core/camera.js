@@ -15,12 +15,13 @@ export class Camera {
      * @param {number} max_x - The x-limit for the camera's position
      * @param {number} max_y - The y-limit for the camera's position
      */
-    constructor(background = '#000000', max_x = 0, max_y = 0) {
+    constructor(background = '#272727', max_x = 0, max_y = 0) {
 
         // super(name, x, y, width, height);
 
         // Background color
         this.background = background;
+        this.fill = false; // fill the black stripes
         
         // The limit for the camera's position
         this.max_x = max_x; // map.cols * map.tsize - width;
@@ -66,5 +67,3 @@ export class Camera {
         this._main = camera;
     }
 }
-
-window.Camera = Camera;

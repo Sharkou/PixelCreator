@@ -1,5 +1,6 @@
 import { System } from '/src/core/system.js';
 import { Scene } from '/src/core/scene.js';
+// import io from '/src/lib/socket.io-client';
 
 export class Network {
 
@@ -36,7 +37,7 @@ export class Network {
         // Add object to scene
         this.on('add', data => {
             console.log('[SERVER] add object: ' + data.id);
-            this.scene.instanciate(data);
+            this.scene.instanciate(JSON.parse(data));
         });
 
         // Remove object from scene
@@ -52,6 +53,15 @@ export class Network {
             let obj = this.scene.objects[data.id];
             if (obj) {
                 obj.setProperty(data.prop, data.value);
+            }
+        });
+
+        // Update scene every heartbeat
+        this.on('heartbeat', data => {
+            console.log('[SERVER] scene heartbeat: ');
+            console.log(data);
+            for (let id in data) {
+                this.scene.objects[id].copy(data[id]);
             }
         });
 
@@ -123,13 +133,19 @@ export class Network {
      */
     sync() {
         System.addEventListener('setProperty', data => {
-                this.emit('update', {
-                    id: data.object.id,
-                    prop: data.prop,
-                    value: data.value
-                });
+                // this.emit('update', {
+                //     id: data.object.id,
+                //     prop: data.prop,
+                //     value: data.value
+                // });
                 // TODO: limiter la bande passante
                 // TODO: envoyer les données des composants
+        });
+        System.addEventListener('addComponent', data => {
+            this.emit('addComponent', {
+                id: data.object.id,
+                component: data.component
+            });
         });
         this.scene.addEventListener('add', obj => {
             this.emit('add', obj.stringify());

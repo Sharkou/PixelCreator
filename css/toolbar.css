@@ -28,6 +28,10 @@
 #toolbar li:hover {
     color: var(--hover-color);
     background-color: var(--hover-bg-li-color);
+    cursor: grab;
+}
+
+#toolbar .bottom li:hover {
     cursor: pointer;
 }
 

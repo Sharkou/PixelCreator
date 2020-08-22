@@ -1,5 +1,4 @@
 import { Time } from '/src/time/time.js';
-import { Component } from '/src/core/component.js';
 
 export class Animation {
     
@@ -44,7 +43,3 @@ export class Animation {
         }
     }
 }
-
-window.Animation = Animation;
-
-Component.add(Animation, 'far fa-images', 'anim');

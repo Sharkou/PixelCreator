@@ -26,5 +26,3 @@ export class Rotator {
         
     }
 }
-
-window.Rotator = Rotator;

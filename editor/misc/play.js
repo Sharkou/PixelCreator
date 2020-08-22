@@ -16,13 +16,13 @@ document.getElementById('playButton').addEventListener('click', function() {
     const centerY = window.innerHeight / 2 + window.screenTop - height / 2;
     
     const app = window.open(
-        '/build/',
+        'http://localhost/', // ''/build/',
         '_blank',
         `directories=no,fullscreen=yes,titlebar=no,toolbar=no,location=no,status=yes,menubar=no,scrollbars=no,resizable=yes,top=${centerY},left=${centerX},width=${width},height=${height}`);
     
-    app.data = {
-        scene,
-        camera,
-        objects: scene.objects
-    };
+    // app.data = {
+    //     scene,
+    //     camera,
+    //     objects: scene.objects
+    // };
 });

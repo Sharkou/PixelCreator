@@ -79,5 +79,3 @@ export class Map {
         }
     }
 }
-
-window.Mapping = Map;

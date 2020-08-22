@@ -37,7 +37,7 @@ Collab.canvas.addEventListener('mousemove', function(e) {
     log(Collab.me);
 });
 
-var socket = io.connect('http://localhost:3000');
+// var socket = io.connect('http://localhost:3000');
 
 socket.on('message', function(message) {
     console.log(message);

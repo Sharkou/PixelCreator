@@ -12,6 +12,8 @@ export class Properties {
      */
     constructor(node, scene) {
 
+        Properties.main = this;
+
         this.node = document.getElementById(node);
         this.scene = scene;
         
@@ -56,6 +58,22 @@ export class Properties {
                 this.add(scene.current);
             }
         });
+    }
+
+    /**
+     * Get current properties
+     * @return {Properties} properties - The current properties
+     */
+    static get main() {        
+        return this._main;
+    }
+    
+    /**
+     * Set current properties
+     * @param {Properties} properties - The current properties
+     */
+    static set main(scene) {        
+        this._main = scene;
     }
 
     /**

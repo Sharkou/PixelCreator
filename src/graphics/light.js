@@ -31,5 +31,3 @@ export class Light {
         Graphics.light(self.x, self.y, this.radius)
     }
 }
-
-window.Light = Light;

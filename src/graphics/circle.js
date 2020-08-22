@@ -1,5 +1,4 @@
 import { Graphics } from '/src/graphics/graphics.js';
-import { Component } from '/src/core/component.js';
 
 export class Circle {
     
@@ -9,7 +8,7 @@ export class Circle {
      * @param {string} color - The color
      * @param {number} opacity - The opacity
      */
-    constructor(color = '#000', opacity = 1, fill = true) {
+    constructor(color = '#000000', opacity = 1, fill = true) {
         
         this.color = color;
         this.opacity = opacity;
@@ -39,7 +38,3 @@ export class Circle {
         }
     }
 }
-
-window.Circle = Circle;
-
-Component.add(Circle, 'fad fa-circle', 'graphics');

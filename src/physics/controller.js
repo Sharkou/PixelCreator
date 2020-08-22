@@ -52,5 +52,3 @@ export class Controller {
     //     this.collision = false;
     // }
 }
-
-window.Controller = Controller;

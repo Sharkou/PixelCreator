@@ -2,7 +2,7 @@
 import { System } from '/src/core/system.js';
 import { Scene } from '/src/core/scene.js';
 import { Renderer } from '/src/core/renderer.js';
-// import { Components } from '/src/core/components.js';
+import { Component } from '/src/core/component.js';
 import { Camera } from '/src/core/camera.js';
 import { Object } from '/src/core/object.js';
 import { Time } from '/src/time/time.js';
@@ -10,19 +10,6 @@ import { Performance } from '/src/time/performance.js';
 import { Mouse } from '/src/input/mouse.js';
 import { Keyboard } from '/src/input/keyboard.js';
 import { Network } from '/src/network/network.js';
-// import { Socket } from '/src/network/socket.js';
-// import { Room } from '/src/network/room.js';
-
-/* Components */
-import { Texture } from '/src/graphics/texture.js';
-import { Circle } from '/src/graphics/circle.js';
-import { Rect } from '/src/graphics/rect.js';
-import { Light } from '/src/graphics/light.js';
-import { Map } from '/src/graphics/map.js';
-import { Animation } from '/src/anim/animation.js';
-import { Animator } from '/src/anim/animator.js';
-import { Collider } from '/src/physics/collider.js';
-import { Rotator } from '/src/physics/rotator.js';
 
 /* Editor Modules */
 import { Handler } from '/editor/system/handler.js';
@@ -69,6 +56,8 @@ async function init() {
     const properties = new Properties('properties-list', scene);
     const handler = new Handler(scene, camera, renderer, project);
     const toolbar = new Toolbar(camera);
+
+    Component.init(properties);
 
     // Objects instantiating
     for (let id in objects) {

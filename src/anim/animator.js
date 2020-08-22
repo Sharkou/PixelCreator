@@ -1,5 +1,3 @@
-import { Component } from '/src/core/component.js';
-
 export class Animator {
     
     /**
@@ -77,7 +75,3 @@ export class Animator {
         // delete this.animations[animation.name];
     }
 }
-
-window.Animator = Animator;
-
-Component.add(Animator, 'far fa-images', 'anim');

@@ -1,5 +1,4 @@
 import { Graphics } from '/src/graphics/graphics.js';
-import { Component } from '/src/core/component.js';
 
 export class Texture {
     
@@ -56,7 +55,3 @@ export class Texture {
         });
     }
 }
-
-window.Texture = Texture;
-
-Component.add(Texture, 'far fa-image', 'graphics');
