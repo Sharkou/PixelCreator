@@ -9,3 +9,14 @@ export { Performance } from '/src/time/performance.js';
 export { Mouse } from '/src/input/mouse.js';
 export { Keyboard } from '/src/input/keyboard.js';
 export { Network } from '/src/network/network.js';
+
+export { Texture } from '/src/graphics/texture.js';
+export { Circle } from '/src/graphics/circle.js';
+export { Rect } from '/src/graphics/rect.js';
+export { Light } from '/src/graphics/light.js';
+export { Map } from '/src/graphics/map.js';
+export { Animation } from '/src/anim/animation.js';
+export { Animator } from '/src/anim/animator.js';
+export { Collider, RectCollider, CircleCollider } from '/src/physics/collider.js';
+export { Controller } from '/src/physics/controller.js';
+export { Rotator } from '/src/physics/rotator.js';

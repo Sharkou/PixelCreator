@@ -56,7 +56,6 @@
     <script src="/src/lib/codemirror/addon/edit/closebrackets.js"></script>-->
     
     <!-- Core Engine -->
-    <script src="/src/lib/socket.io.js"></script>
     <script async type="module" src="app.js"></script>
 
     <title>Pixel Creator · Editor</title>
@@ -80,14 +79,16 @@
             </ul>
         </nav>-->
 
-        <h1><i class="far fa-sword"></i>Pixel Creator v0.1.42-beta
+        <h1><i class="far fa-sword"></i>Test Project · Pixel Creator v0.1.42-beta
             <!-- - Project Name -->
         </h1>
 
         <!-- Menu -->
         <div id="menu">
             <ul>
-                <li title="Play" id="playButton"><i class="material-icons">play_arrow</i></li>
+                <li title="Play" id="play" class="button"><i class="material-icons">play_arrow</i></li>
+                <li title="Pause" id="pause" class="button"><span class="material-icons">pause</span></li>
+                <!-- <li title="Sync" id="sync" class="button"><span class="material-icons">sync</span></li> -->
                 <!--
                   <li><i class="material-icons tooltip">create<span class="tooltiptext">Edit</span></i></li>
                   <li><i class="material-icons tooltip">open_with<span class="tooltiptext">Move</span></i></li>
@@ -131,25 +132,22 @@
 
             <!-- Toolbar -->
             <ul id="toolbar">
-
-                <!--<li id="save" title="Save">
-                    <i class="fas fa-save"></i>
-                </li>-->
                 
-                <!--<li id="wifi" title="Collaboration">
+                <!-- <li id="wifi" title="Collaboration">
                     <i class="fas fa-wifi"></i>
-                </li>-->
+                </li> -->
 
                 <!--<hr />-->
-
-                <!--<li id="Selection" title="Selection" class="active tool">
-                    <i class="fas fa-arrows-alt"></i>
-                </li>-->
-
-                <!--<li id="rotate" title="Rotate" onclick="rotate(this)"><i class="fas fa-sync-alt"></i></li>
+                
+                <!--<li id="Selection" title="Selection" class="active tool"></li>
+                <li id="rotate" title="Rotate" onclick="rotate(this)"><i class="fas fa-sync-alt"></i></li>
                 <li id="scale" title="Scale" onclick="scale(this)"><i class="fas fa-expand-arrows-alt"></i></li>-->
 
-                <!--<hr />-->
+                <!-- <li draggable="true" id="Pointer" title="Pointer" class="tool">
+                    <i class="far fa-mouse-pointer"></i>
+                </li> -->
+
+                <!-- <hr /> -->
                 
                 <li draggable="true" id="Object" title="Object" class="tool">
                     <i class="far fa-cube"></i>
@@ -210,9 +208,9 @@
                         <i class="fas fa-save"></i>
                     </li>
 
-                    <li id="layers" title="Layers">
+                    <!-- <li id="layers" title="Layers">
                         <i class="fas fa-layer-group"></i>
-                    </li>
+                    </li> -->
                 </div>
 
             </ul>
@@ -247,7 +245,7 @@
                 <!-- Events Window -->
                 <div id="overlay" class="overlay tab-content">
 
-                    <header></header>
+                    <!-- <header></header> -->
 
                     <section class="overlay-content">
 
@@ -497,7 +495,7 @@
     </nav>
 
     <!-- Loading -->
-    <div class="loading hidden"></div>
+    <div class="loading"></div>
 
 </body>
 

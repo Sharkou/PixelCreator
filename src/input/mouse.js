@@ -1,6 +1,18 @@
-// import { Handler } from '/src/editor/system/handler.js';
+import { System } from '/src/core/system.js';
 
 export class Mouse {
+
+    static x = 0;
+    static y = 0;
+    static target = null;
+    static down = false;
+    static up = false;
+    static move = false;
+    static button = '';
+    static editor = { x: 0, y: 0 };
+    static lastPosition = { x: 0, y: 0 };
+    static offset = { x: 0, y: 0 };
+    static world = { x: 0, y: 0 };
         
     // Mouse position
     static getMousePos(e) {
@@ -18,6 +30,9 @@ export class Mouse {
             case 0:
                 this.button = 'left';
                 break;
+            case 1:
+                this.button = 'middle';
+                break;
             case 2:
                 this.button = 'right';
                 break;
@@ -25,64 +40,39 @@ export class Mouse {
     }
 }
 
-Mouse.x = 0;
-Mouse.y = 0;
-Mouse.target = null;
-Mouse.down = false;
-Mouse.up = false;
-Mouse.move = false;
-Mouse.button = '';
-Mouse.editor = {
-    x: 0,
-    y: 0
-};
-Mouse.lastPosition = {
-    x: 0,
-    y: 0
-};
-Mouse.offset = {
-    x: 0,
-    y: 0
-};
-Mouse.world = {
-    x: 0,
-    y: 0
-};
-
-/*Canvas.node.addEventListener('mousedown', function(e) {
-    Mouse.setButton(e.button);
-    Mouse.down = true;
-    Mouse.up = false;
-});
-
-Canvas.node.addEventListener('mouseup', function(e) {
+// Initialize events
+document.addEventListener('mousedown', e => {
+    Mouse.target = e.target;
     Mouse.setButton(e.button);
     Mouse.down = false;
     Mouse.up = true;
-});*/
-
-document.addEventListener('click', function(e) {
-    Mouse.target = e.target;
+    System.dispatchEvent('mousedown', e.button);
 });
 
-/*(function() {
-    var thread;
-    
-    Canvas.node.addEventListener('mousemove', function(e) {
-        Mouse.move = true;
-        
-        if (thread) {
-            clearTimeout(thread);
-        }
-        
-        // on mouse stop
-        thread = setTimeout(function() {
-            Mouse.move = false;
-        }, 100);
-    });
-})();*/
-
-document.body.addEventListener('mouseup', (e) => {
+document.body.addEventListener('mouseup', e => {
+    Mouse.setButton(e.button);
+    Mouse.down = false;
+    Mouse.up = true;
     Mouse.editor.x = e.clientX;
     Mouse.editor.y = e.clientY;
+    System.dispatchEvent('mouseup', e.button);
 })
+
+let timeoutID;
+
+// Handle mouse movement on the canvas
+document.body.addEventListener('mousemove', e => {
+    const delay = 50; // ms
+    
+    Mouse.move = true;
+    System.dispatchEvent('mousemove');
+    
+    if (timeoutID) {
+        clearTimeout(timeoutID);
+    }
+    
+    // on mouse stop
+    timeoutID = setTimeout(function() {
+        Mouse.move = false;
+    }, delay);
+});

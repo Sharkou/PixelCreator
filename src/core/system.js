@@ -99,8 +99,9 @@ export class System {
      * @static
      * @param {string} e - The event name
      * @param {function} fn - The callback function
+     * @param {array} args - The function arguments
      */
-    static addEventListener(e, fn) {
+    static addEventListener(e, fn, ...args) {
         
         // Create the event if undefined
         if (this.events[e] === undefined) {
@@ -108,6 +109,25 @@ export class System {
         }
         
         this.events[e].push(fn); // push the function
+    }
+
+    /**
+     * Set interval with number of repetitions
+     * @static
+     * @param {function} callback - The callback function
+     * @param {number} delay - The delay
+     * @param {number} repetitions - The number of repetitions
+     */
+    static setIntervalX(callback, delay, repetitions) {
+        let x = 0;
+        let intervalID = window.setInterval(function () {
+    
+           callback();
+    
+           if (++x === repetitions) {
+               window.clearInterval(intervalID);
+           }
+        }, delay);
     }
     
     static include(url) {

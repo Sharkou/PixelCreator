@@ -1,5 +1,6 @@
 /* Core Modules */
 import { Object } from '/src/core/object.js';
+import { System } from '/src/core/system.js';
 import { Renderer } from '/src/core/renderer.js';
 import { Scene } from '/src/core/scene.js';
 import { Camera } from '/src/core/camera.js';
@@ -43,17 +44,17 @@ export class Handler {
         this.lastHeight = 0;
         
         // Initialize events
-        this.canvas.addEventListener('mousedown', function(e) {
-            Mouse.setButton(e.button);
-            Mouse.down = true;
-            Mouse.up = false;
-        });
+        // this.canvas.addEventListener('mousedown', function(e) {
+        //     Mouse.setButton(e.button);
+        //     Mouse.down = true;
+        //     Mouse.up = false;
+        // });
 
-        this.canvas.addEventListener('mouseup', function(e) {
-            Mouse.setButton(e.button);
-            Mouse.down = false;
-            Mouse.up = true;
-        });
+        // this.canvas.addEventListener('mouseup', function(e) {
+        //     Mouse.setButton(e.button);
+        //     Mouse.down = false;
+        //     Mouse.up = true;
+        // });
         
         // Move Mouse (onDragOver)
         this.canvas.addEventListener('mouseover', function(e) {
@@ -66,19 +67,19 @@ export class Handler {
         }, false);
         
         // Handle mouse movement on the canvas
-        this.canvas.addEventListener('mousemove', function(e) {
-            let thread;
-            Mouse.move = true;
+        // this.canvas.addEventListener('mousemove', function(e) {
+        //     let thread;
+        //     Mouse.move = true;
             
-            if (thread) {
-                clearTimeout(thread);
-            }
+        //     if (thread) {
+        //         clearTimeout(thread);
+        //     }
             
-            // on mouse stop
-            thread = setTimeout(function() {
-                Mouse.move = false;
-            }, 100);
-        });
+        //     // on mouse stop
+        //     thread = setTimeout(function() {
+        //         Mouse.move = false;
+        //     }, 100);
+        // });
 
         // Drop element in Scene
         this.canvas.addEventListener('drop', function(e) {
@@ -110,19 +111,19 @@ export class Handler {
                 case 'Circle':
                     obj.name = 'Circle';
                     obj.type = 'object';
-                    obj.addComponent(new Circle('#CC8844', 0.4));
+                    obj.addComponent(new Circle('#FFFFFF', 0.6), false);
                     break;
                     
                 case 'Rectangle':
                     obj.name = 'Rectangle';
                     obj.type = 'object';
-                    obj.addComponent(new Rect('#CC8844', 0.4));
+                    obj.addComponent(new Rect('#FFFFFF', 0.6), false);
                     break;
                     
                 case 'Light':
                     obj.name = 'Light';
                     obj.type = 'light';
-                    obj.addComponent(new Light());
+                    obj.addComponent(new Light(), false);
                     break;
                     
                 case 'Camera':
@@ -130,13 +131,13 @@ export class Handler {
                     obj.type = 'camera';
                     obj.width = 320;
                     obj.height = 180;
-                    obj.addComponent(new Camera('#272727'));
+                    obj.addComponent(new Camera('#272727'), false);
                     break;
                 
                 case 'Particle':
                     obj.name = 'Particle';
                     obj.type = 'particle';
-                    obj.addComponent(new Particle());
+                    obj.addComponent(new Particle(), false);
                     break;
                     
                 // Drop d'une ressource
@@ -240,8 +241,7 @@ export class Handler {
                                     let side = component.detectSide(obj, Mouse.x, Mouse.y);
 
                                     // Resizing
-                                    if (side)
-                                    {
+                                    if (side) {
                                         // Si on redimensionne le composant
                                         this.resizeObject = side;
                                         this.lastX = obj.x+component.offsetX;
@@ -320,6 +320,12 @@ export class Handler {
 
         // Mouse Move on Scene
         this.canvas.addEventListener('mousemove', e => {
+
+            // Data to dispatch
+            // let object = null;
+            // let component = null;
+            // let prop = '';
+            // let value = null;
             
             // Position update
             Mouse.x = ~~Mouse.getMousePos(e).x;
@@ -341,12 +347,40 @@ export class Handler {
                     // Move Component
                     scene.currentComponent.offsetX = ~~(Mouse.x / camera.scale - camera.x - Mouse.offset.x - scene.current.x);
                     scene.currentComponent.offsetY = ~~(Mouse.y / camera.scale - camera.y - Mouse.offset.y - scene.current.y);
+
+                    System.dispatchEvent('updateProperties', {
+                        object: scene.current,
+                        component: scene.currentComponent,
+                        prop: 'offsetX',
+                        value: scene.currentComponent.offsetX
+                    });
+
+                    System.dispatchEvent('updateProperties', {
+                        object: scene.current,
+                        component: scene.currentComponent,
+                        prop: 'offsetY',
+                        value: scene.currentComponent.offsetY
+                    });
                 }
                 else if (scene.current)
                 {
                     // Move Object
                     scene.current.x = Mouse.x / camera.scale - camera.x - Mouse.offset.x;
                     scene.current.y = Mouse.y / camera.scale - camera.y - Mouse.offset.y;
+
+                    System.dispatchEvent('updateProperties', {
+                        object: scene.current,
+                        component: null,
+                        prop: 'x',
+                        value: scene.current.x
+                    });
+
+                    System.dispatchEvent('updateProperties', {
+                        object: scene.current,
+                        component: null,
+                        prop: 'y',
+                        value: scene.current.y
+                    });
                 }
             }
             
@@ -485,6 +519,34 @@ export class Handler {
                                 scene.current.y = ~~(this.lastY + offset / 2);
                                 break;
                         }
+
+                        System.dispatchEvent('updateProperties', {
+                            object: scene.current,
+                            component: null,
+                            prop: 'x',
+                            value: scene.current.x
+                        });
+
+                        System.dispatchEvent('updateProperties', {
+                            object: scene.current,
+                            component: null,
+                            prop: 'y',
+                            value: scene.current.y
+                        });
+
+                        System.dispatchEvent('updateProperties', {
+                            object: scene.current,
+                            component: null,
+                            prop: 'width',
+                            value: scene.current.width
+                        });
+
+                        System.dispatchEvent('updateProperties', {
+                            object: scene.current,
+                            component: null,
+                            prop: 'height',
+                            value: scene.current.height
+                        });
                     }
             }
             

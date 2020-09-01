@@ -40,10 +40,10 @@ export class Camera {
     }
 
     /**
-     * Draw the component
-     * @draw
+     * Preview the component
+     * @preview
      */
-    draw(self) {
+    preview(self) {
         
         Graphics.rect(self.x, self.y, self.width, self.height);
         Graphics.stroke('rgba(255, 255, 255, 0.6)', 0.8);

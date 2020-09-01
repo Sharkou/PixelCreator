@@ -1,7 +1,7 @@
 import { Scene } from '/src/core/scene.js';
 import { Camera } from '/src/core/camera.js';
 
-document.getElementById('playButton').addEventListener('click', function() {
+document.getElementById('play').addEventListener('click', function() {
 
     if (!Scene.main.camera) {
         console.error('Camera is not defined');
@@ -18,7 +18,9 @@ document.getElementById('playButton').addEventListener('click', function() {
     const app = window.open(
         'http://localhost/', // ''/build/',
         '_blank',
-        `directories=no,fullscreen=yes,titlebar=no,toolbar=no,location=no,status=yes,menubar=no,scrollbars=no,resizable=yes,top=${centerY},left=${centerX},width=${width},height=${height}`);
+        `directories=no,fullscreen=yes,titlebar=no,scrollbars=no,toolbar=no,location=no,status=yes,menubar=no,scrollbars=no,resizable=yes,top=${centerY},left=${centerX},width=${width},height=${height},innerHeight=${height + 1}`);
+
+    // app.resizeBy(0, height - app.innerHeight);
     
     // app.data = {
     //     scene,

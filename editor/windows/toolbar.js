@@ -31,15 +31,15 @@ export class Toolbar {
             switch (tool.id) {
                 
                 case 'Circle':
-                    obj.addComponent(new Circle('#CC8844', 0.4));
+                    obj.addComponent(new Circle('#FFFFFF', 0.6), false); // CC8844
                     break;
 
                 case 'Rectangle':
-                    obj.addComponent(new Rect('#CC8844', 0.4));
+                    obj.addComponent(new Rect('#FFFFFF', 0.6), false);
                     break;
 
                 case 'Light':
-                    obj.addComponent(new Light());
+                    obj.addComponent(new Light(), false);
                     break;
 
                 case 'Particle':

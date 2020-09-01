@@ -18,19 +18,19 @@ export class Hierarchy {
         this.node = document.getElementById(node);
         this.scene = scene;
 
-        this.scene.addEventListener('add', obj => {
+        System.addEventListener('add', obj => {
             this.add(obj);
         });
 
-        this.scene.addEventListener('instanciate', obj => {
+        System.addEventListener('instanciate', obj => {
             this.add(obj);
         });
 
-        this.scene.addEventListener('remove', obj => {
+        System.addEventListener('remove', obj => {
             this.remove(obj);
         });
         
-        this.scene.addEventListener('setCurrentObject', obj => {
+        System.addEventListener('setCurrentObject', obj => {
 
             if (obj) {
 
@@ -186,6 +186,12 @@ export class Hierarchy {
             let obj = scene.objects[this.parentNode.id];
             obj.lock = !obj.lock;            
             lock.setAttribute('data-content', obj.lock ? 'lock' : 'lock_open');
+            System.dispatchEvent('updateProperties', {
+                object: obj,
+                component: null,
+                prop: 'lock',
+                value: obj.lock
+            });
         });
 
         var visibility = document.createElement('i');
@@ -198,6 +204,12 @@ export class Hierarchy {
             let obj = scene.objects[this.parentNode.id];
             obj.active = !obj.active;            
             visibility.setAttribute('data-content', obj.active ? 'visibility' : 'visibility_off');
+            System.dispatchEvent('updateProperties', {
+                object: obj,
+                component: null,
+                prop: 'active',
+                value: obj.active
+            });
         });
 
         var delete_icon = document.createElement('i');

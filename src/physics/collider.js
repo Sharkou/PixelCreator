@@ -421,7 +421,7 @@ export class CircleCollider extends Collider {
 }
 
 System.addEventListener('setProperty', data => {
-    if (data.object.components) {
+    if (data.object?.components) {
         if (data.object.components.collider || data.object.components.rectcollider) {
             if (data.prop === 'x' || data.prop === 'y') {
                 console.log(data.object.x);

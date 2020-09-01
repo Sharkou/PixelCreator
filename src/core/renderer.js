@@ -13,14 +13,18 @@ export class Renderer {
      * @param {number} width - The width
      * @param {number} height - The height
      * @param {Element} parent - The DOM Element parent of renderer
+     * @param {boolean} pause - Is the game paused?
+     * @param {boolean} inspector - Is it the editor?
      */
-    constructor(width, height, parent = document.body, pause = true) {
+    constructor(width, height, parent = document.body, pause = false, inspector = false) {
         
         this.width = width;
         this.height = height;
         this.ratio = 1;
+        this.dpi = window.devicePixelRatio;
         this.parent = parent;
         this.pause = pause;
+        this.inspector = inspector;
         
         /*// Create canvas layers
         this.layers = {
@@ -66,6 +70,19 @@ export class Renderer {
     static set main(renderer) {
         this._main = renderer;
     }
+
+    /**
+    * Fix Canvas DPI
+    * @param {HTMLCanvasElement} canvas - The canvas
+    */
+    fix_dpi(canvas) {
+
+        // const height = +getComputedStyle(canvas).getPropertyValue('height').slice(0,-2);
+        // const width = +getComputedStyle(canvas).getPropertyValue('width').slice(0,-2);
+
+        this.canvas.setAttribute('width', this.width * this.dpi);
+        this.canvas.setAttribute('height', this.height * this.dpi);
+    }
     
     /**
     * Create canvas from layer
@@ -107,15 +124,14 @@ export class Renderer {
         let heightRatio = this.height / camera.height;
         
         this.ratio = widthRatio > heightRatio ? heightRatio : widthRatio;
+        // this.ratio = Math.round((this.ratio + Number.EPSILON) * 100) / 100;
         
         // Resize canvas from page orientation (portrait or landscape)
         if (widthRatio < heightRatio) {
             this.canvas.width = this.width;
-            this.height = this.canvas.height = camera.height * this.ratio;
-        }
-
-        else {
-            this.width = this.canvas.width = camera.width * this.ratio;
+            this.canvas.height = this.height = camera.height * this.ratio;
+        } else {
+            this.canvas.width = this.width = camera.width * this.ratio;
             this.canvas.height = this.height;
         }
 
@@ -166,6 +182,9 @@ export class Renderer {
             // Straddle the pixels
             // canvas.ctx.translate(0.5, 0.5);
         }*/
+
+        // Fix Canvas DPI
+        // this.fix_dpi(this.canvas);
         
         // Initialize graphics renderer context
         Graphics.initContext(this.ctx);
@@ -191,12 +210,12 @@ export class Renderer {
             
             if (obj != undefined && obj != null && obj.active) {
                 
-                // if (!this.pause) {
+                if (!this.pause) {
                     obj.update(); // update the object
-                // }
+                }
 
                 // Si l'objet n'est pas verrouillé
-                if (!obj.lock) {
+                if (!obj.lock && this.inspector) {
                                 
                     // Au survol d'un object
                     // if (!handler.drag && !handler.moveCamera) {
@@ -257,13 +276,16 @@ export class Renderer {
 
                 if (obj.visible) {
                     obj.draw(); // draw the object
+                    if (this.inspector) {
+                        obj.preview(); // preview in editor
+                    }
                 }
 
                 // Restore the saved state of the canvas
                 this.ctx.restore();
 
                 // Si l'objet est sélectionné dans l'éditeur
-                if (obj === scene.current && !obj.lock) {
+                if (obj === scene.current && !obj.lock && this.inspector) {
                     obj.select(this.ctx); // affichage de la sélection
                 }
             }

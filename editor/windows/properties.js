@@ -17,14 +17,14 @@ export class Properties {
         this.node = document.getElementById(node);
         this.scene = scene;
         
-        this.scene.addEventListener('setCurrentObject', obj => this.add(obj));
+        System.addEventListener('setCurrentObject', obj => this.add(obj));
 
+        // Update properties on object property setter
         System.addEventListener('setProperty', data => {
-            // Update properties
+            const obj = data.object;
             if (scene.current) {
-                if (scene.current == data.object || scene.current.contains(data.object)) {
-                    this.updateObjectProperties(data);
-                    this.updateComponentsProperties(data);
+                if (scene.current == obj || scene.current.contains(obj)) {
+                    this.updateProperties(obj);
                 }
             }
         });
@@ -92,9 +92,17 @@ export class Properties {
                 this.node.appendChild(this.createComponentView(obj.components[id]));
             }
 
-            this.updateObjectProperties();
-            this.updateComponentsProperties();
+            this.updateProperties(obj);
         }
+    }
+
+    /**
+     * Update object properties
+     * @param {Object} obj - The object to update
+     */
+    updateProperties(obj) {
+        this.updateObjectProperties(obj);
+        this.updateComponentsProperties(obj);
     }
     
     /**
@@ -111,7 +119,6 @@ export class Properties {
      * @param {Object} component - The component
      */
     addComponent(component) {
-
         
     }
     
@@ -121,20 +128,36 @@ export class Properties {
      */
     updateCurrentObject(el) {
 
+        let object = this.scene.current;
+        let type = null;
+        let component = null;
+        let prop = null;
+        let value = null;
+
         // Object properties
         if (el.parentElement.classList.contains('object')) {
-            let type = typeof this.scene.current[el.id];
-            this.scene.current[el.id] = (type === 'number' ? parseFloat(el.value, 10) : el.value);;
+            prop = el.id;
+            type = typeof object[prop];
+            value = (type === 'number' ? parseFloat(el.value, 10) : el.value);
+            object[prop] = value;
         }
 
         // Component properties
         else {
-            let p = (el.id).split('.');
-            let component = this.scene.current.components[p[0]];
-            let type = typeof component[p[1]];
-
-            component[p[1]] = (type === 'number' ? parseFloat(el.value, 10) : el.value);
+            let key = (el.id).split('.');
+            component = object.components[key[0]];
+            prop = key[1];
+            type = typeof component[prop];
+            value = (type === 'number' ? parseFloat(el.value, 10) : el.value)
+            component[prop] = value;
         }
+
+        System.dispatchEvent('updateProperties', {
+            object,
+            component,
+            prop,
+            value
+        });
     }
     
     /**
@@ -142,13 +165,15 @@ export class Properties {
      * @param {Object} data - The object data
      */
     updateObjectProperties(data) {
+        // if (!data) return;
+        const obj = this.scene.current;
         // const p = data.prop;
-        for (let p in this.scene.current) {
-            const type = typeof this.scene.current[p];
+        for (let p in obj) {
+            const type = typeof obj[p];
             if (type === 'number' || type === 'string') {
                 p = (p[0] === '_' ? p.substring(1, p.length) : p);
-                const value = this.scene.current[p];
-                const el = document.getElementsByClassName(this.scene.current.id + '-' + p);
+                const value = obj[p];
+                const el = document.getElementsByClassName(obj.id + '-' + p);
                 for (let i = 0; i < el.length; i++) {
                     if (el[i] !== document.activeElement) {
                         if (el[i].nodeName === 'INPUT') {
@@ -167,10 +192,13 @@ export class Properties {
      * Update object components properties in editor
      */
     updateComponentsProperties(data) {
-        for (var c in this.scene.current.components) {
-            for (var p in this.scene.current.components[c]) {
-                var value = this.scene.current.components[c][p];
-                var e = document.getElementsByClassName(this.scene.current.id + '-' + c + '.' + p); // example : id-root.layer
+        // if (!data) return;
+        const obj = this.scene.current;
+        const components = obj.components;
+        for (var c in components) {
+            for (var p in components[c]) {
+                var value = components[c][p];
+                var e = document.getElementsByClassName(obj.id + '-' + c + '.' + p); // example : id-root.layer
                 for (var i = 0; i < e.length; i++) {
                     if (e[i].nodeName === 'INPUT') {
                         e[i].value = value;
@@ -505,8 +533,17 @@ export class Properties {
         
         // Désactivation du composant
         icon_visibility.addEventListener('click', (e) => {
-            component.active = !component.active;
+            const object = scene.current;
+            // const component = object.components[component.name];
+            const value = !component.active
+            component.active = value;
             icon_visibility.setAttribute('data-content', component.active ? 'visibility' : 'visibility_off');
+            System.dispatchEvent('updateProperties', {
+                object,
+                component,
+                prop: 'active',
+                value
+            });
         });
         
         // var icon_edit = this.createIcon('edit');

@@ -32,12 +32,15 @@ import '/editor/misc/filter.js';
 import '/editor/misc/fullscreen.js';
 import '/editor/misc/shortcut.js';
 import '/editor/misc/play.js';
+import '/editor/misc/pause.js';
 import '/editor/misc/save.js';
 
 /* Initialization data */
+const host = 'localhost';
+const port = 80;
 const canvas = document.getElementById('wrapper');
-const network = new Network('localhost', 80);
-const renderer = new Renderer(canvas.clientWidth, canvas.clientHeight, canvas);
+const network = new Network(host, port);
+const renderer = new Renderer(canvas.clientWidth, canvas.clientHeight, canvas, false, true);
 const scene = new Scene('Main Scene');
 const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHeight)
     .addComponent(new Camera('#272727'));
@@ -46,7 +49,7 @@ const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHei
 async function init() {
 
     // Connect to main scene
-    let data = await network.init(scene, true);
+    let data = await network.connect(scene, true);
     let objects = data.objects;
 
     renderer.init(scene, camera);
@@ -109,8 +112,17 @@ window.onresize = function() {
     // renderer.init(scene, camera);
 };
 
+window.onbeforeunload = function() {
+    // websocket.onclose = function () {}; // disable onclose handler first
+    network.disconnect();
+};
+
+window.onunload = function() {
+    network.disconnect();
+};
+
 // Debug
-window.scene = scene;
+// window.scene = scene;
 // window.renderer = renderer;
 // window.camera = camera;
 // window.keyboard = Keyboard;

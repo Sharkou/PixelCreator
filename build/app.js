@@ -1,21 +1,14 @@
 /* Core Modules */
-import { Renderer } from '/src/core/renderer.js';
-import { Object } from '/src/core/object.js';
-import { Camera } from '/src/core/camera.js';
-import { Scene } from '/src/core/scene.js';
-import { Mouse } from '/src/input/mouse.js';
-import { Keyboard } from '/src/input/keyboard.js';
-import { Network } from '/src/network/network.js';
-import { Texture } from '/src/graphics/texture.js';
-import { Circle } from '/src/graphics/circle.js';
-import { Rect } from '/src/graphics/rect.js';
-import { Light } from '/src/graphics/light.js';
-import { Map } from '/src/graphics/map.js';
-import { Animation } from '/src/anim/animation.js';
-import { Animator } from '/src/anim/animator.js';
-import { Collider } from '/src/physics/collider.js';
-import { Controller } from '/src/physics/controller.js';
-import { Rotator } from '/src/physics/rotator.js';
+import {
+    Renderer,
+    Object,
+    Scene,
+    Camera,
+    Component,
+    Mouse,
+    Keyboard,
+    Network
+} from 'http://localhost:5501/src/core/mod.js';
 
 // Get project ID
 // const id = app.dataset ? app.dataset['id'] : null;
@@ -32,8 +25,10 @@ let camera = new Object();
 async function init() {
 
     // Connect to main scene
-    let data = await network.init(scene);
+    let data = await network.connect(scene);
     let objects = data.objects;
+
+    Component.init();
 
     // Objects instantiating
     for (let id in objects) {
@@ -45,21 +40,21 @@ async function init() {
             // obj.x -= obj.width / 2;
             // obj.y -= obj.height / 2;
             // obj.visible = false;
-            camera = objects[id];
+            camera.copy(objects[id]);
             camera.x -= camera.width / 2;
             camera.y -= camera.height / 2;
         }
     }
 
     renderer.init(scene, camera);
-    renderer.pause = false;
+    // renderer.pause = false;
 
     // Start loop
     loop();
 }
 
 /* Game loop */
-async function loop() {    
+async function loop() {
     window.requestAnimationFrame(loop);    
     renderer.render(scene, camera);
 }
@@ -71,4 +66,12 @@ window.onload = init;
 window.onresize = function() {
     renderer.resize(window.innerWidth, window.innerHeight);
     renderer.init(scene, camera);
+};
+
+window.onbeforeunload = function() {
+    network.disconnect();
+};
+
+window.onunload = function() {
+    network.disconnect();
 };

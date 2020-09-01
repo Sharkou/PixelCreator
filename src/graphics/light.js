@@ -8,7 +8,7 @@ export class Light {
      * @param {string} color - The color
      * @param {number} opacity - The opacity
      */
-    constructor(color = '#FFF', opacity = 1, radius = 20) {
+    constructor(color = '#FFFFFF', opacity = 1, radius = 20) {
         this.color = color;
         this.opacity = opacity;
         this.radius = radius;

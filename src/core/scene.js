@@ -1,4 +1,5 @@
 import { Object } from '/src/core/object.js';
+import { System } from '/src/core/system.js';
 
 export class Scene {
     
@@ -23,6 +24,8 @@ export class Scene {
      * @param {boolean} dispatch - Dispatch the evenement
      */
     add(obj, dispatch = true) {
+
+        if (!obj) return;
         
         this.current = obj;
 
@@ -34,7 +37,7 @@ export class Scene {
         this.objects[obj.id] = obj;
         
         if (dispatch) {
-            this.dispatchEvent('add', obj);
+            System.dispatchEvent('add', obj);
         }
     }
     
@@ -44,6 +47,8 @@ export class Scene {
      * @param {boolean} dispatch - Dispatch the evenement
      */
     remove(obj, dispatch = true) {
+
+        if (!obj) return;
         
         // Instance
         if (obj.constructor.name === 'Object') {
@@ -52,7 +57,7 @@ export class Scene {
         }
         
         if (dispatch) {
-            this.dispatchEvent('remove', obj);
+            System.dispatchEvent('remove', obj);
         }
     }
     
@@ -77,7 +82,7 @@ export class Scene {
         this.add(copy, false);
         
         if (dispatch) {
-            this.dispatchEvent('instanciate', copy);
+            System.dispatchEvent('instanciate', copy);
         }
     }
 
@@ -95,7 +100,7 @@ export class Scene {
      */
     set current(obj) {
         this._current = obj;
-        this.dispatchEvent('setCurrentObject', obj);
+        System.dispatchEvent('setCurrentObject', obj);
     }
     
     /**
@@ -186,9 +191,16 @@ export class Scene {
      */
     updateName(el, obj = null) {
         if (obj) {
-            this.objects[obj.id].name = el.textContent;
+            obj = this.objects[obj.id];
         } else {
-            this.objects[el.parentNode.id].name = el.textContent;
+            obj = this.objects[el.parentNode.id];
         }
+        obj.name = el.textContent;
+        System.dispatchEvent('updateProperties', {
+            object: obj,
+            component: null,
+            prop: 'name',
+            value: el.textContent
+        });
     }
 }

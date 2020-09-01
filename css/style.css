@@ -227,7 +227,7 @@ h1 i, h2 i {
 
 h2:hover {
     /* color: var(--hover-color); */
-    background-color: var(--bg-light-color);
+    background-color: var(--bg-medium-color);
     cursor: pointer;
     box-shadow: inset 0px -1px 0 var(--first-border-color);
 }

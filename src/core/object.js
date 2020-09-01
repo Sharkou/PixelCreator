@@ -107,8 +107,37 @@ export class Object {
      * @param {string} value - The property to set
      * @param {number} value - The new value
      */
-    setProperty(prop, value) {
+    setProperty(prop, value, dispatch = true) {
         this['_' + prop] = value;
+
+        // Dispatch event
+        if (dispatch) {
+            System.dispatchEvent('setProperty', {
+                object: this,
+                component: null,
+                prop,
+                value
+            });
+        }
+    }
+
+    /**
+     * Set property value to component
+     * @param {string} value - The property to set
+     * @param {number} value - The new value
+     */
+    setComponentProperty(component, prop, value, dispatch = true) {
+        this.components[component]['_' + prop] = value;
+
+        // Dispatch event
+        if (dispatch) {
+            System.dispatchEvent('setProperty', {
+                object: this,
+                component,
+                prop,
+                value
+            });
+        }
     }
     
     /**
@@ -147,8 +176,21 @@ export class Object {
      * Remove the object component
      * @param {Component} component - The component to remove
      */
-    removeComponent(component) {
-        delete this.components[component.name.toLowerCase()];
+    removeComponent(component, dispatch = true) {
+        const type = typeof component;
+
+        if (type == 'object') {
+            delete this.components[component.name.toLowerCase()];
+        } else if (type == 'string') {
+            delete this.components[component.toLowerCase()];
+        }
+
+        if (dispatch) {
+            System.dispatchEvent('removeComponent', {
+                object: this,
+                component: component
+            });
+        }
     }
     
     /**
@@ -175,7 +217,7 @@ export class Object {
      * @return {boolean} - The boolean result
      */
     contains(component) {
-        return (this.components[component.name]) ? true : false;
+        return (this.components[component?.name]) ? true : false;
     }
     
     /**
@@ -202,6 +244,20 @@ export class Object {
             if (this.components[i].active) {
                 if (this.components[i].draw) {
                     this.components[i].draw(this);
+                }
+            }
+        }
+    }
+
+    /**
+     * Preview the object's components
+     * @param {CanvasRenderingContext2D} ctx - The context
+     */
+    preview() {
+        for (let i in this.components) {
+            if (this.components[i].active) {
+                if (this.components[i].preview) {
+                    this.components[i].preview(this);
                 }
             }
         }
@@ -262,14 +318,13 @@ export class Object {
         for (let name in obj.components) {
 
             const component = obj.components[name];
-
-            this.addComponent(new Component.components[name.charAt(0).toUpperCase() + name.slice(1)]());
+            
+            this.addComponent(new Component.components[name.charAt(0).toUpperCase() + name.slice(1)](), false);
 
             // Copie des propriétés du composant
             for (let prop in component) {
                 this.components[name][prop] = component[prop];
             }
-
         }
 
         // if (dispatch) {
@@ -278,6 +333,23 @@ export class Object {
         //         component: component
         //     });
         // }
+    }
+
+    /**
+     * Copy the component
+     * @param {string} component - The component to copy
+     */
+    copyComponent(component) {
+        // Création d'un nouveau composant
+        const name = component.name;
+        const copy = new Component.components[name.charAt(0).toUpperCase() + name.slice(1)]();
+
+        // Copie des propriétés du composant
+        for (let prop in copy) {
+            copy[prop] = component[prop];
+        }
+
+        return copy;
     }
 
     /**
@@ -398,8 +470,8 @@ export class Object {
 
         const camera = Camera.main;
         
-        // let offsetX = (this.width % 2 == 0) ? 0.5 : 0;
-        // let offsetY = (this.height % 2 == 0) ? 0.5 : 0;
+        // const offsetX = (this.width % 2 == 0) ? 0.5 : 0;
+        // const offsetY = (this.height % 2 == 0) ? 0.5 : 0;
 
         const offsetX = 0;
         const offsetY = 0;

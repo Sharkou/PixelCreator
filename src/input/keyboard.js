@@ -1,4 +1,8 @@
+import { System } from '/src/core/system.js';
+
 export class Keyboard {
+
+    static keys = {};
     
     static get keyPressed() {
         for (let key in this.keys) {
@@ -19,12 +23,14 @@ export class Keyboard {
     }
 }
 
-Keyboard.keys = {};
-
 document.addEventListener('keydown', function(e) {
-    Keyboard.keys[e.key === ' ' ? 'Space' : e.key] = true;
+    const key = e.key === ' ' ? 'Space' : e.key;
+    Keyboard.keys[key] = true;
+    System.dispatchEvent('keydown', key);
 });
 
 document.addEventListener('keyup', function(e) {
-    delete Keyboard.keys[e.key === ' ' ? 'Space' : e.key];
+    const key = e.key === ' ' ? 'Space' : e.key;
+    delete Keyboard.keys[key];
+    System.dispatchEvent('keyup', key);
 });

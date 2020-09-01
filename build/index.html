@@ -6,17 +6,119 @@
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <meta name="robots" content="noindex">
 
-    <link rel="icon" type="image/png" href="../images/favicon.png" />
+    <link rel="icon" type="image/png" href="https://editor.pixelcreator.io/images/favicon.png" />
     
-    <!-- Styles Sheets -->
-    <link rel="stylesheet" href="./style.css" />
+    <title>Pixel Creator · Preview</title>
+    
+    <style>
+* {
+    margin: 0;
+    padding: 0;
+    user-select: none;
+}
 
-    <!-- Initialization -->
-    <script src="/src/lib/socket.io.js"></script>
-    <script async type="module" id="app" src="./app.js"></script>
-    
-    <title>{title}</title>
-    
+html, body {
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    background-color: #000000;
+}
+
+canvas {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    margin: auto;
+    /*image-rendering: crisp-edges;*/
+    /*image-rendering: pixelated;*/
+}
+    </style>
+
+    <!-- <script src="/socket.io/socket.io.js"></script> -->
+    <!-- <script async type="module" id="app" src="./app.js"></script> -->
+    <script saync type="module" id="app">
+import {
+    Renderer,
+    Object,
+    Scene,
+    Camera,
+    Component,
+    Mouse,
+    Keyboard,
+    Network
+} from 'http://localhost:5501/src/core/mod.js';
+
+// Get project ID
+// const id = app.dataset ? app.dataset['id'] : null;
+// console.log(`id: ${id}`);
+
+const host = 'localhost';
+const port = 80;
+const app = document.getElementById('app');
+const network = new Network(host, port);
+const renderer = new Renderer(window.innerWidth, window.innerHeight);
+
+let scene = new Scene('Main Scene');
+let camera = new Object();
+
+/* Initialization */
+async function init() {
+
+    // Connect to main scene
+    let data = await network.connect(scene);
+    let objects = data.objects;
+
+    Component.init();
+
+    // Objects instantiating
+    for (let id in objects) {
+
+        scene.instanciate(objects[id]);
+
+        // Camera initialization
+        if (objects[id].components.camera) {
+            // obj.x -= obj.width / 2;
+            // obj.y -= obj.height / 2;
+            // obj.visible = false;
+            camera.copy(objects[id]);
+            camera.x -= camera.width / 2;
+            camera.y -= camera.height / 2;
+        }
+    }
+
+    renderer.init(scene, camera);
+    // renderer.pause = false;
+
+    // Start loop
+    loop();
+}
+
+/* Game loop */
+async function loop() {
+    window.requestAnimationFrame(loop);    
+    renderer.render(scene, camera);
+}
+
+// Initialize on load
+window.onload = init;
+
+//  Window resized
+window.onresize = function() {
+    renderer.resize(window.innerWidth, window.innerHeight);
+    renderer.init(scene, camera);
+};
+
+window.onbeforeunload = function() {
+    network.disconnect();
+};
+
+window.onunload = function() {
+    network.disconnect();
+};
+    </script>
+
 </head>
 
 <body>
