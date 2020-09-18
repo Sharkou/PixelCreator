@@ -2,7 +2,7 @@ import { Scene } from '/src/core/scene.js';
 import { Camera } from '/src/core/camera.js';
 import { Texture } from '/src/graphics/texture.js';
 import { Circle } from '/src/graphics/circle.js';
-import { Rect } from '/src/graphics/rect.js';
+import { Rectangle } from '/src/graphics/rectangle.js';
 import { Light } from '/src/graphics/light.js';
 import { Map } from '/src/graphics/map.js';
 import { Animation } from '/src/anim/animation.js';
@@ -24,7 +24,7 @@ export class Component {
 
         Component.add(Texture, 'fas fa-file-image', 'graphics');
         Component.add(Circle, 'fad fa-circle', 'graphics');
-        Component.add(Rect, 'fad fa-rectangle-wide', 'graphics');
+        Component.add(Rectangle, 'fad fa-rectangle-wide', 'graphics');
         // Component.add(Light, 'fad fa-circle', 'graphics');
         // Component.add(Map, 'fad fa-circle', 'graphics');
 

@@ -28,35 +28,77 @@ export class Sorter {
                         return true;
                 return false;
     }
+
+    static wrap(el, parent) {
+        if (!el || !parent) return;
+        const parentObj = Scene.main.objects[parent.id];
+        const obj = Scene.main.objects[el.id];
+        if (obj && parentObj) {
+            if (!obj.parent && obj.parent != parentObj.id) {
+                el.dataset.position = parseInt(parent.dataset?.position) + 1;
+                parent.classList?.add('parent');
+                parentObj.addChild(Scene.main.objects[el.id]);
+                if (!parent.firstChild?.classList.contains('unwrap')) {
+                    const i = document.createElement('i');
+                    i.classList.add('unwrap');
+                    i.classList.add('fas');
+                    i.classList.add('fa-sort-down');
+                    i.setAttribute('data-content', 'unwrap');
+                    parent.insertBefore(i, parent.firstChild);
+                }
+            }
+        }
+    }
+
+    static unwrap(el, parent) {
+        if (!el || !parent) return;
+        const parentObj = Scene.main.objects[parent.id];
+        const obj = Scene.main.objects[el.id];
+        if (obj && parentObj) {
+            if (obj.parent && obj.parent == parentObj.id) {
+                el.dataset.position = parseInt(parent.dataset?.position);
+                parent.classList?.remove('parent');
+                Scene.main.objects[parent.id].removeChild(Scene.main.objects[el.id]);
+                if (parent.firstChild?.classList.contains('unwrap')) {
+                    parent.removeChild(parent.firstChild);
+                }
+            }
+        }
+    }
     
     static dragStart(e) {
-        // e.dataTransfer.effectAllowed = "move";
+        // e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text', e.target.id);
-        // var img = Scene.objects[e.target.id].img;
-        // e.dataTransfer.setDragImage(img, img.width / 2, img.height / 2);        
+        // let img = Scene.objects[e.target.id].img;
+        // e.dataTransfer.setDragImage(img, img.width / 2, img.height / 2);
+        // let img = e.target.cloneNode(true);
+        // img.style.position = 'absolute';
+        // img.style.width = '200px';
+        // img.style.top = '0px';
+        // img.style.right = '0px';
+        // document.body.appendChild(img);
+        // e.dataTransfer.setDragImage(img, 0, 0);
         Sorter.draggedElement = e.target;
-        Sorter.x_t0 = e.offsetX;
+        Sorter.x_t0 = e.clientX;
+        if (e.target.previousSibling instanceof HTMLElement) {
+            Sorter.isChild_t0 = e.target.previousSibling.classList.contains('parent');
+        }
     }
     
     static drag(e) {
-        if (e.offsetX >= Sorter.x_t0 + 20) {
-            if (e.target.previousSibling instanceof HTMLElement) {
-                const parent = e.target.previousSibling;
-                if (!parent.firstChild.classList.contains('unwrap')) {
-                    // e.target.style.marginLeft = '20px';
-                    // parent.classList.add('parent');
-                    // const i = document.createElement('i');
-                    // i.classList.add('unwrap');
-                    // i.classList.add('fas');
-                    // i.classList.add('fa-sort-down');
-                    // parent.insertBefore(i, parent.firstChild);
-                }
+        const parent = (e.target.previousSibling instanceof HTMLElement) ? e.target.previousSibling : null;
+        if (!Sorter.isChild_t0) {
+            if (e.clientX > Sorter.x_t0 + 20) {
+                Sorter.wrap(e.target, parent);
+                // console.log(e.target.previousSibling);
+            } else {
+                Sorter.unwrap(e.target, parent);
             }
-            // console.log(e.target.previousSibling);
-        }
-        else {
-            if (e.target.previousSibling instanceof HTMLElement) {
-                // e.target.style.marginLeft = '0px';
+        } else {
+            if (e.clientX < Sorter.x_t0) {
+                Sorter.unwrap(e.target, parent);
+            } else {
+                Sorter.wrap(e.target, parent);
             }
         }
     }
@@ -88,7 +130,7 @@ export class Sorter {
     static dragOver(e) {
         e.preventDefault();
         
-        //Sorter.draggedElement.classList.add('hidden');
+        // Sorter.draggedElement.classList.add('hidden');
         
         if (e.target.tagName === 'LI') {
             e.target.classList.add('hidden');

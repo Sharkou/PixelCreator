@@ -31,8 +31,8 @@ canvas {
     left: 0;
     right: 0;
     margin: auto;
-    /*image-rendering: crisp-edges;*/
-    /*image-rendering: pixelated;*/
+    image-rendering: crisp-edges;
+    image-rendering: pixelated;
 }
     </style>
 
@@ -40,11 +40,12 @@ canvas {
     <!-- <script async type="module" id="app" src="./app.js"></script> -->
     <script saync type="module" id="app">
 import {
-    Renderer,
-    Object,
     Scene,
+    Renderer,
     Camera,
-    Component,
+    Object,
+    Time,
+    Performance,
     Mouse,
     Keyboard,
     Network
@@ -57,7 +58,6 @@ import {
 const host = 'localhost';
 const port = 80;
 const app = document.getElementById('app');
-const network = new Network(host, port);
 const renderer = new Renderer(window.innerWidth, window.innerHeight);
 
 let scene = new Scene('Main Scene');
@@ -67,10 +67,8 @@ let camera = new Object();
 async function init() {
 
     // Connect to main scene
-    let data = await network.connect(scene);
-    let objects = data.objects;
-
-    Component.init();
+    let objects = await Network.init(host, port).connect(scene);
+    // let objects = data.objects;
 
     // Objects instantiating
     for (let id in objects) {
@@ -88,6 +86,9 @@ async function init() {
         }
     }
 
+    // Scene initialization
+    scene.init();
+
     renderer.init(scene, camera);
     // renderer.pause = false;
 
@@ -97,8 +98,15 @@ async function init() {
 
 /* Game loop */
 async function loop() {
+    
+    // Performance calculation
+    Time.deltaTime = (Time.now() - Time.last) / (1000 / 60);
+    Performance.update();
+
     window.requestAnimationFrame(loop);    
     renderer.render(scene, camera);
+
+    Time.last = Time.current;
 }
 
 // Initialize on load

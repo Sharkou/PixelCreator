@@ -116,6 +116,7 @@ export class Hierarchy {
         li.setAttribute('id', obj.id);
         // li.setAttribute('onmousedown', 'changeCurrent(obj)');
         li.setAttribute('draggable', 'true');
+        li.dataset.position = 0;
         
         li.addEventListener('dragstart', function(e) {
              e.dataTransfer.setData('text', e.target.id);
@@ -150,7 +151,7 @@ export class Hierarchy {
                 break;
 
             case 'camera':
-                icon.setAttribute('class', 'fas fa-camera-movie icon');
+                icon.setAttribute('class', 'far fa-camera-movie icon');
                 break;
                 
             case 'prefab':
@@ -170,7 +171,7 @@ export class Hierarchy {
                 break;
 
             case 'light':
-                icon.setAttribute('class', 'fas fa-lightbulb icon');
+                icon.setAttribute('class', 'far fa-lightbulb icon');
                 break;
 
             case 'particle':
@@ -184,14 +185,8 @@ export class Hierarchy {
         lock.setAttribute('data-content', 'lock_open');
         lock.addEventListener('click', function(e) {
             let obj = scene.objects[this.parentNode.id];
-            obj.lock = !obj.lock;            
+            obj.$lock = !obj.lock;            
             lock.setAttribute('data-content', obj.lock ? 'lock' : 'lock_open');
-            System.dispatchEvent('updateProperties', {
-                object: obj,
-                component: null,
-                prop: 'lock',
-                value: obj.lock
-            });
         });
 
         var visibility = document.createElement('i');
@@ -202,14 +197,8 @@ export class Hierarchy {
         // visibility.appendChild(icon);
         visibility.addEventListener('click', function() {
             let obj = scene.objects[this.parentNode.id];
-            obj.active = !obj.active;            
+            obj.$active = !obj.active;            
             visibility.setAttribute('data-content', obj.active ? 'visibility' : 'visibility_off');
-            System.dispatchEvent('updateProperties', {
-                object: obj,
-                component: null,
-                prop: 'active',
-                value: obj.active
-            });
         });
 
         var delete_icon = document.createElement('i');

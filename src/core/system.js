@@ -24,38 +24,58 @@ export class System {
     /**
      * Synchronize a component
      * @static
-     * @param {Object} object - The component to sync
+     * @param {Object} object - The object to sync
+     * @param {Object} component - The component to sync
      */
-    static sync(object) {
+    static sync(object, component = null) {
+
+        const obj = component ?? object;
         
         // Synchronize each properties of component
-        for (let prop in object) {
+        for (let prop in obj) {
             
-            if (prop != 'self') {
+            if (prop != 'self') { // && (!component && prop == 'x') && (!component && prop == 'y')) {
                 
-                let value = object[prop]; // save value
+                let value = obj[prop]; // save value
                 
                 // Getter
-                Object.defineProperty(object, prop, {
+                Object.defineProperty(obj, prop, {
                     
-                    get: function() {
-                        
+                    // Getter
+                    get: function() {                        
+                        // return value;
                         return this['_' + prop]; // get value
                     },
                     
-                    configurable: true
-                });
-                
-                // Setter
-                Object.defineProperty(object, prop, {
-                    
+                    // Setter
                     set: function(value) {
                         
+                        // value = x;
                         this['_' + prop] = value; // set value
                         
                         // Dispatch event
                         System.dispatchEvent('setProperty', {
                             object,
+                            component,
+                            prop,
+                            value
+                        });
+                    },
+                    
+                    configurable: true
+                });
+
+                // Set property on server
+                Object.defineProperty(obj, '$' + prop, {
+                    
+                    set: function(value) {
+                        
+                        this[prop] = value; // set value
+                        
+                        // Dispatch event
+                        System.dispatchEvent('syncProperty', {
+                            object,
+                            component,
                             prop,
                             value
                         });
@@ -65,7 +85,7 @@ export class System {
                     
                 });
                 
-                object[prop] = value; // restore value
+                obj[prop] = value; // restore value
             }
         }
     }
@@ -152,4 +172,6 @@ export class System {
 }
 
 // Disable right mouse click
-document.addEventListener('contextmenu', event => event.preventDefault());
+if (window.document) {
+    document.addEventListener('contextmenu', e => e.preventDefault());
+}

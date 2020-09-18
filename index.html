@@ -161,13 +161,17 @@
                     <i class="far fa-square"></i>
                 </li>
 
-                <li draggable="true" id="Light" title="Light" class="tool">
-                    <i class="fas fa-lightbulb"></i>
+                <li draggable="true" id="Line" title="Line" class="tool">
+                    <i style="transform: rotate(-45deg);" class="far fa-horizontal-rule"></i>
                 </li>
 
-                <li draggable="true" id="Sound" title="Sound" class="tool">
-                    <i class="far fa-volume"></i>
+                <li draggable="true" id="Light" title="Light" class="tool">
+                    <i class="fal fa-lightbulb"></i>
                 </li>
+
+                <!-- <li draggable="true" id="Sound" title="Sound" class="tool">
+                    <i class="far fa-volume"></i>
+                </li> -->
                 
                 <!-- <li draggable="true" id="Image" title="Image" class="tool">
                     <span class="material-icons">wallpaper</span>
@@ -178,11 +182,15 @@
                 </li> -->
 
                 <li draggable="true" id="Camera" title="Camera" class="tool">
-                    <i class="fas fa-camera-movie"></i>
+                    <i class="far fa-camera-movie"></i>
                 </li>
 
-                <li draggable="true" id="Particle" title="Particle" class="tool">
+                <!-- <li draggable="true" id="Particle" title="Particle" class="tool">
                     <i class="material-icons">blur_on</i>
+                </li> -->
+
+                <li draggable="true" id="Text" title="Text" class="tool">
+                    <i class="far fa-text"></i>
                 </li>
 
                 <!-- <li draggable="true" id="Button" title="Button" class="tool">
@@ -208,6 +216,10 @@
                         <i class="fas fa-save"></i>
                     </li>
 
+                    <!-- <li id="modules" title="Modules">
+                        <i class="fad fa-plug"></i>
+                    </li> -->
+
                     <!-- <li id="layers" title="Layers">
                         <i class="fas fa-layer-group"></i>
                     </li> -->
@@ -224,7 +236,7 @@
 
                 <div class="tab">
                     <h2 id="scene-btn" class="tab-link active"><i class="far fa-video"></i>Scene</h2>
-                    <h2 id="blueprint-btn" class="tab-link"><i class="far fa-browser"></i>Blueprint</h2>
+                    <h2 id="blueprint-btn" class="tab-link"><!--<i class="far fa-chart-network"></i>--><i class="far fa-project-diagram"></i>Blueprint</h2>
                     <!-- <h2 id="code-btn" class="tab-link"><i class="far fa-code"></i>Scripting</h2> -->
                     <!-- <h2 class="tab-link" onclick="openTab(event, 'drawing')"><i class="fas fa-paint-brush"></i>Drawing</h2> -->
                     <ul class="end">                        
@@ -249,82 +261,74 @@
 
                     <section class="overlay-content">
 
-                        <!-- Events Buttons -->
-                        <aside id="events">
-
-                            <div class="tab">
-                                <h2>Events</h2>
-                            </div>
-
-                            <ul>
-
-                                <li id="mouseEvent">
-                                    <i class="material-icons">mouse</i><span class="object-text">Mouse</span>
-                                </li>
-
-                                <li id="keyboardEvent">
-                                    <i class="material-icons">keyboard</i><span class="object-text">Keyboard</span>
-                                </li>
-
-                                <li id="collisionEvent">
-                                    <i class="material-icons">vertical_align_center</i><span class="object-text">Collision</span>
-                                </li>
-                                
-                                <li id="updateEvent">
-                                    <i class="material-icons">low_priority</i>
-                                    <span class="object-text">Update</span>
-                                </li>
-                                
-                                <li id="timerEvent">
-                                    <i class="material-icons">timer</i><span class="object-text">Timer</span>
-                                </li>
-
-                            </ul>
-
-                        </aside>
-
                         <!-- Main Events Window -->
                         <section id="blueprint">
 
-                            <div class="box">
+                            <!-- <div class="box">
                                 <h3>Object Name</h3>
                                 <p>Name</p>
-                                <!--<input type="text" id="eventName">-->
-                            </div>
+                                <input type="text" id="eventName">
+                            </div> -->
 
                         </section>
 
-                        <!-- Actions Buttons -->
-                        <aside id="actions">
+                        <!-- Toolbox nodes -->
+                        <aside id="toolbox">
 
-                            <div class="tab">
-                                <h2>Actions</h2>
-                            </div>
+                            <!-- <div class="tab">
+                                <h2>Events</h2>
+                            </div> -->
 
                             <ul>
-                                <li id="moveAction">
-                                    <i class="material-icons">open_with</i><span class="object-text">Move</span>
+
+                                <li id="mouse" title="Mouse" class="event">
+                                    <i class="material-icons">mouse</i>
                                 </li>
 
-                                <li id="editVariableAction">
-                                    <i class="material-icons">edit</i><span class="object-text">Edit Variable</span>
+                                <li id="keyboard" title="Keyboard" class="event">
+                                    <i class="material-icons">keyboard</i>
                                 </li>
 
-                                <li id="createObjectAction">
-                                    <i class="material-icons">lightbulb_outline</i><span class="object-text">Create Object</span>
+                                <li id="collision" title="Collision" class="event">
+                                    <i class="material-icons">vertical_align_center</i>
+                                </li>
+                                
+                                <li id="init" title="Init" class="event">
+                                    <i class="fas fa-flag-checkered"></i>
                                 </li>
 
-                                <li id="deleteAction">
-                                    <i class="material-icons">delete_forever</i><span class="object-text">Delete</span>
+                                <li id="update" title="Update" class="event">
+                                    <i class="material-icons">low_priority</i>
+                                </li>
+                                
+                                <li id="timer" title="Timer" class="event">
+                                    <i class="material-icons">timer</i>
                                 </li>
 
-                                <li id="drawAction">
-                                    <i class="material-icons">wallpaper</i><span class="object-text">Draw</span>
+                                <li id="if" title="Condition" class="structure">
+                                    <i class="far fa-code-branch"></i>
                                 </li>
 
-                                <!--<li id="validate" onclick="closeNav()">
-                                    <i class="material-icons">done</i><span class="object-text">Done&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
-                                </li>-->
+                                <li id="move" title="Move" class="action">
+                                    <i class="material-icons">open_with</i>
+                                </li>
+
+                                <li id="edit" title="Edit" class="action">
+                                    <i class="material-icons">edit</i>
+                                </li>
+
+                                <li id="create" title="Create" class="action">
+                                    <i class="material-icons">lightbulb_outline</i>
+                                </li>
+
+                                <li id="delete" title="Delete" class="action">
+                                    <i class="material-icons">delete_forever</i>
+                                </li>
+
+                                <li id="draw" title="Draw" class="action">
+                                    <i class="material-icons">wallpaper</i>
+                                </li>
+
                             </ul>
 
                         </aside>

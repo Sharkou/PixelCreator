@@ -2,7 +2,6 @@
 import { System } from '/src/core/system.js';
 import { Scene } from '/src/core/scene.js';
 import { Renderer } from '/src/core/renderer.js';
-import { Component } from '/src/core/component.js';
 import { Camera } from '/src/core/camera.js';
 import { Object } from '/src/core/object.js';
 import { Time } from '/src/time/time.js';
@@ -12,12 +11,13 @@ import { Keyboard } from '/src/input/keyboard.js';
 import { Network } from '/src/network/network.js';
 
 /* Editor Modules */
+import { Component } from '/editor/system/component.js';
 import { Handler } from '/editor/system/handler.js';
+import { Dnd } from '/editor/system/dnd.js';
 import { Hierarchy } from '/editor/windows/hierarchy.js';
 import { Properties } from '/editor/windows/properties.js';
 import { Project } from '/editor/windows/project.js';
 import { Toolbar } from '/editor/windows/toolbar.js';
-import { Dnd } from '/editor/system/dnd.js';
 import { Grid } from '/editor/misc/grid.js';
 import { Ruler } from '/editor/misc/ruler.js';
 import { Stats } from '/editor/misc/stats.js';
@@ -35,11 +35,10 @@ import '/editor/misc/play.js';
 import '/editor/misc/pause.js';
 import '/editor/misc/save.js';
 
-/* Initialization data */
+/* Data initialization */
 const host = 'localhost';
 const port = 80;
 const canvas = document.getElementById('wrapper');
-const network = new Network(host, port);
 const renderer = new Renderer(canvas.clientWidth, canvas.clientHeight, canvas, false, true);
 const scene = new Scene('Main Scene');
 const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHeight)
@@ -49,8 +48,8 @@ const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHei
 async function init() {
 
     // Connect to main scene
-    let data = await network.connect(scene, true);
-    let objects = data.objects;
+    let objects = await Network.init(host, port).connect(scene, true);
+    // let objects = data.objects;
 
     renderer.init(scene, camera);
 
@@ -65,7 +64,10 @@ async function init() {
     // Objects instantiating
     for (let id in objects) {
         scene.instanciate(objects[id]);
-    }    
+    }
+
+    // Scene initialization
+    scene.init(objects);
 
     // Start loop
     loop();
@@ -114,15 +116,15 @@ window.onresize = function() {
 
 window.onbeforeunload = function() {
     // websocket.onclose = function () {}; // disable onclose handler first
-    network.disconnect();
+    Network.disconnect();
 };
 
 window.onunload = function() {
-    network.disconnect();
+    Network.disconnect();
 };
 
 // Debug
-// window.scene = scene;
+window.scene = scene;
 // window.renderer = renderer;
 // window.camera = camera;
 // window.keyboard = Keyboard;

@@ -2,8 +2,8 @@
 import { System } from '/src/core/system.js';
 import { Scene } from '/src/core/scene.js';
 import { Camera } from '/src/core/camera.js';
-import { Component } from '/src/core/component.js';
 import { Graphics } from '/src/graphics/graphics.js';
+import * as components from '/src/core/mod.js';
 
 export class Object {
     
@@ -20,6 +20,7 @@ export class Object {
     constructor(name = '', x = 0, y = 0, width = 0, height = 0, layer = 0) {
         
         this.id = System.createID();
+        this.uid = undefined;
         this.name = name;
         this.layer = layer;
         this.tag = '';
@@ -52,19 +53,19 @@ export class Object {
         return this;
     }
     
-    get __x() {
-        return this._x;
+    get _x() {
+        return this.__x;
     }
     
-    get __y() {
-        return this._y;
+    get _y() {
+        return this.__y;
     }
     
     /**
      * Set x-coordinate to the object and his childs
      * @param {number} value - The new x-coordinate position
      */
-    set __x(value) {
+    set _x(value) {
         
         // value *= Time.deltaTime;
             
@@ -75,14 +76,14 @@ export class Object {
             this.childs[id].x += dt;
         }
         
-        this._x = value;
+        this.__x = value;
     }
     
     /**
      * Set y-coordinate to the object and his childs
      * @param {number} value - The new y-coordinate position
      */
-    set __y(value) {
+    set _y(value) {
             
         let dt = value - this.y;
 
@@ -91,7 +92,7 @@ export class Object {
             this.childs[id].y += dt;
         }
         
-        this._y = value;
+        this.__y = value;
     }
 
     /**
@@ -139,6 +140,44 @@ export class Object {
             });
         }
     }
+
+    /**
+     * Sync property value to server
+     * @param {string} value - The property to set
+     * @param {number} value - The new value
+     */
+    syncProperty(prop, value, dispatch = true) {
+        this[prop] = value;
+
+        // Dispatch event
+        if (dispatch) {
+            System.dispatchEvent('syncProperty', {
+                object: this,
+                component: null,
+                prop,
+                value
+            });
+        }
+    }
+
+    /**
+     * Sync component property to server
+     * @param {string} value - The property to set
+     * @param {number} value - The new value
+     */
+    syncComponentProperty(component, prop, value, dispatch = true) {
+        this.components[component][prop] = value;
+
+        // Dispatch event
+        if (dispatch) {
+            System.dispatchEvent('syncProperty', {
+                object: this,
+                component,
+                prop,
+                value
+            });
+        }
+    }
     
     /**
      * Add the object component
@@ -148,7 +187,7 @@ export class Object {
         
         // Naming the component
         // component.name = component.constructor.name[0].toLowerCase() + component.constructor.name.substr(1);
-        component.name = component.constructor.name.toLowerCase()
+        component.name = component.constructor.name.toLowerCase();
         
         component.active = true; // activation of the component   
         // this.components[component.constructor.prototype.name] = component;
@@ -167,7 +206,7 @@ export class Object {
             });
         }
         
-        System.sync(component); // Synchronize the component
+        System.sync(this, component); // Synchronize the component
 
         return this;
     }
@@ -192,23 +231,14 @@ export class Object {
             });
         }
     }
-    
+
     /**
-     * Add child to object
-     * @param {Object} child - The child to add
+     * Get component
+     * @param {Component} component - The component to get
+     * @return {Component} component - The component
      */
-    addChild(child) {
-        this.childs[child.id] = child;
-        child.parent = this.id;
-    }
-    
-    /**
-     * Remove the child
-     * @param {Object} child - The child to remove
-     */
-    removeChild(child) {
-        child.parent = null;
-        delete this.childs[child.id];
+    getComponent(component) {
+        return this.components[component.constructor.name.toLowerCase()];
     }
 
     /**
@@ -218,6 +248,47 @@ export class Object {
      */
     contains(component) {
         return (this.components[component?.name]) ? true : false;
+    }
+    
+    /**
+     * Add child to object
+     * @param {Object} child - The child to add
+     */
+    addChild(child, dispatch = true) {
+        this.childs[child.id] = child;
+        child.parent = this.id;
+
+        if (dispatch) {
+            System.dispatchEvent('addChild', {
+                object: this,
+                child: child
+            });
+        }
+    }
+    
+    /**
+     * Remove the child
+     * @param {Object} child - The child to remove
+     */
+    removeChild(child, dispatch = true) {
+        child.parent = null;
+        delete this.childs[child.id];
+
+        if (dispatch) {
+            System.dispatchEvent('removeChild', {
+                object: this,
+                child: child
+            });
+        }
+    }
+
+    /**
+     * Add child to object
+     * @param {Object} child - The child to get
+     * @return {Object} child - The child
+     */
+    getChild(child) {
+        return this.childs[child.id];
     }
     
     /**
@@ -307,19 +378,19 @@ export class Object {
 
         // Copie des propriétés de l'objet
         for (let prop in obj) {
-
             if (typeof obj[prop] !== 'object') {
-
                 this[prop] = obj[prop];
+            } else {
+                // TODO: Gérer les objets
             }
         }
 
-        // Copie des composants de l'objet
+        // Copie des composants
         for (let name in obj.components) {
 
             const component = obj.components[name];
             
-            this.addComponent(new Component.components[name.charAt(0).toUpperCase() + name.slice(1)](), false);
+            this.addComponent(new components[name.charAt(0).toUpperCase() + name.slice(1)](), false);
 
             // Copie des propriétés du composant
             for (let prop in component) {
@@ -342,11 +413,15 @@ export class Object {
     copyComponent(component) {
         // Création d'un nouveau composant
         const name = component.name;
-        const copy = new Component.components[name.charAt(0).toUpperCase() + name.slice(1)]();
+        const copy = new components[name.charAt(0).toUpperCase() + name.slice(1)]();
 
         // Copie des propriétés du composant
         for (let prop in copy) {
-            copy[prop] = component[prop];
+            if (typeof obj[prop] !== 'object') {
+                copy[prop] = component[prop];
+            } else {
+                // TODO: Gérer les objets
+            }
         }
 
         return copy;
@@ -565,7 +640,10 @@ export class Object {
         function replacer(key, value) {
             // console.log(key.charAt(0) + ' : ' + key);
             // Filtering out properties
-            if (key[0] !== "_") {
+            switch (key) {
+                case 'image': break;
+            }
+            if (key[0] !== '_' && key[0] !== '$') {
                 return value;
             }
         }

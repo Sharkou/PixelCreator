@@ -34,7 +34,7 @@ export class Dnd {
         el.draggable = true;
 
         // Au drag de l'élément
-        el.addEventListener('dragstart', function(e) {            
+        el.addEventListener('dragstart', function(e) {
             Dnd.draggedElement = e.target; // On sauvegarde l'élément en cours de déplacement
             e.dataTransfer.setData('text/plain', ''); // Nécessaire pour Firefox
         });
@@ -110,7 +110,7 @@ export class Dnd {
             }
         }
         else if (this.hovering) {
-            this.setCursor('grab')
+            this.setCursor('grab');
         }
         else {
             this.setCursor('default');        
@@ -121,30 +121,32 @@ export class Dnd {
     }
 }
 
-document.addEventListener('mousedown', function(e) {
-    Dnd.drag = true;
-});
-
-document.addEventListener('mouseup', function(e) {
-    Dnd.drag = false;
-});
-
-/** 
- * Détecte le mouvement de la souris
- */
-(function() {
-    var thread;
-    
-    document.addEventListener('mousemove', function(e) {
-        Dnd.move = true;
-        
-        if (thread) {
-            clearTimeout(thread);
-        }
-        
-        // on mouse stop
-        thread = setTimeout(function() {
-            Dnd.move = false;
-        }, 100);
+if (window.document) {
+    document.addEventListener('mousedown', function(e) {
+        Dnd.drag = true;
     });
-})();
+
+    document.addEventListener('mouseup', function(e) {
+        Dnd.drag = false;
+    });
+
+    /** 
+     * Détecte le mouvement de la souris
+     */
+    (function() {
+        var thread;
+        
+        document.addEventListener('mousemove', function(e) {
+            Dnd.move = true;
+            
+            if (thread) {
+                clearTimeout(thread);
+            }
+            
+            // on mouse stop
+            thread = setTimeout(function() {
+                Dnd.move = false;
+            }, 100);
+        });
+    })();
+}

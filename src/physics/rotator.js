@@ -1,3 +1,4 @@
+import { Time } from '/src/time/time.js';
 
 export class Rotator {
     
@@ -6,23 +7,19 @@ export class Rotator {
      * @constructor
      * @param {number} speed - the speed in degree
      */
-    constructor(speed = 10) {
-        
+    constructor(speed = 2) {        
         this.rotation = 0;
-        this.speed = speed;
-        
+        this.speed = speed;        
     }
     
     /**
      * Update the component
      * @update
-     * @param {Scene} scene - The renderer scene
+     * @param {Object} self - The container object
      */
     update(self) {
-        
-        this.rotation += this.speed;
+        this.rotation += this.speed * Time.deltaTime;
         this.rotation = this.rotation % 360;
         self.rotate(this.rotation);
-        
     }
 }

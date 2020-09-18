@@ -1,5 +1,6 @@
 import { Object } from '/src/core/object.js';
 import { System } from '/src/core/system.js';
+import { Network } from '/src/network/network.js';
 
 export class Scene {
     
@@ -62,11 +63,11 @@ export class Scene {
     }
     
     /**
-     * Instanciate an object to scene
+     * Instanciate the object to scene
      * @param {object} obj - The object to instanciate
      * @param {boolean} dispatch - Dispatch the evenement
      */
-    instanciate(obj, dispatch = true) {
+    instanciate(obj, uid = false, dispatch = true) {
 
         // let obj = new window[resource.type](resource);        
         // let obj = Object.assign({}, object);
@@ -77,12 +78,33 @@ export class Scene {
 
         copy.id = obj.id;
 
+        if (typeof uid === 'boolean' && uid) {
+            copy.uid = Network.uid;
+        } else if (uid) {
+            copy.uid = uid;
+        }
+
         // copy.lock = true; // lock the object from editing
 
         this.add(copy, false);
         
         if (dispatch) {
             System.dispatchEvent('instanciate', copy);
+        }
+    }
+
+    /**
+     * Initialize the object to scene
+     * @param {Object} objects - The objects to initialize
+     */
+    init(objects) {
+        // Copie des enfants
+        for (let id in objects) {
+            const obj = this.objects[id];
+            for (let child_id in objects[id].childs) {
+                const child = this.objects[child_id];
+                obj.addChild(child, false);
+            }
         }
     }
 
@@ -195,12 +217,6 @@ export class Scene {
         } else {
             obj = this.objects[el.parentNode.id];
         }
-        obj.name = el.textContent;
-        System.dispatchEvent('updateProperties', {
-            object: obj,
-            component: null,
-            prop: 'name',
-            value: el.textContent
-        });
+        obj.$name = el.textContent;
     }
 }

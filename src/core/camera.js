@@ -44,7 +44,6 @@ export class Camera {
      * @preview
      */
     preview(self) {
-        
         Graphics.rect(self.x, self.y, self.width, self.height);
         Graphics.stroke('rgba(255, 255, 255, 0.6)', 0.8);
     }
@@ -54,7 +53,6 @@ export class Camera {
      * @return {Camera} camera - The main camera
      */
     static get main() {
-        
         return this._main;
     }
     
@@ -63,7 +61,6 @@ export class Camera {
      * @param {Camera} camera - The main camera
      */
     static set main(camera) {
-        
         this._main = camera;
     }
 }

@@ -16,16 +16,27 @@
     font-weight: bold;
     */
     padding: 10px;
-    padding-left: 25px;
+    padding-left: 45px;
     box-sizing: border-box;
     z-index: 1;
     /* border-left: 2px dashed #373737; */
     width: 100%;
     display: flex;
+    align-items: center;
     margin-top: 0px;
     /*margin-bottom: -6px;*/
     margin-bottom: 10px;
     border-top: 1px solid #2c2c2c;
+}
+
+#properties #properties-list h3 > i.icon {
+    position: absolute;
+    top: inherit;
+    left: 15px;
+    width: 20px;
+    font-size: 14px;
+    display: flex;
+    justify-content: center;
 }
 
 #properties-list hr {

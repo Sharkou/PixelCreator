@@ -1,4 +1,9 @@
 export class Performance {
+
+    static lastCalledTime = 0;
+    static fps = 0;
+    static timer = 0;
+    static delta = 0;
     
     // Performance update
     static update() {
@@ -25,8 +30,3 @@ export class Performance {
         ctx.fillText(this.fps.toFixed(1), 5, 30);
     }
 }
-
-Performance.lastCalledTime = 0;
-Performance.fps = 0;
-Performance.timer = 0;
-Performance.delta = 0;

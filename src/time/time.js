@@ -1,4 +1,9 @@
 export class Time {
+
+    // Delta time in milliseconds
+    static deltaTime = 0;
+    static current = 0;
+    static last = 0;
     
     /**
      * Initialize the timer
@@ -20,8 +25,3 @@ export class Time {
         return Time.current;
     }
 }
-
-// Delta time in milliseconds
-Time.deltaTime = 0;
-Time.current = 0;
-Time.last = 0;

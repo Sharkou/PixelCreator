@@ -115,9 +115,10 @@ export class Renderer {
     init(scene, camera) {
         
         // Define current objects
+        Renderer.main = this;
         Scene.main = scene;
         Camera.main = camera; // set the camera as main
-        Renderer.main = this;
+        scene.camera = camera;
         
         // Ratio of camera to renderer
         let widthRatio = this.width / camera.width;
@@ -305,8 +306,8 @@ export class Renderer {
         this.ctx.restore();
 
         // Calculation of delta-time
-        Time.deltaTime = (Time.now() - Time.last) / (1000 / 60);
-        Time.last = Time.current;
+        // Time.deltaTime = (Time.now() - Time.last) / (1000 / 60);
+        // Time.last = Time.current;
     }
     
     /**

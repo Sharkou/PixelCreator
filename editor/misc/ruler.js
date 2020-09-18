@@ -3,6 +3,10 @@ import { Camera } from '/src/core/camera.js';
 
 export class Ruler {
 
+    static rulerOffset = 45;
+    static spacing = 40;
+    static active = true;
+
     static update(ctx, x, y) {
 
         const camera = Camera.main;
@@ -85,10 +89,6 @@ export class Ruler {
         this.create();
     }
 }
-
-Ruler.rulerOffset = 45;
-Ruler.spacing = 40;
-Ruler.active = true;
 
 const button = document.getElementById('rulerBtn');
 

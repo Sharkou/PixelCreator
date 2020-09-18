@@ -1,18 +1,16 @@
 export { System } from '/src/core/system.js';
 export { Scene } from '/src/core/scene.js';
 export { Renderer } from '/src/core/renderer.js';
-export { Component } from '/src/core/component.js';
-export { Camera } from '/src/core/camera.js';
 export { Object } from '/src/core/object.js';
 export { Time } from '/src/time/time.js';
 export { Performance } from '/src/time/performance.js';
 export { Mouse } from '/src/input/mouse.js';
 export { Keyboard } from '/src/input/keyboard.js';
 export { Network } from '/src/network/network.js';
-
+export { Camera } from '/src/core/camera.js';
 export { Texture } from '/src/graphics/texture.js';
 export { Circle } from '/src/graphics/circle.js';
-export { Rect } from '/src/graphics/rect.js';
+export { Rectangle } from '/src/graphics/rectangle.js';
 export { Light } from '/src/graphics/light.js';
 export { Map } from '/src/graphics/map.js';
 export { Animation } from '/src/anim/animation.js';

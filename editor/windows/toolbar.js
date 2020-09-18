@@ -1,6 +1,6 @@
 import { Object } from '/src/core/object.js';
 import { Circle } from '/src/graphics/circle.js';
-import { Rect } from '/src/graphics/rect.js';
+import { Rectangle } from '/src/graphics/rectangle.js';
 import { Light } from '/src/graphics/light.js';
 
 export class Toolbar {
@@ -35,7 +35,7 @@ export class Toolbar {
                     break;
 
                 case 'Rectangle':
-                    obj.addComponent(new Rect('#FFFFFF', 0.6), false);
+                    obj.addComponent(new Rectangle('#FFFFFF', 0.6), false);
                     break;
 
                 case 'Light':

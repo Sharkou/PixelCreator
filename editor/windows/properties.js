@@ -22,10 +22,15 @@ export class Properties {
         // Update properties on object property setter
         System.addEventListener('setProperty', data => {
             const obj = data.object;
+            const component = data.component;
+            const prop = data.prop;
+            const value = data.value;
             if (scene.current) {
                 if (scene.current == obj || scene.current.contains(obj)) {
                     this.updateProperties(obj);
                 }
+            } else {
+                this.updateProperty(obj, component, prop, value);
             }
         });
 
@@ -97,6 +102,31 @@ export class Properties {
     }
 
     /**
+     * Update property in editor
+     * @param {object} obj - The object updated
+     * @param {object} component - The component updated
+     * @param {string} prop - The property
+     * @param {any} value - The new value
+     */
+    updateProperty(obj, component, p, value) {
+        const type = typeof obj[p];
+        if (type === 'number' || type === 'string') {
+            p = (p[0] === '_' ? p.substring(1, p.length) : p);
+            const el = document.getElementsByClassName(obj.id + '-' + p);
+            for (let i = 0; i < el.length; i++) {
+                if (el[i] !== document.activeElement) {
+                    if (el[i].nodeName === 'INPUT') {
+                        el[i].value = (type === 'string' ? value : parseInt(value, 10));
+                    }
+                    else if (!component) {
+                        el[i].textContent = (type === 'string' ? value : parseInt(value, 10));
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Update object properties
      * @param {Object} obj - The object to update
      */
@@ -139,7 +169,7 @@ export class Properties {
             prop = el.id;
             type = typeof object[prop];
             value = (type === 'number' ? parseFloat(el.value, 10) : el.value);
-            object[prop] = value;
+            object['$' + prop] = value;
         }
 
         // Component properties
@@ -149,15 +179,8 @@ export class Properties {
             prop = key[1];
             type = typeof component[prop];
             value = (type === 'number' ? parseFloat(el.value, 10) : el.value)
-            component[prop] = value;
+            component['$' + prop] = value;
         }
-
-        System.dispatchEvent('updateProperties', {
-            object,
-            component,
-            prop,
-            value
-        });
     }
     
     /**
@@ -235,6 +258,7 @@ export class Properties {
 
                 switch (p) {
                     case 'id': break;
+                    case 'uid': break;
                     // case 'rotation': break;
                     case 'scale': break;
                     case 'static': break;
@@ -502,16 +526,52 @@ export class Properties {
     appendName(li, obj) {
         
         const scene = Scene.main;
-        const name = this.createComponentName(obj.name);
+        const h3 = this.createComponentName(obj.name);
         
         // Component reference
         let component = obj; // scene.current.components[li.classList[0]];
 
+        // let icon_component = this.createIcon(h3.textContent.toLocaleLowerCase());
+        const icon = document.createElement('i');
+
         switch (component.name) {
 
+            case 'object':
+                icon.setAttribute('class', 'far fa-cube icon');
+                break;
+
+            case 'camera':
+                icon.setAttribute('class', 'far fa-camera-movie icon');
+                break;
+                
+            case 'prefab':
+                icon.setAttribute('class', 'fad fa-cubes icon');
+                break;
+
+            case 'image':
+                icon.setAttribute('class', 'far fa-image icon');
+                break;
+
+            case 'circle':
+                icon.setAttribute('class', 'far fa-circle icon');
+                break;
+
+            case 'rectangle':
+                icon.setAttribute('class', 'far fa-square icon');
+                break;
+
+            case 'light':
+                icon.setAttribute('class', 'far fa-lightbulb icon');
+                break;
+
+            case 'particle':
+                icon.setAttribute('class', 'fad fa-sun-dust icon');
+                break;
+
+            default:
+                icon.setAttribute('class', 'far fa-cog icon');
+                break;
         }
-        
-        // let icon_component = this.createIcon(name.textContent.toLocaleLowerCase());
         
         // Delete feature
         let icon_delete = this.createIcon('delete');
@@ -534,16 +594,10 @@ export class Properties {
         // Désactivation du composant
         icon_visibility.addEventListener('click', (e) => {
             const object = scene.current;
-            // const component = object.components[component.name];
+            component = object.components[component.name];
             const value = !component.active
-            component.active = value;
+            component.$active = value;
             icon_visibility.setAttribute('data-content', component.active ? 'visibility' : 'visibility_off');
-            System.dispatchEvent('updateProperties', {
-                object,
-                component,
-                prop: 'active',
-                value
-            });
         });
         
         // var icon_edit = this.createIcon('edit');
@@ -551,16 +605,16 @@ export class Properties {
         let hr = document.createElement('hr');
         // li.insertBefore(hr, li.firstChild);
         // li.insertBefore(br, li.firstChild); // br supprimé        
-        name.appendChild(icon_delete);
-        name.appendChild(icon_visibility);
-        // name.appendChild(icon_edit);
+        h3.appendChild(icon_delete);
+        h3.appendChild(icon_visibility);
+        // h3.appendChild(icon_edit);
         // li.insertBefore(icon_edit, li.firstChild);
+
+        // Ajout de l'icône
+        h3.insertBefore(icon, h3.firstChild);
         
         // Ajout du nom du composant
-        li.insertBefore(name, li.firstChild);
-        
-        // Ajout de l'icône
-        // li.insertBefore(icon_component, li.firstChild);
+        li.insertBefore(h3, li.firstChild);
     }
     
     appendSelect(li, content, values) {

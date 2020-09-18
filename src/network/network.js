@@ -1,14 +1,20 @@
 import { System } from '/src/core/system.js';
+import { Client } from '/src/network/client.js';
+import { Renderer } from '/src/core/renderer.js';
 import { Scene } from '/src/core/scene.js';
 import { Mouse } from '/src/input/mouse.js';
 import { Keyboard } from '/src/input/keyboard.js';
 
 export class Network {
-
-    // static host;
-    // static port;
-    // static socket;
-    // static id;
+    
+    static host;
+    static port;
+    static protocol;
+    static ws;
+    static uid;
+    static scene;
+    static inspector;
+    static users;
     
     /**
      * Initialize the network
@@ -17,35 +23,19 @@ export class Network {
      * @param {string} host - The server host
      * @param {number} port - The server port
      */
-    constructor(host, port) {
+    static init(host, port) {
         
         this.host = host;
         this.port = port;
+        this.protocol = 'http';
         this.ws = new WebSocket(`ws://${host}:${port}/ws`);
         // this.socket = io(host + ':' + port);        
-        // this.id = this.socket.id;
+        this.uid = null;
         this.scene = null;
         this.inspector = false;
         this.users = {};
-        this.events = {};
 
         return this;
-    }
-
-    /**
-     * Get current network
-     * @return {Network} network - The current network
-     */
-    static get main() {
-        return this._main;
-    }
-    
-    /**
-     * Set current network
-     * @param {Network} network - The current network
-     */
-    static set main(network) {
-        this._main = network;
     }
 
     /**
@@ -53,16 +43,19 @@ export class Network {
      * @param {string} id - The event id
      * @param {object} data - The data
      */
-    send(id, data = null) {
-        this.ws.send(JSON.stringify({ id, data }));
+    static send(id, data = null) {
+        if (this.ws.readyState !== WebSocket.CLOSED) {
+            this.ws.send(JSON.stringify({ id, data }));
+        }
     }
 
     /**
      * Connect to server
      * @param {Scene} scene - The scene
-     * @return {boolean} inspector - Is it an inspector?
+     * @param {boolean} inspector - Is it an inspector?
+     * @param {string} password - The password access
      */
-    async connect(scene, inspector = false) {
+    static async connect(scene, inspector = false) {
         this.scene = scene;
         this.inspector = inspector;
         return new Promise((resolve, reject) => {
@@ -91,9 +84,13 @@ export class Network {
         });
     }
 
-    disconnect() {
+    static disconnect() {
         console.log('Disconnect request from local app layer...');
         this.ws.close();
+    }
+
+    static getUser(uid) {
+        return this.users[uid];
     }
 
     /**
@@ -102,15 +99,16 @@ export class Network {
      * @param {string} id - The packet id
      * @param {object} data - The data
      */
-    onMessage(e) {
+    static onMessage(e) {
         const { id, data } = JSON.parse(e.data);
 
         return new Promise((resolve, reject) => {
             switch (id) {
-                case 'init': this.init(data); resolve(data); break;
+                case 'init': this.initScene(data); resolve(data); break;
                 case 'message': this.message(data); break;
                 case 'connection': this.connection(data); break;
                 case 'disconnection': this.disconnection(data); break;
+                case 'getUID': this.getUID(data); break;
                 case 'getUsers': this.getUsers(data); break;
                 case 'heartbeat': this.heartbeat(data); break;
                 case 'beat': this.beat(data); break;
@@ -120,6 +118,8 @@ export class Network {
                 case 'update': this.update(data); break;
                 case 'addComponent': this.addComponent(data); break;
                 case 'removeComponent': this.removeComponent(data); break;
+                case 'addChild': this.addChild(data); break;
+                case 'removeChild': this.removeChild(data); break;
                 case 'mousemove': this.mousemove(data); break;
                 case 'mousedown': this.mousedown(data); break;
                 case 'mouseup': this.mouseup(data); break;
@@ -134,7 +134,7 @@ export class Network {
      * @param {Object} data - The scene data
      * @return {Promise} data - The promise resolved
      */
-    init(data) {
+    static initScene(data) {
         console.log('[SERVER] scene data received from server: ');
         console.log(data);
         if (this.inspector) this.sync();
@@ -143,56 +143,54 @@ export class Network {
         // return data;
     }
 
-    message(data) {
+    static message(data) {
         console.log('[SERVER] message received from server: ' + data);
     }
 
-    connection(data) {
+    static connection(data) {
         console.log('[SERVER] a new user connected: ' + data.id);
 
         // Create the user
-        this.users[data.id] = {
-            keys: {},
-            mouse: {
-                buttons: {},
-                x: 0,
-                y: 0
-            }
-        };
+        this.users[data.id] = new Client(data.id);
     }
 
-    disconnection(id) {
+    static disconnection(id) {
         console.log('[SERVER] a user disconnected: ' + id);
         delete this.users[id];
     }
 
-    getUsers(users) {
-        console.log('[SERVER] get users connected to the server: ' + Object.keys(users).length);
-        // console.log(users);
-        this.users = users;
+    static getUID(data) {
+        console.log('[SERVER] your UID: ' + data);
+        this.uid = data;
+    }
+
+    static getUsers(data) {
+        console.log('[SERVER] get users connected to the server: ' + Object.keys(data).length);
+        console.log(data);
+        this.users = data;
     }
 
     /**
      * Update scene every heartbeat
      * @param {Object} data - The scene data
      */
-    heartbeat(data) {
-        if (!this.inspector) {
+    static heartbeat(data) {
+        // if (!this.inspector) {
             console.log('[SERVER] scene heartbeat: ');
-            console.log(data);
+            // console.log(data);
             for (let id in data) {
                 if (this.scene.objects[id]) {
                     this.scene.objects[id].copy(data[id]);
                 }
             }
-        }
+        // }
     }
 
     /**
      * Update scene on beat
      * @param {Object} data - The scene data
      */
-    beat(data) {
+    static beat(data) {
         this.heartbeat(data);
     }
 
@@ -200,40 +198,41 @@ export class Network {
      * Pause the server
      * @param {boolean} pause - The pause state
      */
-    pause(pause) {
+    static pause(pause) {
         console.log(pause);
+        Renderer.main.pause = pause;
     }
 
     /**
      * Update mouse position
      * @param {Object} data - The input data
      */
-    mousemove(data) {
+    static mousemove(data) {
         this.users[data.id].mouse.x = data.x;
         this.users[data.id].mouse.y = data.y;
     }
 
-    mousedown(data) {
-        this.users[data.id].mouse.buttons[data.button] = true;
+    static mousedown(data) {
+        this.users[data.id].mouse.buttons[data.data] = true;
     }
 
-    mouseup(data) {
-        delete this.users[data.id].mouse.buttons[data.button];
+    static mouseup(data) {
+        delete this.users[data.id].mouse.buttons[data.data];
     }
 
-    keydown(data) {
-        this.users[data.id].keys[data.key] = true;
+    static keydown(data) {
+        this.users[data.id].keys[data.data] = true;
     }
     
-    keyup(data) {
-        delete this.users[data.id].keys[data.key];
+    static keyup(data) {
+        delete this.users[data.id].keys[data.data];
     }
 
     /**
      * Add object to scene
      * @param {Object} obj - The object data
      */
-    add(obj) {
+    static add(obj) {
         const id = obj.id;
         console.log('[SERVER] add object: ' + id);
         console.log(obj);
@@ -244,7 +243,7 @@ export class Network {
      * Remove object from scene
      * @param {string} id - The object id
      */
-    remove(id) {
+    static remove(id) {
         console.log('[SERVER] object removed: ' + id);
         this.scene.remove(this.scene.objects[id]);
     }
@@ -253,27 +252,39 @@ export class Network {
      * Mise à jour d'un objet
      * @param {Object} data - The object data
      */
-    update(data) {
-        console.log('[SERVER] object updated: ');
-        console.log(data);
+    static update(data) {
+        console.log('[SERVER] object updated: ' + data.id);
         const obj = this.scene.objects[data.id];
+        const component = data.component;
+        const scene = Scene.main;
+        const camera = scene.camera;
         if (obj) {
-            if (data.component) {
-                obj.setComponentProperty(data.component, data.prop, data.value, false);
-            } else if (obj) {
-                obj.setProperty(data.prop, data.value, false);
+            // Camera updated
+            if (data.id === camera.id) {
+                if (component) {
+                    camera.components[component][data.prop] = data.value;
+                } else {
+                    camera[data.prop] = data.value;
+                    if (data.prop === 'x') {
+                        camera.x -= camera.width / 2;
+                    } else if (data.prop === 'y') {
+                        camera.y -= camera.height / 2;
+                    }
+                }
+                // TODO: Reset rendering
+                // Renderer.main.init(scene, camera);
+            } else if (component) {
+                // obj.setComponentProperty(data.component, data.prop, data.value);
+                obj.components[component][data.prop] = data.value;
+            } else {
                 // TODO: Interpolate the movement
-            }
-            if (this.inspector) {
-                // Update properties editor
-                System.dispatchEvent('setProperty', {
-                    object: obj
-                });
+                // obj.setProperty(data.prop, data.value);
+                obj[data.prop] = data.value;
             }
         }
     }
 
-    addComponent(data) {
+    static addComponent(data) {
         console.log('[SERVER] component added: ' + data.component.name);
         // console.log(data);
         const obj = this.scene.objects[data.id];
@@ -283,7 +294,7 @@ export class Network {
         }
     }
 
-    removeComponent(data) {
+    static removeComponent(data) {
         console.log('[SERVER] component removed: ' + data.component);
         // console.log(data);
         const obj = this.scene.objects[data.id];
@@ -293,23 +304,43 @@ export class Network {
         }
     }
 
+    static addChild(data) {
+        console.log('[SERVER] child added: ' + data.component.name);
+        // console.log(data);
+        const obj = this.scene.objects[data.id];
+        const child = this.scene.objects[data.child];
+        if (obj && child) {
+            obj.addChild(child, false);
+        }
+    }
+
+    static removeChild(data) {
+        console.log('[SERVER] child removed: ' + data.component.name);
+        // console.log(data);
+        const obj = this.scene.objects[data.id];
+        const child = this.scene.objects[data.child];
+        if (obj && child) {
+            obj.removeChild(child, false);
+        }
+    }
+
     /**
      * Save data to server
      */
-    save() {
+    static save() {
         this.send('save', this.scene);
     }   
 
     /**
      * Synchronize objects data with server
      */
-    sync() {
+    static sync() {
         let timers = {};
         let timeoutID;
         const delay = 0; // ms
 
-        System.addEventListener('updateProperties', data => {
-            console.log(data);
+        System.addEventListener('syncProperty', data => {
+            // console.log(data);
             const id = data.object.id;
             const prop = data.prop;
             const component = data.component?.name;
@@ -323,16 +354,16 @@ export class Network {
                     // console.log(data);
                     window.clearTimeout(timeoutID);
                     timers[key] = Date.now();
-                    this.updateObjectProperty(id, component, prop, value);
+                    this.syncProperty(id, component, prop, value);
                 } else {
                     window.clearTimeout(timeoutID);
                     timeoutID = window.setTimeout(() => {
-                        this.updateObjectProperty(id, component, prop, value);
+                        this.syncProperty(id, component, prop, value);
                     }, delay);
                 }
             } else {
                 timers[key] = Date.now();
-                this.updateObjectProperty(id, component, prop, value);
+                this.syncProperty(id, component, prop, value);
             }
         });
 
@@ -348,6 +379,21 @@ export class Network {
             this.send('removeComponent', {
                 id: data.object.id,
                 component: data.component.name
+            });
+        });
+
+        System.addEventListener('addChild', data => {
+            // console.log(data);
+            this.send('addChild', {
+                id: data.object.id,
+                child: data.child.id
+            });
+        });
+
+        System.addEventListener('removeChild', data => {
+            this.send('removeChild', {
+                id: data.object.id,
+                child: data.child.id
             });
         });
 
@@ -368,7 +414,7 @@ export class Network {
         });
     }
 
-    updateObjectProperty(id, component, prop, value) {
+    static syncProperty(id, component, prop, value) {
         this.send('update', {
             id,
             component,
@@ -380,7 +426,7 @@ export class Network {
     /**
      * Synchronize inputs with server
      */
-    syncInputs() {
+    static syncInputs() {
         let timer = Date.now();
         let timeoutID;
         const delay = 50; // ms
@@ -405,7 +451,7 @@ export class Network {
         });
     }
 
-    updateMousePosition(x, y) {
+    static updateMousePosition(x, y) {
         this.send('mousemove', {
             x,
             y

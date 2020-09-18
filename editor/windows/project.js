@@ -1,6 +1,7 @@
 import { System } from '/src/core/system.js';
 import { Scene } from '/src/core/scene.js';
 import { Object } from '/src/core/object.js';
+import { Network } from '/src/network/network.js';
 import { Sorter } from '/editor/misc/sorter.js';
 
 export class Project {
@@ -15,8 +16,8 @@ export class Project {
 
         this.node = document.getElementById(node);
         this.scene = scene;
-        this.allowedTypes = ['png', 'jpg', 'jped', 'gif', 'js'];
-        this.resources = {};
+        this.allowedTypes = ['png', 'jpg', 'jped', 'gif', 'svg', 'js'];
+        this.resources = {}; // = Project.resources = {};
         // this.lastScript = null;
         this.input = document.getElementById('upload-input');
 
@@ -45,44 +46,19 @@ export class Project {
             // Prefab creation
             if (Sorter.draggedElement) {
                 
-                // ID de l'instance
+                // Instance reference
                 const id = Sorter.draggedElement.id;
+                const instance = this.scene.objects[id];
                 
                 // console.log(Scene.objects[id]);
                 
                 // Création du prefab
-                let prefab = new Resource(Scene.objects[id].name, 'prefab', Scene.objects[id].createImage());
-                
-                // console.log(prefab);
-                
-                // Dimensions du prefab
-                prefab.size.width = Scene.objects[id].size.width;
-                prefab.size.height = Scene.objects[id].size.height;
-                
-                // Duplication des composants
-                for (let name in Scene.objects[id].components) {
-                    
-                    if (name !== 'root' && name !== 'position' && name !== 'size') {
-                        
-                        // let component = Object.create(Scene.main.components[name]);
-                        // let component = Object.assign({}, Scene.main.components[name]);
-                        
-                        // Création du composant
-                        let component = new window[name.charAt(0).toUpperCase() + name.slice(1)]();
-                        
-                        // Duplication des propriétés du composant
-                        for (let prop in Scene.objects[id].components[name]) {
-                            component[prop] = Scene.objects[id].components[name][prop];
-                        }
-                        
-                        prefab.addComponent(component);
-                    }
-                    
-                }
-                
-                // prefab.components = Object.assign({}, Scene.main.components);
-                // prefab.components.position = null;
-                // prefab.components = clone(Scene.main.components);
+                let prefab = new Object(instance.name);
+                prefab.copy(instance);
+                prefab.id = System.createID();
+                prefab.type = 'prefab';
+                prefab.createImage();
+                console.log(prefab);
                 
                 this.addResource(prefab);
             }
@@ -100,19 +76,27 @@ export class Project {
      * Add object to resources list
      * @param {Object} obj - The object
      */
-    addResource(obj) {
+    addResource(obj, dispatch = true) {
         this.node.appendChild(this.createView(obj));        
         this.resources[obj.id] = obj;
         this.scene.current = obj;
+
+        if (dispatch) {
+            System.dispatchEvent('add_resource', obj);
+        }
     }
 
     /**
      * Remove resource to resources list
      * @param {Object} obj - The object
      */
-    remove(obj) {
+    remove(obj, dispatch = true) {
         this.node.removeChild(document.getElementById(obj.id));
         delete this.resources[obj.id];
+
+        if (dispatch) {
+            System.dispatchEvent('remove_resource', obj);
+        }
     }
     
     /**
@@ -122,6 +106,22 @@ export class Project {
     updateName(e) {
         this.resources[e.target.parentNode.id].name = e.target.textContent;
     }
+
+    /**
+     * Get project resources
+     * @return {object} resources - The resources
+     */
+    static get resources() {        
+        return this._resources;
+    }
+    
+    /**
+     * Set project resources
+     * @param {object} resources - The resources
+     */
+    static set resources(resources) {        
+        this._resources = resources;
+    }
     
     /**
      * Upload files in project
@@ -129,24 +129,53 @@ export class Project {
      */
     uploadFiles(files) {
         let filesLen = files.length;
+        let fileName = '';
         let fileType = '';
 
         for (let i = 0; i < filesLen; i++) {
 
-            // const fileName = files[i].name.split('.')[0];
-
-            fileType = files[i].name.split('.');
+            fileName = files[i].name;
+            fileType = fileName.split('.');
             fileType = fileType[fileType.length - 1];
+
+            let data = {
+                name: fileName,
+                type: fileType,
+                path: '/',
+                value: null
+            };
+
+            // Upload to server
+            let xhr = new XMLHttpRequest();
+
+            xhr.open('POST', `${Network.protocol}://${Network.host}:${Network.port}`);
+
+            xhr.upload.addEventListener('progress', function(e) {
+                // progress.value = e.loaded;
+                // progress.max = e.total;
+            });
+
+            xhr.addEventListener('load', function() {
+                // alert('Upload terminé !');
+            });
 
             // Si c'est une image
             if (this.allowedTypes.indexOf(fileType) !== -1) {
                 (i => {
                     createThumbnail(files[i], img => {
-                        const obj = new Object(files[i].name.split('.')[0]);
+                        const obj = new Object(fileName.split('.')[0]);
                         obj.type = fileType;
                         obj.image = img;
                         this.addResource(obj);
-                        // this.addResource(new Resource(files[i].name.split('.')[0], fileType, e));
+                        // fetch(img.src)
+                        // .then(res => res.blob())
+                        // .then(blob => blob.arrayBuffer())
+                        // .then(buffer => {
+                        //     buffer = new Uint8Array(buffer);
+                        // });
+                        data.value = img.src;
+                        xhr.send(JSON.stringify(data));
+                        // this.addResource(new Resource(fileName.split('.')[0], fileType, e));
                     });
                 })(i);
             }
@@ -194,7 +223,7 @@ export class Project {
         // Ajout de l'ID dans le dataTransfer
         li.addEventListener('dragstart', (e) => {
             e.dataTransfer.setData('text', e.target.id);
-            // TODO : Gérer les types pouvant afficher une image au drag
+            // TODO: Gérer les types pouvant afficher une image au drag
             if (obj.type !== 'js') {
                 e.dataTransfer.setDragImage(obj.image, 20, 20);
             }
