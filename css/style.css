@@ -6,10 +6,7 @@
 * {
     margin: 0;
     padding: 0;
-    -webkit-user-select: none; /* Safari */        
-    -moz-user-select: none; /* Firefox */
-    -ms-user-select: none; /* IE10+/Edge */
-    user-select: none; /* Standard */
+    user-select: none;
 }
 
 html, body {
@@ -32,13 +29,13 @@ html, body {
     color: var(--color);
 }
 
-/*::selection {*/
-    /*background: var(--main);
+::selection {
+    background: var(--main);
+    background: #97c4ff;
     color: #b0b0b0;
     color: var(--color);
-    color: white;*/
-    /*background-color: rgba(30, 120, 255, 1);*/
-/*}*/
+    color: white;
+}
 
 [contenteditable]:focus {
     outline: 2px solid var(--main);
@@ -232,6 +229,10 @@ h2:hover {
     box-shadow: inset 0px -1px 0 var(--first-border-color);
 }
 
+h2:first-child:hover {
+    box-shadow: inset 1px -1px 0 var(--first-border-color);
+}
+
 h2.active {
     /*color: #eee;*/
     background-color: var(--bg-light-color);
@@ -269,7 +270,7 @@ h2.active:before {
 h2.active:after {
     content: '';
     position: absolute;
-    border-bottom: 4px solid var(--bg-light-color);
+    border-bottom: 3px solid var(--bg-light-color);
     bottom: -3px;
     left: 0;
     width: 100%;
@@ -324,9 +325,9 @@ h3 {
     border-top: 1px solid var(--first-border-color);
     box-shadow: inset 1px 0 0 #2c2c2c;
     box-shadow: inset 1px 0 0 var(--first-border-color);
-    overflow: hidden;
     display: flex;
     flex-direction: column;
+    /* overflow: hidden; */
 }
 
 #resources {

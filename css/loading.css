@@ -1,5 +1,4 @@
-/* Loading */
-.loading {
+#loading {
     animation-duration: 0.75s;
     animation-iteration-count: infinite;
     animation-name: rotate-forever;
@@ -19,9 +18,16 @@
     z-index: 940;
 }
 
-.loading.hidden {
+#loading.hidden {
     display: none;
 }
+
+/* #loading:before {
+    content: '';
+    width: 100%;
+    height: 100%;
+    position: absolute;
+} */
 
 @keyframes rotate-forever {
     0% {
@@ -31,4 +37,8 @@
     100% {
         transform: rotate(360deg);
     }
+}
+
+.loading {
+    filter: blur(3px);
 }

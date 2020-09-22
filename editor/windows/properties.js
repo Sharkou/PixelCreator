@@ -222,12 +222,14 @@ export class Properties {
             for (var p in components[c]) {
                 var value = components[c][p];
                 var e = document.getElementsByClassName(obj.id + '-' + c + '.' + p); // example : id-root.layer
-                for (var i = 0; i < e.length; i++) {
-                    if (e[i].nodeName === 'INPUT') {
-                        e[i].value = value;
-                    }
-                    else {
-                        e[i].innerHTML = value;
+                if (value) {
+                    for (var i = 0; i < e.length; i++) {
+                        if (e[i].nodeName === 'INPUT') {
+                            e[i].value = value;
+                        }
+                        else {
+                            e[i].innerHTML = value;
+                        }
                     }
                 }
             }
@@ -344,7 +346,7 @@ export class Properties {
         switch (typeof value) {
 
             case 'number': {
-                let type = 'number';
+                let type = 'text'; // 'number';
                 this.appendElement(li, p, type, id);
                 break;
             }
@@ -465,6 +467,13 @@ export class Properties {
         let text = document.createTextNode(capitalizeFirstLetter(content));
         span.appendChild(text);
         span.classList.add('label');
+
+        span.setAttribute('draggable', true);
+        span.addEventListener('dragstart', e => {
+            let input = e.target.nextSibling;
+            e.dataTransfer.setData('text', input.className);
+        });
+
         return span;
     }
     

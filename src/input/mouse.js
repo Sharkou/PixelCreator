@@ -3,8 +3,8 @@ import { Network } from '/src/network/network.js';
 
 export class Mouse {
 
-    static x = undefined;
-    static y = undefined;
+    static x = 0;
+    static y = 0;
     static target = null;
     static down = false;
     static up = false;

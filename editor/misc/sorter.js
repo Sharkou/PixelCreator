@@ -78,6 +78,7 @@ export class Sorter {
         // img.style.right = '0px';
         // document.body.appendChild(img);
         // e.dataTransfer.setDragImage(img, 0, 0);
+        // e.dataTransfer.setDragImage(e.target, 0, 0);
         Sorter.draggedElement = e.target;
         Sorter.x_t0 = e.clientX;
         if (e.target.previousSibling instanceof HTMLElement) {

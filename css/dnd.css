@@ -1,10 +1,9 @@
 .draggable {
-    cursor: pointer; /* IE */
     cursor: -webkit-grab;
-    cursor: grab;
+    cursor: grab !important;
 }
 
 .dragging {
   cursor: -webkit-grabbing;
-  cursor: grabbing;
+  cursor: grabbing !important;
 }

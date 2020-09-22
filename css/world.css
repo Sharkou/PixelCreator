@@ -8,7 +8,7 @@
     border-bottom: 1px var(--last-border-color) solid;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    /* overflow: hidden; */
 }
 
 #world .tab {
@@ -60,7 +60,7 @@
     left: 10px;
     /* margin-right: 12px; */
     /* margin-left: 12px; */
-    font-size: 17px;
+    font-size: 15px;
     display: flex;
     justify-content: center;
 }
@@ -104,7 +104,7 @@
 }
 
 #world li:after {
-    content: '';
+    /* content: ''; */
     position: absolute;
     width: 100%;
     height: calc(100% + 4px);

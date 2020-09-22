@@ -30,25 +30,26 @@ export class Toolbar {
             
             switch (tool.id) {
                 
-                case 'Circle':
+                case 'circle':
                     obj.addComponent(new Circle('#FFFFFF', 0.6), false); // CC8844
                     break;
 
-                case 'Rectangle':
+                case 'rectangle':
                     obj.addComponent(new Rectangle('#FFFFFF', 0.6), false);
                     break;
 
-                case 'Light':
+                case 'light':
                     obj.addComponent(new Light(), false);
                     break;
 
-                case 'Particle':
+                case 'particle':
                     break;
             }
             
             obj.createImage();
             
             tool.addEventListener('dragstart', function(e) {
+                // e.target.classList.add('dragging');
                 e.dataTransfer.setData('text', e.target.id);
                 e.dataTransfer.setDragImage(obj.image, xOffset, yOffset);
             });

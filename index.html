@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 
 <head>
     <meta charset="utf-8" />
@@ -45,6 +45,7 @@
     <link rel="stylesheet" href="css/context-menu.css" />
     <link rel="stylesheet" href="css/stats.css" />
     <link rel="stylesheet" href="css/loading.css" />
+    <link rel="stylesheet" href="css/timeline.css" />
     
     <!-- Code Mirror -->    
     <!--<link rel="stylesheet" href="/src/lib/codemirror/lib/codemirror.css" />
@@ -61,13 +62,13 @@
     <title>Pixel Creator · Editor</title>
 </head>
 
-<body id="editor">
+<body>
 
     <!-- Collaboration -->
     <!--<canvas id="collab"></canvas>-->
 
     <!-- Menu principal -->
-    <div id="header">
+    <header id="header" class="loading">
 
         <!-- Navbar -->
         <!--<nav>
@@ -87,7 +88,7 @@
         <div id="menu">
             <ul>
                 <li title="Play" id="play" class="button"><i class="material-icons">play_arrow</i></li>
-                <li title="Pause" id="pause" class="button"><span class="material-icons">pause</span></li>
+                <li title="Pause" id="pause" class="button"><i class="material-icons">pause</i></li>
                 <!-- <li title="Sync" id="sync" class="button"><span class="material-icons">sync</span></li> -->
                 <!--
                   <li><i class="material-icons tooltip">create<span class="tooltiptext">Edit</span></i></li>
@@ -101,19 +102,18 @@
         <!-- Settings -->
         <nav>
             <ul>
-                <li title="Settings"><i class="fas fa-cog"></i></li>
-                <li title="Fullscreen" id="fullscreen"><i class="fas fa-expand"></i></li>
-                <li title="Close" onclick="close()"><i class="fas fa-times"></i></li>
-                <!--<li><i class="material-icons tooltip">settings_input_hdmi<span class="tooltiptext">Online</span></i></li>
-                <li title="Settings"><i class="material-icons">settings</i></li>-->
-
+                <!-- <li title="Settings"><i class="fas fa-cog"></i></li> -->
+                <!-- <li title="Minimize"><i class="fal fa-window-minimize"></i></li> -->
+                <li title="Fullscreen" id="fullscreen"><i class="far fa-expand"></i></li>
+                <li title="Close" onclick="close()"><i class="far fa-times"></i></li>
+                <!--<li><i class="material-icons tooltip">settings_input_hdmi<span class="tooltiptext">Online</span></i></li>-->
             </ul>
         </nav>
 
-    </div>
+    </header>
 
     <!-- Main Content -->
-    <main>
+    <main id="editor" class="loading">
 
         <aside id="left">
 
@@ -139,65 +139,65 @@
 
                 <!--<hr />-->
                 
-                <!--<li id="Selection" title="Selection" class="active tool"></li>
+                <!--<li id="selection" title="Selection" class="active tool"></li>
                 <li id="rotate" title="Rotate" onclick="rotate(this)"><i class="fas fa-sync-alt"></i></li>
                 <li id="scale" title="Scale" onclick="scale(this)"><i class="fas fa-expand-arrows-alt"></i></li>-->
 
-                <!-- <li draggable="true" id="Pointer" title="Pointer" class="tool">
+                <!-- <li draggable="true" id="pointer" title="Pointer" class="tool">
                     <i class="far fa-mouse-pointer"></i>
                 </li> -->
 
                 <!-- <hr /> -->
                 
-                <li draggable="true" id="Object" title="Object" class="tool">
+                <li draggable="true" id="object" title="Object" class="tool">
                     <i class="far fa-cube"></i>
                 </li>
 
-                <li draggable="true" id="Circle" title="Circle" class="tool">
+                <li draggable="true" id="circle" title="Circle" class="tool">
                     <i class="far fa-circle"></i>
                 </li>
 
-                <li draggable="true" id="Rectangle" title="Rectangle" class="tool">
+                <li draggable="true" id="rectangle" title="Rectangle" class="tool">
                     <i class="far fa-square"></i>
                 </li>
 
-                <li draggable="true" id="Line" title="Line" class="tool">
+                <!-- <li draggable="true" id="line" title="Line" class="tool">
                     <i style="transform: rotate(-45deg);" class="far fa-horizontal-rule"></i>
-                </li>
+                </li> -->
 
-                <li draggable="true" id="Light" title="Light" class="tool">
+                <li draggable="true" id="light" title="Light" class="tool">
                     <i class="fal fa-lightbulb"></i>
                 </li>
 
-                <!-- <li draggable="true" id="Sound" title="Sound" class="tool">
+                <!-- <li draggable="true" id="sound" title="Sound" class="tool">
                     <i class="far fa-volume"></i>
                 </li> -->
                 
-                <!-- <li draggable="true" id="Image" title="Image" class="tool">
+                <!-- <li draggable="true" id="image" title="Image" class="tool">
                     <span class="material-icons">wallpaper</span>
                 </li> -->
 
-                <!-- <li draggable="true" id="Video" title="Video" class="tool">
+                <!-- <li draggable="true" id="video" title="Video" class="tool">
                     <i class="far fa-photo-video"></i>
                 </li> -->
 
-                <li draggable="true" id="Camera" title="Camera" class="tool">
+                <li draggable="true" id="camera" title="Camera" class="tool">
                     <i class="far fa-camera-movie"></i>
                 </li>
 
-                <!-- <li draggable="true" id="Particle" title="Particle" class="tool">
+                <!-- <li draggable="true" id="particle" title="Particle" class="tool">
                     <i class="material-icons">blur_on</i>
                 </li> -->
 
-                <li draggable="true" id="Text" title="Text" class="tool">
+                <li draggable="true" id="text" title="Text" class="tool">
                     <i class="far fa-text"></i>
                 </li>
 
-                <!-- <li draggable="true" id="Button" title="Button" class="tool">
+                <!-- <li draggable="true" id="button" title="Button" class="tool">
                     <i class="far fa-hand-point-up"></i>
                 </li> -->
 
-                <!-- <li draggable="true" id="Sprite" title="Sprite" class="tool">
+                <!-- <li draggable="true" id="sprite" title="Sprite" class="tool">
                     <i class="far fa-alien-monster"></i>
                 </li> -->
 
@@ -236,7 +236,7 @@
 
                 <div class="tab">
                     <h2 id="scene-btn" class="tab-link active"><i class="far fa-video"></i>Scene</h2>
-                    <h2 id="blueprint-btn" class="tab-link"><!--<i class="far fa-chart-network"></i>--><i class="far fa-project-diagram"></i>Blueprint</h2>
+                    <h2 id="blueprint-btn" class="tab-link"><!--<i class="far fa-chart-network"></i>--><i class="far fa-project-diagram"></i>Graph</h2>
                     <!-- <h2 id="code-btn" class="tab-link"><i class="far fa-code"></i>Scripting</h2> -->
                     <!-- <h2 class="tab-link" onclick="openTab(event, 'drawing')"><i class="fas fa-paint-brush"></i>Drawing</h2> -->
                     <ul class="end">                        
@@ -270,67 +270,81 @@
                                 <input type="text" id="eventName">
                             </div> -->
 
-                        </section>
+                            <svg id="svg">
+                                <defs>
+                                    <pattern id="smallGrid" width="10" height="10" patternUnits="userSpaceOnUse">
+                                        <path d="M 100 0 L 0 0 0 100" fill="none" stroke="rgba(255, 255, 255, 0.05)" stroke-width="1"/>
+                                    </pattern>
+                                    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+                                        <rect width="100" height="100" fill="url(#smallGrid)"/>
+                                        <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(255, 255, 255, 0.05)" stroke-width="1" stroke-dasharray="0" />
+                                    </pattern>
+                                </defs>
+                                <rect width="100%" height="100%" fill="url(#grid)" />
+                            </svg>
 
+                        </section>
+                        
                         <!-- Toolbox nodes -->
                         <aside id="toolbox">
 
                             <!-- <div class="tab">
                                 <h2>Events</h2>
                             </div> -->
-
+                            
                             <ul>
-
-                                <li id="mouse" title="Mouse" class="event">
-                                    <i class="material-icons">mouse</i>
-                                </li>
-
-                                <li id="keyboard" title="Keyboard" class="event">
-                                    <i class="material-icons">keyboard</i>
-                                </li>
-
-                                <li id="collision" title="Collision" class="event">
-                                    <i class="material-icons">vertical_align_center</i>
-                                </li>
-                                
-                                <li id="init" title="Init" class="event">
+                                <li draggable="true" id="init" title="Start" class="box event">
                                     <i class="fas fa-flag-checkered"></i>
                                 </li>
-
-                                <li id="update" title="Update" class="event">
+                                <li draggable="true" id="update" title="Update" class="box event">
                                     <i class="material-icons">low_priority</i>
                                 </li>
-                                
-                                <li id="timer" title="Timer" class="event">
+                                <li draggable="true" id="mouse" title="Mouse" class="box event">
+                                    <i class="fas fa-mouse"></i>
+                                </li>
+                                <li draggable="true" id="key" title="Keyboard" class="box event">
+                                    <i class="material-icons">keyboard</i>
+                                </li>
+                                <li draggable="true" id="collision" title="Collision" class="box event">
+                                    <i class="material-icons">vertical_align_center</i>
+                                </li>                                
+                                <li draggable="true" id="timer" title="Timer" class="box event">
                                     <i class="material-icons">timer</i>
                                 </li>
-
-                                <li id="if" title="Condition" class="structure">
-                                    <i class="far fa-code-branch"></i>
+                                <li draggable="true" id="if" title="Condition" class="box structure">
+                                    <i class="far fa-equals"></i>
+                                    <!-- <i class="far fa-code-branch"></i> -->
                                 </li>
-
-                                <li id="move" title="Move" class="action">
-                                    <i class="material-icons">open_with</i>
+                                <li draggable="true" id="repeat" title="Repeat" class="box structure">
+                                    <i class="far fa-repeat-alt"></i>
                                 </li>
-
-                                <li id="edit" title="Edit" class="action">
-                                    <i class="material-icons">edit</i>
+                                <!-- <li draggable="true" id="jump" title="Jump" class="box structure">
+                                    <i class="far fa-redo"></i>
+                                </li> -->
+                                <li draggable="true" id="math" title="Math" class="box function">
+                                    <i class="far fa-function"></i>
                                 </li>
-
-                                <li id="create" title="Create" class="action">
+                                <li draggable="true" id="move" title="Move" class="box function">
+                                    <i class="far fa-arrows"></i>
+                                </li>
+                                <li draggable="true" id="edit" title="Edit" class="box function">
+                                    <i class="fas fa-pencil-alt"></i>
+                                    <!-- <i class="material-icons">edit</i> -->
+                                </li>
+                                <li draggable="true" id="create" title="Create" class="box function">
                                     <i class="material-icons">lightbulb_outline</i>
                                 </li>
-
-                                <li id="delete" title="Delete" class="action">
+                                <li draggable="true" id="delete" title="Delete" class="box function">
                                     <i class="material-icons">delete_forever</i>
                                 </li>
-
-                                <li id="draw" title="Draw" class="action">
-                                    <i class="material-icons">wallpaper</i>
+                                <li draggable="true" id="draw" title="Draw" class="box function">
+                                    <i class="fas fa-fill"></i>
+                                    <!-- <i class="material-icons">wallpaper</i> -->
                                 </li>
-
+                                <li draggable="true" id="print" title="Print" class="box function">
+                                    <i class="fas fa-shredder"></i>
+                                </li>
                             </ul>
-
                         </aside>
 
                     </section>
@@ -339,7 +353,7 @@
 
                 <!-- Scripting Window -->
                 <div id="scripting" class="tab-content overlay">
-                    <!--<pre contenteditable id="code" spellcheck="false"><div><br></div</pre>-->
+                    <!-- <pre id="editor" contenteditable="true" wrap="off" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"><div class="line" data-line="1"></div></pre> -->
                     <form>
                         <textarea id="code" name="code"></textarea>
                     </form>
@@ -382,10 +396,10 @@
                     </ul>
                 </div>
 
-                <!-- <div id="timeline" class="tab-content">
-                    <header></header>
-                    <aside></aside>
-                </div> -->
+                <div id="timeline" class="tab-content">
+                    <!-- <header></header> -->
+                    <aside>Not yet developed!</aside>
+                </div>
 
             </section>
 
@@ -398,7 +412,7 @@
             <aside id="world">
 
                 <div class="tab">
-                    <h2><i class="far fa-list-ul"></i>Hierarchy</h2>
+                    <h2 id="world-btn" class="tab-link"><i class="far fa-list-ul"></i>Hierarchy</h2>
                     
                     <div id="filter">
                         <i title="Search" class="material-icons">search</i>
@@ -421,7 +435,7 @@
                 <!-- Properties Title and Dropdown Content -->
                 <div class="tab">
                     <div>
-                        <h2><i class="fas fa-sliders-h"></i>Properties</h2>
+                        <h2 id="properties-btn" class="tab-link"><i class="fas fa-sliders-h"></i>Properties</h2>
                         <!-- <h2><i class="fas fa-lightbulb-on"></i>Lighting</h2> -->
 
                         <i title="Add Component" class="material-icons" id="add-property">add_box</i>
@@ -489,17 +503,21 @@
             </li>-->
             <li class="item" id="folder">
                 <i class="fas fa-folder-plus"></i>
-                <span>New Folder</span>
+                <span>Create Folder</span>
+            </li>
+            <li class="item" id="custom">
+                <i class="material-icons">settings_input_component</i>
+                <span>Custom Component</span>
             </li>
             <li class="item" id="script">
                 <i class="material-icons">description</i>
-                <span>New Script</span>
+                <span>Create Script</span>
             </li>
         </ul>
     </nav>
 
     <!-- Loading -->
-    <div class="loading"></div>
+    <div id="loading"></div>
 
 </body>
 

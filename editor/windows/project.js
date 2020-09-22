@@ -280,6 +280,10 @@ export class Project {
         div.addEventListener('keypress', function(e) {
             System.validate(this, e);
         });
+
+        div.addEventListener('focusout', () => {
+            window.getSelection().removeAllRanges();
+        });
         
         div.setAttribute('class', obj.id + '-name');
         let name = document.createTextNode(obj.name);

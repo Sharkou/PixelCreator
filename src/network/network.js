@@ -138,7 +138,10 @@ export class Network {
         console.log('[SERVER] scene data received from server: ');
         console.log(data);
         if (this.inspector) this.sync();
-        for (let el of document.getElementsByClassName('loading')) el.classList.add('hidden');
+        for (let el of document.querySelectorAll('.loading')) {
+            el.classList.remove('loading');
+        }
+        document.getElementById('loading')?.classList.add('hidden');
         this.syncInputs();
         // return data;
     }

@@ -139,9 +139,9 @@ export class Collider {
     
     /**
      * Draw the component
-     * @draw
+     * @preview
      */
-    draw(self) {
+    preview(self) {
         
         if (this.preview) {
             Graphics.circle(self.x + this.offsetX, self.y + this.offsetY, 1);
@@ -241,9 +241,9 @@ export class RectCollider extends Collider {
     
     /**
      * Draw the component
-     * @draw
+     * @preview
      */
-    draw(self) {
+    preview(self) {
         
         if (this.preview) {
             Graphics.rect(self.x + this.offsetX, self.y + this.offsetY, this.width, this.height);
@@ -409,9 +409,9 @@ export class CircleCollider extends Collider {
     
     /**
      * Draw the component
-     * @draw
+     * @preview
      */
-    draw(self) {
+    preview(self) {
         
         if (this.preview) {
             Graphics.circle(self.x + this.offsetX, self.y + this.offsetY, this.width);

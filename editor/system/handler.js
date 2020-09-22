@@ -103,30 +103,30 @@ export class Handler {
             
             switch (e.dataTransfer.getData('text/plain')) {
 
-                case 'Object':
+                case 'object':
                     obj.name = 'Object';
                     obj.type = 'object';
                     break;
 
-                case 'Circle':
+                case 'circle':
                     obj.name = 'Circle';
                     obj.type = 'object';
                     obj.addComponent(new Circle('#FFFFFF', 0.6), false);
                     break;
                     
-                case 'Rectangle':
+                case 'rectangle':
                     obj.name = 'Rectangle';
                     obj.type = 'object';
                     obj.addComponent(new Rectangle('#FFFFFF', 0.6), false);
                     break;
                     
-                case 'Light':
+                case 'light':
                     obj.name = 'Light';
                     obj.type = 'light';
                     obj.addComponent(new Light(), false);
                     break;
                     
-                case 'Camera':
+                case 'camera':
                     obj.name = 'Camera';
                     obj.type = 'camera';
                     obj.width = 320;
@@ -134,7 +134,7 @@ export class Handler {
                     obj.addComponent(new Camera('#272727'), false);
                     break;
                 
-                case 'Particle':
+                case 'particle':
                     obj.name = 'Particle';
                     obj.type = 'particle';
                     obj.addComponent(new Particle(), false);

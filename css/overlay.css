@@ -3,7 +3,7 @@
 }*/
 
 .overlay {
-    height: calc(100% - 42px);
+    height: calc(100% - 40px);
     width: 100%;
     position: relative;
     z-index: 0;
@@ -16,8 +16,10 @@
     height: 100%;
     width: 100%;
     display: flex;
+    overflow: hidden;
     /*align-content: center;
     justify-content: center;*/
+    /* background-color: var(--bg-medium-color); */
 }
 
 /* #scripting {
@@ -30,12 +32,57 @@
 
 #blueprint {
     width: 100%;
+    height: 100%;
+    position: relative;
     overflow: auto;
-    overflow-x: hidden;
+    /* overflow-x: hidden; */
+    scrollbar-width: none;  /* Firefox */
+    touch-action: auto;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+#blueprint::-webkit-scrollbar {
+    display: none;
+}
+
+/* Drop Container */
+#blueprint:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    left: 0;
+    border: 2px dashed transparent;
+    transition: 200ms;
+    z-index: 0;
+    pointer-events: none;
+}
+
+#blueprint.drop_hover:before {
+    border: 2px dashed var(--main);
+}
+
+#blueprint svg {
+    /* position: absolute;
+    top: 0px;
+    bottom: 0px;
+    left: 0px;
+    right: 0px;
+    z-index: -100; */
+    width: 100%;
+    min-height: 4001px;
+    min-width: 2001px;
+}
+
+#blueprint svg path.connection {
+    fill: none;
+    stroke-width: 2px;
+    stroke: var(--main); /* #8e8e8e; */
 }
 
 #toolbox {
-    width: 100px;
+    width: 200px;
     border-left: 1px solid var(--last-border-color);
     box-shadow: inset -1px 0px 0 var(--first-border-color), inset 1px 0px 0 var(--first-border-color);
     background-color: var(--bg-medium-color);
@@ -43,72 +90,144 @@
     overflow-x: hidden;
 }
 
-.overlay-content ul {
+#toolbox ul {
     width: 100%;
+    height: 100%;
+    padding: 5px;
     display: flex;
     justify-content: space-around;
+    align-content: flex-start;
     align-items: center;
     flex-wrap: wrap;
+    box-sizing: border-box;
 }
 
-.overlay-content ul li {
+#toolbox ul li {
     display: flex;
     justify-content: center;
     align-items: center;
-    transition: 100ms;
+    transition: 200ms;
     color: var(--white-color);
-    border: 1px var(--last-border-color) solid;
-    box-shadow: inset 0 -1px 0 var(--first-border-color);
+    border: 2px rgba(255, 255, 255, 0.1) solid; /* var(--last-border-color) */
+    /* box-shadow: 
+        inset 0 -1px 0 var(--first-border-color),
+        inset 0 1px 0 var(--first-border-color),
+        inset 1px 0 0 var(--first-border-color),
+        inset -1px 0 0 var(--first-border-color); */
     width: 30px;
     height: 30px;
+    margin: 5px;
 }
 
-.overlay-content ul li:hover {
-    background-color: #2e2e2e;
+#toolbox ul li:hover {
     background-color: var(--hover-bg-li-color);
-    cursor: pointer;
+    cursor: grab;
     color: var(--hover-color);
+    border: 2px rgba(255, 255, 255, 0.3) solid;
 }
 
-.overlay-content ul li.event {
-    background-color: rgba(3, 158, 92, 0.4);
-}
-
-.overlay-content ul li.action {
+#toolbox ul li.event {
     background-color: rgba(134, 40, 40, 0.4);
 }
 
-.overlay-content ul li.structure {
+#toolbox ul li.event:hover {
+    background-color: rgba(134, 40, 40, 0.7);
+}
+
+#toolbox ul li.function {
     background-color: rgba(28, 68, 128, 0.4);
 }
 
-.node {
-    animation: fadeEffect 300ms;
-    width: 320px;
-    margin: auto;
-    margin-top: 20px;
-    margin-bottom: 20px;
-    background-color: #252525;
-    background-color: var(--bg-medium-color);
-    outline: 1px solid #1f1f1f;
-    outline: 1px solid var(--last-border-color);
-    border-top: 1px solid #2c2c2c;
-    border-top: 1px solid var(--first-border-color);
-    border-right: 1px solid #2c2c2c;
-    border-right: 1px solid var(--first-border-color);
-    border-left: 1px solid #2c2c2c;
-    border-left: 1px solid var(--first-border-color);
-    box-shadow: inset 0px -1px 0 #2c2c2c;
-    box-shadow: inset 0px -1px 0 var(--first-border-color);
-    overflow: auto;
-    overflow-x: hidden;
-    border-radius: 2px;
+#toolbox ul li.function:hover {
+    background-color: rgba(28, 68, 128, 0.7);
 }
 
-/*.node:last-of-type {
-    border-bottom: none;
-    box-shadow: inset 0px -1px 0 transparent;
-}*/
+#toolbox ul li.structure {
+    background-color: rgba(3, 158, 92, 0.4);
+}
+
+#toolbox ul li.structure:hover {
+    background-color: rgba(3, 158, 92, 0.7);
+}
+
+.node {
+    position: absolute;
+    min-width: 80px;
+    height: 31px;
+    margin: auto;
+    padding: 3px 7px;
+    /* margin-top: 20px;
+    margin-bottom: 20px; */
+    background-color: var(--bg-medium-color);
+    /* outline: 1px solid var(--last-border-color);
+    border-top: 1px solid var(--first-border-color);
+    border-right: 1px solid var(--first-border-color);
+    border-left: 1px solid var(--first-border-color);
+    border-bottom: 1px solid var(--first-border-color);
+    box-shadow: inset 0px -1px 0 var(--first-border-color); */
+    /* overflow: hidden; */
+    border-radius: 0px;
+    border-top: 4px solid #3d3e41;
+    border-bottom: 4px solid #3d3e41;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+}
+
+.node:hover {
+    cursor: grab;
+}
+
+.node:active {
+    cursor: grabbing;
+}
+
+.node > span {
+    cursor: text;
+    height: 17px;
+    min-width: 40px;
+    display: inline-block;
+    color: var(--hover-color);
+    font-family: 'Source Code Pro', monospace;
+    font-size: 13px;
+}
+
+.node .connector.output, .node .connector.input {
+    position: absolute;
+    cursor: pointer;
+    /* border: solid 1px var(--white-color);
+    background-color: var(--white-color); */
+    border: solid 1px var(--bg-light-color);
+    background-color: var(--bg-light-color);
+    width: 8px;
+    height: 4px;
+    /* border-radius: 50%; */
+    box-sizing: border-box;
+}
+
+.node .connector.input {
+    top: -4px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    border-top: 0;
+}
+
+.node .connector.output {
+    bottom: -4px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom: 0;
+}
+
+.node .connector.connected, .node .connector.filled {
+    border: solid 1px transparent;
+    background-color: var(--main); /* #aeaeae; */
+}
+
+.node .connector.output:hover, .node .connector.input:hover {
+    border-color: var(--main);
+    background-color: var(--main);
+}
 
 .node h3 {
     padding: 10px;
@@ -242,7 +361,7 @@ button:focus {
     background-color: var(--bg-medium-color);
 }
 
-#key {
+/* #key {
     width: 120px;
     height: 20px;
     text-align: center;
@@ -262,9 +381,18 @@ button:focus {
 
 .keyPressed:hover {
     cursor: pointer;
-}
+} */
 
 .labelName {
     margin-top: 20px;
     margin-bottom: 25px;
+}
+
+#blueprint code {
+    background-color: black;
+    border: 1px dotted rgba(0, 0, 0, 0.1);
+    padding: 2px;
+    margin: 0 3px;
+    color: rgb(30, 100, 234);
+    font-size: 13px;
 }

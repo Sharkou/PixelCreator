@@ -1,4 +1,5 @@
 ::-webkit-scrollbar {
+    height: 2px;
     width: 2px;
     z-index: 9;
 }
@@ -9,7 +10,7 @@
     /*background: var(--bg-dark-color);*/
     border-right: 2px solid rgba(0, 0, 0, 0);
     border-left: 2px solid rgba(0, 0, 0, 0);
-    background-clip: padding-box;
+    /* background-clip: padding-box; */
     -webkit-border-radius: 0px;
     /*-webkit-box-shadow: inset -1px -1px 0px #1f1f1f, inset 1px 1px 0px #1f1f1f;*/
     /*-webkit-box-shadow: inset -1px -1px 0px var(--last-border-color), inset 1px 1px 0px var(--last-border-color);*/

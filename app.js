@@ -18,6 +18,7 @@ import { Hierarchy } from '/editor/windows/hierarchy.js';
 import { Properties } from '/editor/windows/properties.js';
 import { Project } from '/editor/windows/project.js';
 import { Toolbar } from '/editor/windows/toolbar.js';
+import { Graph } from '/editor/blueprint/graph.js';
 import { Grid } from '/editor/misc/grid.js';
 import { Ruler } from '/editor/misc/ruler.js';
 import { Stats } from '/editor/misc/stats.js';
@@ -60,6 +61,7 @@ async function init() {
     const toolbar = new Toolbar(camera);
 
     Component.init(properties);
+    Graph.init();
 
     // Objects instantiating
     for (let id in objects) {
