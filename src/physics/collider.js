@@ -23,6 +23,8 @@ export class Collider {
         this.preview = preview;
         this.color = color;
         this.opacity = 1;
+
+        this.is_trigger = false;
         
         this.#isOnCollision = new Map();
     }

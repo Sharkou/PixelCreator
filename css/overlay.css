@@ -152,10 +152,11 @@
 
 .node {
     position: absolute;
-    min-width: 80px;
+    min-width: 81px;
     height: 31px;
     margin: auto;
     padding: 3px 7px;
+    padding-right: 20px;
     /* margin-top: 20px;
     margin-bottom: 20px; */
     background-color: var(--bg-medium-color);
@@ -182,7 +183,7 @@
     cursor: grabbing;
 }
 
-.node > span {
+.node > div.content {
     cursor: text;
     height: 17px;
     min-width: 40px;
@@ -190,9 +191,11 @@
     color: var(--hover-color);
     font-family: 'Source Code Pro', monospace;
     font-size: 13px;
+    /* word-spacing: 0.05em; */
+    white-space: pre-wrap;
 }
 
-.node .connector.output, .node .connector.input {
+.node .connector {
     position: absolute;
     cursor: pointer;
     /* border: solid 1px var(--white-color);
@@ -217,6 +220,37 @@
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
     border-bottom: 0;
+}
+
+.node .connector.error {
+    right: 6px;
+}
+
+/* .node .connector.error {
+    right: -2.5px;
+    bottom: 0;
+    top: 0;
+    margin: auto;
+    transform: rotate(-90deg);
+    border: solid 1px rgb(120, 0, 0);
+    background-color:  rgb(120, 0, 0);
+} */
+
+.node .connector.input:before {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 10px;
+    left: -3px;
+    top: -5px;
+}
+
+.node .connector.output:before {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 10px;
+    left: -3px;
 }
 
 .node .connector.connected, .node .connector.filled {
@@ -256,7 +290,7 @@
     display: inline-block;
     margin-bottom: 6px;
     margin-top: 20px;
-    float: left;
+    /* float: left; */
     width: 30%;
 }
 
@@ -389,10 +423,11 @@ button:focus {
 }
 
 #blueprint code {
-    background-color: black;
-    border: 1px dotted rgba(0, 0, 0, 0.1);
-    padding: 2px;
-    margin: 0 3px;
-    color: rgb(30, 100, 234);
-    font-size: 13px;
+    color: #dcdcaa; /* #9cdcfe; */
+    background-color: rgb(30, 30, 30);
+    /* font-family: Consolas, 'Courier New', monospace; */
+    padding: 1px 3px;
+    /* font-size: 14px;
+    line-height: 19px; */
+    /* white-space: pre; */
 }

@@ -12,22 +12,24 @@ export class Properties {
      */
     constructor(node, scene) {
 
-        Properties.main = this;
+        // Properties.main = this;
 
         this.node = document.getElementById(node);
         this.scene = scene;
         
         System.addEventListener('setCurrentObject', obj => this.add(obj));
 
-        // Update properties on object property setter
+        // Update object properties in editor
         System.addEventListener('setProperty', data => {
             const obj = data.object;
             const component = data.component;
             const prop = data.prop;
             const value = data.value;
-            if (scene.current) {
+            if (scene.current && scene.current.contains) {
                 if (scene.current == obj || scene.current.contains(obj)) {
                     this.updateProperties(obj);
+                } else {
+                    this.updateProperty(obj, component, prop, value);
                 }
             } else {
                 this.updateProperty(obj, component, prop, value);
@@ -112,6 +114,7 @@ export class Properties {
         const type = typeof obj[p];
         if (type === 'number' || type === 'string') {
             p = (p[0] === '_' ? p.substring(1, p.length) : p);
+            p = (p[0] === '$' ? p.substring(1, p.length) : p);
             const el = document.getElementsByClassName(obj.id + '-' + p);
             for (let i = 0; i < el.length; i++) {
                 if (el[i] !== document.activeElement) {
@@ -255,6 +258,7 @@ export class Properties {
             if (typeof obj[p] !== 'function') {
 
                 if (p.charAt(0) === '_') continue;
+                if (p.charAt(0) === '$') continue;
 
                 const id = p;
 
@@ -316,6 +320,7 @@ export class Properties {
                 }
 
                 if (p.charAt(0) === '_') continue;
+                if (p.charAt(0) === '$') continue;
                 
                 const id = obj.name + '.' + p;
 
@@ -588,7 +593,7 @@ export class Properties {
         
         // Suppression du composant
         icon_delete.addEventListener('click', e => {
-            let componentName = e.target.parentNode.textContent.toLowerCase();
+            let componentName = e.target.parentNode.parentNode.classList[0]; // textContent.toLowerCase();
             scene.current.removeComponent(scene.current.components[componentName]);
             
             // Mise à jour des propriétés
@@ -604,7 +609,7 @@ export class Properties {
         icon_visibility.addEventListener('click', (e) => {
             const object = scene.current;
             component = object.components[component.name];
-            const value = !component.active
+            const value = !component.active;
             component.$active = value;
             icon_visibility.setAttribute('data-content', component.active ? 'visibility' : 'visibility_off');
         });
@@ -653,9 +658,11 @@ export class Properties {
 
 function capitalizeFirstLetter(text) {
     return text.replace('_', ' ')
+        .replace(/([A-Z])/g, ' $1')
         .toLowerCase()
         .split(' ')
         .map((s) => s.charAt(0).toUpperCase() + s.substring(1))
-        .join(' ');
+        .join(' ')
+        .trim();
     // return text.charAt(0).toUpperCase() + text.slice(1);
 }

@@ -187,7 +187,7 @@ export class Object {
         
         // Naming the component
         // component.name = component.constructor.name[0].toLowerCase() + component.constructor.name.substr(1);
-        component.name = component.constructor.name.toLowerCase();
+        component.name = component.constructor.name; // .toLowerCase();
         
         component.active = true; // activation of the component   
         // this.components[component.constructor.prototype.name] = component;
@@ -219,9 +219,9 @@ export class Object {
         const type = typeof component;
 
         if (type == 'object') {
-            delete this.components[component.name.toLowerCase()];
+            delete this.components[component.name]; // .toLowerCase()];
         } else if (type == 'string') {
-            delete this.components[component.toLowerCase()];
+            delete this.components[component]; // .toLowerCase()];
         }
 
         if (dispatch) {
@@ -234,11 +234,12 @@ export class Object {
 
     /**
      * Get component
-     * @param {Component} component - The component to get
+     * @param {string} component - The component to get
      * @return {Component} component - The component
      */
     getComponent(component) {
-        return this.components[component.constructor.name.toLowerCase()];
+        // return this.components[component.constructor.name]; // .toLowerCase()];
+        return this.components[component];
     }
 
     /**
@@ -390,12 +391,17 @@ export class Object {
 
             const component = obj.components[name];
             
-            this.addComponent(new components[name.charAt(0).toUpperCase() + name.slice(1)](), false);
+            // this.addComponent(new components[name.charAt(0).toUpperCase() + name.slice(1)](), false);
+            this.addComponent(new components[name], false);
 
             // Copie des propriétés du composant
             for (let prop in component) {
                 this.components[name][prop] = component[prop];
             }
+
+            // } catch (error) {
+            //     console.error(error);
+            // }
         }
 
         // if (dispatch) {
@@ -590,7 +596,8 @@ export class Object {
     createImage(ctx) {
         
         const canvas = document.createElement('canvas'); // offscreen canvas
-        const camera = Camera.main;
+        // const camera = Camera.main;
+        const camera = {};
 
         Graphics.initContext(canvas.getContext('2d'));
 
@@ -603,8 +610,8 @@ export class Object {
         this.x = this.width / 2;
         this.y = this.height / 2;
 
-        let dx = camera.x;
-        let dy = camera.y;
+        // let dx = camera.x;
+        // let dy = camera.y;
 
         camera.x = canvas.width / 2;
         camera.y = canvas.height / 2;
@@ -615,8 +622,9 @@ export class Object {
 
         this.x = x;
         this.y = y;
-        camera.x = dx;
-        camera.y = dy;
+        
+        // camera.x = dx;
+        // camera.y = dy;
 
         var img = document.createElement('img');
         img.setAttribute('src', src);

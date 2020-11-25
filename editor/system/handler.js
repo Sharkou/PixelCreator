@@ -8,8 +8,8 @@ import { Mouse } from '/src/input/mouse.js';
 
 /* Components */
 import { Texture } from '/src/graphics/texture.js';
-import { Circle } from '/src/graphics/circle.js';
-import { Rectangle } from '/src/graphics/rectangle.js';
+import { CircleRenderer } from '/src/graphics/circle.js';
+import { RectangleRenderer } from '/src/graphics/rectangle.js';
 import { Light } from '/src/graphics/light.js';
 
 /* Editor Modules */
@@ -111,13 +111,13 @@ export class Handler {
                 case 'circle':
                     obj.name = 'Circle';
                     obj.type = 'object';
-                    obj.addComponent(new Circle('#FFFFFF', 0.6), false);
+                    obj.addComponent(new CircleRenderer('#FFFFFF', 0.6), false);
                     break;
                     
                 case 'rectangle':
                     obj.name = 'Rectangle';
                     obj.type = 'object';
-                    obj.addComponent(new Rectangle('#FFFFFF', 0.6), false);
+                    obj.addComponent(new RectangleRenderer('#FFFFFF', 0.6), false);
                     break;
                     
                 case 'light':

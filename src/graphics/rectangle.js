@@ -1,6 +1,6 @@
 import { Graphics } from '/src/graphics/graphics.js';
 
-export class Rectangle {
+export class RectangleRenderer {
     
     /**
      * Initialize the component

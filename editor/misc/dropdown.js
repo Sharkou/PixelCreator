@@ -6,7 +6,7 @@ document.getElementById('add-property').onclick = function() {
 };
 
 // Close the dropdown menu if the user clicks outside of it
-document.addEventListener('click', function(event) {
+document.addEventListener('mousedown', function(event) {
     if (!event.target.matches('#add-property')) {
       
         var dropdowns = document.getElementsByClassName("dropdown-content");

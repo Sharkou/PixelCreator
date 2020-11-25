@@ -98,6 +98,10 @@ export class Scene {
      * @param {Object} objects - The objects to initialize
      */
     init(objects) {
+        // Objects instantiating
+        for (let id in objects) {
+            scene.instanciate(objects[id]);
+        }
         // Copie des enfants
         for (let id in objects) {
             const obj = this.objects[id];

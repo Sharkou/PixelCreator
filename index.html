@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="utf-8" />
@@ -43,6 +43,7 @@
     <link rel="stylesheet" href="css/code.css" />
     <link rel="stylesheet" href="css/icons.css" />
     <link rel="stylesheet" href="css/context-menu.css" />
+    <link rel="stylesheet" href="css/settings.css" />
     <link rel="stylesheet" href="css/stats.css" />
     <link rel="stylesheet" href="css/loading.css" />
     <link rel="stylesheet" href="css/timeline.css" />
@@ -102,7 +103,7 @@
         <!-- Settings -->
         <nav>
             <ul>
-                <!-- <li title="Settings"><i class="fas fa-cog"></i></li> -->
+                <li title="Settings"><i class="fas fa-cog"></i></li>
                 <!-- <li title="Minimize"><i class="fal fa-window-minimize"></i></li> -->
                 <li title="Fullscreen" id="fullscreen"><i class="far fa-expand"></i></li>
                 <li title="Close" onclick="close()"><i class="far fa-times"></i></li>
@@ -489,6 +490,20 @@
         </section>
 
     </main>
+
+    <nav class="settings">
+        <!-- TODO: Gérer le nombre de joueurs -->
+        <ul class="items">
+            <li class="item" id="folder">
+                <i class="fas fa-folder-plus"></i>
+                <span>Create Folder</span>
+            </li>
+            <li class="item" id="custom">
+                <i class="material-icons">settings_input_component</i>
+                <span>Custom Component</span>
+            </li>
+        </ul>
+    </nav>
 
     <nav class="context-menu">
         <ul class="items">

@@ -3,6 +3,7 @@ import { Scene } from '/src/core/scene.js';
 import { Object } from '/src/core/object.js';
 import { Network } from '/src/network/network.js';
 import { Sorter } from '/editor/misc/sorter.js';
+import { Texture } from '/src/graphics/texture.js';
 
 export class Project {
     
@@ -16,7 +17,9 @@ export class Project {
 
         this.node = document.getElementById(node);
         this.scene = scene;
-        this.allowedTypes = ['png', 'jpg', 'jped', 'gif', 'svg', 'js'];
+        this.allowedTypes = ['image/png', 'image/jpg', 'image/jped', 'image/gif', 'image/svg+xml', 'application/javascript', 'application/px'];
+        this.allowedImagesTypes = ['image/png', 'image/jpg', 'image/jped', 'image/gif', 'image/svg+xml'];
+        this.allowedScriptsTypes = ['application/javascript', 'application/px'];
         this.resources = {}; // = Project.resources = {};
         // this.lastScript = null;
         this.input = document.getElementById('upload-input');
@@ -73,13 +76,23 @@ export class Project {
     }
 
     /**
+     * Init the project
+     * @param {array} resources - The project resources
+     */
+    init(resources) {
+        for (let resource of resources) {
+            this.addResource(resource);
+        }
+    }
+
+    /**
      * Add object to resources list
      * @param {Object} obj - The object
      */
     addResource(obj, dispatch = true) {
         this.node.appendChild(this.createView(obj));        
         this.resources[obj.id] = obj;
-        this.scene.current = obj;
+        // this.scene.current = obj;
 
         if (dispatch) {
             System.dispatchEvent('add_resource', obj);
@@ -131,17 +144,21 @@ export class Project {
         let filesLen = files.length;
         let fileName = '';
         let fileType = '';
+        let path = '/';
+
+        console.log(files);
 
         for (let i = 0; i < filesLen; i++) {
 
             fileName = files[i].name;
-            fileType = fileName.split('.');
-            fileType = fileType[fileType.length - 1];
+            fileType = files[i].type;
+            // fileType = fileName.split('.');
+            // fileType = fileType[fileType.length - 1];
 
             let data = {
                 name: fileName,
                 type: fileType,
-                path: '/',
+                path: path,
                 value: null
             };
 
@@ -156,29 +173,94 @@ export class Project {
             });
 
             xhr.addEventListener('load', function() {
-                // alert('Upload terminé !');
+                console.log('Upload terminé !');
             });
+
+            // console.log(fileType)
 
             // Si c'est une image
             if (this.allowedTypes.indexOf(fileType) !== -1) {
-                (i => {
-                    createThumbnail(files[i], img => {
-                        const obj = new Object(fileName.split('.')[0]);
-                        obj.type = fileType;
-                        obj.image = img;
-                        this.addResource(obj);
-                        // fetch(img.src)
-                        // .then(res => res.blob())
-                        // .then(blob => blob.arrayBuffer())
-                        // .then(buffer => {
-                        //     buffer = new Uint8Array(buffer);
-                        // });
-                        data.value = img.src;
-                        xhr.send(JSON.stringify(data));
-                        // this.addResource(new Resource(fileName.split('.')[0], fileType, e));
-                    });
-                })(i);
+                if (this.allowedImagesTypes.indexOf(fileType) !== -1) {
+                    (i => {
+                        createThumbnail(files[i], async img => {
+                            const obj = new Object(fileName.split('.')[0]);
+                            obj.type = fileType;
+                            obj.image = img;
+                            this.addResource(obj);
+
+                            // fetch(img.src)
+                            // .then(res => res.blob())
+                            // .then(blob => blob.arrayBuffer())
+                            // .then(buffer => {
+                            //     buffer = new Uint8Array(buffer);
+                            // });
+
+                            data.value = img.src;
+                            xhr.send(JSON.stringify(data));
+
+                            // let form = new FormData();
+                            // form.append('file', files[i]);
+                            // form.append('path', path);
+                            // xhr.send(form);
+
+                            // this.addResource(new Resource(fileName.split('.')[0], fileType, e));
+                        });
+                    })(i);
+                } else if (this.allowedScriptsTypes.indexOf(fileType) !== -1) {
+                    console.log('ok');
+                }
             }
+        }
+    }
+
+    /**
+     * Download project resources
+     * @param {string} url - The project url
+     */
+    async download(url, dispatch = true) {
+        const files = await fetch(url + '/data')
+            .then(response => response.json())
+            .catch(error => console.error);
+        
+        let resources = [];
+        let progress = 0;
+        
+        console.log('Progress: ' + progress.toFixed(2) + '%');
+        // console.log(files);
+
+        for (let i = 1; i < files.length; i++) {
+            const path = files[i].replace('\\', '/').split('/');
+            const folder = path[0];
+            const name = path[1];
+            resources.push(
+                await fetch(`${url}/${folder}/${name}`)
+                    .then(response => response.blob())
+                    .then(async blob => {
+                        const url = URL.createObjectURL(blob);
+                        const type = blob.type;
+                        const img = await Texture.load(url);
+                        const obj = new Object(name.split('.')[0]);
+                        obj.type = type;
+                        obj.image = img;
+                        return obj;
+                        // this.addResource(obj);
+                    })
+                    .catch(error => console.error)
+            );
+            progress = (i * 100) / (files.length - 1);
+            console.log('Progress: ' + progress.toFixed(2) + '%');
+
+            if (progress == 100) {
+                return new Promise((resolve, reject) => {
+                    resolve(resources);
+                });
+            }
+        }
+
+        // console.log(resources);
+
+        if (dispatch) {
+            System.dispatchEvent('load_resources', resources);
         }
     }
 
@@ -212,6 +294,8 @@ export class Project {
                 let sources = resource.data.toString().replace(/^class [a-zA-Z0-9_$]* {/, `class ${name} {`);
                 Compiler.open(obj.id, resource.name + '.js', sources);
                 return;
+            } else if (type === 'px') {
+                document.getElementById('blueprint-btn').click();
             }
             this.scene.current = obj;
             // document.getElementById('code-btn').click();
@@ -231,15 +315,24 @@ export class Project {
         
         // Ajout de l'image ou de l'icône
         if (this.allowedTypes.indexOf(obj.type) !== -1) {
-            if (obj.type === 'jpg' || obj.type === 'png' || obj.type === 'jped' || obj.type === 'gif') {
+            if (obj.type === 'image/jpg' || obj.type === 'image/png' || obj.type === 'image/jped' || obj.type === 'image/gif' || obj.type === 'image/svg+xml') {
                 var figure = document.createElement('figure');
                 figure.appendChild(obj.image);
                 var i = figure;
-            }
-            else if (obj.type === 'js' || obj.type === 'script') {
+            } else if (obj.type === 'application/javascript' || obj.type === 'script') {
                 var i = document.createElement('i');
                 i.setAttribute('class', 'material-icons');
                 var icon = document.createTextNode('description');
+                i.appendChild(icon);
+            } else if (obj.type === 'application/px' || obj.type === 'px') {
+                var i = document.createElement('i');
+                i.setAttribute('class', 'material-icons');
+                var icon = document.createTextNode('settings_input_component');
+                i.appendChild(icon);
+            } else {
+                var i = document.createElement('i');
+                i.setAttribute('class', 'material-icons list');
+                var icon = document.createTextNode(obj.type);
                 i.appendChild(icon);
             }
         }
@@ -265,7 +358,7 @@ export class Project {
             // Mise à jour du nom de la ressource
             this.updateName(e);
             
-            // TODO : Mise à jour de l'image de la ressource
+            // TODO: Mettre à jour l'image de la ressource
             // obj.createImage();
         });
         
@@ -304,6 +397,9 @@ export class Project {
 function createThumbnail(file, callback) {
 
     var reader = new FileReader();
+
+    // console.log(file);
+    // console.log(reader);
     
     reader.addEventListener('load', function() {
         var img = new Image(); // document.createElement('img');
@@ -315,4 +411,15 @@ function createThumbnail(file, callback) {
     });
     
     reader.readAsDataURL(file);
+}
+
+function readAsArrayBuffer(file) {
+
+    var reader = new FileReader();
+    
+    reader.addEventListener('load', function() {
+        
+    });
+    
+    reader.readAsArrayBuffer(file);
 }

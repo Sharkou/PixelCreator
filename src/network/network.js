@@ -27,9 +27,8 @@ export class Network {
         
         this.host = host;
         this.port = port;
-        this.protocol = 'http';
-        this.ws = new WebSocket(`ws://${host}:${port}/ws`);
-        // this.socket = io(host + ':' + port);        
+        this.protocol = 'https';
+        this.ws = new WebSocket(`wss://${host}:${port}/ws`);
         this.uid = null;
         this.scene = null;
         this.inspector = false;

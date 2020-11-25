@@ -1,4 +1,4 @@
-function openTab(e, id, parentID) {
+export default function openTab(e, id, parentID) {
     
     // Declare all variables
     var i, tabcontent, tablinks;

@@ -1,22 +1,19 @@
 import { Node } from '/editor/blueprint/node.js';
 
 export class Graph {
-
-    static nodes = {};
-    static boxes = {};
-    static blueprint = null;
-    static svg = null;
-    static currentConnector = null;
-    static currentNode = null;
     
     /**
      * Initialize Graph (visual scripting)
      * @constructor
      */
-    static init() {
+    constructor() {
+        this.nodes = {};
         this.boxes = document.getElementsByClassName('box');
         this.blueprint = document.getElementById('blueprint');
         this.svg = document.getElementById('svg');
+        this.currentConnector = null;
+        this.currentNode = null;
+        this.code = '';
 
         this.blueprint.addEventListener('dragover', e => {
             e.preventDefault(); // annule l'interdiction de "drop"
@@ -119,7 +116,7 @@ export class Graph {
      * Create new node
      * @param {string} type - The node type
      */
-    static createNode(type, e) {
+    createNode(type, e) {
         const node = new Node(type);
         this.blueprint.appendChild(node.el);
         node.moveTo({
@@ -127,13 +124,15 @@ export class Graph {
             y: e.y - node.el.offsetHeight / 2
         });
         this.nodes[node.id] = node;
+
+        this.updateScript();
     }
 
-    static deleteNode(id) {
-
+    deleteNode(id) {
+        this.updateScript();
     }
 
-    static createPath(a, b) {
+    createPath(a, b) {
         // let x1 = (b.x - a.x) * 0.4 + a.x;
         // let y1 = a.y;
         // let x2 = (b.x - a.x) * 0.6 + a.x;
@@ -149,7 +148,7 @@ export class Graph {
         return path;
     }
 
-    static deletePath(connector) {
+    deletePath(connector) {
         if (connector) {
             connector.path.removeAttribute('d');
             connector.classList.remove('filled');
@@ -157,9 +156,15 @@ export class Graph {
             connector.classList.add('empty');
             connector.node.detachConnector(connector);
         }
+
+        this.updateScript();
     }
 
-    static connect(input, output) {
+    addConnectorPath(path) {
+        this.svg.appendChild(path);
+    }
+
+    connect(input, output) {
 
         const connect = function(connector) {
             connector.connected = true;
@@ -186,31 +191,17 @@ export class Graph {
             path: input.path
         });
         
-        // var iPoint = Graph.getConnectorPos(input);
-        // var oPoint = Graph.getConnectorPos(output);
+        // var iPoint = this.getConnectorPos(input);
+        // var oPoint = this.getConnectorPos(output);
         
         // var path = Graph.createPath(iPoint, oPoint);
         
         // input.path.setAttribute('d', path);
+
+        this.updateScript();
     }
 
-    static getOffset(el) {
-        const rect = el.getBoundingClientRect();
-        return {
-            left: rect.left - this.blueprint.scrollLeft,
-            top: rect.top - this.blueprint.scrollTop
-        };
-    }
-
-    static getMousePos(e) {
-        const rect = this.getOffset(this.blueprint);
-        return {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
-        }
-    }
-
-    static getConnectorPos(connector) {
+    getConnectorPos(connector) {
         // let connector = this.el.firstElementChild;
         const offset = this.getOffset(connector);
         const rect = this.getOffset(this.blueprint);
@@ -221,6 +212,22 @@ export class Graph {
         };
     }
 
+    getOffset(el) {
+        const rect = el.getBoundingClientRect();
+        return {
+            left: rect.left - this.blueprint.scrollLeft,
+            top: rect.top - this.blueprint.scrollTop
+        };
+    }
+
+    getMousePos(e) {
+        const rect = this.getOffset(this.blueprint);
+        return {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        }
+    }
+
     // static getAttachPoint(connector) {
     //     let offset = this.getOffset(connector);
     //     return {
@@ -228,4 +235,15 @@ export class Graph {
     //         y: offset.top + connector.offsetHeight / 2
     //     };
     // }
+
+    /**
+     * Update PixelScript content
+     */
+    updateScript(id, code) {
+        console.log(this.nodes);
+        this.code = '';
+        // let script = Project.resources[id];
+        // script.data = Compiler.compile(code);
+        // Compiler.update(script);
+    }
 }

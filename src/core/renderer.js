@@ -194,7 +194,7 @@ export class Renderer {
         this.ctx.save();
         
         // Cleaning the canvas
-        this.clear(camera.components.camera.background); // #272727 // #333
+        this.clear(camera.getComponent('Camera').background); // #272727 // #333
 
         // Straddle the pixels
         this.ctx.translate(0.5, 0.5);

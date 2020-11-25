@@ -49,14 +49,14 @@ import {
     Mouse,
     Keyboard,
     Network
-} from 'http://localhost:5501/src/core/mod.js';
+} from 'https://editor.pixelcreator.io/src/core/mod.js';
 
 // Get project ID
 // const id = app.dataset ? app.dataset['id'] : null;
 // console.log(`id: ${id}`);
 
-const host = 'localhost';
-const port = 80;
+const host = data.host;
+const port = data.port;
 const app = document.getElementById('app');
 const renderer = new Renderer(window.innerWidth, window.innerHeight);
 
@@ -76,7 +76,7 @@ async function init() {
         scene.instanciate(objects[id]);
 
         // Camera initialization
-        if (objects[id].components.camera) {
+        if (objects[id].components.Camera) {
             // obj.x -= obj.width / 2;
             // obj.y -= obj.height / 2;
             // obj.visible = false;
@@ -118,12 +118,12 @@ window.onresize = function() {
     renderer.init(scene, camera);
 };
 
-window.onbeforeunload = function() {
-    network.disconnect();
+window.onbeforeunload = function(e) {
+    Network.disconnect();
 };
 
-window.onunload = function() {
-    network.disconnect();
+window.onunload = function(e) {
+    Network.disconnect();
 };
     </script>
 

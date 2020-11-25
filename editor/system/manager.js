@@ -1,8 +1,8 @@
 import { Scene } from '/src/core/scene.js';
 import { Camera } from '/src/core/camera.js';
 import { Texture } from '/src/graphics/texture.js';
-import { Circle } from '/src/graphics/circle.js';
-import { Rectangle } from '/src/graphics/rectangle.js';
+import { CircleRenderer } from '/src/graphics/circle.js';
+import { RectangleRenderer } from '/src/graphics/rectangle.js';
 import { Light } from '/src/graphics/light.js';
 import { Map } from '/src/graphics/map.js';
 import { Animation } from '/src/anim/animation.js';
@@ -11,34 +11,32 @@ import { Collider, RectCollider, CircleCollider } from '/src/physics/collider.js
 import { Controller } from '/src/physics/controller.js';
 import { Rotator } from '/src/physics/rotator.js';
 
-export class Component {
+export class Manager {
 
-    static components = {};
-    static properties;
-
-    static init(properties = null) {
+    constructor(properties = null) {
         this.properties = properties;
+        this.components = {};
 
         // Components init
-        Component.add(Camera, 'fas fa-camera-movie', 'camera');
+        this.addComponent(Camera, 'fas fa-camera-movie', 'camera');
 
-        Component.add(Texture, 'fas fa-file-image', 'graphics');
-        Component.add(Circle, 'fad fa-circle', 'graphics');
-        Component.add(Rectangle, 'fad fa-rectangle-wide', 'graphics');
-        // Component.add(Light, 'fad fa-circle', 'graphics');
-        // Component.add(Map, 'fad fa-circle', 'graphics');
+        this.addComponent(Texture, 'fas fa-file-image', 'graphics');
+        this.addComponent(CircleRenderer, 'fad fa-circle', 'graphics');
+        this.addComponent(RectangleRenderer, 'fad fa-rectangle-wide', 'graphics');
+        // this.addComponent(Light, 'fad fa-circle', 'graphics');
+        // this.addComponent(Map, 'fad fa-circle', 'graphics');
 
-        // Component.add(Animation, 'far fa-images', 'anim');
-        // Component.add(Animator, 'far fa-images', 'anim');
+        // this.addComponent(Animation, 'far fa-images', 'anim');
+        // this.addComponent(Animator, 'far fa-images', 'anim');
 
-        Component.add(Collider, 'far fa-arrow-to-right', 'physics');
+        this.addComponent(Collider, 'far fa-arrow-to-right', 'physics');
 
         // TODO: Replace by a list
-        // Component.add(RectCollider, 'far fa-arrow-to-right', 'physics');
-        // Component.add(CircleCollider, 'far fa-arrow-to-right', 'physics');
+        // this.addComponent(RectCollider, 'far fa-arrow-to-right', 'physics');
+        // this.addComponent(CircleCollider, 'far fa-arrow-to-right', 'physics');
 
-        Component.add(Controller, 'fas fa-gamepad', 'physics');
-        Component.add(Rotator, 'far fa-sync', 'physics');
+        this.addComponent(Controller, 'fas fa-gamepad', 'physics');
+        this.addComponent(Rotator, 'far fa-sync', 'physics');
 }
     
     /**
@@ -48,7 +46,7 @@ export class Component {
      * @param {string} iconClasses - The icon classes
      * @param {string} category - The component category
      */
-    static add(component, iconClasses, category = '') {
+    addComponent(component, iconClasses, category = '') {
 
         // Add component to array
         this.components[component.name] = component;
@@ -59,7 +57,7 @@ export class Component {
         }
     }
 
-    static appendChild(component, iconClasses, category) {
+    appendChild(component, iconClasses, category) {
 
         const li = document.createElement('li');
         const i = document.createElement('i');
@@ -67,10 +65,10 @@ export class Component {
         const name = component.name;
 
         li.classList.add('component');
-        li.id = name.toLowerCase();
+        li.id = name; // .toLowerCase();
 
         span.classList.add('object-text');
-        span.textContent = name;
+        span.textContent = name.replace(/([A-Z])/g, ' $1').trim();
 
         const iconsArray = iconClasses.split(' ');
         i.classList.add(...iconsArray);
@@ -78,7 +76,7 @@ export class Component {
         li.appendChild(i);
         li.appendChild(span);
 
-        li.addEventListener('click', e => {
+        li.addEventListener('mousedown', e => {
 
             const component = new this.components[name]();
             const current = Scene.main.current;

@@ -1,6 +1,6 @@
 import { Graphics } from '/src/graphics/graphics.js';
 
-export class Circle {
+export class CircleRenderer {
     
     /**
      * Initialize the component

@@ -61,6 +61,8 @@
 
 #resources-list li figure img {
     pointer-events: none;
+    max-width: 70px;
+    max-height: 60px;
 }
 
 #resources-list li div {

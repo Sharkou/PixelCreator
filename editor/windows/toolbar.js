@@ -1,6 +1,6 @@
 import { Object } from '/src/core/object.js';
-import { Circle } from '/src/graphics/circle.js';
-import { Rectangle } from '/src/graphics/rectangle.js';
+import { CircleRenderer } from '/src/graphics/circle.js';
+import { RectangleRenderer } from '/src/graphics/rectangle.js';
 import { Light } from '/src/graphics/light.js';
 
 export class Toolbar {
@@ -31,11 +31,11 @@ export class Toolbar {
             switch (tool.id) {
                 
                 case 'circle':
-                    obj.addComponent(new Circle('#FFFFFF', 0.6), false); // CC8844
+                    obj.addComponent(new CircleRenderer('#FFFFFF', 0.6), false); // CC8844
                     break;
 
                 case 'rectangle':
-                    obj.addComponent(new Rectangle('#FFFFFF', 0.6), false);
+                    obj.addComponent(new RectangleRenderer('#FFFFFF', 0.6), false);
                     break;
 
                 case 'light':
