@@ -1,0 +1,48 @@
+@keyframes move {
+    0% {
+        transform: translateY(100px);
+        opacity: 0;
+    }
+
+    20% {
+        opacity: 1;
+        transform: translateY(-20px);
+    }
+
+    80% {
+        opacity: 1;
+        transform: translateY(-20px);
+    }
+
+    100% {
+        transform: translateY(100px);
+        opacity: 0;
+    }
+}
+
+#save-popup {
+    display: none;
+    position: absolute;
+    z-index: 10;
+    bottom: 0px;
+    left: 20px;
+    background: url('../images/success.png') no-repeat 15px;
+    background-size: 10%;
+    background-color: white;
+    border-left: 4px solid #7dd320;
+    padding: 15px 40px 15px 80px;
+    color: rgba(0, 0, 0, 0.8);
+    box-shadow: 1px 3px 9px 0px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    transition: 800ms;
+}
+
+#save-popup.active {
+    display: block;
+    animation: move 4000ms;
+}
+
+#save-popup p:first-child {
+    font-weight: bold;
+    color: #333;
+}

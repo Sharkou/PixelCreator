@@ -1,4 +1,5 @@
 import { System } from '/src/core/system.js';
+import { Loader } from '/src/core/loader.js';
 import { Client } from '/src/network/client.js';
 import { Renderer } from '/src/core/renderer.js';
 import { Scene } from '/src/core/scene.js';
@@ -60,7 +61,7 @@ export class Network {
         return new Promise((resolve, reject) => {
 
             this.ws.onopen = e => {
-                console.log('[SERVER] Connection established!');
+                console.log('%c[SERVER] Connection established!', 'color: #11AB0D');
                 this.send('init', scene.name);
             };
 
@@ -78,13 +79,13 @@ export class Network {
             };
 
             this.ws.onclose = e => {
-                console.log('[SERVER] Connection closed: ' + JSON.stringify(e));
+                console.log('%c[SERVER] Connection closed: ' + JSON.stringify(e), 'color: #11AB0D');
             };
         });
     }
 
     static disconnect() {
-        console.log('Disconnect request from local app layer...');
+        console.log('%c[SERVER] Disconnect request from local app layer...', 'color: #11AB0D');
         this.ws.close();
     }
 
@@ -119,6 +120,7 @@ export class Network {
                 case 'removeComponent': this.removeComponent(data); break;
                 case 'addChild': this.addChild(data); break;
                 case 'removeChild': this.removeChild(data); break;
+                case 'upload_files': this.uploadFiles(data); break;
                 case 'mousemove': this.mousemove(data); break;
                 case 'mousedown': this.mousedown(data); break;
                 case 'mouseup': this.mouseup(data); break;
@@ -134,8 +136,8 @@ export class Network {
      * @return {Promise} data - The promise resolved
      */
     static initScene(data) {
-        console.log('[SERVER] scene data received from server: ');
-        console.log(data);
+        console.log('%c[SERVER] Scene data received from server: ' + Object.keys(data).length, 'color: #11AB0D');
+        // console.log(data);
         if (this.inspector) this.sync();
         for (let el of document.querySelectorAll('.loading')) {
             el.classList.remove('loading');
@@ -146,29 +148,29 @@ export class Network {
     }
 
     static message(data) {
-        console.log('[SERVER] message received from server: ' + data);
+        console.log('%c[SERVER] Message received from server: ' + data, 'color: #11AB0D');
     }
 
     static connection(data) {
-        console.log('[SERVER] a new user connected: ' + data.id);
+        console.log('%c[SERVER] New user connected: ' + data.id, 'color: #11AB0D');
 
         // Create the user
         this.users[data.id] = new Client(data.id);
     }
 
     static disconnection(id) {
-        console.log('[SERVER] a user disconnected: ' + id);
+        console.log('%c[SERVER] User disconnected: ' + id, 'color: #11AB0D');
         delete this.users[id];
     }
 
     static getUID(data) {
-        console.log('[SERVER] your UID: ' + data);
+        console.log('%c[SERVER] Your UID: ' + data, 'color: #11AB0D');
         this.uid = data;
     }
 
     static getUsers(data) {
-        console.log('[SERVER] get users connected to the server: ' + Object.keys(data).length);
-        console.log(data);
+        console.log('%c[SERVER] Users connected to the server: ' + Object.keys(data).length, 'color: #11AB0D');
+        // console.log(data);
         this.users = data;
     }
 
@@ -178,7 +180,7 @@ export class Network {
      */
     static heartbeat(data) {
         // if (!this.inspector) {
-            console.log('[SERVER] scene heartbeat: ');
+            // console.log('%c[SERVER] Scene heartbeat: ', 'color: #11AB0D');
             // console.log(data);
             for (let id in data) {
                 if (this.scene.objects[id]) {
@@ -201,7 +203,7 @@ export class Network {
      * @param {boolean} pause - The pause state
      */
     static pause(pause) {
-        console.log(pause);
+        console.log('%cinfo: ' + (pause ? 'Stop' : 'Start'), 'color: #3b78ff');
         Renderer.main.pause = pause;
     }
 
@@ -236,9 +238,9 @@ export class Network {
      */
     static add(obj) {
         const id = obj.id;
-        console.log('[SERVER] add object: ' + id);
+        console.log('%c[SERVER] Object added: ' + id, 'color: #11AB0D');
         console.log(obj);
-        this.scene.instanciate(obj);
+        this.scene.instantiate(obj);
     }
 
     /**
@@ -246,7 +248,7 @@ export class Network {
      * @param {string} id - The object id
      */
     static remove(id) {
-        console.log('[SERVER] object removed: ' + id);
+        console.log('%c[SERVER] Object removed: ' + id, 'color: #11AB0D');
         this.scene.remove(this.scene.objects[id]);
     }
 
@@ -255,7 +257,7 @@ export class Network {
      * @param {Object} data - The object data
      */
     static update(data) {
-        console.log('[SERVER] object updated: ' + data.id);
+        // console.log('%c[SERVER] Object updated: ' + data.id, 'color: #11AB0D');
         const obj = this.scene.objects[data.id];
         const component = data.component;
         const scene = Scene.main;
@@ -287,7 +289,7 @@ export class Network {
     }
 
     static addComponent(data) {
-        console.log('[SERVER] component added: ' + data.component.name);
+        console.log('%c[SERVER] Component added: ' + data.component.name, 'color: #11AB0D');
         // console.log(data);
         const obj = this.scene.objects[data.id];
         const component = data.component;
@@ -297,7 +299,7 @@ export class Network {
     }
 
     static removeComponent(data) {
-        console.log('[SERVER] component removed: ' + data.component);
+        console.log('%c[SERVER] Component removed: ' + data.component, 'color: #11AB0D');
         // console.log(data);
         const obj = this.scene.objects[data.id];
         const component = data.component;
@@ -307,7 +309,7 @@ export class Network {
     }
 
     static addChild(data) {
-        console.log('[SERVER] child added: ' + data.component.name);
+        console.log('%c[SERVER] Child added: ' + data.component.name, 'color: #11AB0D');
         // console.log(data);
         const obj = this.scene.objects[data.id];
         const child = this.scene.objects[data.child];
@@ -317,7 +319,7 @@ export class Network {
     }
 
     static removeChild(data) {
-        console.log('[SERVER] child removed: ' + data.component.name);
+        console.log('%c[SERVER] Child removed: ' + data.component.name, 'color: #11AB0D');
         // console.log(data);
         const obj = this.scene.objects[data.id];
         const child = this.scene.objects[data.child];
@@ -331,7 +333,16 @@ export class Network {
      */
     static save() {
         this.send('save', this.scene);
-    }   
+    }
+
+    /*
+     * Download uploaded files
+     */
+    static async uploadFiles(data) {
+        // console.log(data);
+        await Loader.load(data.id);
+        console.log('%c[SERVER] File loaded: ' + data.id, 'color: #11AB0D');
+    }
 
     /**
      * Synchronize objects data with server
@@ -413,6 +424,14 @@ export class Network {
 
         System.addEventListener('remove', obj => {
             this.send('remove', obj.id);
+        });
+
+        System.addEventListener('upload_files', data => {
+            // console.log(data);
+            this.send('upload_files', {
+                id: data.id,
+                type: data.type
+            });
         });
     }
 

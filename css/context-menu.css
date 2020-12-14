@@ -25,6 +25,7 @@
 
 .context-menu ul {
     width: 100%;
+    height: 140px;
 }
 
 /* Links inside the context menu */

@@ -8,7 +8,7 @@
 }
 
 #resources-container {
-    height: 100%;
+    height: calc(100% - 40px);
 }
 
 #resources-list {

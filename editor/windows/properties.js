@@ -548,37 +548,40 @@ export class Properties {
         // let icon_component = this.createIcon(h3.textContent.toLocaleLowerCase());
         const icon = document.createElement('i');
 
+        // console.log(component.name);
+
         switch (component.name) {
 
-            case 'object':
+            case 'Object':
                 icon.setAttribute('class', 'far fa-cube icon');
                 break;
 
-            case 'camera':
+            case 'Camera':
                 icon.setAttribute('class', 'far fa-camera-movie icon');
                 break;
                 
-            case 'prefab':
+            case 'Prefab':
                 icon.setAttribute('class', 'fad fa-cubes icon');
                 break;
 
-            case 'image':
+            case 'Texture':
+            case 'Image':
                 icon.setAttribute('class', 'far fa-image icon');
                 break;
 
-            case 'circle':
+            case 'CircleRenderer':
                 icon.setAttribute('class', 'far fa-circle icon');
                 break;
 
-            case 'rectangle':
+            case 'RectangleRenderer':
                 icon.setAttribute('class', 'far fa-square icon');
                 break;
 
-            case 'light':
+            case 'Light':
                 icon.setAttribute('class', 'far fa-lightbulb icon');
                 break;
 
-            case 'particle':
+            case 'Particle':
                 icon.setAttribute('class', 'fad fa-sun-dust icon');
                 break;
 

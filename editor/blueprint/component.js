@@ -1,4 +1,3 @@
-/* Core Modules */
 import { System } from '/src/core/system.js';
 
 export class Component {

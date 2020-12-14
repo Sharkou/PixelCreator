@@ -22,7 +22,7 @@ export class Hierarchy {
             this.add(obj);
         });
 
-        System.addEventListener('instanciate', obj => {
+        System.addEventListener('instantiate', obj => {
             this.add(obj);
         });
 
@@ -49,7 +49,7 @@ export class Hierarchy {
      */
     add(obj) {
         let last = this.node.appendChild(this.createView(obj));
-        obj.createImage();
+        if (!obj.image) obj.createImage();
         Sorter.sort(last);
         // last.classList.add('active');
         this.setActive(last.id);
@@ -177,6 +177,9 @@ export class Hierarchy {
             case 'particle':
                 icon.setAttribute('class', 'fad fa-sun-dust icon');
                 break;
+
+            default:
+                icon.setAttribute('class', 'far fa-cube icon');
         }
         
         var lock = document.createElement('i');

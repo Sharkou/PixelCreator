@@ -25,15 +25,12 @@ export class CircleRenderer {
      */
     draw(self) {
         
-        Graphics.circle(self.x, self.y, self.width / 2);
+        Graphics.ellipse(self.x, self.y, self.width / 2, self.height / 2);
+        // Graphics.circle(self.x, self.y, self.width / 2);
         
         if (this.fill) {
-
             Graphics.fill(this.color, this.opacity);
-        }
-
-        else {
-
+        } else {
             Graphics.stroke(this.color, this.opacity);
         }
     }

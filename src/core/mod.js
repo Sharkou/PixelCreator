@@ -2,6 +2,8 @@ export { System } from '/src/core/system.js';
 export { Scene } from '/src/core/scene.js';
 export { Renderer } from '/src/core/renderer.js';
 export { Object } from '/src/core/object.js';
+export { Loader } from '/src/core/loader.js';
+export { Resource } from '/src/core/resource.js';
 export { Time } from '/src/time/time.js';
 export { Performance } from '/src/time/performance.js';
 export { Mouse } from '/src/input/mouse.js';

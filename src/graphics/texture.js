@@ -1,19 +1,40 @@
+import { Loader } from '/src/core/loader.js';
 import { Graphics } from '/src/graphics/graphics.js';
+// import { Project } from '/app.js';
 
 export class Texture {
+
+    #scaleFromBox;
+    #scaleX;
+    #scaleY;
+    #image;
     
     /**
      * Initialize the component
      * @constructor
-     * @param {Image} image - The texture to display
+     * @param {Image} src - The texture source
      */
-    constructor(image = null, flip = false, scaleX = 1, scaleY = 1, scaleFromBox = true) {
+    constructor(src, flip = false, scaleX = 1, scaleY = 1, scaleFromBox = true) {
         
-        this.image = image;
+        // this.image = {
+        //     type: 'image',
+        //     value: id
+        // };
+
+        this.source = src;
+        this.image = Loader.files[src];
         this.flip = flip;
-        this.scaleX = scaleX;
-        this.scaleY = scaleY;
-        this.scaleFromBox = scaleFromBox;
+        this.#scaleX = scaleX;
+        this.#scaleY = scaleY;
+        this.#scaleFromBox = scaleFromBox;
+    }
+
+    /**
+     * Update the component
+     * @update
+     */
+    update(self) {
+        this.image = Loader.files[this.source];
     }
     
     /**
@@ -27,16 +48,13 @@ export class Texture {
             Graphics.ctx.scale(-1, 1);
         }
 
-        // scale
-        //Graphics.ctx.scale(this.scaleX, this.scaleY);
+        // Scale
+        // Graphics.ctx.scale(this.scaleX, this.scaleY);
         
-        if (this.scaleFromBox)
-        {
-            Graphics.imageBox(this.image, self.x, self.y, this.scaleX, this.scaleY, self.width, self.height);
-        }
-        else
-        {
-            Graphics.image(this.image, self.x, self.y, this.scaleX, this.scaleY);
+        if (this.#scaleFromBox) {
+            Graphics.imageBox(this.image, self.x, self.y, this.#scaleX, this.#scaleY, self.width, self.height);
+        } else {
+            Graphics.image(this.image, self.x, self.y, this.#scaleX, this.#scaleY);
         }
     }
     

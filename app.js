@@ -67,16 +67,19 @@ async function init() {
     // }
 
     // Download project resources
-    let resources = await project.download(`https://${host}:${port}`);
-    // Loader.load(`https://${host}:${port}`);
+    let resources = await Loader.download(`https://${host}:${port}`);
+
+    // console.log(resources);
 
     // Connect to main scene
     let objects = await Network.init(host, port).connect(scene, true);
-    // let objects = data.objects;
 
+    // console.log(objects);
+
+    // Scene initialization
     project.init(resources);
-    renderer.init(scene, camera);
     scene.init(objects);
+    renderer.init(scene, camera);
 
     // Start loop
     loop();
@@ -133,6 +136,8 @@ window.onunload = function(e) {
 
 // Debug
 window.scene = scene;
+window.project = project;
+window.loader = Loader;
 // window.renderer = renderer;
 // window.camera = camera;
 // window.keyboard = Keyboard;

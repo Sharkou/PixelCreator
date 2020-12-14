@@ -551,8 +551,8 @@ export class Object {
 
         const camera = Camera.main;
         
-        // const offsetX = (this.width % 2 == 0) ? 0.5 : 0;
-        // const offsetY = (this.height % 2 == 0) ? 0.5 : 0;
+        // const offsetX = (this.width % 2 !== 0) ? 0.5 : 0;
+        // const offsetY = (this.height % 2 !== 0) ? 0.5 : 0;
 
         const offsetX = 0;
         const offsetY = 0;

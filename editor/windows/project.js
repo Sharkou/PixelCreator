@@ -1,9 +1,10 @@
 import { System } from '/src/core/system.js';
+import { Loader } from '/src/core/loader.js';
 import { Scene } from '/src/core/scene.js';
 import { Object } from '/src/core/object.js';
+import { Resource } from '/src/core/resource.js';
 import { Network } from '/src/network/network.js';
 import { Sorter } from '/editor/misc/sorter.js';
-import { Texture } from '/src/graphics/texture.js';
 
 export class Project {
     
@@ -17,9 +18,6 @@ export class Project {
 
         this.node = document.getElementById(node);
         this.scene = scene;
-        this.allowedTypes = ['image/png', 'image/jpg', 'image/jped', 'image/gif', 'image/svg+xml', 'application/javascript', 'application/px'];
-        this.allowedImagesTypes = ['image/png', 'image/jpg', 'image/jped', 'image/gif', 'image/svg+xml'];
-        this.allowedScriptsTypes = ['application/javascript', 'application/px'];
         this.resources = {}; // = Project.resources = {};
         // this.lastScript = null;
         this.input = document.getElementById('upload-input');
@@ -73,6 +71,11 @@ export class Project {
             let files = this.input.files;
             this.uploadFiles(files);
         });
+
+        // Load file
+        System.addEventListener('load_file', obj => {
+            this.addResource(obj);
+        });
     }
 
     /**
@@ -80,17 +83,22 @@ export class Project {
      * @param {array} resources - The project resources
      */
     init(resources) {
-        for (let resource of resources) {
-            this.addResource(resource);
+        if (resources) {
+            for (let resource of resources) {
+                this.addResource(resource);
+            }
         }
     }
 
     /**
      * Add object to resources list
-     * @param {Object} obj - The object
+     * @param {Object} obj - The resource
      */
     addResource(obj, dispatch = true) {
-        this.node.appendChild(this.createView(obj));        
+
+        if (!obj) return;
+
+        this.node.appendChild(this.createView(obj));
         this.resources[obj.id] = obj;
         // this.scene.current = obj;
 
@@ -140,13 +148,13 @@ export class Project {
      * Upload files in project
      * @param {Array} files - The files to add
      */
-    uploadFiles(files) {
+    async uploadFiles(files, dispatch = true) {
         let filesLen = files.length;
         let fileName = '';
         let fileType = '';
         let path = '/';
 
-        console.log(files);
+        // console.log(files);
 
         for (let i = 0; i < filesLen; i++) {
 
@@ -155,17 +163,49 @@ export class Project {
             // fileType = fileName.split('.');
             // fileType = fileType[fileType.length - 1];
 
-            let data = {
-                name: fileName,
-                type: fileType,
-                path: path,
-                value: null
-            };
-
             // Upload to server
+            let resource;
             let xhr = new XMLHttpRequest();
 
             xhr.open('POST', `${Network.protocol}://${Network.host}:${Network.port}`);
+
+            // console.log(fileType);
+
+            // Authorized file
+            if (Loader.allowedTypes.indexOf(fileType) !== -1) {
+
+                // Create the resource
+                resource = new Resource(fileName.split('.')[0], fileName.split('.')[1], fileType, path);
+
+                // Image file
+                if (Loader.allowedImagesTypes.indexOf(fileType) !== -1) {
+
+                    const img = await this.createThumbnail(files[i]);
+                    resource.value = img.src;
+
+                    xhr.send(JSON.stringify(resource));
+
+                    resource.sync();
+                    resource.image = img;
+
+                    // (i => {
+                    //     this.createThumbnail(files[i], async img => {
+                    //         obj.image = img;
+                    //         let form = new FormData();
+                    //         form.append('file', files[i]);
+                    //         form.append('path', path);
+                    //         xhr.send(form);
+                    //     });
+                    // })(i);
+
+                // Script file
+                } else if (this.allowedScriptsTypes.indexOf(fileType) !== -1) {
+                    console.log('ok');
+                }
+                
+                this.addResource(resource);
+                Loader.add(resource);
+            }
 
             xhr.upload.addEventListener('progress', function(e) {
                 // progress.value = e.loaded;
@@ -173,95 +213,42 @@ export class Project {
             });
 
             xhr.addEventListener('load', function() {
-                console.log('Upload terminé !');
-            });
+                console.log('%cinfo: Upload ' + resource.id + ' completed!', 'color: #3b78ff');
 
-            // console.log(fileType)
-
-            // Si c'est une image
-            if (this.allowedTypes.indexOf(fileType) !== -1) {
-                if (this.allowedImagesTypes.indexOf(fileType) !== -1) {
-                    (i => {
-                        createThumbnail(files[i], async img => {
-                            const obj = new Object(fileName.split('.')[0]);
-                            obj.type = fileType;
-                            obj.image = img;
-                            this.addResource(obj);
-
-                            // fetch(img.src)
-                            // .then(res => res.blob())
-                            // .then(blob => blob.arrayBuffer())
-                            // .then(buffer => {
-                            //     buffer = new Uint8Array(buffer);
-                            // });
-
-                            data.value = img.src;
-                            xhr.send(JSON.stringify(data));
-
-                            // let form = new FormData();
-                            // form.append('file', files[i]);
-                            // form.append('path', path);
-                            // xhr.send(form);
-
-                            // this.addResource(new Resource(fileName.split('.')[0], fileType, e));
-                        });
-                    })(i);
-                } else if (this.allowedScriptsTypes.indexOf(fileType) !== -1) {
-                    console.log('ok');
+                if (dispatch) {
+                    System.dispatchEvent('upload_files', resource);
                 }
-            }
+            });
         }
     }
 
     /**
-     * Download project resources
-     * @param {string} url - The project url
+     * Create thumbnail from file
+     * @param {File} file - The file/blob
+     * @param {Function} callback - The callback function
      */
-    async download(url, dispatch = true) {
-        const files = await fetch(url + '/data')
-            .then(response => response.json())
-            .catch(error => console.error);
-        
-        let resources = [];
-        let progress = 0;
-        
-        console.log('Progress: ' + progress.toFixed(2) + '%');
-        // console.log(files);
+    createThumbnail(file, callback) {
 
-        for (let i = 1; i < files.length; i++) {
-            const path = files[i].replace('\\', '/').split('/');
-            const folder = path[0];
-            const name = path[1];
-            resources.push(
-                await fetch(`${url}/${folder}/${name}`)
-                    .then(response => response.blob())
-                    .then(async blob => {
-                        const url = URL.createObjectURL(blob);
-                        const type = blob.type;
-                        const img = await Texture.load(url);
-                        const obj = new Object(name.split('.')[0]);
-                        obj.type = type;
-                        obj.image = img;
-                        return obj;
-                        // this.addResource(obj);
-                    })
-                    .catch(error => console.error)
-            );
-            progress = (i * 100) / (files.length - 1);
-            console.log('Progress: ' + progress.toFixed(2) + '%');
+        return new Promise(resolve => {
+            
+            var reader = new FileReader();
 
-            if (progress == 100) {
-                return new Promise((resolve, reject) => {
-                    resolve(resources);
-                });
-            }
-        }
+            // console.log(file);
+            // console.log(reader);
+            
+            reader.addEventListener('load', function() {
+                var img = new Image(); // document.createElement('img');
+                // img.style.maxWidth = '70px';
+                // img.style.maxHeight = '60px';
+                img.src = this.result;
 
-        // console.log(resources);
-
-        if (dispatch) {
-            System.dispatchEvent('load_resources', resources);
-        }
+                resolve(img);
+                
+                // callback(img);
+            });
+            
+            reader.readAsDataURL(file);
+        });
     }
 
     /**
@@ -314,8 +301,8 @@ export class Project {
         });
         
         // Ajout de l'image ou de l'icône
-        if (this.allowedTypes.indexOf(obj.type) !== -1) {
-            if (obj.type === 'image/jpg' || obj.type === 'image/png' || obj.type === 'image/jped' || obj.type === 'image/gif' || obj.type === 'image/svg+xml') {
+        if (Loader.allowedTypes.indexOf(obj.type) !== -1) {
+            if (Loader.allowedImagesTypes.indexOf(obj.type) !== -1) {
                 var figure = document.createElement('figure');
                 figure.appendChild(obj.image);
                 var i = figure;
@@ -387,39 +374,4 @@ export class Project {
         
         return li;
     }
-}
-
-/**
- * Create thumbnail from file
- * @param {File} file - The file
- * @param {Function} callback - The callback function
- */
-function createThumbnail(file, callback) {
-
-    var reader = new FileReader();
-
-    // console.log(file);
-    // console.log(reader);
-    
-    reader.addEventListener('load', function() {
-        var img = new Image(); // document.createElement('img');
-        img.style.maxWidth = '70px';
-        img.style.maxHeight = '60px';
-        img.src = this.result;
-        
-        callback(img);
-    });
-    
-    reader.readAsDataURL(file);
-}
-
-function readAsArrayBuffer(file) {
-
-    var reader = new FileReader();
-    
-    reader.addEventListener('load', function() {
-        
-    });
-    
-    reader.readAsArrayBuffer(file);
 }

@@ -64,10 +64,10 @@ export class Scene {
     
     /**
      * Instanciate the object to scene
-     * @param {object} obj - The object to instanciate
-     * @param {boolean} dispatch - Dispatch the evenement
+     * @param {object} obj - The object to instantiate
+     * @param {boolean} dispatch - Dispatch the event
      */
-    instanciate(obj, uid = false, dispatch = true) {
+    instantiate(obj, uid = false, dispatch = true) {
 
         // let obj = new window[resource.type](resource);        
         // let obj = Object.assign({}, object);
@@ -89,19 +89,31 @@ export class Scene {
         this.add(copy, false);
         
         if (dispatch) {
-            System.dispatchEvent('instanciate', copy);
+            System.dispatchEvent('instantiate', copy);
         }
     }
 
     /**
      * Initialize the object to scene
      * @param {Object} objects - The objects to initialize
+     * @param {Object} camera - The camera to initialize
      */
-    init(objects) {
+    init(objects, camera = null) {
         // Objects instantiating
         for (let id in objects) {
-            scene.instanciate(objects[id]);
+            this.instantiate(objects[id]);
+
+            // Camera initialization
+            if (camera && objects[id].components.Camera) {
+                // obj.x -= obj.width / 2;
+                // obj.y -= obj.height / 2;
+                // obj.visible = false;
+                camera.copy(objects[id]);
+                camera.x -= camera.width / 2;
+                camera.y -= camera.height / 2;
+            }
         }
+        
         // Copie des enfants
         for (let id in objects) {
             const obj = this.objects[id];

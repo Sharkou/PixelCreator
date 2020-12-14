@@ -1,6 +1,7 @@
 /* Core Modules */
 import { Object } from '/src/core/object.js';
 import { System } from '/src/core/system.js';
+import { Loader } from '/src/core/loader.js';
 import { Renderer } from '/src/core/renderer.js';
 import { Scene } from '/src/core/scene.js';
 import { Camera } from '/src/core/camera.js';
@@ -141,71 +142,77 @@ export class Handler {
                     break;
                     
                 // Drop d'une ressource
-                default:
+                default: {
                     
                     // TODO: Gérer le drop d'une image depuis l'explorateur windows
                     
                     // Récupération de l'objet
-                    let id = e.dataTransfer.getData('text/plain');
-                    let resource = project.resources[id];
+                    const id = e.dataTransfer.getData('text/plain');
+                    const resource = project.resources[id];
+                    const type = resource.type;
                     
                     // Association du nom
                     obj.name = resource.name;
-                    
-                    // Instanciation de l'image
-                    if (resource.type === 'png' || 
-                        resource.type === 'gif' || 
-                        resource.type === 'svg' || 
-                        resource.type === 'jpg' || 
-                        resource.type === 'jpeg') {
+                    obj.type = type;
 
-                        obj.type = 'image';
-                        
-                        // Dimensions de l'image
-                        obj.width = resource.image.naturalWidth;
-                        obj.height = resource.image.naturalHeight;
-                        
-                        obj.addComponent(new Texture(resource.image));
-                    }
-                    
-                    // Instanciation du prefab
-                    else if (resource.type === 'prefab') {
+                    // console.log(resource);
 
-                        obj.type = 'prefab';
-                        
-                        // Dimensions du prefab
-                        obj.width = resource.size.width;
-                        obj.height = resource.size.height;
-                        
-                        // TODO : Duplication profonde
-                        
-                        // Duplication des composants
-                        for (let name in resource.components) {
+                    // Authorized file
+                    if (Loader.allowedTypes.indexOf(type) !== -1) {
 
-                            if (name !== 'root' && name !== 'position' && name !== 'size') {
-                                
-                                // console.log(resource.components[name]);
-                                
-                                // let component = Object.assign({}, resource.components[name]);
-                                
-                                // Création du composant
-                                let component = new window[name.charAt(0).toUpperCase() + name.slice(1)]();
-                                // let component = eval(`new ${name.charAt(0).toUpperCase() + name.slice(1)}()`);
-                                
-                                // Duplication des propriétés du composant
-                                for (let prop in resource.components[name]) {
-                                    component[prop] = resource.components[name][prop];
+                        // Instanciation de l'image
+                        if (Loader.allowedImagesTypes.indexOf(type) !== -1) {
+                            const src = resource.id; // resource.value
+                            const img = resource.image;
+                            obj.image = img;
+                            obj.type = 'image'; // resource.type;
+
+                            // Dimensions de l'image
+                            obj.width = img.naturalWidth;
+                            obj.height = img.naturalHeight;
+                            
+                            obj.addComponent(new Texture(src));
+                            // await Texture.load('assets/walk/adventurer-walk-00.png'),
+                        }
+
+                        // Instanciation du prefab
+                        else if (resource.type === 'prefab') {
+
+                            obj.type = 'prefab';
+                            
+                            // Dimensions du prefab
+                            obj.width = resource.size.width;
+                            obj.height = resource.size.height;
+                            
+                            // TODO : Duplication profonde
+                            
+                            // Duplication des composants
+                            for (let name in resource.components) {
+
+                                if (name !== 'root' && name !== 'position' && name !== 'size') {
+                                    
+                                    // console.log(resource.components[name]);
+                                    
+                                    // let component = Object.assign({}, resource.components[name]);
+                                    
+                                    // Création du composant
+                                    let component = new window[name.charAt(0).toUpperCase() + name.slice(1)]();
+                                    // let component = eval(`new ${name.charAt(0).toUpperCase() + name.slice(1)}()`);
+                                    
+                                    // Duplication des propriétés du composant
+                                    for (let prop in resource.components[name]) {
+                                        component[prop] = resource.components[name][prop];
+                                    }
+                                    
+                                    obj.addComponent(component);
                                 }
-                                
-                                obj.addComponent(component);
-                            }
 
+                            }
                         }
                     }
-                    
-                    break;
+                }
             }
-                
+            
             scene.add(obj);
             
         }, false);

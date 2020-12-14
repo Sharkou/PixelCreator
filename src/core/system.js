@@ -169,6 +169,30 @@ export class System {
             return (typeof val === 'string') ? ((val.substr(0, 8) === 'function') ? new Function('return ' + val)() : val) : val;
         });
     }
+
+    static getDate() {
+        const today = new Date();
+        const year = today.getFullYear().toString();
+        const month = ('0' + (today.getMonth() + 1).toString()).slice(-2);
+        const day = ('0' + today.getDate().toString()).slice(-2);
+        const hours = ('0' + today.getHours().toString()).slice(-2);
+        const minutes = ('0' + today.getMinutes().toString()).slice(-2);
+        const seconds = ('0' + today.getSeconds().toString()).slice(-2);
+        const milliseconds = ('00' + today.getMilliseconds().toString()).slice(-3);
+        return `[${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}]`
+    }
+
+    static log(string) {
+        console.log(`%c${string}`, 'color: #3b78ff');
+    }
+    
+    static debug(string) {
+        console.log(`%c[SERVER] ${string}`, 'color: #11AB0D');
+    }
+    
+    static warn(string) {
+        console.log(`%cwarn: ${string}`, 'color: #F9F1A5');
+    }
 }
 
 // Disable right mouse click

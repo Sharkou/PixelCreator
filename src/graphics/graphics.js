@@ -92,6 +92,29 @@ export class Graphics {
             Math.PI * 2
         );
     }
+
+    /**
+     * Draw an ellipse
+     * @static
+     * @param {number} x - The x-coordinate
+     * @param {number} y - The y-coordinate
+     * @param {number} rx - The x-radius
+     * @param {number} ry - The y-radius
+     */
+    static ellipse(x, y, rx, ry) {
+        
+        Graphics.ctx.beginPath();
+
+        Graphics.ctx.ellipse(
+            x, // + Viewport.offset.x,
+            y, // + Viewport.offset.y,
+            rx,
+            ry,
+            0,
+            0,
+            Math.PI * 2
+        );
+    }
     
     /**
      * Draw a rectangle
@@ -123,6 +146,8 @@ export class Graphics {
     static image(image, x, y, scaleX = 1, scaleY = 1) {
         
         if (!image) return;
+        if (image.toString() !== '[object HTMLImageElement]') return;
+        // if (Object.keys(image).length === 0) return; // empty
         
         Graphics.ctx.beginPath();
         
@@ -150,6 +175,7 @@ export class Graphics {
     static imageBox(image, x, y, scaleX = 1, scaleY = 1, boxX = 40, boxY = 40) {
         
         if (!image) return;
+        if (image.toString() !== '[object HTMLImageElement]') return;
         
         Graphics.ctx.beginPath();
         

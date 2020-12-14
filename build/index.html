@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="utf-8" />
@@ -42,6 +42,7 @@ canvas {
 import {
     Scene,
     Renderer,
+    Loader,
     Camera,
     Object,
     Time,
@@ -59,37 +60,23 @@ const host = data.host;
 const port = data.port;
 const app = document.getElementById('app');
 const renderer = new Renderer(window.innerWidth, window.innerHeight);
-
-let scene = new Scene('Main Scene');
-let camera = new Object();
+const scene = new Scene('Main Scene');
+const camera = new Object();
 
 /* Initialization */
 async function init() {
+
+    // Download project resources
+    let resources = await Loader.download(`https://${host}:${port}`);
 
     // Connect to main scene
     let objects = await Network.init(host, port).connect(scene);
     // let objects = data.objects;
 
-    // Objects instantiating
-    for (let id in objects) {
-
-        scene.instanciate(objects[id]);
-
-        // Camera initialization
-        if (objects[id].components.Camera) {
-            // obj.x -= obj.width / 2;
-            // obj.y -= obj.height / 2;
-            // obj.visible = false;
-            camera.copy(objects[id]);
-            camera.x -= camera.width / 2;
-            camera.y -= camera.height / 2;
-        }
-    }
-
     // Scene initialization
-    scene.init();
-
+    scene.init(objects, camera);
     renderer.init(scene, camera);
+    
     // renderer.pause = false;
 
     // Start loop

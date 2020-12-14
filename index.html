@@ -45,6 +45,7 @@
     <link rel="stylesheet" href="css/context-menu.css" />
     <link rel="stylesheet" href="css/settings.css" />
     <link rel="stylesheet" href="css/stats.css" />
+    <link rel="stylesheet" href="css/save.css" />
     <link rel="stylesheet" href="css/loading.css" />
     <link rel="stylesheet" href="css/timeline.css" />
     
@@ -213,13 +214,15 @@
                 <li title="Redo"><i class="fas fa-redo-alt"></i></li>-->
                 
                 <div class="bottom">
+
+                    <!-- <li id="modules" title="Modules">
+                        <i class="fas fa-puzzle-piece"></i>
+                        <i class="fad fa-plug"></i>
+                    </li> -->
+
                     <li id="save" title="Save">
                         <i class="fas fa-save"></i>
                     </li>
-
-                    <!-- <li id="modules" title="Modules">
-                        <i class="fad fa-plug"></i>
-                    </li> -->
 
                     <!-- <li id="layers" title="Layers">
                         <i class="fas fa-layer-group"></i>
@@ -521,8 +524,12 @@
                 <span>Create Folder</span>
             </li>
             <li class="item" id="custom">
+                <i class="far fa-cube"></i>
+                <span>Create Object</span>
+            </li>
+            <li class="item" id="custom">
                 <i class="material-icons">settings_input_component</i>
-                <span>Custom Component</span>
+                <span>Create Component</span>
             </li>
             <li class="item" id="script">
                 <i class="material-icons">description</i>
@@ -530,6 +537,11 @@
             </li>
         </ul>
     </nav>
+
+    <div id="save-popup">
+        <p>Success</p>
+        <p>Your project has been successfully saved!</p>
+    </div>
 
     <!-- Loading -->
     <div id="loading"></div>
