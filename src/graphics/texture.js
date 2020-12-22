@@ -34,7 +34,7 @@ export class Texture {
      * @update
      */
     update(self) {
-        this.image = Loader.files[this.source];
+        this.image = Loader.files[this.source]?.image;
     }
     
     /**

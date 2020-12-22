@@ -78,7 +78,7 @@
     text-overflow: clip;
 }
 
-#resources .material-icons {
+#resources #resources-list .material-icons {
     font-size: 400%;
 }
 

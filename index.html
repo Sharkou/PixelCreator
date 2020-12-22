@@ -48,15 +48,9 @@
     <link rel="stylesheet" href="css/save.css" />
     <link rel="stylesheet" href="css/loading.css" />
     <link rel="stylesheet" href="css/timeline.css" />
-    
-    <!-- Code Mirror -->    
-    <!--<link rel="stylesheet" href="/src/lib/codemirror/lib/codemirror.css" />
-    <link rel="stylesheet" href="/src/lib/codemirror/theme/brackets.css" />
-    <script src="/src/lib/codemirror/lib/codemirror.js"></script>
-    <script src="/src/lib/codemirror/mode/javascript/javascript.js"></script>
-    <script src="/src/lib/codemirror/addon/selection/active-line.js"></script>
-    <script src="/src/lib/codemirror/addon/edit/matchbrackets.js"></script>
-    <script src="/src/lib/codemirror/addon/edit/closebrackets.js"></script>-->
+
+    <!-- Monaco Editor -->
+    <script src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
     
     <!-- Core Engine -->
     <script async type="module" src="app.js"></script>
@@ -115,7 +109,7 @@
     </header>
 
     <!-- Main Content -->
-    <main id="editor" class="loading">
+    <main class="loading"> <!-- id="editor" -->
 
         <aside id="left">
 
@@ -258,14 +252,13 @@
                     <!-- <canvas id="canvas" moz-opaque></canvas> -->
                 </div>
 
-                <!-- Events Window -->
+                <!-- Graph -->
                 <div id="overlay" class="overlay tab-content">
 
                     <!-- <header></header> -->
 
                     <section class="overlay-content">
 
-                        <!-- Main Events Window -->
                         <section id="blueprint">
 
                             <!-- <div class="box">
@@ -355,14 +348,6 @@
 
                 </div>
 
-                <!-- Scripting Window -->
-                <div id="scripting" class="tab-content overlay">
-                    <!-- <pre id="editor" contenteditable="true" wrap="off" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"><div class="line" data-line="1"></div></pre> -->
-                    <form>
-                        <textarea id="code" name="code"></textarea>
-                    </form>
-                </div>
-
             </section>
 
             <!-- Project Section -->
@@ -370,8 +355,8 @@
 
                 <div class="tab">
                     <h2 id="project-btn" class="active tab-link"><i class="far fa-folder-tree"></i>Project</h2>
+                    <h2 id="script-btn" class="tab-link"><i class="material-icons" style="font-size: 20px;">description</i>Script</h2>
                     <h2 id="timeline-btn" class="tab-link"><i class="fas fa-film"></i>Timeline</h2>
-                    <!-- <h2 id="code-btn" class="tab-link"><i class="far fa-brackets-curly"></i>Code</h2> -->
                     <!-- <h2 id="console-btn" class="tab-link"><i class="far fa-terminal"></i>Console</h2> -->
                     <!-- <h2 id="memory-btn" class="tab-link"><i class="far fa-memory"></i>Memory</h2> -->
                     <!-- <h2><i class="fas fa-tv-music"></i>Audio Mixer</h2> -->
@@ -400,9 +385,18 @@
                     </ul>
                 </div>
 
+                <!-- Timeline -->
                 <div id="timeline" class="tab-content">
                     <!-- <header></header> -->
                     <aside>Not yet developed!</aside>
+                </div>
+
+                <!-- Scripting Window -->
+                <div id="editor" class="tab-content">
+                    <!-- <pre id="editor" contenteditable="true" wrap="off" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"><div class="line" data-line="1"></div></pre> -->
+                    <!-- <form>
+                        <textarea id="code" name="code"></textarea>
+                    </form> -->
                 </div>
 
             </section>
@@ -519,10 +513,10 @@
             <li class="item" id="delete">
                 <i class="material-icons">delete</i><span class="object-text">Delete Object</span>
             </li>-->
-            <li class="item" id="folder">
+            <!-- <li class="item" id="folder">
                 <i class="fas fa-folder-plus"></i>
                 <span>Create Folder</span>
-            </li>
+            </li> -->
             <li class="item" id="custom">
                 <i class="far fa-cube"></i>
                 <span>Create Object</span>

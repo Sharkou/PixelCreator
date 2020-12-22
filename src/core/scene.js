@@ -17,6 +17,11 @@ export class Scene {
         this.camera = null;
         // this.systems = {}; // contains all systems
         this.currentComponent = false;
+
+        // Update objects on component import
+        System.addEventListener('import', component => {
+            this.update(component);
+        });
     }
     
     /**
@@ -122,6 +127,8 @@ export class Scene {
                 obj.addChild(child, false);
             }
         }
+
+        this.current = null;
     }
 
     /**
@@ -155,6 +162,15 @@ export class Scene {
      */
     static set main(scene) {        
         this._main = scene;
+    }
+
+    /**
+     * Refresh current object
+     */
+    refresh() {
+        if (this.current) {
+            this.current = this.current;
+        }
     }
     
     /**
@@ -234,5 +250,18 @@ export class Scene {
             obj = this.objects[el.parentNode.id];
         }
         obj.$name = el.textContent;
+    }
+
+    /**
+     * Update all objects with component
+     * @param {Object} component - The component
+     */
+    update(component) {
+        for (let id in this.objects) {        
+            const obj = this.objects[id];
+            if (obj.contains(component)) {
+                obj.addComponent(new component());
+            }
+        }
     }
 }

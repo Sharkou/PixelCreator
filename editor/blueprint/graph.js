@@ -242,7 +242,7 @@ export class Graph {
     updateScript(id, code) {
         console.log(this.nodes);
         this.code = '';
-        // let script = Project.resources[id];
+        // let script = Project.files[id];
         // script.data = Compiler.compile(code);
         // Compiler.update(script);
     }

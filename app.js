@@ -18,6 +18,7 @@ import { Dnd } from '/editor/system/dnd.js';
 import { Hierarchy } from '/editor/windows/hierarchy.js';
 import { Properties } from '/editor/windows/properties.js';
 import { Project } from '/editor/windows/project.js';
+import { Editor } from '/editor/scripting/editor.js'
 import { Toolbar } from '/editor/windows/toolbar.js';
 import { Graph } from '/editor/blueprint/graph.js';
 import { Grid } from '/editor/misc/grid.js';
@@ -38,7 +39,7 @@ import '/editor/misc/pause.js';
 import '/editor/misc/save.js';
 
 /* Engine initialization */
-const host = 'localhost'; // 'apps.pixelcreator.io';
+const host = 'apps.pixelcreator.io';
 const port = 443;
 const canvas = document.getElementById('wrapper');
 const renderer = new Renderer(canvas.clientWidth, canvas.clientHeight, canvas, false, true);
@@ -66,10 +67,12 @@ async function init() {
     //     Loader.import(plugin);
     // }
 
-    // Download project resources
-    let resources = await Loader.download(`https://${host}:${port}`);
+    Editor.init();
 
-    // console.log(resources);
+    // Download project resources
+    let files = await Loader.download(`https://${host}:${port}`);
+
+    // console.log(files);
 
     // Connect to main scene
     let objects = await Network.init(host, port).connect(scene, true);
@@ -77,7 +80,7 @@ async function init() {
     // console.log(objects);
 
     // Scene initialization
-    project.init(resources);
+    project.init(files);
     scene.init(objects);
     renderer.init(scene, camera);
 
@@ -122,6 +125,7 @@ window.onload = init;
 
 // Window resized
 window.onresize = function() {
+    Editor.resize();
     renderer.resize(canvas.clientWidth, canvas.clientHeight);
     // renderer.init(scene, camera);
 };

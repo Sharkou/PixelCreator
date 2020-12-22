@@ -148,7 +148,7 @@ export class Handler {
                     
                     // Récupération de l'objet
                     const id = e.dataTransfer.getData('text/plain');
-                    const resource = project.resources[id];
+                    const resource = project.files[id];
                     const type = resource.type;
                     
                     // Association du nom

@@ -84,7 +84,11 @@
 #toolbox {
     width: 200px;
     border-left: 1px solid var(--last-border-color);
-    box-shadow: inset -1px 0px 0 var(--first-border-color), inset 1px 0px 0 var(--first-border-color);
+    box-shadow: 
+        inset -1px 0px 0 var(--first-border-color),
+        inset 1px 0px 0 var(--first-border-color),
+        inset 0px -1px 0 var(--first-border-color),
+        inset 0px 1px 0 var(--first-border-color);
     background-color: var(--bg-medium-color);
     overflow: auto;
     overflow-x: hidden;

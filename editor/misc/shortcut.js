@@ -1,4 +1,6 @@
 import { Scene } from '/src/core/scene.js';
+import { Loader } from '/src/core/loader.js';
+import { Project } from '/editor/windows/project.js';
 
 /** 
  * Module permettant de gérer les raccourcis clavier.
@@ -8,8 +10,17 @@ document.addEventListener('keydown', (e) => {
         switch (e.key) {
             // Delete current object on suppr key pressed.
             case 'Delete':
-                Scene.main.remove(Scene.main.current);
-                Scene.main.current = null;
+                const scene = Scene.main;
+                const project = Project.main;
+                if (scene.current instanceof File) {
+                    // project.remove(project.current);
+                    Loader.delete(project.current);
+                    project.current = null;
+                    scene.current = null;
+                } else if (scene.current instanceof Object) {
+                    scene.remove(scene.current);
+                    scene.current = null;
+                }
                 break;
         }
     }

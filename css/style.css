@@ -23,19 +23,17 @@ html, body {
     font-size: 1em;
 }
 
-::-moz-selection { /* Code for Firefox */
-    background: var(--main);
-    background: var(--bg-selection-color);
-    color: #b0b0b0;
-    color: var(--color);
+::selection {
+    /* background: var(--main); */
+    /* background: var(--bg-selection-color); */
+    background: #97c4ff;
+    /* color: #b0b0b0; */
+    /* color: var(--color); */
+    color: white;
 }
 
-::selection {
-    background: var(--main);
-    background: #97c4ff;
-    color: #b0b0b0;
-    color: var(--color);
-    color: white;
+:focus {
+    outline: none;
 }
 
 [contenteditable]:focus {
@@ -203,10 +201,13 @@ h2 {
     color: var(--white-color);
     font-weight: normal;
     font-size: 1em;
+    height: 39px;
     padding: 10px;
     padding-left: 20px;
     padding-right: 20px;
-    display: inline-block;
+    /* display: inline-block; */
+    display: flex;
+    align-items: center;
     /*border-top: 2px solid transparent;*/
     box-sizing: border-box;
     /* transition: 200ms; */

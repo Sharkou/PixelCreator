@@ -27,7 +27,9 @@ export class Hierarchy {
         });
 
         System.addEventListener('remove', obj => {
-            this.remove(obj);
+            if (!(obj instanceof File)) {
+                this.remove(obj);
+            }
         });
         
         System.addEventListener('setCurrentObject', obj => {
@@ -60,8 +62,8 @@ export class Hierarchy {
      * @param {Object} obj - The object to remove
      */
     remove(obj) {
-        // this.parentNode.parentNode.removeChild(this.parentNode);
         this.node.removeChild(document.getElementById(obj.id));
+        // this.parentNode.parentNode.removeChild(this.parentNode);
     }
     
     /**
@@ -79,7 +81,7 @@ export class Hierarchy {
                 break;
 
             case 'resources-list':
-                this.scene.current = Project.resources[e.id];
+                this.scene.current = Project.files[e.id];
                 break;
         }
     }
@@ -129,8 +131,10 @@ export class Hierarchy {
         
         // Centrer sur l'objet double cliqué
         li.addEventListener('dblclick', () => {
-            Camera.main.x = ~~(scene.current.x - (Renderer.main.width / 2) / Camera.main.scale);
-            Camera.main.y = ~~(scene.current.y - (Renderer.main.height / 2) / Camera.main.scale);
+            const camera = Camera.main;
+            const renderer = Renderer.main;
+            camera.x = ~~(scene.current.x - (renderer.width / 2) / camera.scale);
+            camera.y = ~~(scene.current.y - (renderer.height / 2) / camera.scale);
         });
         
         // li.setAttribute('data-type', obj.type);

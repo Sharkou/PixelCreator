@@ -2,9 +2,9 @@ import { System } from '/src/core/system.js';
 import { Loader } from '/src/core/loader.js';
 import { Scene } from '/src/core/scene.js';
 import { Object } from '/src/core/object.js';
-import { Resource } from '/src/core/resource.js';
-import { Network } from '/src/network/network.js';
+// import { Resource } from '/src/core/resource.js';
 import { Sorter } from '/editor/misc/sorter.js';
+import { Editor } from '/editor/scripting/editor.js';
 
 export class Project {
     
@@ -16,9 +16,11 @@ export class Project {
      */
     constructor(node, scene) {
 
+        Project.main = this;
+        
         this.node = document.getElementById(node);
         this.scene = scene;
-        this.resources = {}; // = Project.resources = {};
+        this.files = {};
         // this.lastScript = null;
         this.input = document.getElementById('upload-input');
 
@@ -42,7 +44,7 @@ export class Project {
         
             // Upload files
             let files = e.dataTransfer.files;
-            this.uploadFiles(files);
+            Loader.uploadFiles(files);
             
             // Prefab creation
             if (Sorter.draggedElement) {
@@ -61,7 +63,7 @@ export class Project {
                 prefab.createImage();
                 console.log(prefab);
                 
-                this.addResource(prefab);
+                this.add(prefab);
             }
             
         }, false);
@@ -69,55 +71,117 @@ export class Project {
         // Upload files
         this.input.addEventListener('change', e => {
             let files = this.input.files;
-            this.uploadFiles(files);
+            Loader.uploadFiles(files);
         });
 
         // Load file
-        System.addEventListener('load_file', obj => {
-            this.addResource(obj);
+        System.addEventListener('load_file', file => {
+            this.add(file);
         });
+
+        // Upload file to server
+        System.addEventListener('upload_file', file => {
+            this.add(file);
+        });
+
+        // Remove file from project
+        System.addEventListener('remove_file', file => {
+            this.remove(file, false);
+        });
+    }
+
+    /**
+     * Get currently open file
+     * @return {File} file - The currently open file
+     */
+    get current() {
+        return this._current;
+    }
+
+    /**
+     * Set currently open file
+     * @param {File} file - The currently open file
+     */
+    set current(file) {
+        this._current = file;
+        const type = file?.type;
+
+        // Load file data
+        if (Loader.allowedScriptsTypes.indexOf(type) !== -1) {
+            // let name = file[obj.id].name.replace(/\s/g, '');
+            // let sources = file.value.replace(/^class [a-zA-Z0-9_$]* {/, `class ${name} {`);
+            Editor.current = file;
+            Editor.setValue(file.value);
+        } else if (type === 'px') {
+            document.getElementById('blueprint-btn').click();
+        }
+
+        System.dispatchEvent('setCurrentFile', file);
+    }
+
+    /**
+     * Get current project
+     * @return {Project} project - The current project
+     */
+    static get main() {        
+        return this._main;
+    }
+    
+    /**
+     * Set current project
+     * @param {Project} project - The current project
+     */
+    static set main(scene) {        
+        this._main = scene;
     }
 
     /**
      * Init the project
-     * @param {array} resources - The project resources
+     * @param {array} files - The project files
      */
-    init(resources) {
-        if (resources) {
-            for (let resource of resources) {
-                this.addResource(resource);
+    init(files) {
+
+        if (files) {
+            for (let file of files) {
+                this.add(file);
             }
         }
+        
+        this.current = null;
     }
 
     /**
-     * Add object to resources list
-     * @param {Object} obj - The resource
+     * Add file to files list
+     * @param {File} file - The file
      */
-    addResource(obj, dispatch = true) {
+    add(file, dispatch = true) {
 
-        if (!obj) return;
+        if (!file) return;
 
-        this.node.appendChild(this.createView(obj));
-        this.resources[obj.id] = obj;
-        // this.scene.current = obj;
+        this.node.appendChild(this.createView(file));
+        this.files[file.id] = file;
 
-        if (dispatch) {
-            System.dispatchEvent('add_resource', obj);
-        }
+        // this.scene.current = file;
+        // this.current = file;
+
+        // if (dispatch) {
+        //     System.dispatchEvent('add_resource', file);
+        // }
     }
 
     /**
-     * Remove resource to resources list
-     * @param {Object} obj - The object
+     * Remove file to files list
+     * @param {File} file - The file
      */
-    remove(obj, dispatch = true) {
-        this.node.removeChild(document.getElementById(obj.id));
-        delete this.resources[obj.id];
+    remove(file, dispatch = true) {
 
-        if (dispatch) {
-            System.dispatchEvent('remove_resource', obj);
-        }
+        this.node.removeChild(document.getElementById(file.id));
+        delete this.files[file.id];
+
+        // if (dispatch) {
+        //     Loader.delete(file);
+        //     System.dispatchEvent('remove_resource', file);
+        // }
     }
     
     /**
@@ -125,101 +189,8 @@ export class Project {
      * @param {HTMLElement} e - The HTML Element
      */
     updateName(e) {
-        this.resources[e.target.parentNode.id].name = e.target.textContent;
-    }
-
-    /**
-     * Get project resources
-     * @return {object} resources - The resources
-     */
-    static get resources() {        
-        return this._resources;
-    }
-    
-    /**
-     * Set project resources
-     * @param {object} resources - The resources
-     */
-    static set resources(resources) {        
-        this._resources = resources;
-    }
-    
-    /**
-     * Upload files in project
-     * @param {Array} files - The files to add
-     */
-    async uploadFiles(files, dispatch = true) {
-        let filesLen = files.length;
-        let fileName = '';
-        let fileType = '';
-        let path = '/';
-
-        // console.log(files);
-
-        for (let i = 0; i < filesLen; i++) {
-
-            fileName = files[i].name;
-            fileType = files[i].type;
-            // fileType = fileName.split('.');
-            // fileType = fileType[fileType.length - 1];
-
-            // Upload to server
-            let resource;
-            let xhr = new XMLHttpRequest();
-
-            xhr.open('POST', `${Network.protocol}://${Network.host}:${Network.port}`);
-
-            // console.log(fileType);
-
-            // Authorized file
-            if (Loader.allowedTypes.indexOf(fileType) !== -1) {
-
-                // Create the resource
-                resource = new Resource(fileName.split('.')[0], fileName.split('.')[1], fileType, path);
-
-                // Image file
-                if (Loader.allowedImagesTypes.indexOf(fileType) !== -1) {
-
-                    const img = await this.createThumbnail(files[i]);
-                    resource.value = img.src;
-
-                    xhr.send(JSON.stringify(resource));
-
-                    resource.sync();
-                    resource.image = img;
-
-                    // (i => {
-                    //     this.createThumbnail(files[i], async img => {
-                    //         obj.image = img;
-                    //         let form = new FormData();
-                    //         form.append('file', files[i]);
-                    //         form.append('path', path);
-                    //         xhr.send(form);
-                    //     });
-                    // })(i);
-
-                // Script file
-                } else if (this.allowedScriptsTypes.indexOf(fileType) !== -1) {
-                    console.log('ok');
-                }
-                
-                this.addResource(resource);
-                Loader.add(resource);
-            }
-
-            xhr.upload.addEventListener('progress', function(e) {
-                // progress.value = e.loaded;
-                // progress.max = e.total;
-            });
-
-            xhr.addEventListener('load', function() {
-                console.log('%cinfo: Upload ' + resource.id + ' completed!', 'color: #3b78ff');
-
-                if (dispatch) {
-                    System.dispatchEvent('upload_files', resource);
-                }
-            });
-        }
+        this.files[e.target.parentNode.id].name = e.target.textContent;
+        Loader.files[e.target.parentNode.id].$name = e.target.textContent;
     }
 
     /**
@@ -253,65 +224,67 @@ export class Project {
 
     /**
      * Create resource view
-     * @param {Object} obj - The object to display
+     * @param {File} file - The file to display
      * @return {HTMLElement} li - The li element
      */
-    createView(obj) {
+    createView(file) {
         
         let li = document.createElement('li');
-        li.setAttribute('id', obj.id);
+        li.setAttribute('id', file.id);
         
-        // li.setAttribute('onmousedown', 'changeCurrent(obj)');
+        // li.setAttribute('onmousedown', 'changeCurrent(file)');
         li.addEventListener('mouseup', () => {
-            let resource = this.resources[obj.id];
-            let type = resource.type;
+            const type = file.type;
             /*if (type === 'js' || type === 'script') {
-                this.lastScript = resource;
+                this.lastScript = file;
                 return;
             }*/
-            this.scene.current = obj;
+            this.scene.current = file;
+            this.current = file;
         });
         
         li.addEventListener('dblclick', () => {
-            let resource = this.resources[obj.id];
-            let type = resource.type;
-            if (type === 'js' || type === 'script') {
-                // this.lastScript = resource;
-                let name = this.resources[obj.id].name.replace(/\s/g, '');
-                let sources = resource.data.toString().replace(/^class [a-zA-Z0-9_$]* {/, `class ${name} {`);
-                Compiler.open(obj.id, resource.name + '.js', sources);
+            let resource = this.files[file.id];
+            let type = file.type;
+            if (Loader.allowedScriptsTypes.indexOf(type) !== -1) {
+                // this.lastScript = file;
+                // let name = this.files[file.id].name.replace(/\s/g, '');
+                // let sources = file.value.replace(/^class [a-zA-Z0-9_$]* {/, `class ${name} {`);
+                // Compiler.open(file.id, file.name + '.js', sources);
+                document.getElementById('script-btn').click();
                 return;
             } else if (type === 'px') {
                 document.getElementById('blueprint-btn').click();
             }
-            this.scene.current = obj;
+            this.scene.current = file;
+            this.current = file;
             // document.getElementById('code-btn').click();
         });
         
         li.setAttribute('draggable', 'true');
-        li.setAttribute('data-type', obj.type);
+        li.setAttribute('data-type', file.type);
         
         // Ajout de l'ID dans le dataTransfer
         li.addEventListener('dragstart', (e) => {
             e.dataTransfer.setData('text', e.target.id);
             // TODO: Gérer les types pouvant afficher une image au drag
-            if (obj.type !== 'js') {
-                e.dataTransfer.setDragImage(obj.image, 20, 20);
+            if (file.image) {
+                e.dataTransfer.setDragImage(file.image, 20, 20);
             }
         });
         
         // Ajout de l'image ou de l'icône
-        if (Loader.allowedTypes.indexOf(obj.type) !== -1) {
-            if (Loader.allowedImagesTypes.indexOf(obj.type) !== -1) {
+        if (Loader.allowedTypes.indexOf(file.type) !== -1) {
+            if (Loader.allowedImagesTypes.indexOf(file.type) !== -1) {
                 var figure = document.createElement('figure');
-                figure.appendChild(obj.image);
+                figure.appendChild(file.image);
                 var i = figure;
-            } else if (obj.type === 'application/javascript' || obj.type === 'script') {
+            } else if (Loader.allowedScriptsTypes.indexOf(file.type) !== -1) {
                 var i = document.createElement('i');
                 i.setAttribute('class', 'material-icons');
                 var icon = document.createTextNode('description');
                 i.appendChild(icon);
-            } else if (obj.type === 'application/px' || obj.type === 'px') {
+            } else if (file.type === 'application/px' || file.type === 'px') {
                 var i = document.createElement('i');
                 i.setAttribute('class', 'material-icons');
                 var icon = document.createTextNode('settings_input_component');
@@ -319,23 +292,23 @@ export class Project {
             } else {
                 var i = document.createElement('i');
                 i.setAttribute('class', 'material-icons list');
-                var icon = document.createTextNode(obj.type);
+                var icon = document.createTextNode(file.type);
                 i.appendChild(icon);
             }
         }
         
-        else if (obj.image) {
+        else if (file.image) {
             var figure = document.createElement('figure');
-            figure.appendChild(obj.image);
+            figure.appendChild(file.image);
             var i = figure;
         }
         
         else {
             var i = document.createElement('i');
             i.setAttribute('class', 'material-icons list');
-            var icon = document.createTextNode(obj.type);
+            var icon = document.createTextNode(file.type);
             i.appendChild(icon);
-        }        
+        }
         
         var div = document.createElement('div');
         div.setAttribute('contenteditable', 'true');
@@ -346,17 +319,17 @@ export class Project {
             this.updateName(e);
             
             // TODO: Mettre à jour l'image de la ressource
-            // obj.createImage();
+            // file.createImage();
         });
         
-        // div.setAttribute('oninput', 'updateName(obj)');
+        // div.setAttribute('oninput', 'updateName(file)');
         
-        // div.setAttribute('onblur', 'scrollBack(obj)');
+        // div.setAttribute('onblur', 'scrollBack(file)');
         div.addEventListener('blur', function(e) {        
             e.target.scrollLeft = 0;
         });
         
-        // div.setAttribute('onkeypress', 'validate(obj, event)');
+        // div.setAttribute('onkeypress', 'validate(file, event)');
         div.addEventListener('keypress', function(e) {
             System.validate(this, e);
         });
@@ -365,8 +338,8 @@ export class Project {
             window.getSelection().removeAllRanges();
         });
         
-        div.setAttribute('class', obj.id + '-name');
-        let name = document.createTextNode(obj.name);
+        div.setAttribute('class', file.id + '-name');
+        let name = document.createTextNode(file.name);
         div.appendChild(name);
         
         li.appendChild(i);

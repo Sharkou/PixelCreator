@@ -301,7 +301,12 @@ export class Object {
         for (let i in this.components) {
             if (this.components[i].active) {
                 if (this.components[i].update) {
-                    this.components[i].update(this);
+                    try {
+                        this.components[i].update(this);
+                    } catch (err) {
+                        console.error(err);
+                        // throw err;
+                    }
                 }
             }
         }
@@ -315,7 +320,12 @@ export class Object {
         for (let i in this.components) {
             if (this.components[i].active) {
                 if (this.components[i].draw) {
-                    this.components[i].draw(this);
+                    try {
+                        this.components[i].draw(this);
+                    } catch (err) {
+                        console.error(err);
+                        // throw err;
+                    }
                 }
             }
         }
@@ -423,7 +433,7 @@ export class Object {
 
         // Copie des propriétés du composant
         for (let prop in copy) {
-            if (typeof obj[prop] !== 'object') {
+            if (typeof copy[prop] !== 'object') {
                 copy[prop] = component[prop];
             } else {
                 // TODO: Gérer les objets

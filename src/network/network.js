@@ -120,7 +120,8 @@ export class Network {
                 case 'removeComponent': this.removeComponent(data); break;
                 case 'addChild': this.addChild(data); break;
                 case 'removeChild': this.removeChild(data); break;
-                case 'upload_files': this.uploadFiles(data); break;
+                case 'upload_file': this.uploadFile(data); break;
+                case 'delete_file': this.deleteFile(data); break;
                 case 'mousemove': this.mousemove(data); break;
                 case 'mousedown': this.mousedown(data); break;
                 case 'mouseup': this.mouseup(data); break;
@@ -258,32 +259,45 @@ export class Network {
      */
     static update(data) {
         // console.log('%c[SERVER] Object updated: ' + data.id, 'color: #11AB0D');
-        const obj = this.scene.objects[data.id];
-        const component = data.component;
-        const scene = Scene.main;
-        const camera = scene.camera;
-        if (obj) {
-            // Camera updated
-            if (data.id === camera.id) {
-                if (component) {
-                    camera.components[component][data.prop] = data.value;
-                } else {
-                    camera[data.prop] = data.value;
-                    if (data.prop === 'x') {
-                        camera.x -= camera.width / 2;
-                    } else if (data.prop === 'y') {
-                        camera.y -= camera.height / 2;
+        // console.log(data);
+
+        // File
+        // if (data.id[0] === '/') {
+        if (Loader.allowedTypes.indexOf(data.type) !== -1) {
+            const files = Loader.files;
+            const file = files[data.id];
+            if (file) {
+                file[data.prop] = data.value;
+            }
+        // Object
+        } else {
+            const obj = this.scene.objects[data.id];
+            const component = data.component;
+            const scene = Scene.main;
+            const camera = scene.camera;
+            if (obj) {
+                // Camera updated
+                if (data.id === camera.id) {
+                    if (component) {
+                        camera.components[component][data.prop] = data.value;
+                    } else {
+                        camera[data.prop] = data.value;
+                        if (data.prop === 'x') {
+                            camera.x -= camera.width / 2;
+                        } else if (data.prop === 'y') {
+                            camera.y -= camera.height / 2;
+                        }
                     }
+                    // TODO: Reset rendering
+                    // Renderer.main.init(scene, camera);
+                } else if (component) {
+                    // obj.setComponentProperty(data.component, data.prop, data.value);
+                    obj.components[component][data.prop] = data.value;
+                } else {
+                    // TODO: Interpolate the movement
+                    // obj.setProperty(data.prop, data.value);
+                    obj[data.prop] = data.value;
                 }
-                // TODO: Reset rendering
-                // Renderer.main.init(scene, camera);
-            } else if (component) {
-                // obj.setComponentProperty(data.component, data.prop, data.value);
-                obj.components[component][data.prop] = data.value;
-            } else {
-                // TODO: Interpolate the movement
-                // obj.setProperty(data.prop, data.value);
-                obj[data.prop] = data.value;
             }
         }
     }
@@ -295,6 +309,9 @@ export class Network {
         const component = data.component;
         if (obj) {
             obj.addComponent(obj.copyComponent(component), false);
+            if (obj === this.scene.current) {
+                this.scene.refresh();
+            }
         }
     }
 
@@ -305,6 +322,9 @@ export class Network {
         const component = data.component;
         if (obj) {
             obj.removeComponent(component, false);
+            if (obj === this.scene.current) {
+                this.scene.refresh();
+            }
         }
     }
 
@@ -336,12 +356,22 @@ export class Network {
     }
 
     /*
-     * Download uploaded files
+     * Download uploaded file
      */
-    static async uploadFiles(data) {
-        // console.log(data);
-        await Loader.load(data.id);
-        console.log('%c[SERVER] File loaded: ' + data.id, 'color: #11AB0D');
+    static async uploadFile(file) {
+        // console.log(file);
+        await Loader.load(file.id);
+        // console.log('%c[SERVER] File loaded: ' + file.id, 'color: #11AB0D');
+    }
+
+    /*
+     * Deleted file
+     */
+    static async deleteFile(fileId) {
+        const file = Loader.files[fileId];
+        Loader.remove(file);
+        console.log('%cinfo: File deleted: ' + fileId, 'color: #3b78ff');
+        // console.log('%c[SERVER] File deleted: ' + fileId, 'color: #11AB0D');
     }
 
     /**
@@ -355,10 +385,15 @@ export class Network {
         System.addEventListener('syncProperty', data => {
             // console.log(data);
             const id = data.object.id;
+            const type = data.object.type;
             const prop = data.prop;
             const component = data.component?.name;
             const value = data.value;
             const key = id + '-' + prop;
+            // File
+            if (Loader.allowedTypes.indexOf(type) !== -1) {
+                Loader.update(data.object);
+            }
             if (timers[key]) {
                 const lastTime = timers[key];
                 // Update every 50ms
@@ -367,16 +402,16 @@ export class Network {
                     // console.log(data);
                     window.clearTimeout(timeoutID);
                     timers[key] = Date.now();
-                    this.syncProperty(id, component, prop, value);
+                    this.syncProperty(id, type, component, prop, value);
                 } else {
                     window.clearTimeout(timeoutID);
                     timeoutID = window.setTimeout(() => {
-                        this.syncProperty(id, component, prop, value);
+                        this.syncProperty(id, type, component, prop, value);
                     }, delay);
                 }
             } else {
                 timers[key] = Date.now();
-                this.syncProperty(id, component, prop, value);
+                this.syncProperty(id, type, component, prop, value);
             }
         });
 
@@ -426,18 +461,23 @@ export class Network {
             this.send('remove', obj.id);
         });
 
-        System.addEventListener('upload_files', data => {
+        System.addEventListener('upload_file', data => {
             // console.log(data);
-            this.send('upload_files', {
+            this.send('upload_file', {
                 id: data.id,
                 type: data.type
             });
         });
+
+        System.addEventListener('delete_file', obj => {
+            this.send('delete_file', obj.id);
+        });
     }
 
-    static syncProperty(id, component, prop, value) {
+    static syncProperty(id, type, component, prop, value) {
         this.send('update', {
             id,
+            type,
             component,
             prop,
             value

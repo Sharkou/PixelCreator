@@ -1,5 +1,6 @@
 import { Scene } from '/src/core/scene.js';
 import { System } from '/src/core/system.js';
+import { Loader } from '/src/core/loader.js';
 import { Project } from '/editor/windows/project.js';
 
 export class Properties {
@@ -36,6 +37,15 @@ export class Properties {
             }
         });
 
+        // Update properties on component import
+        System.addEventListener('import', component => {
+            if (this.scene?.current?.contains) {
+                if (this.scene.current.contains(component)) {
+                    this.add(scene.current);
+                }
+            }
+        });
+
         this.node.addEventListener('dragover', function(e) {
             e.preventDefault(); // annule l'interdiction de "drop"
             this.classList.add('drop_hover');
@@ -49,20 +59,22 @@ export class Properties {
             this.classList.remove('drop_hover');
         });
 
-        this.node.addEventListener('drop', function(e) {
+        this.node.addEventListener('drop', async function(e) {
             e.preventDefault();
-            var id = e.dataTransfer.getData('text');
+            let id = e.dataTransfer.getData('text');
             
             this.classList.remove('drop_hover');
             
             // Instanciation de la classe du composant
-            var component = new Project.resources[id].data();
-            
-            scene.current.addComponent(component);
-            
-            // Update properties
+            // let component = new Project.files[id].data();
+            // let name = Loader.files[id].name.replace(/\s/g, '');
+            // let url = Loader.createURL(Loader.files[id]);
+            // let component = await Loader.import(url);
+
             if (scene.current) {
-                this.add(scene.current);
+                let component = Loader.files[id].component;                
+                scene.current.addComponent(new component());
+                scene.refresh(); // update object component in properties
             }
         });
     }
@@ -224,14 +236,14 @@ export class Properties {
         for (var c in components) {
             for (var p in components[c]) {
                 var value = components[c][p];
-                var e = document.getElementsByClassName(obj.id + '-' + c + '.' + p); // example : id-root.layer
+                var el = document.getElementsByClassName(obj.id + '-' + c + '.' + p); // example : id-root.layer
                 if (value) {
-                    for (var i = 0; i < e.length; i++) {
-                        if (e[i].nodeName === 'INPUT') {
-                            e[i].value = value;
+                    for (var i = 0; i < el.length; i++) {
+                        if (el[i].nodeName === 'INPUT') {
+                            el[i].value = value;
                         }
                         else {
-                            e[i].innerHTML = value;
+                            el[i].innerHTML = value;
                         }
                     }
                 }
@@ -372,7 +384,7 @@ export class Properties {
 
                 if (!value) break; // null value
 
-                switch (value.constructor.name) {
+                switch (value.constructor?.name) {
 
                     case 'Color': {
                         let type = 'color';

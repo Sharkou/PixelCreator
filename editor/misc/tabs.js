@@ -1,3 +1,5 @@
+import { Editor } from '/editor/scripting/editor.js';
+
 export default function openTab(e, id, parentID) {
     
     // Declare all variables
@@ -37,4 +39,11 @@ document.getElementById('project-btn').addEventListener('click', function(e) {
 
 document.getElementById('timeline-btn').addEventListener('click', function(e) {
     openTab(e, 'timeline', 'resources');
+});
+
+document.getElementById('script-btn').addEventListener('click', function(e) {
+    openTab(e, 'editor', 'resources');
+    // if (!Editor.launched) {
+    //     Editor.init();
+    // }
 });

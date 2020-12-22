@@ -30,6 +30,8 @@ export class System {
     static sync(object, component = null) {
 
         const obj = component ?? object;
+
+        // console.log(obj);
         
         // Synchronize each properties of component
         for (let prop in obj) {
@@ -42,7 +44,7 @@ export class System {
                 Object.defineProperty(obj, prop, {
                     
                     // Getter
-                    get: function() {                        
+                    get: function() {
                         // return value;
                         return this['_' + prop]; // get value
                     },
@@ -62,7 +64,8 @@ export class System {
                         });
                     },
                     
-                    configurable: true
+                    configurable: true,
+                    enumerable: true
                 });
 
                 // Set property on server
@@ -81,13 +84,47 @@ export class System {
                         });
                     },
                     
-                    configurable: true
+                    configurable: true,
+                    enumerable: true
                     
                 });
                 
                 obj[prop] = value; // restore value
             }
         }
+    }
+
+    /**
+     * Create a file
+     * @constructor
+     * @param {string} name - The name of the file
+     * @param {string} type - The MIME type
+     * @param {string} path - The path
+     * @param {Blob} data - The data
+     */
+    static createFile(name, type, path = '/', data = null) {
+        let file = new File([data], name, {
+            type: type
+        });
+
+        Object.defineProperty(file, 'name', {
+            writable: true,
+            configurable: true,
+            enumerable: true,
+            value: name
+        });
+
+        // console.log(file);
+
+        file.name = name.split('.')[0];
+        file.extension = name.split('.')[1];
+        file.path = (path === '' ? '/' : path);
+        file.id = path + name;
+        file.value = data;
+
+        this.sync(file);
+
+        return file;
     }
 
     // Validate input text

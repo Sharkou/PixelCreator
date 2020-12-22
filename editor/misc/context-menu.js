@@ -1,6 +1,8 @@
+import { System } from '/src/core/system.js';
+import { Loader } from '/src/core/loader.js';
 import { Mouse } from '/src/input/mouse.js';
+import { Editor } from '/editor/scripting/editor.js';
 import { Component } from '/editor/blueprint/component.js';
-import { Project } from '/app.js';
 
 // Disable right mouse click
 document.addEventListener('contextmenu', function(e) {
@@ -40,19 +42,44 @@ document.addEventListener('mousedown', function(event) {
 // New Script
 document.getElementById('script').addEventListener('mousedown', function() {
 
-    var script = new Script('New Script', 'js', null);
+    let name = 'New Script';
+    let rename = 'New Script';
+    let i = 1;
 
-    // Code.getDoc().setValue(code);
+    while (Loader.contains(rename)) {
+        rename = name + ' ' + i;
+        i++
+    }
 
-    // Ouverture de l'onglet Code
-    // document.getElementById('code-btn').click();
-    // Code.refresh();
+    name = rename;
+
+    // let script = new Resource(name, 'js', 'application/javascript');
+    let value = 
+`export default class ${name.replace(/\s/g,'')} {
+    constructor() {
+        
+    }
+}`;
+
+    let script = new File([value], name + '.js', {
+        type: 'application/javascript',
+    });
+
+    // let script = System.createFile(name + '.js', 'application/javascript', '/', value);
+    
+    // console.log(script);
+
+    Loader.uploadFiles([script]);
+
+    // Ouverture de l'onglet Script
+    // document.getElementById('script-btn').click();
+    // Editor.setValue(value);
 });
 
 // New Custom Component
 document.getElementById('custom').addEventListener('mousedown', function() {
     // let graph = new Graph('Custom Component');
     let component = new Component('Custom Component', 'px');
-    // Project.addResource(component);
-    Project.uploadFiles(component);
+    // Project.add(component);
+    Loader.uploadFiles(component);
 });
