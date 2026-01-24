@@ -1,6 +1,6 @@
 # Pixel Creator License (Custom Open Source / Proprietary Hybrid)
 
-Copyright (c) 2026 Dylan
+Copyright (c) 2026 Dylan "Sharkou" Audic
 
 ## 1. Definitions
 
