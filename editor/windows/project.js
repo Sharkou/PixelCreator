@@ -113,7 +113,7 @@ export class Project {
             Editor.current = file;
             Editor.setValue(file.value);
         } else if (type === 'px') {
-            document.getElementById('blueprint-btn').click();
+            document.getElementById('graph-btn').click();
         }
 
         System.dispatchEvent('setCurrentFile', file);
@@ -254,7 +254,7 @@ export class Project {
                 document.getElementById('script-btn').click();
                 return;
             } else if (type === 'px') {
-                document.getElementById('blueprint-btn').click();
+                document.getElementById('graph-btn').click();
             }
             this.scene.current = file;
             this.current = file;

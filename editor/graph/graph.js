@@ -1,4 +1,4 @@
-import { Node } from '/editor/blueprint/node.js';
+import { Node } from '/editor/graph/node.js';
 
 export class Graph {
     
@@ -9,26 +9,26 @@ export class Graph {
     constructor() {
         this.nodes = {};
         this.boxes = document.getElementsByClassName('box');
-        this.blueprint = document.getElementById('blueprint');
+        this.graph = document.getElementById('graph');
         this.svg = document.getElementById('svg');
         this.currentConnector = null;
         this.currentNode = null;
         this.code = '';
 
-        this.blueprint.addEventListener('dragover', e => {
+        this.graph.addEventListener('dragover', e => {
             e.preventDefault(); // annule l'interdiction de "drop"
             e.target.classList.add('drop_hover');
         }, false);
         
-        this.blueprint.addEventListener('dragleave', e => {
+        this.graph.addEventListener('dragleave', e => {
             e.target.classList.remove('drop_hover');
         });
         
-        this.blueprint.addEventListener('dragend', e => {
+        this.graph.addEventListener('dragend', e => {
             e.target.classList.remove('drop_hover');
         });
         
-        this.blueprint.addEventListener('drop', e => {
+        this.graph.addEventListener('drop', e => {
             e.preventDefault();
             e.target.classList.remove('drop_hover');
             this.createNode(e.dataTransfer.getData('text'), this.getMousePos(e));
@@ -42,7 +42,7 @@ export class Graph {
         }
 
         // DOM Event handlers
-        this.blueprint.addEventListener('mousedown', e => {
+        this.graph.addEventListener('mousedown', e => {
             if (e.target.classList.contains('connector')) {
                 const connector = e.target;
                 const otherConnector = connector.other;
@@ -59,7 +59,7 @@ export class Graph {
             }
         });
 
-        this.blueprint.addEventListener('mouseup', e => {
+        this.graph.addEventListener('mouseup', e => {
             this.currentNode = null;
             let updateConnectorPos = false;
             // S'il y a connexion
@@ -92,7 +92,7 @@ export class Graph {
             this.currentConnector = null;
         });
 
-        this.blueprint.addEventListener('mousemove', e => {
+        this.graph.addEventListener('mousemove', e => {
             // e.stopPropagation();
             let { x, y } = this.getMousePos(e);
             x = Math.round(x);
@@ -118,7 +118,7 @@ export class Graph {
      */
     createNode(type, e) {
         const node = new Node(type);
-        this.blueprint.appendChild(node.el);
+        this.graph.appendChild(node.el);
         node.moveTo({
             x: e.x - node.el.offsetWidth / 2,
             y: e.y - node.el.offsetHeight / 2
@@ -204,24 +204,24 @@ export class Graph {
     getConnectorPos(connector) {
         // let connector = this.el.firstElementChild;
         const offset = this.getOffset(connector);
-        const rect = this.getOffset(this.blueprint);
+        const rect = this.getOffset(this.graph);
         // const node = connector.node.el;
         return {
-            x: offset.left - rect.left + connector.offsetWidth / 2 + this.blueprint.scrollLeft,
-            y: offset.top - rect.top + connector.offsetHeight / 2 + this.blueprint.scrollTop
+            x: offset.left - rect.left + connector.offsetWidth / 2 + this.graph.scrollLeft,
+            y: offset.top - rect.top + connector.offsetHeight / 2 + this.graph.scrollTop
         };
     }
 
     getOffset(el) {
         const rect = el.getBoundingClientRect();
         return {
-            left: rect.left - this.blueprint.scrollLeft,
-            top: rect.top - this.blueprint.scrollTop
+            left: rect.left - this.graph.scrollLeft,
+            top: rect.top - this.graph.scrollTop
         };
     }
 
     getMousePos(e) {
-        const rect = this.getOffset(this.blueprint);
+        const rect = this.getOffset(this.graph);
         return {
             x: e.clientX - rect.left,
             y: e.clientY - rect.top

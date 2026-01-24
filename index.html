@@ -50,7 +50,7 @@
     <link rel="stylesheet" href="css/timeline.css" />
 
     <!-- Monaco Editor -->
-    <script src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
+    <!-- <script src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script> -->
     
     <!-- Core Engine -->
     <script async type="module" src="app.js"></script>
@@ -234,7 +234,7 @@
 
                 <div class="tab">
                     <h2 id="scene-btn" class="tab-link active"><i class="far fa-video"></i>Scene</h2>
-                    <h2 id="blueprint-btn" class="tab-link"><!--<i class="far fa-chart-network"></i>--><i class="far fa-project-diagram"></i>Graph</h2>
+                    <h2 id="graph-btn" class="tab-link"><!--<i class="far fa-chart-network"></i>--><i class="far fa-project-diagram"></i>Graph</h2>
                     <!-- <h2 id="code-btn" class="tab-link"><i class="far fa-code"></i>Scripting</h2> -->
                     <!-- <h2 class="tab-link" onclick="openTab(event, 'drawing')"><i class="fas fa-paint-brush"></i>Drawing</h2> -->
                     <ul class="end">                        
@@ -259,7 +259,7 @@
 
                     <section class="overlay-content">
 
-                        <section id="blueprint">
+                        <section id="graph">
 
                             <!-- <div class="box">
                                 <h3>Object Name</h3>
@@ -355,7 +355,7 @@
 
                 <div class="tab">
                     <h2 id="project-btn" class="active tab-link"><i class="far fa-folder-tree"></i>Project</h2>
-                    <h2 id="script-btn" class="tab-link"><i class="material-icons" style="font-size: 20px;">description</i>Script</h2>
+                    <!-- <h2 id="script-btn" class="tab-link"><i class="material-icons" style="font-size: 20px;">description</i>Script</h2> -->
                     <h2 id="timeline-btn" class="tab-link"><i class="fas fa-film"></i>Timeline</h2>
                     <!-- <h2 id="console-btn" class="tab-link"><i class="far fa-terminal"></i>Console</h2> -->
                     <!-- <h2 id="memory-btn" class="tab-link"><i class="far fa-memory"></i>Memory</h2> -->
@@ -525,11 +525,15 @@
                 <i class="material-icons">settings_input_component</i>
                 <span>Create Component</span>
             </li>
-            <li class="item" id="script">
+            <!-- <li class="item" id="script">
                 <i class="material-icons">description</i>
                 <span>Create Script</span>
-            </li>
+            </li> -->
         </ul>
+    </nav>
+
+    <nav class="picker">
+        
     </nav>
 
     <div id="save-popup">
@@ -538,7 +542,7 @@
     </div>
 
     <!-- Loading -->
-    <div id="loading"></div>
+    <div class="hidden" id="loading"></div>
 
 </body>
 

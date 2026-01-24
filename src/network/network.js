@@ -85,7 +85,15 @@ export class Network {
     }
 
     static disconnect() {
+        
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
         console.log('%c[SERVER] Disconnect request from local app layer...', 'color: #11AB0D');
+
+        // TODO: Use sendBeacon to ensure the request is sent even during page teardown
+        // this.send('disconnect');
         this.ws.close();
     }
 
@@ -176,7 +184,7 @@ export class Network {
     }
 
     /**
-     * Update scene every heartbeat
+     * Update scene every tick
      * @param {Object} data - The scene data
      */
     static heartbeat(data) {

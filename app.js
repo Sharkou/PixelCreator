@@ -18,9 +18,9 @@ import { Dnd } from '/editor/system/dnd.js';
 import { Hierarchy } from '/editor/windows/hierarchy.js';
 import { Properties } from '/editor/windows/properties.js';
 import { Project } from '/editor/windows/project.js';
-import { Editor } from '/editor/scripting/editor.js'
+// import { Editor } from '/editor/scripting/editor.js'
 import { Toolbar } from '/editor/windows/toolbar.js';
-import { Graph } from '/editor/blueprint/graph.js';
+import { Graph } from '/editor/graph/graph.js';
 import { Grid } from '/editor/misc/grid.js';
 import { Ruler } from '/editor/misc/ruler.js';
 import { Stats } from '/editor/misc/stats.js';
@@ -67,7 +67,7 @@ async function init() {
     //     Loader.import(plugin);
     // }
 
-    Editor.init();
+    // Editor.init();
 
     // Download project resources
     let files = await Loader.download(`https://${host}:${port}`);
@@ -125,20 +125,25 @@ window.onload = init;
 
 // Window resized
 window.onresize = function() {
-    Editor.resize();
+    // Editor.resize();
     renderer.resize(canvas.clientWidth, canvas.clientHeight);
     // renderer.init(scene, camera);
 };
 
 window.onbeforeunload = function(e) {
-    Network.disconnect();
+    // Warn the user before leaving the page
+    // e.preventDefault();
+    // e.returnValue = '';
 };
 
-window.onunload = function(e) {
+window.addEventListener('pagehide', e => {
+    // This event is fired when the page is being unloaded or put into the bfcache
+    // TODO: Use sendBeacon to ensure the request is sent even during page teardown
+    // Example: navigator.sendBeacon('/api/disconnect');
     Network.disconnect();
-};
+});
 
-// Debug
+/* Debug */
 window.scene = scene;
 window.project = project;
 window.loader = Loader;

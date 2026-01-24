@@ -2,7 +2,7 @@ import { System } from '/src/core/system.js';
 import { Loader } from '/src/core/loader.js';
 import { Mouse } from '/src/input/mouse.js';
 import { Editor } from '/editor/scripting/editor.js';
-import { Component } from '/editor/blueprint/component.js';
+import { Component } from '/editor/graph/component.js';
 
 // Disable right mouse click
 document.addEventListener('contextmenu', function(e) {
@@ -40,41 +40,41 @@ document.addEventListener('mousedown', function(event) {
 });
 
 // New Script
-document.getElementById('script').addEventListener('mousedown', function() {
+// document.getElementById('script').addEventListener('mousedown', function() {
 
-    let name = 'New Script';
-    let rename = 'New Script';
-    let i = 1;
+//     let name = 'New Script';
+//     let rename = 'New Script';
+//     let i = 1;
 
-    while (Loader.contains(rename)) {
-        rename = name + ' ' + i;
-        i++
-    }
+//     while (Loader.contains(rename)) {
+//         rename = name + ' ' + i;
+//         i++
+//     }
 
-    name = rename;
+//     name = rename;
 
-    // let script = new Resource(name, 'js', 'application/javascript');
-    let value = 
-`export default class ${name.replace(/\s/g,'')} {
-    constructor() {
+//     // let script = new Resource(name, 'js', 'application/javascript');
+//     let value = 
+// `export default class ${name.replace(/\s/g,'')} {
+//     constructor() {
         
-    }
-}`;
+//     }
+// }`;
 
-    let script = new File([value], name + '.js', {
-        type: 'application/javascript',
-    });
+//     let script = new File([value], name + '.js', {
+//         type: 'application/javascript',
+//     });
 
-    // let script = System.createFile(name + '.js', 'application/javascript', '/', value);
+//     // let script = System.createFile(name + '.js', 'application/javascript', '/', value);
     
-    // console.log(script);
+//     // console.log(script);
 
-    Loader.uploadFiles([script]);
+//     Loader.uploadFiles([script]);
 
-    // Ouverture de l'onglet Script
-    // document.getElementById('script-btn').click();
-    // Editor.setValue(value);
-});
+//     // Ouverture de l'onglet Script
+//     // document.getElementById('script-btn').click();
+//     // Editor.setValue(value);
+// });
 
 // New Custom Component
 document.getElementById('custom').addEventListener('mousedown', function() {

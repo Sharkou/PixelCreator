@@ -1,12 +1,12 @@
 import { System } from '/src/core/system.js';
-// import { Graph } from '/editor/blueprint/graph.js';
+// import { Graph } from '/editor/graph/graph.js';
 import { Graph } from '/app.js';
-import { Compiler } from '/editor/blueprint/compiler.js';
+import { Compiler } from '/editor/graph/compiler.js';
 
 export class Node {
     
     /**
-     * Create Node in blueprint editor
+     * Create Node in graph editor
      * @constructor
      * @param {string} type - The node type
      */
