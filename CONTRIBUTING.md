@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing to **Pixel Creator**! We welcome contributions from developers, artists, and other creatives. This guide will help you understand how to contribute effectively and responsibly.
 
-**Note:** Pixel Creator uses a hybrid open source model. The **core engine and editor** are open source and available on GitHub, but the **server-side code handling multiplayer hosting is private**. Contributions cannot include reverse engineering or replication of server functionality.
+**Note:** Pixel Creator uses a hybrid open source model. The **core engine and editor** are open source and available on GitHub, but the **server-side code handling multiplayer hosting is private for security reasons**. Contributions cannot include reverse engineering or replication of server functionality.
 
 ---
 
