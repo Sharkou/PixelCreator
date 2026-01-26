@@ -32,11 +32,12 @@ You are welcome to:
 
    ```bash
    git checkout -b feature/awesome-feature
+   ```
 4. Make your changes with clear, concise commits:
    
-```bash
-git commit -m "Add feature XYZ"
-```
+   ```bash
+   git commit -m "Add feature XYZ"
+   ```
 3. Push your branch and open a Pull Request (PR).
 Include a clear description of your changes and why they are useful.
 
