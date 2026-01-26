@@ -29,9 +29,14 @@ You are welcome to:
 
 1. **Fork the repository**: [https://github.com/Sharkou/PixelCreator](https://github.com/Sharkou/PixelCreator)  
 2. **Create a branch** for your changes:
+
    ```bash
    git checkout -b feature/awesome-feature
-3. Make your changes with clear, concise commits: git commit -m "Add feature XYZ"
+4. Make your changes with clear, concise commits:
+   
+```bash
+git commit -m "Add feature XYZ"
+```
 3. Push your branch and open a Pull Request (PR).
 Include a clear description of your changes and why they are useful.
 
