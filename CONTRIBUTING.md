@@ -48,6 +48,7 @@ Tip: Smaller, focused PRs are easier to review and more likely to be merged quic
 If you find a bug or unexpected behavior:
 - Check existing issues first
 - If none match, open a new issue with:
+  
      - A clear description of the problem
      - Steps to reproduce
      - Screenshots or examples if applicable
@@ -78,3 +79,6 @@ Anyone violating the code of conduct may have their contributions or access revo
 ## Contact & Support
 
 If you have questions about contributing, you can reach out on our Discord or open an issue with the label `help wanted`.
+For subscription and monetization inquiries, please contact us by email at contact@pixelcreator.io
+
+Enjoy taking part in this adventure!
