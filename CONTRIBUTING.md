@@ -67,7 +67,8 @@ Tip: Smaller, focused PRs are easier to review and more likely to be merged quic
 
 If you find a bug or unexpected behavior:
 - Check existing issues first
-- If none match, open a new issue with:  
+- If none match, open a new issue with:
+
      - A clear description of the problem
      - Steps to reproduce
      - Screenshots or examples if applicable
