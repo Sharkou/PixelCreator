@@ -23,21 +23,47 @@ You are welcome to:
 - Suggest or implement enhancements in the editor  
 - Improve documentation or examples
 
-### How to Contribute
+**Important:**  
+All code contributions must target the **`sandbox` branch**.
 
-1. **Fork the repository**: [https://github.com/Sharkou/PixelCreator](https://github.com/Sharkou/PixelCreator)  
-2. **Create a branch** for your changes:
+- `sandbox` is used for development, testing, and experimentation  
+- `main` is reserved for stable releases and is maintained by the project owner  
+
+Pull Requests targeting `main` directly will be closed or redirected to `sandbox`.
+
+---
+
+## How to Contribute (Pull Request workflow)
+
+A **Pull Request (PR)** is a request to merge your changes into the project.
+
+### Step-by-step
+
+1. **Fork the repository**  
+   https://github.com/Sharkou/PixelCreator
+
+2. **Create a branch from `sandbox`**:
 
    ```bash
+   git checkout sandbox
    git checkout -b feature/awesome-feature
    ```
-4. Make your changes with clear, concise commits:
-   
+3. Make your changes with clear, concise commits:
+
    ```bash
    git commit -m "Add feature XYZ"
    ```
-3. Push your branch and open a Pull Request (PR).
+4. Push your branch and open a Pull Request (PR).
+
+   ```bash
+   git push origin feature/awesome-feature
+   ```
 Include a clear description of your changes and why they are useful.
+
+4. Open a Pull Request (PR) on GitHub:
+- Base branch: sandbox
+- Compare branch: your feature branch
+- Clearly explain what you changed and why
 
 Tip: Smaller, focused PRs are easier to review and more likely to be merged quickly.
 
@@ -54,7 +80,7 @@ If you find a bug or unexpected behavior:
 ## Feature Requests
 
 We love ideas! To suggest a new feature:
-- Open an issue with the label enhancement
+- Open an issue with the label `enhancement`
 - Include the problem you want to solve, your proposed solution, and any references
 - Keep requests realistic to the scope of the project
 
