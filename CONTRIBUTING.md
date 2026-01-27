@@ -13,8 +13,6 @@ Thank you for your interest in contributing to **Pixel Creator**! We welcome con
 4. [Assets & Marketplace Contributions](#assets--marketplace-contributions)  
 5. [Code of Conduct](#code-of-conduct)  
 
----
-
 ## Code Contributions
 
 You are welcome to:
