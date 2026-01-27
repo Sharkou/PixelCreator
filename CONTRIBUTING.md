@@ -31,8 +31,6 @@ All code contributions must target the **`sandbox` branch**.
 
 Pull Requests targeting `main` directly will be closed or redirected to `sandbox`.
 
----
-
 ## How to Contribute (Pull Request workflow)
 
 A **Pull Request (PR)** is a request to merge your changes into the project.
@@ -60,7 +58,7 @@ A **Pull Request (PR)** is a request to merge your changes into the project.
    ```
 Include a clear description of your changes and why they are useful.
 
-4. Open a Pull Request (PR) on GitHub:
+5. Open a Pull Request (PR) on GitHub:
 - Base branch: sandbox
 - Compare branch: your feature branch
 - Clearly explain what you changed and why
