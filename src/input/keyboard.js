@@ -1,10 +1,6 @@
 import { System } from '/src/core/system.js';
 import { Network } from '/src/network/network.js';
 
-/**
- * Keyboard input handler
- * Manages keyboard state and events for local and networked users
- */
 export class Keyboard {
 
     // static keys = {};

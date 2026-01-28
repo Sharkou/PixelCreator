@@ -1,9 +1,5 @@
 import { Camera } from '/src/core/camera.js';
 
-/**
- * Grid overlay for the scene editor
- * Draws a visual grid to help with object placement
- */
 export class Grid {
 
     static dt = 50;

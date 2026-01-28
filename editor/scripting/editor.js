@@ -2,10 +2,6 @@ import { System } from '/src/core/system.js';
 import { Project } from '/editor/windows/project.js';
 import { Loader } from '/src/core/loader.js';
 
-/**
- * Code editor integration using Monaco Editor
- * Manages script editing, syntax highlighting, and live updates
- */
 export class Editor {
 
     static el = document.getElementById('editor');

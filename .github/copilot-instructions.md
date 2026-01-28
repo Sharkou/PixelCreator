@@ -433,32 +433,46 @@ Alpha available at: **pixelcreator.io** (Chrome recommended)
 
 ### JSDoc Comments
 
-**DO**: Comment classes and methods with JSDoc
+**File structure**: First line must be `import` or `export class`. No class-level JSDoc comments.
+
+**DO**: Put description in constructor JSDoc
 ```javascript
-/**
- * Initialize the renderer
- * @param {number} width - The width
- * @param {number} height - The height
- */
-constructor(width, height) {
-    this.width = width;
-    this.height = height;
+export class Vector {
+    
+    /**
+     * Create a new vector for physics and transformations
+     * @param {number} x - The x component
+     * @param {number} y - The y component
+     * @param {number} z - The z-index for depth sorting
+     */
+    constructor(x = 0, y = 0, z = 0) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
 }
 ```
 
-**DON'T**: Heavy JSDoc on self-explanatory properties
+**DON'T**: Class-level comments or verbose property JSDoc
 ```javascript
-// BAD - too verbose
+// BAD - class-level comment
+/**
+ * 2D Vector mathematics class
+ * Provides vector operations...
+ */
+export class Vector {
+
+// BAD - verbose property JSDoc
 /** @type {boolean} Whether the button is enabled */
 this.enabled = true;
 
-// GOOD - clean and readable
+// GOOD - clean
 this.enabled = true;
-this.visible = true;
-this.color = '#4a90d9';
 ```
 
-Use inline comments `//` only when clarification is truly needed.
+**Static classes**: No JSDoc needed (no constructor to document).
+
+**Be minimal**: Don't over-explain. The engine will evolve. Use `//` only when truly needed.
 
 ---
 

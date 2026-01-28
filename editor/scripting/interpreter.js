@@ -1,10 +1,6 @@
 import { Scene } from '/src/core/scene.js';
 import { Editor } from '/src/editor/scripting/editor.js';
 
-/**
- * Script interpreter and runtime compiler
- * Compiles and executes user scripts in the game context
- */
 export class Interpreter {
 
     /** @type {Window|null} Popup window for script editing */

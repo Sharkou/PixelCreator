@@ -1,7 +1,3 @@
-/**
- * Real-time collaboration module
- * Manages multi-user editing with cursor positions and synchronized changes
- */
 var Collab = {
     /** @type {Array<{name: string, x: number, y: number}>} Connected collaborators */
     friends: [],

@@ -11,14 +11,10 @@ import { Collider, RectCollider, CircleCollider } from '/src/physics/collider.js
 import { Controller } from '/src/physics/controller.js';
 import { Rotator } from '/src/physics/rotator.js';
 
-/**
- * Component manager for the editor
- * Registers and displays available components in the editor UI
- */
 export class Manager {
 
     /**
-     * Create a new component manager
+     * Create a new component manager for the editor
      * @param {Properties|null} properties - The properties panel reference
      */
     constructor(properties = null) {

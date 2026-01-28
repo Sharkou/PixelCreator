@@ -1,10 +1,6 @@
 import { System } from '/src/core/system.js';
 import { Network } from '/src/network/network.js';
 
-/**
- * Mouse input handler
- * Manages mouse state, position, and events for local and networked users
- */
 export class Mouse {
 
     static x = 0;
