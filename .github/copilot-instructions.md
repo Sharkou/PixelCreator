@@ -300,7 +300,15 @@ Any suggestion must respect these constraints.
 - Commit/push from local PowerShell (developer's account)
 - Manual validation before push
 - PixelBot reserved for future automation tasks only
-- When user clicks "keep" on edits, push immediately without asking for additional confirmation
+- When user shares useful information to remember, add it to this file automatically
+
+### Useful Links
+
+- **Website**: https://pixelcreator.io
+- **GitHub**: https://github.com/Sharkou/PixelCreator
+- **Discord**: https://discord.gg/X8scDNX
+- **Wiki**: https://github.com/Sharkou/PixelCreator/wiki
+- **Contact**: contact@pixelcreator.io
 
 ---
 
