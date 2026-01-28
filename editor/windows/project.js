@@ -92,7 +92,7 @@ export class Project {
 
     /**
      * Get currently open file
-     * @return {File} file - The currently open file
+     * @returns {File} file - The currently open file
      */
     get current() {
         return this._current;
@@ -113,7 +113,7 @@ export class Project {
             Editor.current = file;
             Editor.setValue(file.value);
         } else if (type === 'px') {
-            document.getElementById('blueprint-btn').click();
+            document.getElementById('graph-btn').click();
         }
 
         System.dispatchEvent('setCurrentFile', file);
@@ -121,7 +121,7 @@ export class Project {
 
     /**
      * Get current project
-     * @return {Project} project - The current project
+     * @returns {Project} project - The current project
      */
     static get main() {        
         return this._main;
@@ -225,7 +225,7 @@ export class Project {
     /**
      * Create resource view
      * @param {File} file - The file to display
-     * @return {HTMLElement} li - The li element
+     * @returns {HTMLElement} li - The li element
      */
     createView(file) {
         
@@ -254,7 +254,7 @@ export class Project {
                 document.getElementById('script-btn').click();
                 return;
             } else if (type === 'px') {
-                document.getElementById('blueprint-btn').click();
+                document.getElementById('graph-btn').click();
             }
             this.scene.current = file;
             this.current = file;

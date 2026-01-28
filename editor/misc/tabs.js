@@ -29,7 +29,7 @@ document.getElementById('scene-btn').addEventListener('click', function(e) {
     openTab(e, 'wrapper', 'scene');
 });
 
-document.getElementById('blueprint-btn').addEventListener('click', function(e) {
+document.getElementById('graph-btn').addEventListener('click', function(e) {
     openTab(e, 'overlay', 'scene');
 });
 
@@ -41,9 +41,9 @@ document.getElementById('timeline-btn').addEventListener('click', function(e) {
     openTab(e, 'timeline', 'resources');
 });
 
-document.getElementById('script-btn').addEventListener('click', function(e) {
-    openTab(e, 'editor', 'resources');
+// document.getElementById('script-btn').addEventListener('click', function(e) {
+    // openTab(e, 'editor', 'resources');
     // if (!Editor.launched) {
     //     Editor.init();
     // }
-});
+// });

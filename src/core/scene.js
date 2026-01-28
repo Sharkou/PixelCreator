@@ -133,7 +133,7 @@ export class Scene {
 
     /**
      * Get current object
-     * @return {Object} object - The current object
+     * @returns {Object} object - The current object
      */
     get current() {
         return this._current;
@@ -150,7 +150,7 @@ export class Scene {
     
     /**
      * Get current scene
-     * @return {Scene} scene - The current scene
+     * @returns {Scene} scene - The current scene
      */
     static get main() {        
         return this._main;
@@ -207,7 +207,7 @@ export class Scene {
     /**
      * Get object by name
      * @param {string} name - The object name
-     * @return {Object} object - The object
+     * @returns {Object} object - The object
      */
     getObjectByName(name) {
         
@@ -223,7 +223,7 @@ export class Scene {
     /**
      * Get objects by name
      * @param {string} name - The object name
-     * @return {Object} object - The objects
+     * @returns {Object} object - The objects
      */
     getObjectsByName(name) {
         
@@ -232,7 +232,7 @@ export class Scene {
     /**
      * Get objects by tag
      * @param {string} tag - The tag
-     * @return {Object} objects - The objects
+     * @returns {Object} objects - The objects
      */
     getObjectsByTag(tag) {
         

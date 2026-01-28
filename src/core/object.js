@@ -235,7 +235,7 @@ export class Object {
     /**
      * Get component
      * @param {string} component - The component to get
-     * @return {Component} component - The component
+     * @returns {Component} component - The component
      */
     getComponent(component) {
         // return this.components[component.constructor.name]; // .toLowerCase()];
@@ -245,7 +245,7 @@ export class Object {
     /**
      * Contains the object component
      * @param {Component} component - The content component
-     * @return {boolean} - The boolean result
+     * @returns {boolean} - The boolean result
      */
     contains(component) {
         return (this.components[component?.name]) ? true : false;
@@ -286,7 +286,7 @@ export class Object {
     /**
      * Add child to object
      * @param {Object} child - The child to get
-     * @return {Object} child - The child
+     * @returns {Object} child - The child
      */
     getChild(child) {
         return this.childs[child.id];
@@ -489,6 +489,7 @@ export class Object {
      * Detect mouse hover
      * @param {number} x - The x mouse value
      * @param {number} y - The y mouse value
+     * @returns {boolean} detection - The result of the mouse detection
      */
     detectMouse(x, y) {
 
@@ -512,12 +513,12 @@ export class Object {
      * Detects sides for editor resizing
      * @param {number} x - The x mouse value
      * @param {number} y - The y mouse value
-     * @return {boolean} side - The detection side
+     * @returns {string} side - The detected side
      */
     detectSide(x, y) {
 
         const camera = Camera.main;
-        const tolerance = 1+2*(1/camera.scale);
+        const tolerance = 1 + 2 * (1 / camera.scale);
         
         // Right side
         if (x / camera.scale >= this.x + this.width / 2 - camera.x - tolerance) {
@@ -547,8 +548,6 @@ export class Object {
         else if (y / camera.scale <= this.y - this.height / 2 - camera.y + tolerance) {
             return 'top';
         }
-            
-            return false;
     }
     
     /**
@@ -599,9 +598,9 @@ export class Object {
     }
     
     /**
-     * Create image of the object in editor resources window
+     * Create image of the object
      * @param {CanvasRenderingContext2D} ctx - The current rendering context
-     * @return {Image} img - The image
+     * @returns {Image} img - The generated image
      */
     createImage(ctx) {
         
@@ -652,7 +651,7 @@ export class Object {
 
     /**
      * Stringify the object
-     * @return {string} JSON string - The object as a JSON string
+     * @returns {string} JSON string - The object as a JSON string
      */
     stringify() {
         function replacer(key, value) {
@@ -671,7 +670,7 @@ export class Object {
     /**
      * Parse the object JSON string
      * @param {string} JSON string - The object as a JSON string
-     * @return {Object} JSON string - The object as a JSON string
+     * @returns {Object} JSON string - The object as a JSON string
      */
     parse(json) {
         return this.copy(JSON.parse(json));

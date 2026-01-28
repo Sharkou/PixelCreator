@@ -50,7 +50,7 @@ export class Camera {
     
     /**
      * Get main camera
-     * @return {Camera} camera - The main camera
+     * @returns {Camera} camera - The main camera
      */
     static get main() {
         return this._main;

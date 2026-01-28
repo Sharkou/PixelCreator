@@ -86,7 +86,7 @@ export class Loader {
     /**
      * Import script
      * @param {string} url - The script url
-     * @return {Module} module - The imported module
+     * @returns {Module} module - The imported module
      */
     static async import(url, dispatch = true) {
         // this.modules.push(await import('/plugins/' + url + '.js'));

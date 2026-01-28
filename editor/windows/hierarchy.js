@@ -108,7 +108,7 @@ export class Hierarchy {
     /**
      * Create hierarchy view
      * @param {Object} obj - The object to display
-     * @return {HTMLElement} li - The li element
+     * @returns {HTMLElement} li - The li element
      */
     createView(obj) {
 
