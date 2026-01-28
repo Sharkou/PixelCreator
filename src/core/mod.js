@@ -10,6 +10,7 @@ export { Mouse } from '/src/input/mouse.js';
 export { Keyboard } from '/src/input/keyboard.js';
 export { Network } from '/src/network/network.js';
 export { Camera } from '/src/core/camera.js';
+export { Random } from '/src/math/random.js';
 export { Texture } from '/src/graphics/texture.js';
 export { CircleRenderer } from '/src/graphics/circle.js';
 export { RectangleRenderer } from '/src/graphics/rectangle.js';
