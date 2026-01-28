@@ -8,7 +8,7 @@ Create online games (MMO, MOBA, .io) without server headaches.
 
 [![Website](https://img.shields.io/badge/Website-pixelcreator.io-blue?style=flat-square)](https://pixelcreator.io)
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-7289da?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/X8scDNX)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE.md)
+[![License](https://img.shields.io/badge/License-Custom-orange?style=flat-square)](LICENSE.md)
 
 </div>
 
@@ -60,13 +60,13 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 
 ## 📜 License
 
-[MIT License](LICENSE.md) — Free to use, modify, and distribute.
+See [LICENSE.md](LICENSE.md) for details.
 
 ---
 
 <div align="center">
 
-Made with ❤️ by [Dylan "Sharkou" Audic](https://github.com/Sharkou)
+Made with ❤️ by [Sharkou](https://github.com/Sharkou)
 
 [Website](https://pixelcreator.io) · [Discord](https://discord.gg/X8scDNX) · [Wiki](https://github.com/Sharkou/PixelCreator/wiki)
 
