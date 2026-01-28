@@ -337,7 +337,7 @@ Any suggestion must respect these constraints.
 
 ## Project Presentation (Full Text)
 
-**Author**: Dylan (Sharkou), 30 years old, creative developer
+**Author**: Sharkou, creative developer
 
 ### Genesis
 

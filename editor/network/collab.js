@@ -4,7 +4,7 @@ var Collab = {
     
     /** @type {{name: string, x: number, y: number}} Local user cursor */
     me: {
-        name: 'Dylan',
+        name: 'Sharkou',
         x: 80,
         y: 60
     },
