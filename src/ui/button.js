@@ -1,5 +1,4 @@
 import { Component } from '/src/core/mod.js';
-import { System } from '/src/core/system.js';
 
 export class Button extends Component {
 
