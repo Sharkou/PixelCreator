@@ -1,131 +1,292 @@
-# Pixel Creator - AI Agent Guidelines
+# Pixel Creator – AI Agent Guidelines
 
-## Project Overview
-Pixel Creator is a multiplayer collaborative pixel art editor and 2D game engine. It features a dual-architecture system:
-- **Engine Core** (`src/`): Game engine with rendering, physics, input, networking, and graphics
-- **Editor** (`editor/`): Web-based IDE for creating and manipulating 2D objects with drag-and-drop visual scripting
+## Project Identity & Philosophy
 
-## Architecture Layers
+Pixel Creator is **not** a generic game engine and must never be treated as such.
 
-### 1. Core Engine (`src/`)
-The runtime engine provides the foundation for all game logic:
-- **System**: Global event bus (`System.dispatchEvent()`, `System.addEventListener()`)
-- **Scene**: Container for all game objects; manages object lifecycle and hierarchies
-- **Object**: Base entity class with position, dimensions, components, and child objects
-- **Renderer**: Canvas-based 2D rendering engine with camera support
-- **Components**: Modular behavior system (Texture, CircleRenderer, RectangleRenderer, Collider, Controller, etc.)
+It is a **web-based, beginner-oriented, no-code / low-code 2D multiplayer game engine**, designed to allow anyone — even without programming knowledge — to create, collaborate on, and publish online games (MMO, MOBA, .io-style).
 
-### 2. Editor System (`editor/`)
-The editor provides visual tools and workflows:
-- **Windows**: UI panels (Hierarchy for object trees, Properties for editing, Project for resources, Toolbar for actions)
-- **Handler**: Manages canvas interactions (drag, resize, camera pan, object selection)
-- **Manager**: Component registry and UI component list
-- **Graph**: Visual scripting interface with nodes and connectors
-- **Miscellaneous**: Grid, ruler, stats, tabs, context menus, keyboard shortcuts, save/load
+This project exists to **reduce complexity**, not showcase clever abstractions.
 
-### 3. Integration Layer (`app.js`)
-Entry point that initializes both engine and editor, coordinates network connection to server.
+Primary objectives:
+- Make multiplayer game creation accessible to beginners
+- Hide networking complexity entirely from users
+- Favor clarity, determinism, and real-time systems
+- Enable collaborative development directly in the browser
+- Prioritize learning, experimentation, and creativity
 
-## Critical Data Flows
+If a proposed solution:
+- Makes the engine harder to understand
+- Adds unnecessary abstraction
+- Assumes advanced programming knowledge
+- Shifts complexity onto the user
 
-### Object-Component Pattern
-Objects are containers; components provide behavior. Example:
+Then it is wrong.
+
+---
+
+## Vision & Long-Term Goals
+
+Pixel Creator is developed with the following long-term vision:
+- A living ecosystem around multiplayer game creation
+- A community-driven marketplace for modules and assets
+- A platform for publishing and distributing games
+- A collaborative environment where multiple users edit the same project in real time
+
+The engine is opinionated by design:
+- Web-first
+- Multiplayer-first
+- Beginner-first
+
+---
+
+## Target Audience
+
+Pixel Creator targets:
+- Beginners with no programming background
+- Indie creators who want multiplayer without server headaches
+- Small teams collaborating remotely
+- Developers who value simplicity over maximal control
+
+This engine does **not** target:
+- AAA pipelines
+- Engine hackers
+- People who want to rewrite the engine instead of using it
+
+---
+
+## Technology Stack (Intentional Choices)
+
+- Language: JavaScript (ES modules)
+- Editor: HTML5 + Canvas
+- Client runtime: Browser
+- Server runtime: Deno (authoritative, real-time)
+- Rendering: Canvas 2D (WebGL/WebGPU later when justified)
+- External libraries: Avoided unless strictly beneficial
+
+Everything is built **custom and native** to keep the engine:
+- Lightweight
+- Flexible
+- Predictable
+- Maintainable
+
+---
+
+## Code Style
+
+- Language: English (code, comments, variables, functions)
+- Naming: camelCase by default
+- Classes: PascalCase (e.g., `Player`, `Renderer`, `Random`)
+- Files: lowercase, single word (e.g., `renderer.js`, `random.js`, `camera.js`)
+- Structure: 1 file = 1 module = 1 class = 1 component
+- Documentation files: lowercase (e.g., `renderer.md`, `random.md`)
+
+---
+
+## Architecture Overview
+
+Pixel Creator is split into two strictly separated layers:
+
+- **Engine Core (`src/`)**
+  - Runtime logic
+  - Rendering
+  - Physics
+  - Networking
+  - Component behavior
+
+- **Editor (`editor/`)**
+  - Visual IDE
+  - Drag-and-drop workflows
+  - Visual scripting
+  - Real-time collaboration tools
+
+The editor **never mutates engine state directly**.  
+All communication goes through the event system.
+
+---
+
+## Core Architectural Principles
+
+### Object–Component Pattern
+
+Objects are **dumb containers**.  
+Components contain **all behavior and logic**.
+
 ```javascript
 const obj = new Object('Player', 0, 0, 32, 32);
 obj.addComponent(new Texture('player.png'));
-obj.addComponent(new Controller()); // Input handling
+obj.addComponent(new Controller());
 scene.add(obj);
 ```
-- Components must be imported from `/src/core/mod.js` barrel export
-- Use `object.getComponent('ComponentName')` to retrieve components
-- Properties sync via `System.dispatchEvent('setProperty', {object, component, prop, value})`
 
-### Event System
-All state changes flow through `System` event bus:
-- `'add'`, `'remove'`, `'instantiate'`: Object lifecycle
-- `'setProperty'`: Local property changes (triggers UI updates)
-- `'syncProperty'`: Network synchronization to server
-- `'addComponent'`, `'import'`: Component lifecycle
-- `'setCurrentObject'`: Selection changes in editor
+Rules:
+- Components are imported exclusively from /src/core/mod.js
+- Never import components from deep paths
+- Components must remain modular and independent
+- Access components via: `obj.getComponent(ComponentClass)`
 
-Editor windows subscribe to these events to stay synchronized.
+---
 
-### Editor-Engine Binding
-- **Hierarchy**: Listens to `'add'`/`'remove'`/`'instantiate'` to update object tree
-- **Properties**: Listens to `'setCurrentObject'` and `'setProperty'` to update property panels
-- **Graph**: Visual node editor; compiles to executable code via `Graph.compile()`
-- **Handler**: Intercepts canvas clicks/drags to select/manipulate objects, dispatches `'setProperty'` events
+### Event-Driven Communication
 
-## Development Patterns & Conventions
+All state changes go through the global event bus.
+No direct mutation. No shortcuts.
 
-### Property Synchronization
-Two-layer property system in Object:
-1. **Local edits**: `setProperty(prop, value)` → UI updates via `'setProperty'` event
-2. **Server sync**: `syncProperty(prop, value)` → `'syncProperty'` event propagates to network
+Core API:
+- System.dispatchEvent(eventName, payload)
+- System.addEventListener(eventName, callback)
 
-Both dispatch events that trigger cascade updates across editor windows.
+Important events:
+- `add`, `remove`, `instantiate`, `destroy` → object lifecycle
+- `setCurrentObject` → editor selection
+- `addComponent`, `import`, `removeComponent` → component lifecycle
+- `setProperty` → property changes + local editor update
+- `syncProperty` → authoritative network sync
 
-### Component Rendering
-Graphics components (Texture, CircleRenderer, etc.) define a `render(ctx, camera)` method:
+Events are synchronous.
+Listener order matters.
+
+---
+
+### Property Synchronization Model
+
+Objects expose a two-layer property system.
+
+Local editor update:
+```javascript
+obj.setProperty('x', 100);
+```
+
+Network synchronization:
+```javascript
+obj.syncProperty('x', 100);
+```
+
+This separation allows:
+- Immediate local feedback in the editor
+- Never assign properties directly
+- `setProperty` updates UI and editor state
+- `syncProperty` propagates changes to server and clients
+- Network sync must be explicit and intentional
+
+---
+
+### Rendering Model
+
+Rendering is fully component-driven.
+
 ```javascript
 export class CircleRenderer extends Component {
     render(ctx, camera) {
         ctx.fillStyle = this.color;
         ctx.beginPath();
-        ctx.arc(this.x - camera.x, this.y - camera.y, this.radius, 0, Math.PI * 2);
+        ctx.arc(
+            this.x - camera.x,
+            this.y - camera.y,
+            this.radius,
+            0,
+            Math.PI * 2
+        );
         ctx.fill();
     }
 }
 ```
-Renderer loops through scene objects and calls each component's `render()` method.
 
-### Module Structure
-- **Barrel exports**: `/src/core/mod.js` re-exports all components for unified imports
-- **System modules**: Static singletons (Renderer, Network, System, Time, Performance)
-- **Editor-specific isolation**: Editor modules never directly modify engine objects; only dispatch System events
+If something is visible, it owns a renderer component.
+No implicit rendering logic.
 
-## Common Tasks
+---
 
-### Adding a New Component Type
-1. Create component class in appropriate `src/` subdirectory (e.g., `src/graphics/newcomponent.js`)
-2. Extend `Component` base class and implement `render(ctx, camera)` if visual
-3. Add export to `/src/core/mod.js`
-4. Register in `Manager.addComponent()` with icon and category for editor UI
+## Multiplayer & Collaboration
 
-### Modifying Object Properties
-Always use `setProperty()` or `syncProperty()` rather than direct assignment to ensure UI/network updates:
-```javascript
-// Wrong: obj.x = 100;
-// Right:
-obj.setProperty('x', 100); // Local UI update
-obj.syncProperty('x', 100); // Network sync
-```
+Pixel Creator is **multiplayer by design**.
 
-### Listening to Object Changes
-```javascript
-System.addEventListener('setProperty', data => {
-    const {object, component, prop, value} = data;
-    // React to changes across all objects
-});
-```
+Key principles:
+- Real-time gameplay
+- Deterministic logic when possible
+- Avoid RNG-driven advantages
 
-### Creating Editor UI Elements
-Use `Hierarchy`, `Properties`, or `Project` window patterns:
-- Query `System.addEventListener()` for state changes
-- Build DOM elements via `document.createElement()`
-- Store references in instance properties for cleanup
+Collaboration:
+- Multiple users can edit the same project simultaneously
+- Property changes are synchronized live
+- The editor reflects authoritative engine state in real time
 
-## Key Files for Reference
-- **Object model**: [src/core/object.js](src/core/object.js#L186)
-- **Event system**: [src/core/system.js](src/core/system.js#L145)
-- **Scene management**: [src/core/scene.js](src/core/scene.js#L20)
-- **Component registry**: [editor/system/manager.js](editor/system/manager.js#L14)
-- **Editor bindings**: [editor/windows/properties.js](editor/windows/properties.js#L18)
-- **Canvas interaction**: [editor/system/handler.js](editor/system/handler.js#L18)
-- **Rendering pipeline**: [src/core/renderer.js](src/core/renderer.js#L1)
+---
 
-## Important Gotchas
-- **Synchronization conflicts**: Only dispatch `'syncProperty'` when intentionally synchronizing to server; `setProperty` is for local editor-only updates
-- **Component name collisions**: Component names must match export names in `/src/core/mod.js` exactly
-- **Event propagation**: Listener order matters; events fire synchronously in registration order
-- **DOM element IDs**: Must match object IDs for Hierarchy/Properties binding to work (`getElementById(obj.id)`)
+## Editor Responsibilities
+
+The editor is responsible for:
+- Provides visual tooling only
+- Converts user actions into engine events
+- Manages project files and assets
+
+Editor subsystems:
+- Scene view (canvas)
+- Object hierarchy panel (objects tree)
+- Properties (components and values)
+- Project (assets)
+- Graph (visual scripting & behaviors)
+- Handler (canvas interactions)
+- Timeline (animations & sequences)
+- Collaboration (real-time multi-user editing)
+- Settings (project configuration)
+- Toolbar (common actions)
+- Menu (file, edit, view, help)
+- Modal (dialogs & prompts)
+- Notifications (user feedback)
+- Shortcuts (keyboard bindings)
+- Context menu (right-click actions)
+- History (undo/redo)
+- Search (find objects, assets, components)
+
+If logic belongs to the game, it belongs in the engine.
+
+---
+
+## Modularity & Extensibility
+
+Pixel Creator uses a modular architecture:
+- Core modules are minimal (e.g., Renderer, Physics, Networking = 3 modules = 3 classes)
+- Components are independent and reusable
+- New components can be added without modifying core code
+- Additional functionality is opt-in
+- Modules must remain isolated and interoperable
+- Avoid monolithic classes or god objects
+
+A future marketplace will allow:
+- Sharing custom modules
+- Downloading community-created components
+- Selling assets
+- Extending engine capabilities safely
+
+---
+
+## Known Constraints & Reality
+
+Pixel Creator is a work in progress.
+- The project is developed by a single developer
+- Infrastructure is currently limited
+- Connection limits exist during beta
+- Stability and clarity are prioritized over feature count
+- Some advanced features may be deferred or simplified
+- Feedback from early users is actively sought
+- The engine will evolve based on real-world usage and needs
+- Documentation will improve over time
+- The focus remains on accessibility and ease of use
+
+Any suggestion must respect these constraints.
+
+---
+
+## Summary / Final Reminders
+
+When contributing to Pixel Creator, always remember if a suggestion:
+- Adds complexity for the user
+- Breaks beginner accessibility
+- Obscures engine behavior
+- Requires advanced knowledge to debug
+
+Then it must be rejected.
+
+Pixel Creator exists to empower creators —
+not to impress engineers.
