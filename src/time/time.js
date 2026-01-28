@@ -18,7 +18,7 @@ export class Time {
     /**
      * Get the time in milliseconds
      * @static
-     * @return {DOMHighResTimeStamp} current - the time in milliseconds
+     * @returns {DOMHighResTimeStamp} current - the time in milliseconds
      */
     static now() {
         Time.current = performance.now();

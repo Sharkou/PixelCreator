@@ -142,7 +142,7 @@ export class Network {
     /**
      * Init scene data
      * @param {Object} data - The scene data
-     * @return {Promise} data - The promise resolved
+     * @returns {Promise} data - The promise resolved
      */
     static initScene(data) {
         console.log('%c[SERVER] Scene data received from server: ' + Object.keys(data).length, 'color: #11AB0D');

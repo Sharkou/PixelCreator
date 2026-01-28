@@ -92,7 +92,7 @@ export class Project {
 
     /**
      * Get currently open file
-     * @return {File} file - The currently open file
+     * @returns {File} file - The currently open file
      */
     get current() {
         return this._current;
@@ -121,7 +121,7 @@ export class Project {
 
     /**
      * Get current project
-     * @return {Project} project - The current project
+     * @returns {Project} project - The current project
      */
     static get main() {        
         return this._main;
@@ -225,7 +225,7 @@ export class Project {
     /**
      * Create resource view
      * @param {File} file - The file to display
-     * @return {HTMLElement} li - The li element
+     * @returns {HTMLElement} li - The li element
      */
     createView(file) {
         

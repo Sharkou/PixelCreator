@@ -81,7 +81,7 @@ export class Properties {
 
     /**
      * Get current properties
-     * @return {Properties} properties - The current properties
+     * @returns {Properties} properties - The current properties
      */
     static get main() {        
         return this._main;
@@ -254,7 +254,7 @@ export class Properties {
     /**
      * Create a view of object root
      * @param {Object} obj - The object
-     * @return {Element} li - The DOM Element of the object
+     * @returns {Element} li - The DOM Element of the object
      */
     createObjectView(obj) {
 
@@ -304,7 +304,7 @@ export class Properties {
     /**
      * Create a view of component
      * @param {Object} obj - The component
-     * @return {Element} li - The DOM Element of the component
+     * @returns {Element} li - The DOM Element of the component
      */
     createComponentView(obj) {
         

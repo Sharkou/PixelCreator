@@ -16,6 +16,7 @@ export class System {
      * @static
      * @param {number} a - The first number
      * @param {number} b - The second number
+     * @returns {number} random - The generated random number
      */
     static random(a, b) {
         return Math.floor((Math.random() * b) + a);

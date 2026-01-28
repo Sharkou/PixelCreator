@@ -10,7 +10,7 @@ export class Color {
      * @param {string} r - The red color
      * @param {string} g - The green color
      * @param {string} b - The blue color
-     * @return {string} - The Hex color
+     * @returns {string} - The Hex color
      */
     static RGBToHex(r, g, b) {
         return '#' + Color.componentToHex(r) + Color.componentToHex(g) + Color.componentToHex(b);
@@ -19,7 +19,7 @@ export class Color {
     /**
      * Convert Hex color to RGB
      * @param {number} hex - The hexadecimal color
-     * @return {string} - The RGB color
+     * @returns {string} - The RGB color
      */
     static toColor(hex) {
         
@@ -35,7 +35,7 @@ export class Color {
      * Create a transparent color
      * @param {string} color - The RGB color
      * @param {number} opacity - The opacity
-     * @return {string} - The rgba color
+     * @returns {string} - The rgba color
      */
     static createAlphaColor(color, opacity) {
         return [color.slice(0, color.length-1), ', ' + opacity, color.slice(color.length-1)].join('');

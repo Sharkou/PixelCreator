@@ -57,7 +57,7 @@ export class Renderer {
 
     /**
      * Get current renderer
-     * @return {Renderer} renderer - The current renderer
+     * @returns {Renderer} renderer - The current renderer
      */
     static get main() {
         return this._main;
@@ -88,7 +88,7 @@ export class Renderer {
     * Create canvas from layer
     * @param {string} id - The Element ID
     * @param {number} zIndex - The z-index Element
-    * @return {HTMLCanvasElement} canvas - The canvas
+    * @returns {HTMLCanvasElement} canvas - The canvas
     */
     createCanvas(id, zIndex) {
         
