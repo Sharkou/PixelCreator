@@ -3,11 +3,6 @@ import { Graphics } from '/src/graphics/graphics.js';
 /**
  * Spawn point component for multiplayer
  * Defines locations where players can spawn in the game
- * 
- * @class Spawner
- * @example
- * const spawner = new Spawner();
- * obj.addComponent(spawner);
  */
 export class Spawner {
     

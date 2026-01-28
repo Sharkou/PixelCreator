@@ -4,13 +4,6 @@ import { System } from '/src/core/system.js';
 /**
  * UI Button component using HTML DOM elements
  * Creates an interactive HTML button that can be positioned in the game UI
- * 
- * @class Button
- * @extends Component
- * @example
- * const button = new Button('Play', 100, 50);
- * button.onClick = () => game.start();
- * obj.addComponent(button);
  */
 export class Button extends Component {
 

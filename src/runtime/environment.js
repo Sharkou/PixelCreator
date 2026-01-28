@@ -1,16 +1,6 @@
 /**
  * Runtime environment configuration and detection
  * Handles platform detection, capabilities, and environment settings
- * 
- * @example
- * // Check environment
- * if (Environment.isBrowser) {
- *     console.log('Running in browser');
- * }
- * 
- * // Get device info
- * const info = Environment.getDeviceInfo();
- * console.log(info.platform);
  */
 export class Environment {
 

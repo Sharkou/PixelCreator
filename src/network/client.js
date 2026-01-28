@@ -4,11 +4,6 @@
 /**
  * Network client representing a connected user
  * Stores user input state for network synchronization
- * 
- * @class Client
- * @example
- * const client = new Client('user123');
- * client.keys['ArrowUp'] = true;
  */
 export class Client {
 

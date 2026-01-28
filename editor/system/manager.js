@@ -14,11 +14,6 @@ import { Rotator } from '/src/physics/rotator.js';
 /**
  * Component manager for the editor
  * Registers and displays available components in the editor UI
- * 
- * @class Manager
- * @example
- * const manager = new Manager(properties);
- * manager.addComponent(MyComponent, 'fas fa-star', 'custom');
  */
 export class Manager {
 

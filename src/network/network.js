@@ -9,16 +9,6 @@ import { Keyboard } from '/src/input/keyboard.js';
 /**
  * Network manager for multiplayer functionality
  * Handles WebSocket connections, user management, and state synchronization
- * 
- * @class Network
- * @static
- * @example
- * // Initialize and connect
- * Network.init('localhost', 8080);
- * await Network.connect(scene);
- * 
- * // Send data to server
- * Network.send('move', { x: 100, y: 200 });
  */
 export class Network {
     

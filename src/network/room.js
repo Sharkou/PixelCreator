@@ -4,13 +4,6 @@ import { db } from '/src/db/firebase.js';
 /**
  * Multiplayer room management
  * Handles room creation, joining, and real-time synchronization via Firebase
- * 
- * @class Room
- * @example
- * const room = new Room(socket);
- * await room.create('my-room');
- * // or
- * await room.join('existing-room');
  */
 export class Room {
     

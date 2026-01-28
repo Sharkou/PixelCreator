@@ -3,12 +3,6 @@ import { Scene } from '/src/core/scene.js';
 /**
  * Drag-and-drop sorter for hierarchy list
  * Manages object ordering and parent-child relationships via drag operations
- * 
- * @class Sorter
- * @static
- * @example
- * // Enable sorting on an element
- * Sorter.sort(listItem);
  */
 export class Sorter {
 

@@ -1,15 +1,6 @@
 /**
  * Time management utility
  * Provides delta time and timing functions for game loop
- * 
- * @class Time
- * @static
- * @example
- * // Use delta time for frame-independent movement
- * position.x += velocity * Time.deltaTime;
- * 
- * // Get current time
- * const now = Time.now();
  */
 export class Time {
 

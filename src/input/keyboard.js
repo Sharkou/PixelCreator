@@ -4,18 +4,6 @@ import { Network } from '/src/network/network.js';
 /**
  * Keyboard input handler
  * Manages keyboard state and events for local and networked users
- * 
- * @class Keyboard
- * @static
- * @example
- * // Check if any key is pressed for a user
- * if (Keyboard.keyPressed(uid)) {
- *     console.log('Key pressed!');
- * }
- * 
- * // Get specific key state
- * const keys = Keyboard.keys(uid);
- * if (keys['ArrowUp']) player.jump();
  */
 export class Keyboard {
 

@@ -3,12 +3,6 @@ import * as Peer from '/src/lib/simplepeer.js';
 /**
  * P2P socket using WebRTC for peer-to-peer connections
  * Provides direct communication between clients without server relay
- * 
- * @class Socket
- * @example
- * const socket = new Socket();
- * await socket.init(true); // As initiator
- * socket.on('connect', () => console.log('Connected!'));
  */
 export class Socket {
     
