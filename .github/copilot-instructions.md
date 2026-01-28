@@ -297,8 +297,9 @@ Any suggestion must respect these constraints.
 ### Workflow Preferences
 
 - Local file editing preferred (faster iteration)
-- Manual commit/push by developer
-- PixelBot for automation tasks only
+- Commit/push from local PowerShell (developer's account)
+- Manual validation before push
+- PixelBot reserved for future automation tasks only
 
 ---
 
