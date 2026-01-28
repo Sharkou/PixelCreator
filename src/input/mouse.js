@@ -1,21 +1,62 @@
 import { System } from '/src/core/system.js';
 import { Network } from '/src/network/network.js';
 
+/**
+ * Mouse input handler
+ * Manages mouse state, position, and events for local and networked users
+ * 
+ * @class Mouse
+ * @static
+ * @example
+ * // Get mouse position
+ * console.log(Mouse.x, Mouse.y);
+ * 
+ * // Check if button is pressed
+ * if (Mouse.buttonPressed(uid)) {
+ *     player.shoot();
+ * }
+ */
 export class Mouse {
 
+    /** @type {number} Current mouse X position on canvas */
     static x = 0;
+    
+    /** @type {number} Current mouse Y position on canvas */
     static y = 0;
+    
+    /** @type {EventTarget|null} Current event target element */
     static target = null;
+    
+    /** @type {boolean} Whether mouse button is down */
     static down = false;
+    
+    /** @type {boolean} Whether mouse button is up */
     static up = false;
+    
+    /** @type {boolean} Whether mouse is moving */
     static move = false;
+    
+    /** @type {string} Current button name ('left', 'middle', 'right') */
     static button = '';
+    
+    /** @type {{x: number, y: number}} Mouse position in editor coordinates */
     static editor = { x: 0, y: 0 };
+    
+    /** @type {{x: number, y: number}} Last recorded mouse position */
     static lastPosition = { x: 0, y: 0 };
+    
+    /** @type {{x: number, y: number}} Mouse offset from origin */
     static offset = { x: 0, y: 0 };
+    
+    /** @type {{x: number, y: number}} Mouse position in world coordinates */
     static world = { x: 0, y: 0 };
         
-    // Mouse position
+    /**
+     * Get mouse position relative to canvas
+     * @static
+     * @param {MouseEvent} e - The mouse event
+     * @returns {{x: number, y: number}} Mouse position in canvas coordinates
+     */
     static getMousePos(e) {
         
         var rect = canvas.getBoundingClientRect();
@@ -25,7 +66,12 @@ export class Mouse {
             y: (e.clientY - rect.top) / (rect.bottom - rect.top) * canvas.height
         };
     }
-        
+    
+    /**
+     * Set the current button name from button index
+     * @static
+     * @param {number} e - The button index (0=left, 1=middle, 2=right)
+     */
     static setButton(e) {
         switch (e) {
             case 0:
@@ -40,6 +86,12 @@ export class Mouse {
         }
     }
 
+    /**
+     * Check if any mouse button is pressed for a user
+     * @static
+     * @param {string} uid - The user identifier
+     * @returns {boolean} True if any button is pressed
+     */
     static buttonPressed(uid) {
         const buttons = this.buttons(uid);
         for (let button in buttons) {
@@ -60,10 +112,22 @@ export class Mouse {
         return true;
     }
 
+    /**
+     * Get the mouse buttons state object for a user
+     * @static
+     * @param {string} uid - The user identifier
+     * @returns {Object|undefined} Object with button indices as keys and boolean pressed state
+     */
     static buttons(uid) {
         return Network.getUser(uid)?.mouse?.buttons;
     }
 
+    /**
+     * Get the complete mouse state for a user
+     * @static
+     * @param {string} uid - The user identifier
+     * @returns {Object|undefined} Mouse state object with x, y, and buttons
+     */
     static getUserMouse(uid) {
         return Network.getUser(uid)?.mouse;
     }

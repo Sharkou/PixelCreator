@@ -1,10 +1,32 @@
 import { System } from '/src/core/system.js';
 import { Network } from '/src/network/network.js';
 
+/**
+ * Keyboard input handler
+ * Manages keyboard state and events for local and networked users
+ * 
+ * @class Keyboard
+ * @static
+ * @example
+ * // Check if any key is pressed for a user
+ * if (Keyboard.keyPressed(uid)) {
+ *     console.log('Key pressed!');
+ * }
+ * 
+ * // Get specific key state
+ * const keys = Keyboard.keys(uid);
+ * if (keys['ArrowUp']) player.jump();
+ */
 export class Keyboard {
 
     // static keys = {};
 
+    /**
+     * Check if any key is currently pressed for a user
+     * @static
+     * @param {string} uid - The user identifier
+     * @returns {boolean} True if any key is pressed
+     */
     static keyPressed(uid) {
         const keys = this.keys(uid);
         for (let key in keys) {
@@ -15,6 +37,12 @@ export class Keyboard {
         return false;
     }
     
+    /**
+     * Check if all keys are released for a user
+     * @static
+     * @param {string} uid - The user identifier
+     * @returns {boolean} True if no keys are pressed
+     */
     static keyReleased(uid) {
         const keys = this.keys(uid);
         for (let key in keys) {
@@ -25,6 +53,12 @@ export class Keyboard {
         return true;
     }
 
+    /**
+     * Get the keyboard state object for a user
+     * @static
+     * @param {string} uid - The user identifier
+     * @returns {Object|undefined} Object with key names as keys and boolean pressed state
+     */
     static keys(uid) {
         return Network.getUser(uid)?.keys;
     }

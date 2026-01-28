@@ -1,17 +1,36 @@
+/**
+ * WebSocket-based database client
+ * Provides async communication with a database server
+ * 
+ * @class Database
+ * @example
+ * const db = new Database('localhost', 8080, () => {
+ *     console.log('Connected!');
+ * });
+ * const data = await db.get('users/123');
+ */
 export class Database {
     
     /**
-     * Initialize the database
-     * @constructor
+     * Create a new database connection
+     * @param {string} addr - Server address
+     * @param {number} port - Server port
+     * @param {Function} onconnect - Callback when connected
      */
     constructor(addr, port, onconnect) {
-        
+        /** @type {string} Server address */
         this.addr = addr;
+        
+        /** @type {number} Server port */
         this.port = port;
+        
+        /** @type {number} Request ID counter */
         this.id = 0;
         
+        /** @type {Object<number, Function>} Pending request callbacks */
         this.callbacks = {};
         
+        /** @type {WebSocket} WebSocket connection */
 		this.ws = new WebSocket("ws://" + addr + ":" + port);
 
 		this.ws.onopen = e => onconnect(e);
@@ -20,6 +39,12 @@ export class Database {
         // TODO: Setter infini avec le bind
 	}
     
+    /**
+     * Send a command to the database
+     * @param {string} name - Command name
+     * @param {Object} args - Command arguments
+     * @returns {Promise<*>} Response data
+     */
     send(name, args) {
         
         this.ws.send(JSON.stringify({
@@ -65,6 +90,12 @@ export class Database {
         });
     }
     
+    /**
+     * Authenticate with the database
+     * @param {string} username - Username
+     * @param {string} password - Password
+     * @returns {Promise<*>} Authentication result
+     */
     connect(username, password) {
         
         return this.send('connect', {
@@ -73,6 +104,11 @@ export class Database {
         });
     }
     
+    /**
+     * Create a new database
+     * @param {string} name - Database name
+     * @returns {Promise<*>} Creation result
+     */
     create(name) {
         
         return this.send('create', {
@@ -80,6 +116,11 @@ export class Database {
         });
     }
     
+    /**
+     * Open an existing database
+     * @param {string} name - Database name
+     * @returns {Promise<*>} Open result
+     */
     open(name) {
         
         return this.send('open', {
@@ -87,6 +128,12 @@ export class Database {
         });
     }
     
+    /**
+     * Get data from a key path
+     * @param {string} keyPath - Path to data (e.g., 'users/123')
+     * @param {boolean} link - Whether to follow links
+     * @returns {Promise<*>} Retrieved data
+     */
     get(keyPath, link = false) {
         
         keyPath = keyPath.split('/');

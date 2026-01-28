@@ -309,6 +309,75 @@ Any suggestion must respect these constraints.
 - **Discord**: https://discord.gg/X8scDNX
 - **Wiki**: https://github.com/Sharkou/PixelCreator/wiki
 - **Contact**: contact@pixelcreator.io
+- **Presentation**: https://docs.google.com/document/d/1ujmM65EZabiN6_Wxxp7lpiCNUaSDuFDV92dQ8SjPsPU/edit?usp=sharing
+
+### Subdomains
+
+| Subdomain | Purpose | Access |
+|-----------|---------|--------|
+| `pixelcreator.io` | Main website | Public |
+| `docs.pixelcreator.io` | User documentation (also: sharkou.github.io) | Public |
+| `editor.pixelcreator.io` | The game engine editor | Public |
+| `console.pixelcreator.io` | User project & server management panel | Public |
+| `store.pixelcreator.io` | Marketplace (modules, assets, games) | Public |
+| `play.pixelcreator.io` | Game launcher / developer's game | Public |
+| `apps.pixelcreator.io` | Community-created apps and games | Public |
+| `blog.pixelcreator.io` | Blog articles | Public |
+| `forum.pixelcreator.io` | Forum (TBD, Discord may replace) | Public |
+| `admin.pixelcreator.io` | Internal project & server management | Private |
+
+### Business Model
+
+- **Offline mode**: Free (no server required)
+- **Online mode**: Subscription-based (server rental for multiplayer)
+- Dynamic creation and automated deployment of game servers
+- Focus on ease of use for multiplayer without server management
+
+---
+
+## Technical Guidelines
+
+### Rendering Separation
+
+**Canvas (game frames only):**
+- Animations
+- Sprites
+- Tilemaps
+- Particles
+- Lights
+- Game visuals
+
+**HTML/DOM (UI elements):**
+- Buttons
+- Text/Labels
+- HUD elements
+- Menus
+- Dialogs
+- Any user interface
+
+UI components must **never** render on the canvas context.
+
+### Vector Class
+
+- The `z` component exists only for **z-index ordering** (depth sorting)
+- The engine is strictly **2D** — no 3D rendering
+- Z is not used for 3D calculations, only layer ordering
+
+### Multiplayer Focus
+
+- The engine's core value proposition is **multiplayer made easy**
+- Dynamic server creation and automated deployment
+- Users don't manage servers — the platform does
+- Deterministic game logic when possible
+
+---
+
+## AI Agent Memory Instructions
+
+When the user says "mémoriser", "enregistrer", "retenir", or "remember":
+- Add the information to this file (`copilot-instructions.md`)
+- This ensures persistence across sessions
+- Always confirm what was saved
 
 ---
 

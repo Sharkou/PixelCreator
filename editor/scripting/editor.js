@@ -2,13 +2,37 @@ import { System } from '/src/core/system.js';
 import { Project } from '/editor/windows/project.js';
 import { Loader } from '/src/core/loader.js';
 
+/**
+ * Code editor integration using Monaco Editor
+ * Manages script editing, syntax highlighting, and live updates
+ * 
+ * @class Editor
+ * @static
+ * @example
+ * // Initialize the editor
+ * Editor.init();
+ * 
+ * // Open a script
+ * Editor.load(script);
+ */
 export class Editor {
 
+    /** @type {HTMLElement} Editor container element */
     static el = document.getElementById('editor');
+    
+    /** @type {boolean} Whether the editor has been initialized */
     static launched = false;
-    static current = null; // current script
-    static value = ''; // current script value
+    
+    /** @type {Object|null} Current script being edited */
+    static current = null;
+    
+    /** @type {string} Current script content */
+    static value = '';
 
+    /**
+     * Initialize the Monaco editor instance
+     * @static
+     */
     static init() {
         this.launched = true;
         const project = Project.main;

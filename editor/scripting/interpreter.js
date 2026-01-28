@@ -1,10 +1,31 @@
 import { Scene } from '/src/core/scene.js';
 import { Editor } from '/src/editor/scripting/editor.js';
 
+/**
+ * Script interpreter and runtime compiler
+ * Compiles and executes user scripts in the game context
+ * 
+ * @class Interpreter
+ * @static
+ * @example
+ * // Run a script
+ * const data = Interpreter.run(sourceCode);
+ * 
+ * // Open script in new window
+ * Interpreter.open(id, name, data);
+ */
 export class Interpreter {
 
+    /** @type {Window|null} Popup window for script editing */
     static window = null;
     
+    /**
+     * Open a script in a new popup window
+     * @static
+     * @param {string} id - The script resource ID
+     * @param {string} name - The script name
+     * @param {Object} data - The script data
+     */
     static open(id, name, data) {
         this.window = window.open('/src/editor/scripting/script.html', '_blank', 'directories=no,fullscreen=yes,titlebar=no,toolbar=no,location=no,status=yes,menubar=no,scrollbars=no,resizable=yes,width=800,height=500');
         this.window.data = {
@@ -15,6 +36,12 @@ export class Interpreter {
         // this.window.init();
     }
     
+    /**
+     * Compile and run a script source
+     * @static
+     * @param {string} source - The JavaScript source code
+     * @returns {Function|null} The compiled class/function or null on error
+     */
     static run(source) {
 
         /* Compilation des sources */
@@ -55,6 +82,11 @@ export class Interpreter {
         }
     }
     
+    /**
+     * Update all instances of a script in the scene
+     * @static
+     * @param {Object} script - The script resource with compiled data
+     */
     static update(script) {
         
         if (script.data) {

@@ -1,18 +1,55 @@
 import { Camera } from '/src/core/camera.js';
 
+/**
+ * Grid overlay for the scene editor
+ * Draws a visual grid to help with object placement
+ * 
+ * @class Grid
+ * @static
+ * @example
+ * // Draw grid on canvas
+ * Grid.draw(ctx);
+ * 
+ * // Toggle grid visibility
+ * Grid.active = false;
+ */
 export class Grid {
 
+    /** @type {number} Grid cell size in pixels */
     static dt = 50;
+    
+    /** @type {number} Grid width */
     static length = 400;
+    
+    /** @type {number} Grid height */
     static height = 400;
-    static dashLimit = 3500; // prevent lag
+    
+    /** @type {number} Maximum lines before disabling dashes (performance) */
+    static dashLimit = 3500;
+    
+    /** @type {number} Dash length in pixels */
     static dashfull = 4;
+    
+    /** @type {number} Gap between dashes in pixels */
     static dashvoid = 2;
+    
+    /** @type {number} Total dash pattern length */
     static dashtotal = this.dashfull + this.dashvoid;
+    
+    /** @type {number} Grid line width */
     static lineWidth = 1;
+    
+    /** @type {number} Sub-pixel alignment gap */
     static gap = (Grid.lineWidth % 2 == 0) ? 0 : 0.5;
+    
+    /** @type {boolean} Whether grid is visible */
     static active = true;
     
+    /**
+     * Draw the grid on the canvas
+     * @static
+     * @param {CanvasRenderingContext2D} ctx - The canvas context
+     */
     static draw(ctx) {
 
         const camera = Camera.main;
