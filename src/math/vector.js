@@ -20,14 +20,9 @@ export class Vector {
      * @param {number} z - The z-index for depth sorting (NOT 3D)
      */
     constructor(x = 0, y = 0, z = 0) {
-        /** @type {number} X component */
         this.x = x;
-        
-        /** @type {number} Y component */
         this.y = y;
-        
-        /** @type {number} Z-index for depth/layer sorting only */
-        this.z = z;
+        this.z = z; // z-index only (depth sorting)
     }
 
     /**

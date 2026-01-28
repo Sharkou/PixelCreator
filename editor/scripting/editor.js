@@ -17,16 +17,9 @@ import { Loader } from '/src/core/loader.js';
  */
 export class Editor {
 
-    /** @type {HTMLElement} Editor container element */
     static el = document.getElementById('editor');
-    
-    /** @type {boolean} Whether the editor has been initialized */
     static launched = false;
-    
-    /** @type {Object|null} Current script being edited */
     static current = null;
-    
-    /** @type {string} Current script content */
     static value = '';
 
     /**

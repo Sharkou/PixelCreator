@@ -16,25 +16,11 @@ export class Socket {
      * Create a new P2P socket
      */
     constructor() {
-        /** @type {string|null} Connection signal ID */
         this.id = null;
-        
-        /** @type {Object|null} Host peer signal data */
         this.host = null;
-        
-        /** @type {SimplePeer|null} SimplePeer instance */
         this.peer = null;
-        
-        /** @type {boolean} Whether this socket initiated the connection */
         this.initiator = false;
-        
-        /** @type {Object<string, Function[]>} Event listeners */
-        this.events = {
-            connect: [],
-            disconnect: []
-        };
-        
-        /** @type {boolean} Connection state */
+        this.events = { connect: [], disconnect: [] };
         this.connected = false;
     }
     

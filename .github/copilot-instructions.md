@@ -335,6 +335,133 @@ Any suggestion must respect these constraints.
 
 ---
 
+## Project Presentation (Full Text)
+
+**Author**: Dylan (Sharkou), 30 years old, creative developer
+
+### Genesis
+
+There are countless game engines, but none suited the creator's needs. Learning such software requires many hours, even for programmers. Adding multiplayer is even harder — countless forum posts ask "how to make a MMORPG?" with no clear answer.
+
+These problems led to Pixel Creator: not another Game Maker clone, not competing with Unity/Unreal, but a **simple yet effective solution** for creating online games accessible to beginners.
+
+### What is Pixel Creator?
+
+A **multiplayer game creation tool**, accessible online, designed for beginners. It enables creation of online games (MOBA, MMO, .io games) with a graphical interface.
+
+Current features:
+- **Visual editor**: Scene navigation, object hierarchy, resource management
+- **Visual scripting**: Event-based programming system for behaviors
+- **Properties manager**: Components, particle systems, lighting
+- **Core system**: Nearly complete, supports .io games in 2D environment
+
+Alpha available at: **pixelcreator.io** (Chrome recommended)
+
+### Upcoming Features (Beta)
+
+- Material and sprite editor
+- Map editor
+- Animation editor
+- Audio mixing
+- And more...
+
+### Technology
+
+- **Language**: JavaScript (ES7+), HTML5 interface
+- **Libraries**: None (everything custom-built = lightweight, flexible, performant)
+- **Real-time sync**: Property synchronization in real-time
+
+**APIs Used**:
+- Canvas API + WebGL for graphics
+- Fullscreen API
+- Web Audio API for sound
+- Gamepad API for controllers
+- Web Storage API for saves
+- WebSocket API for real-time networking
+
+**Servers**: Written in Rust, running in secure environment. When creating a project, a server is automatically deployed. Collaborators can edit in real-time.
+
+**Current Infrastructure**: Raspberry Pi (most powerful model) for testing. Limited to 4 simultaneous connections per project during beta.
+
+### Project Goals
+
+1. Create a **simple, beginner-accessible** multiplayer game creation tool
+2. No existing solution lets beginners easily create flexible online games in persistent worlds
+3. Leverage modern web technologies and architectures
+4. **Community dimension**: Open source core + editor at https://github.com/Sharkou/PixelCreator (server code obfuscated for security)
+5. Future **distribution platform** for community projects and modules
+6. Eventually: dedicated servers instead of Raspberry Pi for massively multiplayer projects
+
+### Unique Features
+
+**Simplicity**
+- Accessible to all, especially beginners
+- Drag & drop + visual scripting = no programming required
+
+**Portability**
+- Runs directly in browser (multiplatform)
+- Projects stored in cloud (accessible anywhere, shareable)
+
+**Connectivity**
+- Built specifically for multiplayer
+- No server management needed (handled internally)
+- Real-time collaboration for team game development
+
+**Flexibility**
+- Modular architecture (like Unity's Asset Store)
+- Future marketplace for custom modules
+
+**Stability**
+- No version update concerns (always latest stable)
+- Independent modules prevent dependency issues
+
+**Performance**
+- Benefits from V8 (Chrome) and WebAssembly
+- Hardware acceleration when available
+- Multithreading via Web Workers
+- Future optimizations: WebAssembly for objects/vectors, WebGPU for graphics
+
+### Contact
+
+- **Discord**: https://discord.gg/X8scDNX
+- **Website**: pixelcreator.io
+- **Email**: contact@pixelcreator.io
+
+---
+
+## Code Style Guidelines
+
+### JSDoc Comments
+
+**DO**: Comment classes and methods with JSDoc
+```javascript
+/**
+ * Initialize the renderer
+ * @param {number} width - The width
+ * @param {number} height - The height
+ */
+constructor(width, height) {
+    this.width = width;
+    this.height = height;
+}
+```
+
+**DON'T**: Heavy JSDoc on self-explanatory properties
+```javascript
+// BAD - too verbose
+/** @type {boolean} Whether the button is enabled */
+this.enabled = true;
+
+// GOOD - clean and readable
+this.enabled = true;
+this.visible = true;
+this.color = '#4a90d9';
+```
+
+Use inline comments `//` only when clarification is truly needed.
+
+---
+
 ## Technical Guidelines
 
 ### Rendering Separation
