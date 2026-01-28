@@ -5,15 +5,6 @@ import { Loader } from '/src/core/loader.js';
 /**
  * Code editor integration using Monaco Editor
  * Manages script editing, syntax highlighting, and live updates
- * 
- * @class Editor
- * @static
- * @example
- * // Initialize the editor
- * Editor.init();
- * 
- * // Open a script
- * Editor.load(script);
  */
 export class Editor {
 

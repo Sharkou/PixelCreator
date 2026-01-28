@@ -1,13 +1,6 @@
 /**
  * WebSocket-based database client
  * Provides async communication with a database server
- * 
- * @class Database
- * @example
- * const db = new Database('localhost', 8080, () => {
- *     console.log('Connected!');
- * });
- * const data = await db.get('users/123');
  */
 export class Database {
     

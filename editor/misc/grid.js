@@ -3,15 +3,6 @@ import { Camera } from '/src/core/camera.js';
 /**
  * Grid overlay for the scene editor
  * Draws a visual grid to help with object placement
- * 
- * @class Grid
- * @static
- * @example
- * // Draw grid on canvas
- * Grid.draw(ctx);
- * 
- * // Toggle grid visibility
- * Grid.active = false;
  */
 export class Grid {
 

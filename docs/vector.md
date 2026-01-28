@@ -1,5 +1,3 @@
-# Vector
-
 The **Vector** class provides comprehensive 2D and 3D vector mathematics for game physics, movement, and transformations.
 
 ---

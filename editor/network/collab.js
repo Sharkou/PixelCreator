@@ -1,14 +1,6 @@
 /**
  * Real-time collaboration module
  * Manages multi-user editing with cursor positions and synchronized changes
- * 
- * @namespace Collab
- * @example
- * // Start collaboration
- * Collab.draw();
- * 
- * // Add a friend's cursor
- * Collab.friends.push({ name: 'User2', x: 100, y: 100 });
  */
 var Collab = {
     /** @type {Array<{name: string, x: number, y: number}>} Connected collaborators */

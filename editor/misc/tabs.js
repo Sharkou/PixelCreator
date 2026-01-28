@@ -3,14 +3,9 @@ import { Editor } from '/editor/scripting/editor.js';
 /**
  * Open a tab in a tabbed interface
  * Hides all other tabs and shows the selected one
- * 
- * @function openTab
  * @param {Event} e - The click event
  * @param {string} id - The ID of the tab content to show
  * @param {string} parentID - The ID of the parent tab container
- * @example
- * // Open a specific tab
- * openTab(event, 'scene-tab', 'main-tabs');
  */
 export default function openTab(e, id, parentID) {
     

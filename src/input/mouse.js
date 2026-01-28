@@ -4,17 +4,6 @@ import { Network } from '/src/network/network.js';
 /**
  * Mouse input handler
  * Manages mouse state, position, and events for local and networked users
- * 
- * @class Mouse
- * @static
- * @example
- * // Get mouse position
- * console.log(Mouse.x, Mouse.y);
- * 
- * // Check if button is pressed
- * if (Mouse.buttonPressed(uid)) {
- *     player.shoot();
- * }
  */
 export class Mouse {
 

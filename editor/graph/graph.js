@@ -3,11 +3,6 @@ import { Node } from '/editor/graph/node.js';
 /**
  * Visual scripting graph editor
  * Manages node creation, connections, and code generation
- * 
- * @class Graph
- * @example
- * const graph = new Graph();
- * graph.createNode('move', { x: 100, y: 100 });
  */
 export class Graph {
     

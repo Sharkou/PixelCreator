@@ -4,15 +4,6 @@ import { Editor } from '/src/editor/scripting/editor.js';
 /**
  * Script interpreter and runtime compiler
  * Compiles and executes user scripts in the game context
- * 
- * @class Interpreter
- * @static
- * @example
- * // Run a script
- * const data = Interpreter.run(sourceCode);
- * 
- * // Open script in new window
- * Interpreter.open(id, name, data);
  */
 export class Interpreter {
 

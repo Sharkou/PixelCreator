@@ -4,12 +4,6 @@
  * 
  * Note: The z component is used ONLY for z-index (depth sorting), not 3D calculations.
  * Pixel Creator is a 2D engine - z is for layer ordering only.
- * 
- * @class Vector
- * @example
- * const pos = new Vector(100, 200);
- * const velocity = new Vector(5, 0);
- * pos.add(velocity);
  */
 export class Vector {
     
