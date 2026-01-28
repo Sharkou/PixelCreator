@@ -1,11 +1,31 @@
 import { Scene } from '/src/core/scene.js';
 
+/**
+ * Drag-and-drop sorter for hierarchy list
+ * Manages object ordering and parent-child relationships via drag operations
+ * 
+ * @class Sorter
+ * @static
+ * @example
+ * // Enable sorting on an element
+ * Sorter.sort(listItem);
+ */
 export class Sorter {
 
+    /** @type {HTMLElement|null} Currently dragged element */
     static draggedElement = null;
+    
+    /** @type {HTMLElement} The hierarchy list container */
     static list = document.getElementById('world-list');
+    
+    /** @type {number} Initial X position at drag start */
     static x_t0 = 0;
     
+    /**
+     * Attach drag event listeners to an element
+     * @static
+     * @param {HTMLElement} el - The element to make sortable
+     */
     static sort(el) {
         el.addEventListener('dragstart', Sorter.dragStart);
         el.addEventListener('drag', Sorter.drag);
@@ -16,10 +36,22 @@ export class Sorter {
         // el.addEventListener('drop', Sorter.drop);
     }
     
+    /**
+     * Allow drop by preventing default behavior
+     * @static
+     * @param {DragEvent} e - The drag event
+     */
     static allowDrop(e) {
         e.preventDefault();
     }
     
+    /**
+     * Check if el1 is before el2 in the DOM
+     * @static
+     * @param {HTMLElement} el1 - First element
+     * @param {HTMLElement} el2 - Second element
+     * @returns {boolean} True if el1 is before el2
+     */
     static isBefore(el1, el2) {
         if (el2 != undefined)
             if (el1.parentNode === el2.parentNode)
@@ -29,6 +61,12 @@ export class Sorter {
                 return false;
     }
 
+    /**
+     * Make an element a child of another (wrap)
+     * @static
+     * @param {HTMLElement} el - The element to wrap
+     * @param {HTMLElement} parent - The new parent element
+     */
     static wrap(el, parent) {
         if (!el || !parent) return;
         const parentObj = Scene.main.objects[parent.id];
@@ -50,6 +88,12 @@ export class Sorter {
         }
     }
 
+    /**
+     * Remove parent-child relationship (unwrap)
+     * @static
+     * @param {HTMLElement} el - The child element
+     * @param {HTMLElement} parent - The current parent element
+     */
     static unwrap(el, parent) {
         if (!el || !parent) return;
         const parentObj = Scene.main.objects[parent.id];
@@ -66,6 +110,11 @@ export class Sorter {
         }
     }
     
+    /**
+     * Handle drag start event
+     * @static
+     * @param {DragEvent} e - The drag event
+     */
     static dragStart(e) {
         // e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text', e.target.id);

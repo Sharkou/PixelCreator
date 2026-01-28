@@ -1,165 +1,186 @@
 import { Component } from '/src/core/mod.js';
+import { System } from '/src/core/system.js';
 
 /**
- * UI Button component for interactive buttons
- * Handles click events and visual states
+ * UI Button component using HTML DOM elements
+ * Creates an interactive HTML button that can be positioned in the game UI
  * 
+ * @class Button
+ * @extends Component
  * @example
- * const button = new Button('Click Me', 100, 50);
- * button.onClick = () => console.log('Clicked!');
+ * const button = new Button('Play', 100, 50);
+ * button.onClick = () => game.start();
  * obj.addComponent(button);
  */
 export class Button extends Component {
 
     /**
-     * Create a new button
+     * Create a new HTML button
      * @param {string} text - The button text
-     * @param {number} width - The button width
-     * @param {number} height - The button height
+     * @param {number} width - The button width in pixels
+     * @param {number} height - The button height in pixels
      */
     constructor(text = 'Button', width = 100, height = 40) {
         super();
+        
+        /** @type {string} The button display text */
         this.text = text;
+        
+        /** @type {number} The button width */
         this.width = width;
+        
+        /** @type {number} The button height */
         this.height = height;
         
-        // Visual properties
+        /** @type {HTMLButtonElement|null} The DOM button element */
+        this.element = null;
+        
+        /** @type {boolean} Whether the button is enabled */
+        this.enabled = true;
+        
+        /** @type {boolean} Whether the button is visible */
+        this.visible = true;
+        
+        // Style properties
+        /** @type {string} Background color */
         this.color = '#4a90d9';
+        
+        /** @type {string} Hover background color */
         this.hoverColor = '#5a9fe9';
+        
+        /** @type {string} Active/pressed background color */
         this.activeColor = '#3a80c9';
+        
+        /** @type {string} Disabled background color */
         this.disabledColor = '#888888';
+        
+        /** @type {string} Text color */
         this.textColor = '#ffffff';
+        
+        /** @type {number} Border radius in pixels */
         this.borderRadius = 4;
+        
+        /** @type {number} Font size in pixels */
         this.fontSize = 14;
+        
+        /** @type {string} Font family */
         this.fontFamily = 'Arial, sans-serif';
         
-        // State
-        this.enabled = true;
-        this.hovered = false;
-        this.pressed = false;
-        this.focused = false;
-        
         // Callbacks
+        /** @type {Function|null} Click callback */
         this.onClick = null;
+        
+        /** @type {Function|null} Hover callback */
         this.onHover = null;
+        
+        /** @type {Function|null} Press callback */
         this.onPress = null;
+        
+        /** @type {Function|null} Release callback */
         this.onRelease = null;
     }
 
     /**
-     * Get current background color based on state
-     * @returns {string} The current color
+     * Called when component is added to an object
+     * Creates the HTML button element and attaches it to the DOM
      */
-    get currentColor() {
-        if (!this.enabled) return this.disabledColor;
-        if (this.pressed) return this.activeColor;
-        if (this.hovered) return this.hoverColor;
-        return this.color;
+    start() {
+        this.createElement();
     }
 
     /**
-     * Check if point is inside button
-     * @param {number} x - X coordinate
-     * @param {number} y - Y coordinate
-     * @returns {boolean} True if point is inside
+     * Create the HTML button element
+     * @private
      */
-    containsPoint(x, y) {
-        const obj = this.object;
-        if (!obj) return false;
+    createElement() {
+        if (this.element) return;
         
-        return x >= obj.x && 
-               x <= obj.x + this.width && 
-               y >= obj.y && 
-               y <= obj.y + this.height;
+        const button = document.createElement('button');
+        button.textContent = this.text;
+        button.className = 'pixel-ui-button';
+        
+        // Apply styles
+        this.applyStyles(button);
+        
+        // Event listeners
+        button.addEventListener('click', (e) => {
+            if (this.enabled && this.onClick) {
+                this.onClick(e);
+            }
+        });
+        
+        button.addEventListener('mouseenter', (e) => {
+            if (this.enabled) {
+                button.style.backgroundColor = this.hoverColor;
+                if (this.onHover) this.onHover(e);
+            }
+        });
+        
+        button.addEventListener('mouseleave', () => {
+            button.style.backgroundColor = this.enabled ? this.color : this.disabledColor;
+        });
+        
+        button.addEventListener('mousedown', (e) => {
+            if (this.enabled) {
+                button.style.backgroundColor = this.activeColor;
+                if (this.onPress) this.onPress(e);
+            }
+        });
+        
+        button.addEventListener('mouseup', (e) => {
+            if (this.enabled) {
+                button.style.backgroundColor = this.hoverColor;
+                if (this.onRelease) this.onRelease(e);
+            }
+        });
+        
+        // Append to UI container or body
+        const container = document.getElementById('ui-container') || document.body;
+        container.appendChild(button);
+        
+        this.element = button;
+        this.updatePosition();
     }
 
     /**
-     * Handle mouse enter
+     * Apply CSS styles to the button element
+     * @private
+     * @param {HTMLButtonElement} button - The button element
      */
-    onMouseEnter() {
-        if (!this.enabled) return;
-        this.hovered = true;
-        if (this.onHover) this.onHover();
+    applyStyles(button) {
+        Object.assign(button.style, {
+            position: 'absolute',
+            width: `${this.width}px`,
+            height: `${this.height}px`,
+            backgroundColor: this.enabled ? this.color : this.disabledColor,
+            color: this.textColor,
+            border: 'none',
+            borderRadius: `${this.borderRadius}px`,
+            fontSize: `${this.fontSize}px`,
+            fontFamily: this.fontFamily,
+            cursor: this.enabled ? 'pointer' : 'not-allowed',
+            outline: 'none',
+            transition: 'background-color 0.15s ease',
+            zIndex: '1000',
+            display: this.visible ? 'block' : 'none'
+        });
     }
 
     /**
-     * Handle mouse leave
+     * Update button position based on parent object
      */
-    onMouseLeave() {
-        this.hovered = false;
-        this.pressed = false;
+    updatePosition() {
+        if (!this.element || !this.object) return;
+        
+        this.element.style.left = `${this.object.x}px`;
+        this.element.style.top = `${this.object.y}px`;
     }
 
     /**
-     * Handle mouse down
+     * Update the button each frame
      */
-    onMouseDown() {
-        if (!this.enabled) return;
-        this.pressed = true;
-        if (this.onPress) this.onPress();
-    }
-
-    /**
-     * Handle mouse up
-     */
-    onMouseUp() {
-        if (!this.enabled) return;
-        if (this.pressed) {
-            if (this.onClick) this.onClick();
-        }
-        this.pressed = false;
-        if (this.onRelease) this.onRelease();
-    }
-
-    /**
-     * Update button state
-     * @param {number} mouseX - Mouse X position
-     * @param {number} mouseY - Mouse Y position
-     * @param {boolean} mouseDown - Is mouse button down
-     */
-    update(mouseX, mouseY, mouseDown) {
-        const wasHovered = this.hovered;
-        const wasPressed = this.pressed;
-        
-        const isInside = this.containsPoint(mouseX, mouseY);
-        
-        if (isInside && !wasHovered) {
-            this.onMouseEnter();
-        } else if (!isInside && wasHovered) {
-            this.onMouseLeave();
-        }
-        
-        if (isInside && mouseDown && !wasPressed) {
-            this.onMouseDown();
-        } else if (!mouseDown && wasPressed) {
-            this.onMouseUp();
-        }
-    }
-
-    /**
-     * Render the button
-     * @param {CanvasRenderingContext2D} ctx - The rendering context
-     * @param {Camera} camera - The camera
-     */
-    render(ctx, camera) {
-        const obj = this.object;
-        if (!obj) return;
-        
-        const x = obj.x - (camera?.x ?? 0);
-        const y = obj.y - (camera?.y ?? 0);
-        
-        // Draw background
-        ctx.fillStyle = this.currentColor;
-        ctx.beginPath();
-        ctx.roundRect(x, y, this.width, this.height, this.borderRadius);
-        ctx.fill();
-        
-        // Draw text
-        ctx.fillStyle = this.enabled ? this.textColor : '#cccccc';
-        ctx.font = `${this.fontSize}px ${this.fontFamily}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(this.text, x + this.width / 2, y + this.height / 2);
+    update() {
+        this.updatePosition();
     }
 
     /**
@@ -167,6 +188,11 @@ export class Button extends Component {
      */
     enable() {
         this.enabled = true;
+        if (this.element) {
+            this.element.disabled = false;
+            this.element.style.backgroundColor = this.color;
+            this.element.style.cursor = 'pointer';
+        }
     }
 
     /**
@@ -174,8 +200,31 @@ export class Button extends Component {
      */
     disable() {
         this.enabled = false;
-        this.hovered = false;
-        this.pressed = false;
+        if (this.element) {
+            this.element.disabled = true;
+            this.element.style.backgroundColor = this.disabledColor;
+            this.element.style.cursor = 'not-allowed';
+        }
+    }
+
+    /**
+     * Show the button
+     */
+    show() {
+        this.visible = true;
+        if (this.element) {
+            this.element.style.display = 'block';
+        }
+    }
+
+    /**
+     * Hide the button
+     */
+    hide() {
+        this.visible = false;
+        if (this.element) {
+            this.element.style.display = 'none';
+        }
     }
 
     /**
@@ -184,21 +233,33 @@ export class Button extends Component {
      */
     setText(text) {
         this.text = text;
+        if (this.element) {
+            this.element.textContent = text;
+        }
     }
 
     /**
      * Set button size
-     * @param {number} width - The width
-     * @param {number} height - The height
+     * @param {number} width - The width in pixels
+     * @param {number} height - The height in pixels
      */
     setSize(width, height) {
         this.width = width;
         this.height = height;
+        if (this.element) {
+            this.element.style.width = `${width}px`;
+            this.element.style.height = `${height}px`;
+        }
     }
 
     /**
      * Set button colors
      * @param {Object} colors - Color configuration
+     * @param {string} [colors.normal] - Normal background color
+     * @param {string} [colors.hover] - Hover background color
+     * @param {string} [colors.active] - Active/pressed background color
+     * @param {string} [colors.disabled] - Disabled background color
+     * @param {string} [colors.text] - Text color
      */
     setColors({ normal, hover, active, disabled, text } = {}) {
         if (normal) this.color = normal;
@@ -206,10 +267,25 @@ export class Button extends Component {
         if (active) this.activeColor = active;
         if (disabled) this.disabledColor = disabled;
         if (text) this.textColor = text;
+        
+        if (this.element) {
+            this.element.style.backgroundColor = this.enabled ? this.color : this.disabledColor;
+            this.element.style.color = this.textColor;
+        }
     }
 
     /**
-     * Clone the button
+     * Clean up when component is removed
+     */
+    destroy() {
+        if (this.element && this.element.parentNode) {
+            this.element.parentNode.removeChild(this.element);
+        }
+        this.element = null;
+    }
+
+    /**
+     * Clone the button component
      * @returns {Button} A new button with same properties
      */
     clone() {
@@ -223,6 +299,7 @@ export class Button extends Component {
         button.fontSize = this.fontSize;
         button.fontFamily = this.fontFamily;
         button.enabled = this.enabled;
+        button.visible = this.visible;
         return button;
     }
 }

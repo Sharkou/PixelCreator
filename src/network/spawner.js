@@ -1,23 +1,34 @@
 import { Graphics } from '/src/graphics/graphics.js';
 
+/**
+ * Spawn point component for multiplayer
+ * Defines locations where players can spawn in the game
+ * 
+ * @class Spawner
+ * @example
+ * const spawner = new Spawner();
+ * obj.addComponent(spawner);
+ */
 export class Spawner {
     
     /**
-     * Initialize the component
-     * @constructor
-     * @param {string} color - The color
+     * Create a new spawner
      */
     constructor() {
         
     }
 
+    /**
+     * Update the spawner each frame
+     * @param {Object} self - The parent game object
+     */
     update(self) {
 
     }
 
     /**
-     * Preview the component
-     * @preview
+     * Preview the spawner in the editor
+     * @param {Object} self - The parent game object
      */
     preview(self) {
         Graphics.circle(self.x, self.y, self.width / 4);

@@ -1,25 +1,39 @@
 // import { System } from '/src/core/system.js';
 import { db } from '/src/db/firebase.js';
 
+/**
+ * Multiplayer room management
+ * Handles room creation, joining, and real-time synchronization via Firebase
+ * 
+ * @class Room
+ * @example
+ * const room = new Room(socket);
+ * await room.create('my-room');
+ * // or
+ * await room.join('existing-room');
+ */
 export class Room {
     
     /**
-     * Initialize the room
-     * @constructor
-     * @param {Socket} socket - The client socket
+     * Create a new room instance
+     * @param {Socket} socket - The client P2P socket
      */
     constructor(socket) {
-        
+        /** @type {Socket} The client socket */
         this.socket = socket;
+        
+        /** @type {string} Room name */
         this.name = '';
+        
+        /** @type {{name: string, id: string}|null} Host information */
         this.host = null;
         // this.players = {};
     }
 
     /**
-     * Create the room
-     * @constructor
+     * Create a new room as host
      * @param {string} name - The room name
+     * @returns {Promise<void>} Resolves when room is created
      */
     create(name) {
         
@@ -43,6 +57,11 @@ export class Room {
         });
     }
     
+    /**
+     * Join an existing room
+     * @param {string} name - The room name to join
+     * @returns {Promise<void>} Resolves when joined
+     */
     join(name) {
         
         return new Promise((resolve, reject) => {
@@ -74,6 +93,10 @@ export class Room {
         });
     }
     
+    /**
+     * Synchronize room state with Firebase
+     * @param {string} name - The room name
+     */
     sync(name) {
         
         db.collection('rooms').doc(name).onSnapshot((doc) => {

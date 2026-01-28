@@ -1,24 +1,48 @@
 import * as Peer from '/src/lib/simplepeer.js';
 
+/**
+ * P2P socket using WebRTC for peer-to-peer connections
+ * Provides direct communication between clients without server relay
+ * 
+ * @class Socket
+ * @example
+ * const socket = new Socket();
+ * await socket.init(true); // As initiator
+ * socket.on('connect', () => console.log('Connected!'));
+ */
 export class Socket {
     
     /**
-     * Initialize the socket
-     * @constructor
+     * Create a new P2P socket
      */
     constructor() {
-        
+        /** @type {string|null} Connection signal ID */
         this.id = null;
+        
+        /** @type {Object|null} Host peer signal data */
         this.host = null;
+        
+        /** @type {SimplePeer|null} SimplePeer instance */
         this.peer = null;
+        
+        /** @type {boolean} Whether this socket initiated the connection */
         this.initiator = false;
+        
+        /** @type {Object<string, Function[]>} Event listeners */
         this.events = {
             connect: [],
             disconnect: []
         };
+        
+        /** @type {boolean} Connection state */
         this.connected = false;
     }
     
+    /**
+     * Initialize the peer connection
+     * @param {boolean} initiator - Whether to initiate the connection
+     * @param {boolean} trickle - Whether to use ICE trickle
+     */
     async init(initiator = false, trickle = false) {
         
         this.peer = new SimplePeer({
@@ -66,6 +90,10 @@ export class Socket {
         });
     }
     
+    /**
+     * Wait for and return the connection signal
+     * @returns {Promise<string>} The signal ID as JSON string
+     */
     signal() {
         
         return new Promise(resolve => {
@@ -77,6 +105,11 @@ export class Socket {
         });
     }
     
+    /**
+     * Connect to a peer using their signal ID
+     * @param {string} id - The peer's signal ID (JSON string)
+     * @param {boolean} host - Whether connecting as host
+     */
     async connect(id, host = false) {
             
         this.host = JSON.parse(id);
@@ -87,6 +120,11 @@ export class Socket {
         }
     }
     
+    /**
+     * Send data to the connected peer
+     * @param {string} type - Event type
+     * @param {*} value - Data to send
+     */
     send(type, value) {
         
         let data = {

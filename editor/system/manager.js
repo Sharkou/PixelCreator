@@ -11,10 +11,26 @@ import { Collider, RectCollider, CircleCollider } from '/src/physics/collider.js
 import { Controller } from '/src/physics/controller.js';
 import { Rotator } from '/src/physics/rotator.js';
 
+/**
+ * Component manager for the editor
+ * Registers and displays available components in the editor UI
+ * 
+ * @class Manager
+ * @example
+ * const manager = new Manager(properties);
+ * manager.addComponent(MyComponent, 'fas fa-star', 'custom');
+ */
 export class Manager {
 
+    /**
+     * Create a new component manager
+     * @param {Properties|null} properties - The properties panel reference
+     */
     constructor(properties = null) {
+        /** @type {Properties|null} Reference to the properties panel */
         this.properties = properties;
+        
+        /** @type {Object} Registered components indexed by name */
         this.components = {};
 
         // Components init
@@ -57,6 +73,12 @@ export class Manager {
         }
     }
 
+    /**
+     * Create and append component DOM element to the components list
+     * @param {Function} component - The component class
+     * @param {string} iconClasses - Space-separated icon CSS classes
+     * @param {string} category - The component category
+     */
     appendChild(component, iconClasses, category) {
 
         const li = document.createElement('li');

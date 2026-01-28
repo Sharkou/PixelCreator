@@ -1,18 +1,39 @@
 import { Node } from '/editor/graph/node.js';
 
+/**
+ * Visual scripting graph editor
+ * Manages node creation, connections, and code generation
+ * 
+ * @class Graph
+ * @example
+ * const graph = new Graph();
+ * graph.createNode('move', { x: 100, y: 100 });
+ */
 export class Graph {
     
     /**
-     * Initialize Graph (visual scripting)
-     * @constructor
+     * Initialize the visual scripting graph
      */
     constructor() {
+        /** @type {Object} Nodes indexed by ID */
         this.nodes = {};
+        
+        /** @type {HTMLCollection} Node box elements */
         this.boxes = document.getElementsByClassName('box');
+        
+        /** @type {HTMLElement} Graph container element */
         this.graph = document.getElementById('graph');
+        
+        /** @type {SVGElement} SVG element for connection paths */
         this.svg = document.getElementById('svg');
+        
+        /** @type {HTMLElement|null} Currently dragged connector */
         this.currentConnector = null;
+        
+        /** @type {Node|null} Currently dragged node */
         this.currentNode = null;
+        
+        /** @type {string} Generated code from graph */
         this.code = '';
 
         this.graph.addEventListener('dragover', e => {

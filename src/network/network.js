@@ -6,15 +6,44 @@ import { Scene } from '/src/core/scene.js';
 import { Mouse } from '/src/input/mouse.js';
 import { Keyboard } from '/src/input/keyboard.js';
 
+/**
+ * Network manager for multiplayer functionality
+ * Handles WebSocket connections, user management, and state synchronization
+ * 
+ * @class Network
+ * @static
+ * @example
+ * // Initialize and connect
+ * Network.init('localhost', 8080);
+ * await Network.connect(scene);
+ * 
+ * // Send data to server
+ * Network.send('move', { x: 100, y: 200 });
+ */
 export class Network {
     
+    /** @type {string} Server host address */
     static host;
+    
+    /** @type {number} Server port */
     static port;
+    
+    /** @type {string} Connection protocol (http/https) */
     static protocol;
+    
+    /** @type {WebSocket} WebSocket connection */
     static ws;
+    
+    /** @type {string|null} Local user identifier */
     static uid;
+    
+    /** @type {Scene|null} Current game scene */
     static scene;
+    
+    /** @type {boolean} Whether this is an inspector client */
     static inspector;
+    
+    /** @type {Object} Connected users indexed by UID */
     static users;
     
     /**
@@ -84,6 +113,10 @@ export class Network {
         });
     }
 
+    /**
+     * Disconnect from the server
+     * @static
+     */
     static disconnect() {
         
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -97,6 +130,12 @@ export class Network {
         this.ws.close();
     }
 
+    /**
+     * Get a connected user by UID
+     * @static
+     * @param {string} uid - The user identifier
+     * @returns {Client|undefined} The user client or undefined
+     */
     static getUser(uid) {
         return this.users[uid];
     }

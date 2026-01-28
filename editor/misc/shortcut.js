@@ -2,8 +2,13 @@ import { Scene } from '/src/core/scene.js';
 import { Loader } from '/src/core/loader.js';
 import { Project } from '/editor/windows/project.js';
 
-/** 
- * Module permettant de gérer les raccourcis clavier.
+/**
+ * Keyboard shortcuts module
+ * Handles global keyboard shortcuts for the editor
+ * 
+ * @module shortcut
+ * @description Manages keyboard shortcuts when no input is focused:
+ *              - Delete: Remove current object or file
  */
 document.addEventListener('keydown', (e) => {
     if (document.activeElement === document.body) {

@@ -1,13 +1,38 @@
+/**
+ * Real-time collaboration module
+ * Manages multi-user editing with cursor positions and synchronized changes
+ * 
+ * @namespace Collab
+ * @example
+ * // Start collaboration
+ * Collab.draw();
+ * 
+ * // Add a friend's cursor
+ * Collab.friends.push({ name: 'User2', x: 100, y: 100 });
+ */
 var Collab = {
+    /** @type {Array<{name: string, x: number, y: number}>} Connected collaborators */
     friends: [],
+    
+    /** @type {{name: string, x: number, y: number}} Local user cursor */
     me: {
         name: 'Dylan',
         x: 80,
         y: 60
     },
+    
+    /** @type {HTMLCanvasElement} Collaboration overlay canvas */
     canvas: $('collab'),
+    
+    /** @type {CanvasRenderingContext2D} Canvas 2D context */
     ctx: $('collab').getContext("2d"),
+    
+    /** @type {string} Cursor dot color */
     color: 'rgba(240, 220, 220, 0.5)',
+    
+    /**
+     * Draw all collaborator cursors
+     */
     draw: function() {
         this.clear();
         this.ctx.beginPath();
@@ -17,6 +42,10 @@ var Collab = {
         this.ctx.fillStyle = this.color;
         this.ctx.fill();
     },
+    
+    /**
+     * Clear the collaboration canvas
+     */
     clear: function() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
