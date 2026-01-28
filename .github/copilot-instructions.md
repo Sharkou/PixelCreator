@@ -300,6 +300,7 @@ Any suggestion must respect these constraints.
 - Commit/push from local PowerShell (developer's account)
 - Manual validation before push
 - PixelBot reserved for future automation tasks only
+- When user clicks "keep" on edits, push immediately without asking for additional confirmation
 
 ---
 
