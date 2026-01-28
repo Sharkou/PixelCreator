@@ -12,13 +12,8 @@ import { Scene } from '/src/core/scene.js';
  */
 export class Sorter {
 
-    /** @type {HTMLElement|null} Currently dragged element */
     static draggedElement = null;
-    
-    /** @type {HTMLElement} The hierarchy list container */
     static list = document.getElementById('world-list');
-    
-    /** @type {number} Initial X position at drag start */
     static x_t0 = 0;
     
     /**

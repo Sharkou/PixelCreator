@@ -27,10 +27,7 @@ export class Manager {
      * @param {Properties|null} properties - The properties panel reference
      */
     constructor(properties = null) {
-        /** @type {Properties|null} Reference to the properties panel */
         this.properties = properties;
-        
-        /** @type {Object} Registered components indexed by name */
         this.components = {};
 
         // Components init

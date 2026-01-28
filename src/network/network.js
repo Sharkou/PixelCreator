@@ -22,28 +22,13 @@ import { Keyboard } from '/src/input/keyboard.js';
  */
 export class Network {
     
-    /** @type {string} Server host address */
     static host;
-    
-    /** @type {number} Server port */
     static port;
-    
-    /** @type {string} Connection protocol (http/https) */
     static protocol;
-    
-    /** @type {WebSocket} WebSocket connection */
     static ws;
-    
-    /** @type {string|null} Local user identifier */
     static uid;
-    
-    /** @type {Scene|null} Current game scene */
     static scene;
-    
-    /** @type {boolean} Whether this is an inspector client */
     static inspector;
-    
-    /** @type {Object} Connected users indexed by UID */
     static users;
     
     /**

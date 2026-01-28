@@ -18,19 +18,10 @@ export class Database {
      * @param {Function} onconnect - Callback when connected
      */
     constructor(addr, port, onconnect) {
-        /** @type {string} Server address */
         this.addr = addr;
-        
-        /** @type {number} Server port */
         this.port = port;
-        
-        /** @type {number} Request ID counter */
         this.id = 0;
-        
-        /** @type {Object<number, Function>} Pending request callbacks */
         this.callbacks = {};
-        
-        /** @type {WebSocket} WebSocket connection */
 		this.ws = new WebSocket("ws://" + addr + ":" + port);
 
 		this.ws.onopen = e => onconnect(e);

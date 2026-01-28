@@ -17,17 +17,8 @@ export class Client {
      * @param {string} uid - The unique user identifier
      */
     constructor(uid) {
-        /** @type {string} Unique user identifier */
         this.id = uid;
-        
-        /** @type {Object<string, boolean>} Keyboard state (key names to pressed state) */
         this.keys = {};
-        
-        /** @type {{buttons: Object<number, boolean>, x: number, y: number}} Mouse state */
-        this.mouse = {
-            buttons: {},
-            x: 0,
-            y: 0
-        };
+        this.mouse = { buttons: {}, x: 0, y: 0 };
     }
 }

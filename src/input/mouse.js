@@ -18,37 +18,16 @@ import { Network } from '/src/network/network.js';
  */
 export class Mouse {
 
-    /** @type {number} Current mouse X position on canvas */
     static x = 0;
-    
-    /** @type {number} Current mouse Y position on canvas */
     static y = 0;
-    
-    /** @type {EventTarget|null} Current event target element */
     static target = null;
-    
-    /** @type {boolean} Whether mouse button is down */
     static down = false;
-    
-    /** @type {boolean} Whether mouse button is up */
     static up = false;
-    
-    /** @type {boolean} Whether mouse is moving */
     static move = false;
-    
-    /** @type {string} Current button name ('left', 'middle', 'right') */
     static button = '';
-    
-    /** @type {{x: number, y: number}} Mouse position in editor coordinates */
     static editor = { x: 0, y: 0 };
-    
-    /** @type {{x: number, y: number}} Last recorded mouse position */
     static lastPosition = { x: 0, y: 0 };
-    
-    /** @type {{x: number, y: number}} Mouse offset from origin */
     static offset = { x: 0, y: 0 };
-    
-    /** @type {{x: number, y: number}} Mouse position in world coordinates */
     static world = { x: 0, y: 0 };
         
     /**

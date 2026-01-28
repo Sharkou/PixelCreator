@@ -23,60 +23,27 @@ export class Button extends Component {
     constructor(text = 'Button', width = 100, height = 40) {
         super();
         
-        /** @type {string} The button display text */
         this.text = text;
-        
-        /** @type {number} The button width */
         this.width = width;
-        
-        /** @type {number} The button height */
         this.height = height;
-        
-        /** @type {HTMLButtonElement|null} The DOM button element */
         this.element = null;
-        
-        /** @type {boolean} Whether the button is enabled */
         this.enabled = true;
-        
-        /** @type {boolean} Whether the button is visible */
         this.visible = true;
         
         // Style properties
-        /** @type {string} Background color */
         this.color = '#4a90d9';
-        
-        /** @type {string} Hover background color */
         this.hoverColor = '#5a9fe9';
-        
-        /** @type {string} Active/pressed background color */
         this.activeColor = '#3a80c9';
-        
-        /** @type {string} Disabled background color */
         this.disabledColor = '#888888';
-        
-        /** @type {string} Text color */
         this.textColor = '#ffffff';
-        
-        /** @type {number} Border radius in pixels */
         this.borderRadius = 4;
-        
-        /** @type {number} Font size in pixels */
         this.fontSize = 14;
-        
-        /** @type {string} Font family */
         this.fontFamily = 'Arial, sans-serif';
         
         // Callbacks
-        /** @type {Function|null} Click callback */
         this.onClick = null;
-        
-        /** @type {Function|null} Hover callback */
         this.onHover = null;
-        
-        /** @type {Function|null} Press callback */
         this.onPress = null;
-        
-        /** @type {Function|null} Release callback */
         this.onRelease = null;
     }
 
