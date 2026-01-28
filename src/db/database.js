@@ -1,11 +1,7 @@
-/**
- * WebSocket-based database client
- * Provides async communication with a database server
- */
 export class Database {
     
     /**
-     * Create a new database connection
+     * Create a new WebSocket database connection
      * @param {string} addr - Server address
      * @param {number} port - Server port
      * @param {Function} onconnect - Callback when connected

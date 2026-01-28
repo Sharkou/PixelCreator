@@ -1,9 +1,5 @@
 import { Node } from '/editor/graph/node.js';
 
-/**
- * Visual scripting graph editor
- * Manages node creation, connections, and code generation
- */
 export class Graph {
     
     /**

@@ -1,14 +1,10 @@
 // import { System } from '/src/core/system.js';
 // import { Network } from '/src/network/network.js';
 
-/**
- * Network client representing a connected user
- * Stores user input state for network synchronization
- */
 export class Client {
 
     /**
-     * Create a new network client
+     * Create a new network client for multiplayer sync
      * @param {string} uid - The unique user identifier
      */
     constructor(uid) {

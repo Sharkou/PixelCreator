@@ -1,7 +1,3 @@
-/**
- * Time management utility
- * Provides delta time and timing functions for game loop
- */
 export class Time {
 
     /** @type {number} Time elapsed since last frame in seconds */

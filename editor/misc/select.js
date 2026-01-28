@@ -1,11 +1,3 @@
-/**
- * Custom select dropdown replacement
- * Converts native select elements into styled custom dropdowns
- * 
- * @module select
- * @description Finds all elements with class "select" and enhances them
- *              with custom-styled dropdown functionality
- */
 var x, i, j, selElmnt, a, b, c;
 /*look for any elements with the class "custom-select":*/
 x = document.getElementsByClassName("select");

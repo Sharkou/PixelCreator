@@ -1,9 +1,5 @@
 import { Scene } from '/src/core/scene.js';
 
-/**
- * Drag-and-drop sorter for hierarchy list
- * Manages object ordering and parent-child relationships via drag operations
- */
 export class Sorter {
 
     static draggedElement = null;

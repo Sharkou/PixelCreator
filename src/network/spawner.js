@@ -1,13 +1,9 @@
 import { Graphics } from '/src/graphics/graphics.js';
 
-/**
- * Spawn point component for multiplayer
- * Defines locations where players can spawn in the game
- */
 export class Spawner {
     
     /**
-     * Create a new spawner
+     * Create a new spawn point for multiplayer
      */
     constructor() {
         

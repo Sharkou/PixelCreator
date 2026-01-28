@@ -1,14 +1,10 @@
 // import { System } from '/src/core/system.js';
 import { db } from '/src/db/firebase.js';
 
-/**
- * Multiplayer room management
- * Handles room creation, joining, and real-time synchronization via Firebase
- */
 export class Room {
     
     /**
-     * Create a new room instance
+     * Create a new multiplayer room
      * @param {Socket} socket - The client P2P socket
      */
     constructor(socket) {

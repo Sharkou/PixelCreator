@@ -1,17 +1,10 @@
-/**
- * 2D Vector mathematics class
- * Provides vector operations for game physics, movement, and transformations
- * 
- * Note: The z component is used ONLY for z-index (depth sorting), not 3D calculations.
- * Pixel Creator is a 2D engine - z is for layer ordering only.
- */
 export class Vector {
     
     /**
-     * Create a new 2D vector
+     * Create a new vector for physics, movement, and transformations
      * @param {number} x - The x component
      * @param {number} y - The y component
-     * @param {number} z - The z-index for depth sorting (NOT 3D)
+     * @param {number} z - The z-index for depth sorting
      */
     constructor(x = 0, y = 0, z = 0) {
         this.x = x;

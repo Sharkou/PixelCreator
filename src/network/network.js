@@ -6,10 +6,6 @@ import { Scene } from '/src/core/scene.js';
 import { Mouse } from '/src/input/mouse.js';
 import { Keyboard } from '/src/input/keyboard.js';
 
-/**
- * Network manager for multiplayer functionality
- * Handles WebSocket connections, user management, and state synchronization
- */
 export class Network {
     
     static host;

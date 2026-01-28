@@ -1,14 +1,10 @@
 import { Component } from '/src/core/mod.js';
 import { System } from '/src/core/system.js';
 
-/**
- * UI Button component using HTML DOM elements
- * Creates an interactive HTML button that can be positioned in the game UI
- */
 export class Button extends Component {
 
     /**
-     * Create a new HTML button
+     * Create a new HTML button for UI
      * @param {string} text - The button text
      * @param {number} width - The button width in pixels
      * @param {number} height - The button height in pixels

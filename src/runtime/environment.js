@@ -1,7 +1,3 @@
-/**
- * Runtime environment configuration and detection
- * Handles platform detection, capabilities, and environment settings
- */
 export class Environment {
 
     static #initialized = false;

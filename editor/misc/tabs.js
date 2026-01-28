@@ -1,11 +1,10 @@
 import { Editor } from '/editor/scripting/editor.js';
 
 /**
- * Open a tab in a tabbed interface
- * Hides all other tabs and shows the selected one
+ * Open a tab and hide others
  * @param {Event} e - The click event
- * @param {string} id - The ID of the tab content to show
- * @param {string} parentID - The ID of the parent tab container
+ * @param {string} id - The tab content ID
+ * @param {string} parentID - The parent container ID
  */
 export default function openTab(e, id, parentID) {
     
