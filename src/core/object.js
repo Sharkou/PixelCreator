@@ -489,6 +489,7 @@ export class Object {
      * Detect mouse hover
      * @param {number} x - The x mouse value
      * @param {number} y - The y mouse value
+     * @return {boolean} detection - The result of the mouse detection
      */
     detectMouse(x, y) {
 
@@ -512,12 +513,12 @@ export class Object {
      * Detects sides for editor resizing
      * @param {number} x - The x mouse value
      * @param {number} y - The y mouse value
-     * @return {boolean} side - The detection side
+     * @return {string} side - The detected side
      */
     detectSide(x, y) {
 
         const camera = Camera.main;
-        const tolerance = 1+2*(1/camera.scale);
+        const tolerance = 1 + 2 * (1 / camera.scale);
         
         // Right side
         if (x / camera.scale >= this.x + this.width / 2 - camera.x - tolerance) {
@@ -547,8 +548,6 @@ export class Object {
         else if (y / camera.scale <= this.y - this.height / 2 - camera.y + tolerance) {
             return 'top';
         }
-            
-            return false;
     }
     
     /**
@@ -599,9 +598,9 @@ export class Object {
     }
     
     /**
-     * Create image of the object in editor resources window
+     * Create image of the object
      * @param {CanvasRenderingContext2D} ctx - The current rendering context
-     * @return {Image} img - The image
+     * @return {Image} img - The generated image
      */
     createImage(ctx) {
         
