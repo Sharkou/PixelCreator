@@ -278,6 +278,30 @@ Any suggestion must respect these constraints.
 
 ---
 
+## Infrastructure & Tools
+
+### PixelBot (Discord Bot)
+
+- **Platform** : Deno (JavaScript) hosted on Raspberry Pi
+- **GitHub** : Collaborator with write access
+- **Git identity** : `PixelBot <bot@pixelcreator.io>`
+- **Branch** : Commits to `sandbox` branch for review before merge
+- **Repo path on Pi** : `~/PixelCreator`
+
+**Future capabilities** (to be developed):
+- Discord commands (`/deploy`, `/status`, `/sync`)
+- GitHub notifications on Discord
+- Automated deployments
+- AI-assisted code generation (requires API key)
+
+### Workflow Preferences
+
+- Local file editing preferred (faster iteration)
+- Manual commit/push by developer
+- PixelBot for automation tasks only
+
+---
+
 ## Summary / Final Reminders
 
 When contributing to Pixel Creator, always remember if a suggestion:
