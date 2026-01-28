@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Pixel Creator Website
+    url: https://pixelcreator.io
+    about: Official website with demos and information
+  - name: Discord Community
+    url: https://discord.gg/X8scDNX
+    about: Join our Discord for questions, discussions, and support
+  - name: Wiki Documentation
+    url: https://github.com/Sharkou/PixelCreator/wiki
+    about: Check the wiki for guides and documentation

@@ -10,8 +10,8 @@ Copyright (c) 2026 Dylan "Sharkou" Audic
 
 ## 2. Grant of Rights
 
-- You are granted a worldwide, non-exclusive, royalty-free license to **use, modify, and redistribute** the Client/Editor code.  
-- Redistribution of modified Client/Editor code is **permitted only** for the purpose of creating modules, extensions, or improvements intended for the official Marketplace.  
+- You are granted a worldwide, non-exclusive, royalty-free license to **use and modify** the Client/Editor code for personal or educational purposes.  
+- Redistribution of modified Client/Editor code is **permitted only** as part of modules, extensions, or improvements intended for the official Marketplace.  
 - You must include attribution to Pixel Creator in any redistribution of the Client/Editor code.
 
 ## 3. Restrictions
@@ -31,4 +31,4 @@ All contributions intended for distribution must comply with the official Market
 
 ## 6. Governing Law
 
-This license is governed by the laws of [France], without regard to conflict-of-law principles.
+This license is governed by the laws of France, without regard to conflict-of-law principles.
