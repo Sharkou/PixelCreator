@@ -36,7 +36,7 @@ Pixel Creator is a **no-code / low-code 2D multiplayer game engine** that runs e
 |----------|-------------|
 | [Wiki](https://github.com/Sharkou/PixelCreator/wiki) | Full documentation |
 | [Guide](https://github.com/Sharkou/PixelCreator/wiki/Guide) | Getting started tutorial |
-| [API Reference](https://docs.pixelcreator.io) | Component documentation |
+| [API Reference](https://github.com/Sharkou/PixelCreator/wiki/Reference) | Component documentation |
 
 ## 🛠️ Core Features
 
