@@ -1,4 +1,4 @@
-# Pixel Creator License (Custom Open Source / Proprietary Hybrid)
+# Pixel Creator License
 
 Copyright (c) 2026 Sharkou
 
