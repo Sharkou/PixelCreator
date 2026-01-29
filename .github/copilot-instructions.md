@@ -79,7 +79,7 @@ Everything is built **custom and native** to keep the engine:
 - Classes: PascalCase (e.g., `Player`, `Renderer`, `Random`)
 - Files: lowercase, single word (e.g., `renderer.js`, `random.js`, `camera.js`)
 - Structure: 1 file = 1 module = 1 class = 1 component
-- Documentation files: lowercase (e.g., `renderer.md`, `random.md`)
+- Wiki pages: PascalCase (e.g., `Renderer.md`, `Camera.md`, `Vector.md`)
 
 ---
 
@@ -285,8 +285,9 @@ Any suggestion must respect these constraints.
 - **Platform** : Deno (JavaScript) hosted on Raspberry Pi
 - **GitHub** : Collaborator with write access
 - **Git identity** : `PixelBot <bot@pixelcreator.io>`
-- **Branch** : Commits to `sandbox` branch for review before merge
+- **Branch** : Commits to `sandbox` branch for review before merge (code), or `master` directly (wiki)
 - **Repo path on Pi** : `~/PixelCreator`
+- **Wiki path on Pi** : `~/PixelCreator.wiki`
 
 **Future capabilities** (to be developed):
 - Discord commands (`/deploy`, `/status`, `/sync`)
@@ -513,6 +514,45 @@ UI components must **never** render on the canvas context.
 
 ---
 
+## Wiki Documentation Format
+
+When creating or updating wiki pages, follow this structure:
+
+**Header format (NO `# Title` - GitHub Wiki displays title from filename):**
+```markdown
+Short description of the class.
+
+\`\`\`js
+import { ClassName } from '/src/path/to/file.js';
+
+const instance = new ClassName();
+\`\`\`
+
+---
+```
+
+**Sections (in order, each separated by `---`):**
+1. `## Parameters` – Constructor parameters table
+2. `## Properties` – Each property as `### propertyName` with Parameters table and Example
+3. `## Methods` – Each method as `### methodName()` with Return table, Parameters table, and Example
+
+**Table format:**
+```markdown
+| Name | Type | Description |
+|------|------|-------------|
+| name | `type` | Description with \`backticks\` for types/classes |
+```
+
+**Rules:**
+- **NO `# Title`** at the start (wiki auto-generates from filename)
+- Start directly with the short description
+- Import + instantiation in ONE code block (use `js` not `javascript`)
+- Use `---` horizontal rules as section separators
+- Use backticks for types in tables (e.g., `number`, `string`, `Element`)
+- Keep descriptions concise and beginner-friendly
+
+---
+
 ## AI Agent Memory Instructions
 
 When the user says "mémoriser", "enregistrer", "retenir", or "remember":
@@ -523,6 +563,12 @@ When the user says "mémoriser", "enregistrer", "retenir", or "remember":
 ---
 
 ## Summary / Final Reminders
+
+**Pay attention to details.** When analyzing examples, documentation, or code:
+- Note EVERY detail, not just the global structure
+- Compare character by character when needed
+- Don't assume — verify
+- If the user shows an example, replicate it exactly
 
 When contributing to Pixel Creator, always remember if a suggestion:
 - Adds complexity for the user
