@@ -18,7 +18,7 @@ Create online games (MMO, MOBA, .io) without server headaches.
 
 Pixel Creator is a **no-code / low-code 2D multiplayer game engine** that runs entirely in your browser. It's designed for beginners who want to create online games without dealing with networking complexity.
 
-- 🌐 **Web-first** — No downloads, works in Chrome
+- 🌐 **Web-first** — No downloads, no installation
 - 👥 **Multiplayer-first** — Built-in networking, no server setup
 - 🎯 **Beginner-first** — Visual editor, drag & drop, visual scripting
 - 🤝 **Real-time collaboration** — Edit with your team simultaneously
