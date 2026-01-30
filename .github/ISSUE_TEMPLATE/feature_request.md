@@ -23,6 +23,13 @@ Any alternative solutions or features you've considered.
 
 How would this feature be used? Who would benefit from it?
 
+## Impact
+- [ ] UX
+- [ ] Performance
+- [ ] Multiplayer
+- [ ] Editor
+- [ ] Server
+
 ## Additional Context
 
-Add any mockups, references, or additional context here.
+Add any mockups, technical notes, references, or additional context here.
