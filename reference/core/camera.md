@@ -19,7 +19,7 @@ viewport.addComponent(new Camera('#272727'));
 
 ## Properties
 
-### background
+### [`background`](###background)
 
 The background color of the camera
 
@@ -35,7 +35,7 @@ camera.getComponent('Camera').background = '#1a1a2e';
 
 ---
 
-### fill
+### [`fill`](###fill)
 
 Fill the black stripes (letterboxing)
 
@@ -51,7 +51,7 @@ camera.getComponent('Camera').fill = true;
 
 ---
 
-### max_x
+### [`max_x`](###max_x)
 
 The x-limit for the camera's position
 
@@ -68,7 +68,7 @@ camera.getComponent('Camera').max_x = map.cols * map.tsize - camera.width;
 
 ---
 
-### max_y
+### [`max_y`](###max_y)
 
 The y-limit for the camera's position
 
@@ -85,7 +85,7 @@ camera.getComponent('Camera').max_y = map.rows * map.tsize - camera.height;
 
 ---
 
-### offset
+### [`offset`](###offset)
 
 Camera offset for smooth following
 
@@ -114,7 +114,7 @@ cam.offset.speed = 0.05;
 
 ## Static Properties
 
-### main
+### [`main`](###main)
 
 Get or set the main `Camera`
 
@@ -136,7 +136,7 @@ Camera.main = viewport;
 
 ## Methods
 
-### preview()
+### [`preview()`](###preview())
 
 Preview the component in the editor
 
