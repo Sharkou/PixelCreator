@@ -1,5 +1,5 @@
 <div align="center">
-
+  
 # 🎮 Pixel Creator
 
 **The beginner-friendly, web-based multiplayer game engine**
@@ -40,11 +40,11 @@ Pixel Creator is a **no-code / low-code 2D multiplayer game engine** that runs e
 
 ## 🛠️ Core Features
 
-- **Visual Editor** — Scene view, hierarchy, properties panel
-- **Visual Scripting** — Event-based programming without code
-- **Component System** — Modular architecture (Texture, Collider, Controller...)
+- **Visual Editor** — Scene view, hierarchy, resources, properties panel
+- **Visual Scripting** — Event-based programming without coding
 - **Real-time Sync** — Automatic multiplayer synchronization
-- **Asset Management** — Import sprites, sounds, scripts
+- **Asset Management** — Import sprites, sounds, modules
+- **Component System** — Modular architecture
 
 ## 🎯 What Can You Build?
 
