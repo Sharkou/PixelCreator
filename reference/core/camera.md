@@ -140,9 +140,9 @@ Camera.main = viewport;
 
 Preview the component in the editor
 
-| Type | Description |
-| --- | --- |
-| void | |
+| Return |
+|--------|
+| `void` |
 
 **Parameters**
 
