@@ -1,6 +1,6 @@
 # Pixel Creator License
 
-Copyright (c) 2026 Sharkou
+Copyright (c) 2026 Pixel Creator
 
 ## 1. Definitions
 
