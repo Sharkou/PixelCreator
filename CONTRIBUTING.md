@@ -51,6 +51,13 @@ PixelCreator/
 └── index.html              # Editor entry point
 ```
 
+### Two-Layer Separation
+
+1. **Engine (`src/`)** — Runtime logic, rendering, physics, networking
+2. **Editor (`editor/`)** — Visual tools, UI panels, user interactions
+
+The editor **never mutates engine state directly**. All changes go through events.
+
 ### Object-Component Pattern
 
 Pixel Creator uses an **Object-Component architecture**:
@@ -132,17 +139,11 @@ System.addEventListener('setProperty', (data) => {
 ```
 
 **Key events:**
+
 - `add`, `remove` — Object lifecycle
 - `setProperty` — Local property change
 - `syncProperty` — Network-synchronized change
 - `addComponent`, `removeComponent` — Component lifecycle
-
-### Two-Layer Separation
-
-1. **Engine (`src/`)** — Runtime logic, rendering, physics, networking
-2. **Editor (`editor/`)** — Visual tools, UI panels, user interactions
-
-The editor **never mutates engine state directly**. All changes go through events.
 
 ## Multiplayer Basics
 
