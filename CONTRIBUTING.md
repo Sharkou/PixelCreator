@@ -145,7 +145,7 @@ System.addEventListener('setProperty', (data) => {
 - `syncProperty` — Network-synchronized change
 - `addComponent`, `removeComponent` — Component lifecycle
 
-## Multiplayer Basics
+### Multiplayer Basics
 
 Pixel Creator handles networking automatically:
 
