@@ -25,6 +25,7 @@
     <!-- Styles Sheets -->
     <link rel="stylesheet" href="css/variables.css" />
     <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/accessibility.css" />
     <link rel="stylesheet" href="css/windows.css" />
     <link rel="stylesheet" href="css/canvas.css" />
     <link rel="stylesheet" href="css/toolbar.css" />
@@ -365,8 +366,9 @@
                         <li id="upload" title="Upload">                            
                             <label for="upload-input">
                                 <i class="fas fa-upload"></i>
+                                <span class="sr-only">Upload files</span>
                             </label>
-                            <input type="file" id="upload-input" multiple/>
+                            <input type="file" id="upload-input" aria-label="Upload files" multiple/>
                         </li>
                     </ul>
                     
