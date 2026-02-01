@@ -328,7 +328,7 @@ Anyone violating the code of conduct may have their contributions or access revo
 ## Resources
 
 - [Wiki Documentation](https://github.com/Sharkou/PixelCreator/wiki)
-- [API Reference](https://docs.pixelcreator.io)
+- [API Reference](https://github.com/Sharkou/PixelCreator/wiki/Reference)
 - [Discord Community](https://discord.gg/X8scDNX)
 
 ## Contact & Support
