@@ -28,6 +28,7 @@ PixelCreator/
 │   ├── graphics/           # Visual components (Texture, Sprite, Circle...)
 │   ├── physics/            # Physics components (Collider, Controller...)
 │   ├── input/              # Input handling (Mouse, Keyboard, Gamepad)
+│   ├── libs/               # Project librairies
 │   ├── network/            # Multiplayer (Network, Client, Socket...)
 │   ├── anim/               # Animation system
 │   ├── math/               # Math utilities (Vector, Random, Math...)
