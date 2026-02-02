@@ -8,14 +8,14 @@ import * as components from '/src/core/mod.js';
 export class Object {
     
     /**
-     * Initialize an entity
+     * Initialize a new object
      * @constructor
-     * @param {string} name - The name of the entity
-     * @param {number} x - The x-coordinate of the entity
-     * @param {number} y - The y-coordinate of the entity
-     * @param {number} width - The width of the entity
-     * @param {number} height - The height of the entity
-     * @param {number} layer - The layer
+     * @param {string} name - The name of the object
+     * @param {number} x - The x-coordinate of the object
+     * @param {number} y - The y-coordinate of the object
+     * @param {number} width - The width of the object
+     * @param {number} height - The height of the object
+     * @param {number} layer - Rendering layer (z-order)
      */
     constructor(name = '', x = 0, y = 0, width = 0, height = 0, layer = 0) {
         

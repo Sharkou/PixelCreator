@@ -3,7 +3,11 @@ Initialize a new `Object`
 ```js
 import { Object } from '/src/core/object.js';
 
-const obj = new Object();
+const obj = new Object({
+    name: 'Player',
+    x: 10,
+    y: 20
+});
 ```
 
 ## Parameters
