@@ -87,14 +87,6 @@ export class Store {
                     this.db.createObjectStore('data', { keyPath: 'id' });
                 }
 
-                if (!this.db.objectStoreNames.contains('modules')) {
-                    this.db.createObjectStore('modules', { keyPath: 'id' });
-                }
-
-                if (!this.db.objectStoreNames.contains('assets')) {
-                    this.db.createObjectStore('assets', { keyPath: 'id' });
-                }
-
             // Future upgrades can be handled here
             default:
                 // TODO: Handle future upgrades
@@ -102,11 +94,171 @@ export class Store {
         }
     }
 
+    /**
+     * Add data to the object store
+     * @param {string} objectStoreName - The name of the object store
+     * @param {Object} data - The data to add
+     * @returns {Promise} - Promise that resolves with the key of the added data
+     */
     add(objectStoreName, data) {
         return new Promise((resolve, reject) => {
+
             const transaction = this.db.transaction(objectStoreName, 'readwrite');
             const store = transaction.objectStore(objectStoreName);
             const request = store.add(data);
+
+            request.onsuccess = () => {
+                resolve(request.result);
+            };
+
+            request.onerror = () => {
+                reject(request.error);
+            };
         });
+    }
+
+    /**
+     * Update or add data to the object store
+     * @param {string} objectStoreName - The name of the object store
+     * @param {Object} data - The data to update or add
+     * @returns {Promise} - Promise that resolves with the key of the data
+     */
+    put(objectStoreName, data) {
+        return new Promise((resolve, reject) => {
+
+            const transaction = this.db.transaction(objectStoreName, 'readwrite');
+            const store = transaction.objectStore(objectStoreName);
+            const request = store.put(data);
+
+            request.onsuccess = () => {
+                resolve(request.result);
+            };
+
+            request.onerror = () => {
+                reject(request.error);
+            };
+        });
+    }
+
+    /**
+     * Get data from the object store by key
+     * @param {string} objectStoreName - The name of the object store
+     * @param {*} key - The key of the data to retrieve
+     * @returns {Promise} - Promise that resolves with the data
+     */
+    get(objectStoreName, key) {
+        return new Promise((resolve, reject) => {
+
+            const transaction = this.db.transaction(objectStoreName, 'readonly');
+            const store = transaction.objectStore(objectStoreName);
+            const request = store.get(key);
+
+            request.onsuccess = () => {
+                resolve(request.result);
+            };
+
+            request.onerror = () => {
+                reject(request.error);
+            };
+        });
+    }
+
+    /**
+     * Get all data from the object store
+     * @param {string} objectStoreName - The name of the object store
+     * @returns {Promise} - Promise that resolves with an array of all data
+     */
+    getAll(objectStoreName) {
+        return new Promise((resolve, reject) => {
+
+            const transaction = this.db.transaction(objectStoreName, 'readonly');
+            const store = transaction.objectStore(objectStoreName);
+            const request = store.getAll();
+
+            request.onsuccess = () => {
+                resolve(request.result);
+            };
+
+            request.onerror = () => {
+                reject(request.error);
+            };
+        });
+    }
+
+    /**
+     * Remove data from the object store by key
+     * @param {string} objectStoreName - The name of the object store
+     * @param {*} key - The key of the data to remove
+     * @returns {Promise} - Promise that resolves when the data is removed
+     */
+    remove(objectStoreName, key) {
+        return new Promise((resolve, reject) => {
+
+            const transaction = this.db.transaction(objectStoreName, 'readwrite');
+            const store = transaction.objectStore(objectStoreName);
+            const request = store.delete(key);
+
+            request.onsuccess = () => {
+                resolve();
+            };
+
+            request.onerror = () => {
+                reject(request.error);
+            };
+        });
+    }
+
+    /**
+     * Clear all data from the object store
+     * @param {string} objectStoreName - The name of the object store
+     * @returns {Promise} - Promise that resolves when the store is cleared
+     */
+    clear(objectStoreName) {
+        return new Promise((resolve, reject) => {
+
+            const transaction = this.db.transaction(objectStoreName, 'readwrite');
+            const store = transaction.objectStore(objectStoreName);
+            const request = store.clear();
+
+            request.onsuccess = () => {
+                resolve();
+            };
+
+            request.onerror = () => {
+                reject(request.error);
+            };
+        });
+    }
+
+    /**
+     * Count the number of items in the object store
+     * @param {string} objectStoreName - The name of the object store
+     * @returns {Promise} - Promise that resolves with the count
+     */
+    count(objectStoreName) {
+        return new Promise((resolve, reject) => {
+
+            const transaction = this.db.transaction(objectStoreName, 'readonly');
+            const store = transaction.objectStore(objectStoreName);
+            const request = store.count();
+
+            request.onsuccess = () => {
+                resolve(request.result);
+            };
+
+            request.onerror = () => {
+                reject(request.error);
+            };
+        });
+    }
+
+    /**
+     * Close the database connection
+     */
+    close() {
+        if (this.db) {
+            this.db.close();
+            this.db = null;
+        }
     }
 }
