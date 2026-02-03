@@ -15,7 +15,5 @@ export class Component {
 
         // Synchronization
         System.sync(this);
-
-        // return this;
     }
 }

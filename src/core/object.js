@@ -50,7 +50,7 @@ export class Object {
         // Synchronization
         System.sync(this);
 
-        return this;
+        // return this by default
     }
     
     get _x() {
@@ -208,7 +208,7 @@ export class Object {
         
         System.sync(this, component); // Synchronize the component
 
-        return this;
+        // return this by default
     }
     
     /**

@@ -35,7 +35,7 @@ export class Sorter {
      * @static
      * @param {HTMLElement} el1 - First element
      * @param {HTMLElement} el2 - Second element
-     * @returns {boolean} True if el1 is before el2
+     * @returns {boolean} - True if el1 is before el2
      */
     static isBefore(el1, el2) {
         if (el2 != undefined)

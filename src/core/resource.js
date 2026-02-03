@@ -15,8 +15,6 @@ export class Resource {
         this.path = (path === '' ? '/' : path);
         this.id = this.path + name + '.' + extension;
         this.value = value;
-
-        // return this;
     }
 
 
