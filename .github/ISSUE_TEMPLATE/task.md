@@ -1,7 +1,7 @@
 ---
 name: Task
 about: Technical task or internal work
-title: "[TASK] "
+title: "[TASK]"
 labels: task
 assignees: ''
 ---
