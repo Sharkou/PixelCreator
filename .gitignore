@@ -1,0 +1,5 @@
+arena/
+*.log
+dist/
+.DS_Store
+.vscode/
