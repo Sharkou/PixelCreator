@@ -21,3 +21,8 @@ export { Animator } from '/src/anim/animator.js';
 export { Collider, RectCollider, CircleCollider } from '/src/physics/collider.js';
 export { Controller } from '/src/physics/controller.js';
 export { Rotator } from '/src/physics/rotator.js';
+export { Body } from '/src/physics/body.js';
+export { Tilemap } from '/src/physics/tilemap.js';
+export { Lighting, LightSource } from '/src/graphics/lighting.js';
+export { Gamepad } from '/src/input/gamepad.js';
+export { Vector } from '/src/math/vector.js';
