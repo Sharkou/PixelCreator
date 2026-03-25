@@ -31,6 +31,10 @@ export { Graphics } from '/src/graphics/graphics.js';
 export { ParticleSystem } from '/src/graphics/particle.js';
 export { Environment } from '/src/runtime/environment.js';
 export { Store } from '/src/storage/store.js';
-// Player is not re-exported here to avoid circular dependency:
-// object.js -> mod.js -> player.js -> object.js
-// Import Player directly: import { Player } from '/src/core/player.js';
+export { Timer } from '/src/time/timer.js';
+export { Audio } from '/src/audio/audio.js';
+export { Sound } from '/src/audio/sound.js';
+export { Tween } from '/src/anim/tween.js';
+export { Touch } from '/src/input/touch.js';
+export { Text } from '/src/graphics/text.js';
+export { SpatialHash } from '/src/physics/spatialhash.js';
