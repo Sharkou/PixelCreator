@@ -29,7 +29,7 @@ export class Animation {
         {
             let texture = self.components.texture;
 
-            if ((Time.now() - this.last) >= this.speed) {
+            if ((Time.now() - this.#last) >= this.speed) {
 
                 this.i = (this.i + 1) % this.frames.length;
 

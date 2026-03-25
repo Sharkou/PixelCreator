@@ -1,6 +1,5 @@
 import { System } from '/src/core/system.js';
-// import { Graph } from '/editor/graph/graph.js';
-import { Graph } from '/app.js';
+import { Graph } from '/editor/graph/graph.js';
 import { Compiler } from '/editor/graph/compiler.js';
 
 export class Node {

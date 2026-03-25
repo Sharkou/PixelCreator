@@ -91,27 +91,27 @@ async function init() {
 /* Main loop */
 async function loop() {
 
-    // Analyse des performances
+    // Performance analysis
     Stats.begin();
     
-    // Changement du curseur
+    // Update cursor
     Dnd.update();
 
-    // Calcul du delta-time
+    // Delta-time calculation
     Time.deltaTime = (Time.now() - Time.last) / (1000 / 60);
     
-    // Calcul des performances
+    // Performance metrics
     Performance.update();
     
-    // Lancement de la boucle principal
+    // Main loop
     window.requestAnimationFrame(loop);
     
     renderer.render(scene, camera);
 
-    // Affichage de la règle
+    // Ruler display
     Ruler.active ? Ruler.update(renderer.ctx, Mouse.x, Mouse.y) : false;
 
-    // Affichage de la grille
+    // Grid display
     Grid.active ? Grid.draw(renderer.ctx) : false;
 
     // Fin de l'analyse des performances
@@ -159,7 +159,7 @@ export {
     renderer as Renderer,
     scene as Scene,
     camera as Camera,
-    hierarchy as Hiearchy,
+    hierarchy as Hierarchy,
     project as Project,
     properties as Properties,
     manager as Manager,

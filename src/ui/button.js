@@ -1,6 +1,4 @@
-import { Component } from '/src/core/mod.js';
-
-export class Button extends Component {
+export class Button {
 
     /**
      * Create a new HTML button for UI
@@ -9,7 +7,6 @@ export class Button extends Component {
      * @param {number} height - The button height in pixels
      */
     constructor(text = 'Button', width = 100, height = 40) {
-        super();
         
         this.text = text;
         this.width = width;

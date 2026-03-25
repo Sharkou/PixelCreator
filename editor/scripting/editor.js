@@ -66,7 +66,7 @@ export class Editor {
                         try {
                             const name = value.match(/class ([a-zA-Z0-9$_]+) {/)[1];
                             if (name !== this.current.name.replace(/\s/g, '')) {
-                                // On change le nom de la ressource par le nom de la classe
+                                // Update the resource name with the class name
                                 this.current.$name = name;
 
                                 // Refresh component in properties
