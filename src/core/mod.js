@@ -31,4 +31,6 @@ export { Graphics } from '/src/graphics/graphics.js';
 export { ParticleSystem } from '/src/graphics/particle.js';
 export { Environment } from '/src/runtime/environment.js';
 export { Store } from '/src/storage/store.js';
-export { Player } from '/src/core/player.js';
+// Player is not re-exported here to avoid circular dependency:
+// object.js -> mod.js -> player.js -> object.js
+// Import Player directly: import { Player } from '/src/core/player.js';
