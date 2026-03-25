@@ -1,4 +1,4 @@
-import { apply } from '/src/lib/utils.js';
+import { apply } from '/src/libs/utils.js';
 
 export class Store {
     
