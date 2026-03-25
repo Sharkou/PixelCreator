@@ -58,6 +58,7 @@ import {
 
 const host = data.host;
 const port = data.port;
+const online = data.online || false;
 const app = document.getElementById('app');
 const renderer = new Renderer(window.innerWidth, window.innerHeight);
 const scene = new Scene('Main Scene');
@@ -66,15 +67,19 @@ const camera = new Object();
 /* Initialization */
 async function init() {
 
-    // Download project resources
-    let resources = await Loader.download(`https://${host}:${port}`);
+    let resources = null;
+    let objects = null;
 
-    // Connect to main scene
-    let objects = await Network.init(host, port).connect(scene);
-    // let objects = data.objects;
+    if (online) {
+        // Download project resources
+        resources = await Loader.download(`https://${host}:${port}`);
+
+        // Connect to main scene
+        objects = await Network.init(host, port).connect(scene);
+    }
 
     // Scene initialization
-    scene.init(objects, camera);
+    scene.init(objects || {}, camera);
     renderer.init(scene, camera);
     
     // renderer.pause = false;

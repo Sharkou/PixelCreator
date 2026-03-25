@@ -24,6 +24,7 @@ document.getElementById('play').addEventListener('click', function() {
     
     app.data = {
         host: Network.host,
-        port: Network.port
+        port: Network.port,
+        online: !!Network.ws
     };
 });
