@@ -50,7 +50,7 @@ import {
     Mouse,
     Keyboard,
     Network
-} from 'https://editor.pixelcreator.io/src/core/mod.js';
+} from '/src/core/mod.js';
 
 // Get project ID
 // const id = app.dataset ? app.dataset['id'] : null;
@@ -67,6 +67,7 @@ async function init() {
     const host = window.data?.host;
     const port = window.data?.port;
     const online = window.data?.online || false;
+    const editorObjects = window.data?.objects;
 
     let resources = null;
     let objects = null;
@@ -77,6 +78,9 @@ async function init() {
 
         // Connect to main scene
         objects = await Network.init(host, port).connect(scene);
+    } else if (editorObjects) {
+        // Offline mode: use objects passed from the editor
+        objects = editorObjects;
     }
 
     // Scene initialization
@@ -112,11 +116,11 @@ window.onresize = function() {
 };
 
 window.onbeforeunload = function(e) {
-    Network.disconnect();
+    if (online) Network.disconnect();
 };
 
 window.onunload = function(e) {
-    Network.disconnect();
+    if (online) Network.disconnect();
 };
     </script>
 
