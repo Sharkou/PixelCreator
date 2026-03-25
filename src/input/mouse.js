@@ -23,11 +23,13 @@ export class Mouse {
      */
     static getMousePos(e) {
         
-        var rect = canvas.getBoundingClientRect();
+        var el = document.getElementById('canvas');
+        if (!el) return { x: 0, y: 0 };
+        var rect = el.getBoundingClientRect();
 
         return {
-            x: (e.clientX - rect.left) / (rect.right - rect.left) * canvas.width,
-            y: (e.clientY - rect.top) / (rect.bottom - rect.top) * canvas.height
+            x: (e.clientX - rect.left) / (rect.right - rect.left) * el.width,
+            y: (e.clientY - rect.top) / (rect.bottom - rect.top) * el.height
         };
     }
     
@@ -103,9 +105,9 @@ if (window.document) {
     document.addEventListener('mousedown', e => {
         Mouse.target = e.target;
         Mouse.setButton(e.button);
-        Mouse.down = false;
-        Mouse.up = true;
-        if (Network.uid) {
+        Mouse.down = true;
+        Mouse.up = false;
+        if (Network.uid && Mouse.buttons(Network.uid)) {
             Mouse.buttons(Network.uid)[e.button] = true;
         }
         System.dispatchEvent('mousedown', e.button);
@@ -117,7 +119,7 @@ if (window.document) {
         Mouse.up = true;
         Mouse.editor.x = e.clientX;
         Mouse.editor.y = e.clientY;
-        if (Network.uid) {
+        if (Network.uid && Mouse.buttons(Network.uid)) {
             delete Mouse.buttons(Network.uid)[e.button];
         }
         System.dispatchEvent('mouseup', e.button);

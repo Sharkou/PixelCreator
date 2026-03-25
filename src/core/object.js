@@ -208,7 +208,7 @@ export class Object {
         
         System.sync(this, component); // Synchronize the component
 
-        // return this by default
+        return this;
     }
     
     /**
@@ -642,7 +642,9 @@ export class Object {
 
         this.image = img;
         
-        Graphics.initContext(ctx); // reset current context
+        if (ctx) {
+            Graphics.initContext(ctx); // reset current context
+        }
         
         // console.log(img);
 

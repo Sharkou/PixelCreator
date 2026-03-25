@@ -168,7 +168,10 @@ export class Loader {
 
         const filesList = await fetch(url + '/data')
             .then(response => response.json())
-            .catch(error => console.error);
+            .catch(error => {
+                console.error(error);
+                return [];
+            });
         
         let files = [];
         let progress = 0;

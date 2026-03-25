@@ -44,7 +44,7 @@ export class Network {
      * @param {object} data - The data
      */
     static send(id, data = null) {
-        if (this.ws.readyState !== WebSocket.CLOSED) {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify({ id, data }));
         }
     }

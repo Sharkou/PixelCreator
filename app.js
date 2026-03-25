@@ -38,13 +38,17 @@ import '/editor/misc/play.js';
 import '/editor/misc/pause.js';
 import '/editor/misc/save.js';
 
+/* Online mode: set to true to connect to the remote server */
+const online = false;
+
 /* Engine initialization */
 const host = 'apps.pixelcreator.io';
 const port = 443;
 const canvas = document.getElementById('wrapper');
 const renderer = new Renderer(canvas.clientWidth, canvas.clientHeight, canvas, false, true);
 const scene = new Scene('Main Scene');
-const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHeight).addComponent(new Camera('#272727'));
+const camera = new Object('Viewport', 0, 0, canvas.clientWidth, canvas.clientHeight);
+camera.addComponent(new Camera('#272727'));
 
 /* Editor initialization */
 const hierarchy = new Hierarchy('world-list', scene);
@@ -58,31 +62,32 @@ const graph = new Graph();
 /* Initialization */
 async function init() {
 
-    // Load plugins
-    // const plugins = await fetch(`https://${host}/plugins`)
-    //     .then(res => res.json())
-    //     .then(json => json)
+    let files = null;
+    let objects = null;
 
-    // for (const plugin of plugins.names) {
-    //     Loader.import(plugin);
-    // }
+    if (online) {
+        try {
+            // Download project resources
+            files = await Loader.download(`https://${host}:${port}`);
 
-    // Editor.init();
-
-    // Download project resources
-    let files = await Loader.download(`https://${host}:${port}`);
-
-    // console.log(files);
-
-    // Connect to main scene
-    let objects = await Network.init(host, port).connect(scene, true);
-
-    // console.log(objects);
+            // Connect to main scene
+            objects = await Network.init(host, port).connect(scene, true);
+        } catch (err) {
+            console.warn('Failed to connect to server, running in offline mode.');
+            console.warn(err);
+        }
+    }
 
     // Scene initialization
     project.init(files);
-    scene.init(objects);
+    scene.init(objects || {});
     renderer.init(scene, camera);
+
+    // Remove loading state
+    for (let el of document.querySelectorAll('.loading')) {
+        el.classList.remove('loading');
+    }
+    document.getElementById('loading')?.classList.add('hidden');
 
     // Start loop
     loop();
@@ -140,7 +145,7 @@ window.addEventListener('pagehide', e => {
     // This event is fired when the page is being unloaded or put into the bfcache
     // TODO: Use sendBeacon to ensure the request is sent even during page teardown
     // Example: navigator.sendBeacon('/api/disconnect');
-    Network.disconnect();
+    if (online) Network.disconnect();
 });
 
 /* Debug */
