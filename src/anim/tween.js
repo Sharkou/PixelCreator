@@ -2,6 +2,12 @@ import { Time } from '/src/time/time.js';
 
 export class Tween {
 
+    #startValues = {};
+    #onComplete = null;
+    #chain = null;
+
+    static #tweens = [];
+
     /**
      * Create a tween animation between values
      * @constructor
@@ -20,9 +26,6 @@ export class Tween {
         this.elapsed = 0;
         this.active = false;
         this.finished = false;
-        this._startValues = {};
-        this._onComplete = null;
-        this._chain = null;
     }
 
     /**
@@ -31,12 +34,12 @@ export class Tween {
      */
     start() {
         for (let prop in this.properties) {
-            this._startValues[prop] = this.target[prop];
+            this.#startValues[prop] = this.target[prop];
         }
         this.elapsed = 0;
         this.active = true;
         this.finished = false;
-        Tween._tweens.push(this);
+        Tween.#tweens.push(this);
         return this;
     }
 
@@ -46,7 +49,7 @@ export class Tween {
      * @returns {Tween} this
      */
     onComplete(fn) {
-        this._onComplete = fn;
+        this.#onComplete = fn;
         return this;
     }
 
@@ -56,7 +59,7 @@ export class Tween {
      * @returns {Tween} this
      */
     chain(tween) {
-        this._chain = tween;
+        this.#chain = tween;
         return this;
     }
 
@@ -65,20 +68,17 @@ export class Tween {
      */
     stop() {
         this.active = false;
-        const idx = Tween._tweens.indexOf(this);
-        if (idx !== -1) Tween._tweens.splice(idx, 1);
+        const idx = Tween.#tweens.indexOf(this);
+        if (idx !== -1) Tween.#tweens.splice(idx, 1);
     }
-
-    /** @type {Tween[]} All active tweens */
-    static _tweens = [];
 
     /**
      * Update all active tweens (call once per frame)
      * @static
      */
     static update() {
-        for (let i = Tween._tweens.length - 1; i >= 0; i--) {
-            const tween = Tween._tweens[i];
+        for (let i = Tween.#tweens.length - 1; i >= 0; i--) {
+            const tween = Tween.#tweens[i];
             if (!tween.active) continue;
 
             tween.elapsed += Time.deltaTime * (1000 / 60);
@@ -86,7 +86,7 @@ export class Tween {
             let easedT = Tween.ease(tween.easing, t);
 
             for (let prop in tween.properties) {
-                const start = tween._startValues[prop];
+                const start = tween.#startValues[prop];
                 const end = tween.properties[prop];
                 tween.target[prop] = start + (end - start) * easedT;
             }
@@ -94,9 +94,9 @@ export class Tween {
             if (t >= 1) {
                 tween.active = false;
                 tween.finished = true;
-                Tween._tweens.splice(i, 1);
-                if (tween._onComplete) tween._onComplete();
-                if (tween._chain) tween._chain.start();
+                Tween.#tweens.splice(i, 1);
+                if (tween.#onComplete) tween.#onComplete();
+                if (tween.#chain) tween.#chain.start();
             }
         }
     }

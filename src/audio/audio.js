@@ -1,13 +1,8 @@
 export class Audio {
 
-    /** @type {AudioContext|null} Shared Web Audio context */
     static ctx = null;
-
-    /** @type {number} Master volume (0 to 1) */
-    static _volume = 1;
-
-    /** @type {GainNode|null} Master gain node */
-    static _masterGain = null;
+    static #volume = 1;
+    static #masterGain = null;
 
     /**
      * Initialize the audio system (must be called after user interaction)
@@ -16,8 +11,8 @@ export class Audio {
     static init() {
         if (this.ctx) return;
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-        this._masterGain = this.ctx.createGain();
-        this._masterGain.connect(this.ctx.destination);
+        this.#masterGain = this.ctx.createGain();
+        this.#masterGain.connect(this.ctx.destination);
     }
 
     /**
@@ -36,7 +31,7 @@ export class Audio {
      * @returns {number} Volume from 0 to 1
      */
     static get volume() {
-        return this._volume;
+        return this.#volume;
     }
 
     /**
@@ -45,9 +40,9 @@ export class Audio {
      * @param {number} value - Volume from 0 to 1
      */
     static set volume(value) {
-        this._volume = Math.max(0, Math.min(1, value));
-        if (this._masterGain) {
-            this._masterGain.gain.value = this._volume;
+        this.#volume = Math.max(0, Math.min(1, value));
+        if (this.#masterGain) {
+            this.#masterGain.gain.value = this.#volume;
         }
     }
 
@@ -71,6 +66,6 @@ export class Audio {
      */
     static get output() {
         this.init();
-        return this._masterGain;
+        return this.#masterGain;
     }
 }

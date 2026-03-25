@@ -17,10 +17,8 @@ export class SpatialHash {
      * @param {number} y
      * @returns {string}
      */
-    _key(x, y) {
-        const cx = Math.floor(x / this.cellSize);
-        const cy = Math.floor(y / this.cellSize);
-        return cx + ',' + cy;
+    #key(x, y) {
+        return Math.floor(x / this.cellSize) + ',' + Math.floor(y / this.cellSize);
     }
 
     /**
@@ -54,7 +52,7 @@ export class SpatialHash {
     /**
      * Get potential collision candidates for an object
      * @param {Object} obj - An object with x, y, width, height
-     * @returns {Object[]} Nearby objects (may include duplicates)
+     * @returns {Object[]} Nearby objects
      */
     query(obj) {
         const result = new Set();

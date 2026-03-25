@@ -3,6 +3,14 @@ import { Time } from '/src/time/time.js';
 import { Random } from '/src/math/random.js';
 
 export class Camera {
+
+    static #main = null;
+
+    #shakeIntensity = 0;
+    #shakeDuration = 0;
+    #shakeTimer = 0;
+    #shakeOffsetX = 0;
+    #shakeOffsetY = 0;
     
     /**
      * Initialize the Camera component
@@ -13,15 +21,12 @@ export class Camera {
      */
     constructor(background = '#272727', max_x = 0, max_y = 0) {
 
-        // Background color
         this.background = background;
         this.fill = false;
         
-        // World bounds (0 = no limit)
         this.max_x = max_x;
         this.max_y = max_y;
 
-        // Camera offset for smooth movement
         this.offset = {
             x: 0,
             y: 0,
@@ -29,17 +34,25 @@ export class Camera {
             friction: 0.95
         };
 
-        // Follow target
         this.target = null;
         this.followSpeed = 0.1;
         this.deadzone = { x: 0, y: 0, width: 0, height: 0 };
+    }
 
-        // Screen shake
-        this._shakeIntensity = 0;
-        this._shakeDuration = 0;
-        this._shakeTimer = 0;
-        this._shakeOffsetX = 0;
-        this._shakeOffsetY = 0;
+    /**
+     * Get main camera
+     * @returns {Camera} camera - The main camera
+     */
+    static get main() {
+        return this.#main;
+    }
+    
+    /**
+     * Set main camera
+     * @param {Camera} camera - The main camera
+     */
+    static set main(camera) {
+        this.#main = camera;
     }
 
     /**
@@ -76,9 +89,9 @@ export class Camera {
      * @param {number} duration - The shake duration in milliseconds
      */
     shake(intensity = 5, duration = 300) {
-        this._shakeIntensity = intensity;
-        this._shakeDuration = duration;
-        this._shakeTimer = duration;
+        this.#shakeIntensity = intensity;
+        this.#shakeDuration = duration;
+        this.#shakeTimer = duration;
     }
 
     /**
@@ -92,7 +105,6 @@ export class Camera {
             const targetX = this.target.x + this.target.width / 2 - self.width / 2;
             const targetY = this.target.y + this.target.height / 2 - self.height / 2;
 
-            // Deadzone check
             const dz = this.deadzone;
             const dx = (this.target.x + this.target.width / 2) - (self.x + self.width / 2 + dz.x);
             const dy = (this.target.y + this.target.height / 2) - (self.y + self.height / 2 + dz.y);
@@ -119,15 +131,15 @@ export class Camera {
         }
 
         // Screen shake
-        if (this._shakeTimer > 0) {
-            const progress = this._shakeTimer / this._shakeDuration;
-            const magnitude = this._shakeIntensity * progress;
-            this._shakeOffsetX = (Random.range(-1, 1)) * magnitude;
-            this._shakeOffsetY = (Random.range(-1, 1)) * magnitude;
-            this._shakeTimer -= Time.deltaTime * (1000 / 60);
+        if (this.#shakeTimer > 0) {
+            const progress = this.#shakeTimer / this.#shakeDuration;
+            const magnitude = this.#shakeIntensity * progress;
+            this.#shakeOffsetX = (Random.range(-1, 1)) * magnitude;
+            this.#shakeOffsetY = (Random.range(-1, 1)) * magnitude;
+            this.#shakeTimer -= Time.deltaTime * (1000 / 60);
         } else {
-            this._shakeOffsetX = 0;
-            this._shakeOffsetY = 0;
+            this.#shakeOffsetX = 0;
+            this.#shakeOffsetY = 0;
         }
     }
 
@@ -137,7 +149,7 @@ export class Camera {
      * @returns {number} The x position with shake applied
      */
     getX(self) {
-        return self.x + this._shakeOffsetX;
+        return self.x + this.#shakeOffsetX;
     }
 
     /**
@@ -146,7 +158,7 @@ export class Camera {
      * @returns {number} The y position with shake applied
      */
     getY(self) {
-        return self.y + this._shakeOffsetY;
+        return self.y + this.#shakeOffsetY;
     }
 
     /**
@@ -156,21 +168,5 @@ export class Camera {
     preview(self) {
         Graphics.rect(self.x, self.y, self.width, self.height);
         Graphics.stroke('rgba(255, 255, 255, 0.6)', 0.8);
-    }
-}
-    /**
-     * Get main camera
-     * @returns {Camera} camera - The main camera
-     */
-    static get main() {
-        return this._main;
-    }
-    
-    /**
-     * Set main camera
-     * @param {Camera} camera - The main camera
-     */
-    static set main(camera) {
-        this._main = camera;
     }
 }

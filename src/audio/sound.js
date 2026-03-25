@@ -2,6 +2,11 @@ import { Audio } from '/src/audio/audio.js';
 
 export class Sound {
 
+    #source = null;
+    #gainNode = null;
+    #startTime = 0;
+    #pauseOffset = 0;
+
     /**
      * Create a sound instance from a URL or AudioBuffer
      * @constructor
@@ -19,12 +24,6 @@ export class Sound {
         this.playbackRate = playbackRate;
         this.playing = false;
 
-        this._source = null;
-        this._gainNode = null;
-        this._startTime = 0;
-        this._pauseOffset = 0;
-
-        // Load if URL
         if (typeof source === 'string') {
             Audio.load(source).then(buf => { this.buffer = buf; });
         } else {
@@ -42,23 +41,23 @@ export class Sound {
 
         this.stop();
 
-        this._source = Audio.ctx.createBufferSource();
-        this._source.buffer = this.buffer;
-        this._source.loop = this.loop;
-        this._source.playbackRate.value = this.playbackRate;
+        this.#source = Audio.ctx.createBufferSource();
+        this.#source.buffer = this.buffer;
+        this.#source.loop = this.loop;
+        this.#source.playbackRate.value = this.playbackRate;
 
-        this._gainNode = Audio.ctx.createGain();
-        this._gainNode.gain.value = this.volume;
+        this.#gainNode = Audio.ctx.createGain();
+        this.#gainNode.gain.value = this.volume;
 
-        this._source.connect(this._gainNode);
-        this._gainNode.connect(Audio.output);
+        this.#source.connect(this.#gainNode);
+        this.#gainNode.connect(Audio.output);
 
-        this._source.start(0, this._pauseOffset);
-        this._startTime = Audio.ctx.currentTime - this._pauseOffset;
-        this._pauseOffset = 0;
+        this.#source.start(0, this.#pauseOffset);
+        this.#startTime = Audio.ctx.currentTime - this.#pauseOffset;
+        this.#pauseOffset = 0;
         this.playing = true;
 
-        this._source.onended = () => {
+        this.#source.onended = () => {
             if (!this.loop) this.playing = false;
         };
 
@@ -69,9 +68,9 @@ export class Sound {
      * Pause the sound
      */
     pause() {
-        if (!this.playing || !this._source) return;
-        this._pauseOffset = Audio.ctx.currentTime - this._startTime;
-        this._source.stop();
+        if (!this.playing || !this.#source) return;
+        this.#pauseOffset = Audio.ctx.currentTime - this.#startTime;
+        this.#source.stop();
         this.playing = false;
     }
 
@@ -79,12 +78,12 @@ export class Sound {
      * Stop the sound and reset to beginning
      */
     stop() {
-        if (this._source) {
-            this._source.onended = null;
-            try { this._source.stop(); } catch (e) { /* already stopped */ }
-            this._source = null;
+        if (this.#source) {
+            this.#source.onended = null;
+            try { this.#source.stop(); } catch (e) { /* already stopped */ }
+            this.#source = null;
         }
-        this._pauseOffset = 0;
+        this.#pauseOffset = 0;
         this.playing = false;
     }
 
@@ -95,11 +94,11 @@ export class Sound {
      */
     setVolume(value, duration = 0) {
         this.volume = Math.max(0, Math.min(1, value));
-        if (this._gainNode) {
+        if (this.#gainNode) {
             if (duration > 0) {
-                this._gainNode.gain.linearRampToValueAtTime(this.volume, Audio.ctx.currentTime + duration);
+                this.#gainNode.gain.linearRampToValueAtTime(this.volume, Audio.ctx.currentTime + duration);
             } else {
-                this._gainNode.gain.value = this.volume;
+                this.#gainNode.gain.value = this.volume;
             }
         }
     }
@@ -109,8 +108,8 @@ export class Sound {
      * @returns {number} Current time in seconds
      */
     get currentTime() {
-        if (!this.playing || !Audio.ctx) return this._pauseOffset;
-        return Audio.ctx.currentTime - this._startTime;
+        if (!this.playing || !Audio.ctx) return this.#pauseOffset;
+        return Audio.ctx.currentTime - this.#startTime;
     }
 
     /**

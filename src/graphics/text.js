@@ -48,7 +48,7 @@ export class Text {
         ctx.globalAlpha = this.opacity;
 
         if (this.maxWidth > 0) {
-            this._drawWrapped(ctx, self.x, self.y);
+            this.#drawWrapped(ctx, self.x, self.y);
         } else {
             if (this.stroke) {
                 ctx.strokeStyle = this.strokeColor;
@@ -68,7 +68,7 @@ export class Text {
      * @param {number} x
      * @param {number} y
      */
-    _drawWrapped(ctx, x, y) {
+    #drawWrapped(ctx, x, y) {
         const words = this.content.split(' ');
         let line = '';
         let lineY = y;
@@ -79,14 +79,14 @@ export class Text {
             const metrics = ctx.measureText(test);
 
             if (metrics.width > this.maxWidth && i > 0) {
-                this._drawLine(ctx, line.trim(), x, lineY);
+                this.#drawLine(ctx, line.trim(), x, lineY);
                 line = words[i] + ' ';
                 lineY += lineSpacing;
             } else {
                 line = test;
             }
         }
-        this._drawLine(ctx, line.trim(), x, lineY);
+        this.#drawLine(ctx, line.trim(), x, lineY);
     }
 
     /**
@@ -96,7 +96,7 @@ export class Text {
      * @param {number} x
      * @param {number} y
      */
-    _drawLine(ctx, text, x, y) {
+    #drawLine(ctx, text, x, y) {
         if (this.stroke) {
             ctx.strokeStyle = this.strokeColor;
             ctx.lineWidth = this.strokeWidth;
