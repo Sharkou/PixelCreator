@@ -12,7 +12,7 @@ export class Compiler {
      * @constructor
      */
     static init() {
-        // Déclaration des types
+        // Type declarations
         this.types = [
             /i32/,
             /str/,
@@ -20,7 +20,7 @@ export class Compiler {
             /void/
         ];
 
-        // Déclarations des opérateurs
+        // Operator declarations
         this.operators = [
             /\+/,
             /-/,
@@ -39,7 +39,7 @@ export class Compiler {
             /||/
         ];
 
-        // Déclarations des signes de ponctuation
+        // Punctuation declarations
         this.brackets = [
             /;/,
             /{/,
@@ -50,7 +50,7 @@ export class Compiler {
             /\]/
         ];
 
-        // Déclaration des mots clés
+        // Keyword declarations
         this.keywords = [
             /let/,
             /struct/,
@@ -72,7 +72,7 @@ export class Compiler {
             /mod/
         ];
 
-        // Déclaration des structures de contrôle
+        // Control structure declarations
         this.structures = [
             /if/,
             /else if/,
@@ -83,7 +83,7 @@ export class Compiler {
             /return/
         ];
 
-        // Déclaration des fonctions natives
+        // Native function declarations
         this.functions = [
             /print/
         ];
@@ -141,7 +141,7 @@ export class Compiler {
         
         const parseStruct = () => {
             
-            // Déclaration du noeud
+            // Node declaration
             let node = parseStructKey();
 
             switch (node.value) {
@@ -197,7 +197,7 @@ export class Compiler {
         };
         
         const isKey = () => {
-            for (let keyword of keywords) {
+            for (let keyword of Compiler.keywords) {
                 if (keyword.test(peek())) {
                     return true;
                 }
@@ -205,7 +205,7 @@ export class Compiler {
         };
         
         const isStruct = () => {
-            for (let structure of structures) {            
+            for (let structure of Compiler.structures) {            
                 if (structure.test(peek())) {
                     return true;
                 }
@@ -213,7 +213,7 @@ export class Compiler {
         };
         
         const isBracket = () => {
-            for (let bracket of brackets) {
+            for (let bracket of Compiler.brackets) {
                 if (bracket.test(peek())) {
                     return true;
                 }
@@ -233,7 +233,7 @@ export class Compiler {
         };
         
         const isOp = () => {
-            for (let operator of operators) {
+            for (let operator of Compiler.operators) {
                 if (operator.test(peek())) {
                     return true;
                 }
@@ -242,32 +242,32 @@ export class Compiler {
 
         const parseExpr = () => {
             
-            // Extraction d'une structure de contrôle
+            // Extract control structure
             if (isStruct()) {
                 return parseStruct();
             }
             
-            // Extraction d'un mot clé
+            // Extract keyword
             else if (isKey()) {
                 return parseKey();
             }
             
-            // Extraction d'un nombre
+            // Extract number
             else if (isNum()) {
                 return parseNum();
             }
             
-            // Extraction d'une variable
+            // Extract variable
             else if (isVar()) {
                 return parseVar();
             }
             
-            // Extraction d'un opérateur
+            // Extract operator
             else if (isOp()) {
                 return parseOp();
             }
             
-            // Extraction d'un bracket
+            // Extract bracket
             else if (isBracket()) {
                 return parseBracket();
             }
@@ -302,7 +302,7 @@ export class Compiler {
 
                 case 'if':
                     
-                    // Création de la condition
+                    // Build condition
                     return transpileKey(node)
                         .concat(transpileVar(node.params[0]))
                         .concat(transpileOp(node.operator))

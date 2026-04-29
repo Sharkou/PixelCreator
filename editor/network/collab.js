@@ -1,75 +1,78 @@
-var Collab = {
+import { Mouse } from '/src/input/mouse.js';
+
+export class Collab {
+
     /** @type {Array<{name: string, x: number, y: number}>} Connected collaborators */
-    friends: [],
+    static friends = [];
     
     /** @type {{name: string, x: number, y: number}} Local user cursor */
-    me: {
-        name: 'Sharkou',
-        x: 80,
-        y: 60
-    },
+    static me = {
+        name: '',
+        x: 0,
+        y: 0
+    };
     
-    /** @type {HTMLCanvasElement} Collaboration overlay canvas */
-    canvas: $('collab'),
+    /** @type {HTMLCanvasElement|null} Collaboration overlay canvas */
+    static canvas = null;
     
-    /** @type {CanvasRenderingContext2D} Canvas 2D context */
-    ctx: $('collab').getContext("2d"),
+    /** @type {CanvasRenderingContext2D|null} Canvas 2D context */
+    static ctx = null;
     
     /** @type {string} Cursor dot color */
-    color: 'rgba(240, 220, 220, 0.5)',
-    
+    static color = 'rgba(240, 220, 220, 0.5)';
+
+    /**
+     * Initialize the collaboration overlay
+     * @param {string} canvasId - The canvas element ID
+     */
+    static init(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        if (!this.canvas) return;
+
+        this.ctx = this.canvas.getContext('2d');
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+        this.canvas.style.position = 'absolute';
+        this.canvas.style.zIndex = '10';
+        this.canvas.style.pointerEvents = 'none';
+
+        this.friends.push(this.me);
+    }
+
     /**
      * Draw all collaborator cursors
      */
-    draw: function() {
+    static draw() {
+        if (!this.ctx) return;
         this.clear();
         this.ctx.beginPath();
-        for (var i = 0; i < this.friends.length; i++) {
-            this.ctx.arc(this.friends[i].x, this.friends[i].y, 5, 0, 2 * Math.PI);
-        }        
+        for (const friend of this.friends) {
+            this.ctx.arc(friend.x, friend.y, 5, 0, 2 * Math.PI);
+        }
         this.ctx.fillStyle = this.color;
         this.ctx.fill();
-    },
+    }
     
     /**
      * Clear the collaboration canvas
      */
-    clear: function() {
+    static clear() {
+        if (!this.ctx) return;
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    /**
+     * Update local cursor position
+     * @param {number} x - Mouse X position
+     * @param {number} y - Mouse Y position
+     */
+    static updateCursor(x, y) {
+        this.me.x = x;
+        this.me.y = y;
     }
 }
 
-Collab.canvas.width = window.innerWidth;
-Collab.canvas.height = window.innerHeight;
-Collab.canvas.style.position = 'absolute';
-Collab.canvas.style.zIndex = '10';
-Collab.canvas.style.pointerEvents = 'none';
-
-Collab.friends.push(Collab.me);
-
-Collab.canvas.addEventListener('mousemove', function(e) {
-    var pos = getMousePos(e);
-    Collab.me.x = pos.x;
-    Collab.me.y = pos.y;
-    log(Collab.me);
-});
-
-// var socket = io.connect('http://localhost:3000');
-
-socket.on('message', function(message) {
-    console.log(message);
-});
-
-socket.on('add', function(o) {
-    o = parse(o);
-    o = new window[o.type](o);
-    // Scene.add(o);
-    
-    // Add to the scene
-    Scene.objects[o.id] = o;
-    var last = World.node.appendChild(o.view());
-    Sorter.sort(last);
-});
+Sorter.sort(last);
 
 socket.on('updateName', function(s) {
     s = s.split('-');

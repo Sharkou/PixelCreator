@@ -1,123 +1,112 @@
-import { GameObject } from '/src/core/entity.js';
+import { Graphics } from '/src/graphics/graphics.js';
+import { Random } from '/src/math/random.js';
 
-var Particle = function()
-{
-    /*this.x = x;
-    this.y = y;
-    this.vx = 0;
-    this.vy = 0;
-    this.width = width;
-    this.height = height;
-    this.color = color;*/
+class Particle {
     
-    this.baseColor = '#f86f1c';
-    this.enabled = true;
-    
-    this.reset = function() {
-        this.startRadius = rand(1, 25);
+    constructor() {
+        this.x = 0;
+        this.y = 0;
+        this.vx = 0;
+        this.vy = 0;
+        this.radius = 5;
+        this.startRadius = 5;
+        this.hue = 23;
+        this.saturation = 75;
+        this.lightness = 50;
+        this.alpha = 0.05;
+        this.startAlpha = 0.05;
+        this.decayRate = 0.1;
+        this.life = 7;
+        this.startLife = 7;
+        this.lineWidth = 1;
+    }
+
+    reset(originX, originY) {
+        this.startRadius = Random.range(1, 25);
         this.radius = this.startRadius;
-        this.x = 300/2 + (rand(0, 6) - 3);
-        this.y = 250;
+        this.x = originX + (Random.range(0, 6) - 3);
+        this.y = originY;
         this.vx = 0;
         this.vy = 0;
         this.hue = 23;
-        this.saturation = rand(50, 100);
-        this.lightness = rand(20, 70);
-        this.startAlpha = rand(1, 10) / 100;
+        this.saturation = Random.range(50, 100);
+        this.lightness = Random.range(20, 70);
+        this.startAlpha = Random.range(1, 10) / 100;
         this.alpha = this.startAlpha;
-        this.decayRate = .1;
+        this.decayRate = 0.1;
         this.startLife = 7;
         this.life = this.startLife;
-        this.lineWidth = rand(1, 3);        
-    };
+        this.lineWidth = Random.range(1, 3);
+    }
+}
+
+export class ParticleSystem {
     
-    this.update = function() {
-        if (this.enabled) {
-            this.vx += (rand(0, 200) - 100) / 1500;
-            this.vy -= this.life/50;  
-            this.x += this.vx;
-            this.y += this.vy;
-            this.alpha = this.startAlpha * (this.life / this.startLife);
-            this.radius = this.startRadius * (this.life / this.startLife);
-            this.life -= this.decayRate;
-            if (
-            this.x > 300 + this.radius ||
-            this.x < -this.radius ||
-            this.y > 300 + this.radius ||
-            this.y < -this.radius ||
-            this.life <= this.decayRate
-            ){
-                this.reset();
+    /**
+     * Initialize the particle system component
+     * @constructor
+     * @param {number} maxParticles - Maximum number of particles
+     * @param {string} color - Base particle color
+     */
+    constructor(maxParticles = 200, color = '#f86f1c') {
+        this.particles = [];
+        this.maxParticles = maxParticles;
+        this.color = color;
+        this.emitting = true;
+    }
+
+    update(self) {
+        if (!this.emitting) return;
+
+        // Spawn particles up to max
+        if (this.particles.length < this.maxParticles) {
+            const p = new Particle();
+            p.reset(self.width / 2, self.height);
+            this.particles.push(p);
+        }
+
+        // Update each particle
+        for (const p of this.particles) {
+            p.vx += (Random.range(0, 200) - 100) / 1500;
+            p.vy -= p.life / 50;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.alpha = p.startAlpha * (p.life / p.startLife);
+            p.radius = p.startRadius * (p.life / p.startLife);
+            p.life -= p.decayRate;
+
+            if (p.x > self.width + p.radius ||
+                p.x < -p.radius ||
+                p.y > self.height + p.radius ||
+                p.y < -p.radius ||
+                p.life <= p.decayRate) {
+                p.reset(self.width / 2, self.height);
             }
         }
-    };
-    
-    this.draw = function(ctx) {
-        if (this.enabled) {
+    }
+
+    draw(self) {
+        if (!this.emitting) return;
+
+        const ctx = Graphics.ctx;
+        const saved = ctx.globalCompositeOperation;
+        ctx.globalCompositeOperation = 'lighter';
+
+        for (const p of this.particles) {
             ctx.beginPath();
-            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
-            ctx.fillStyle = 'rgba(200, 20, 20, 0.5)';
-            ctx.fillStyle = ctx.strokeStyle = 'hsla('+this.hue+', '+this.saturation+'%, '+this.lightness+'%, '+this.alpha+')';
-            ctx.lineWidth = this.lineWidth;
+            ctx.arc(
+                self.x - self.width / 2 + p.x,
+                self.y - self.height / 2 + p.y,
+                Math.max(0, p.radius),
+                0,
+                Math.PI * 2
+            );
+            ctx.fillStyle = ctx.strokeStyle = `hsla(${p.hue}, ${p.saturation}%, ${p.lightness}%, ${p.alpha})`;
+            ctx.lineWidth = p.lineWidth;
             ctx.fill();
             ctx.stroke();
         }
-    };
-    
-    this.reset();
-};
 
-var ParticleSystem = function(name, x, y, width = 200, height = 400) {
-    
-    GameObject.call(this, name, x, y, width, height);
-    
-    /*this.x = x;
-    this.y = y;
-    this.vx = 0;
-    this.vy = 0;
-    this.width = width;
-    this.height = height;
-    this.color = color;*/
-    
-    this.particles = [];
-    this.maxParticle = 200;
-    this.full = false;
-    
-    this.enabled = true;
-    
-    this.addComponent(new Particle2());
-    
-    /*this.addComponent(new Appearance({
-        color: 'rgba(200, 50, 50)',
-        opacity: 0.8,
-        weight: 2
-    }));*/
-};
-
-ParticleSystem.prototype = Object.create(GameObject.prototype);
-
-ParticleSystem.prototype.createParticle = function() {
-    if (!this.full) {
-        if (this.particles.length > this.maxParticle) {
-            this.full = true;
-        } else {
-            this.particles.push(new Particle());
-        }
+        ctx.globalCompositeOperation = saved;
     }
-};
-
-ParticleSystem.prototype.draw = function(ctx) {
-    if (this.enabled) {
-        /*ctx.globalCompositeOperation = 'destination-out';
-        ctx.fillStyle = 'hsla(0, 0%, 0%, .3)';*/
-        ctx.globalCompositeOperation = 'lighter';
-        for (var i = 0; i < this.particles.length; i++) {
-            this.particles[i].draw(ctx);            
-        }
-    }
-};
-
-/*var icon = document.createElement('i');
-icon.setAttribute('class', 'material-icons');
-icon.appendChild(document.createTextNode('blur_on'));
-Objects.add('ParticleSystem', icon);*/
+}

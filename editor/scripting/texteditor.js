@@ -1,4 +1,9 @@
-document.getElementById('canvas').style.display = 'none';
+function initTextEditor() {
+    const canvas = document.getElementById('canvas');
+    if (canvas) {
+        canvas.style.display = 'none';
+    }
+}
 
 function colorer(text, color) {
     return '<span style="color:' + color + ';">' + text + '</span>';

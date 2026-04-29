@@ -1,32 +1,29 @@
 import { Object } from '/src/core/object.js';
-import { Camera } from '/src/core/camera.js';
-import { Graphics } from '/src/graphics/graphics.js';
+import { Texture } from '/src/graphics/texture.js';
+import { Controller } from '/src/physics/controller.js';
+import { RectCollider } from '/src/physics/collider.js';
 
 export class Player extends Object {
     
     /**
-     * Initialize the component
+     * Initialize a player object with default components
      * @constructor
      * @param {string} name - The name of the object
      * @param {number} x - The x-coordinate of the object
      * @param {number} y - The y-coordinate of the object
      * @param {number} width - The width of the object
      * @param {number} height - The height of the object
+     * @param {string} texture - The texture source path
+     * @param {number} speed - The movement speed
      */
-    constructor(name, x, y, width, height, texture, speed) {
+    constructor(name, x, y, width, height, texture = null, speed = 2) {
         
         super(name, x, y, width, height);
         
-        this.addComponent(new Texture(idle.frames[0]));
-        this.addComponent(new Controller(2.5));
-        this.addComponent(new Collider(0, 3, player.width, player.height, true));
-        this.addComponent(new Bow());
-        this.addComponent(new Animator({
-            idle,
-            walk,
-            bow
-        }));
-
-        this.components.animator.play('idle');
+        if (texture) {
+            this.addComponent(new Texture(texture));
+        }
+        this.addComponent(new Controller(speed));
+        this.addComponent(new RectCollider(0, 0, true, '#e02c2c', width, height));
     }
 }

@@ -1,6 +1,5 @@
 import { System } from '/src/core/system.js';
-// import { Graph } from '/editor/graph/graph.js';
-import { Graph } from '/app.js';
+import { Graph } from '/editor/graph/graph.js';
 import { Compiler } from '/editor/graph/compiler.js';
 
 export class Node {
@@ -207,7 +206,7 @@ export class Node {
 
             this.value = e.target.textContent;
 
-            Graph.updateScript();
+            Graph.main.updateScript();
         });
         
         // Create input visual
@@ -289,7 +288,7 @@ export class Node {
         // SVG Connector
         connector.path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         connector.path.classList.add('connection');
-        Graph.addConnectorPath(connector.path);
+        Graph.main.addConnectorPath(connector.path);
         
         // DOM Event handlers
         connector.addEventListener('mousedown', e => {
@@ -306,7 +305,7 @@ export class Node {
     }
 
     deleteConnector(connector) {
-        Graph.deletePath(connector);
+        Graph.main.deletePath(connector);
         // if (connector.classList.contains('input')) {
         //     for (let i = 1; i < this.inputs.length; i++) {
         //         if (connector == this.inputs[i]) {
@@ -386,9 +385,9 @@ export class Node {
         let paths = this.attachedPaths;
 
         for (let i = 0; i < paths.length; i++) {
-            let iPoint = Graph.getConnectorPos(paths[i].input);
-            let oPoint = Graph.getConnectorPos(paths[i].output);
-            let path = Graph.createPath(iPoint, oPoint);
+            let iPoint = Graph.main.getConnectorPos(paths[i].input);
+            let oPoint = Graph.main.getConnectorPos(paths[i].output);
+            let path = Graph.main.createPath(iPoint, oPoint);
             paths[i].path.setAttribute('d', path);
         }
         

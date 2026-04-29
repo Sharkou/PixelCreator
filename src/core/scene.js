@@ -119,7 +119,7 @@ export class Scene {
             }
         }
         
-        // Copie des enfants
+        // Copy children
         for (let id in objects) {
             const obj = this.objects[id];
             for (let child_id in objects[id].childs) {
@@ -203,6 +203,19 @@ export class Scene {
         
         this.events[e].push(fn); // push the function
     }
+
+    /**
+     * Remove event listener
+     * @param {string} e - The event type
+     * @param {Function} fn - The callback function to remove
+     */
+    removeEventListener(e, fn) {
+        if (this.events[e] === undefined) return;
+        const index = this.events[e].indexOf(fn);
+        if (index !== -1) {
+            this.events[e].splice(index, 1);
+        }
+    }
     
     /**
      * Get object by name
@@ -223,19 +236,31 @@ export class Scene {
     /**
      * Get objects by name
      * @param {string} name - The object name
-     * @returns {Object} object - The objects
+     * @returns {Array} objects - The matching objects
      */
     getObjectsByName(name) {
-        
+        const results = [];
+        for (let id in this.objects) {
+            if (this.objects[id].name === name) {
+                results.push(this.objects[id]);
+            }
+        }
+        return results;
     }
     
     /**
      * Get objects by tag
      * @param {string} tag - The tag
-     * @returns {Object} objects - The objects
+     * @returns {Array} objects - The matching objects
      */
     getObjectsByTag(tag) {
-        
+        const results = [];
+        for (let id in this.objects) {
+            if (this.objects[id].tag === tag) {
+                results.push(this.objects[id]);
+            }
+        }
+        return results;
     }
 
     /**

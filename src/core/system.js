@@ -170,6 +170,20 @@ export class System {
     }
 
     /**
+     * Remove event listener
+     * @static
+     * @param {string} e - The event name
+     * @param {function} fn - The callback function to remove
+     */
+    static removeEventListener(e, fn) {
+        if (this.events[e] === undefined) return;
+        const index = this.events[e].indexOf(fn);
+        if (index !== -1) {
+            this.events[e].splice(index, 1);
+        }
+    }
+
+    /**
      * Set interval with number of repetitions
      * @static
      * @param {function} callback - The callback function
@@ -204,7 +218,11 @@ export class System {
 
     static parse(o) {
         return JSON.parse(o, function(key, val) {
-            return (typeof val === 'string') ? ((val.substr(0, 8) === 'function') ? new Function('return ' + val)() : val) : val;
+            if (typeof val === 'string' && val.substr(0, 8) === 'function') {
+                console.warn('System.parse: function deserialization is disabled for security');
+                return val;
+            }
+            return val;
         });
     }
 

@@ -387,7 +387,7 @@ export class Object {
 
         // let clone = Object.assign(Object.create(Object.getPrototypeOf(orig)), orig)
 
-        // Copie des propriétés de l'objet
+        // Copy object properties
         for (let prop in obj) {
             if (typeof obj[prop] !== 'object') {
                 this[prop] = obj[prop];
@@ -396,7 +396,7 @@ export class Object {
             }
         }
 
-        // Copie des composants
+        // Copy components
         for (let name in obj.components) {
 
             const component = obj.components[name];
@@ -404,7 +404,7 @@ export class Object {
             // this.addComponent(new components[name.charAt(0).toUpperCase() + name.slice(1)](), false);
             this.addComponent(new components[name], false);
 
-            // Copie des propriétés du composant
+            // Copy component properties
             for (let prop in component) {
                 this.components[name][prop] = component[prop];
             }
@@ -427,11 +427,11 @@ export class Object {
      * @param {string} component - The component to copy
      */
     copyComponent(component) {
-        // Création d'un nouveau composant
+        // Create new component
         const name = component.name;
         const copy = new components[name.charAt(0).toUpperCase() + name.slice(1)]();
 
-        // Copie des propriétés du composant
+        // Copy component properties
         for (let prop in copy) {
             if (typeof copy[prop] !== 'object') {
                 copy[prop] = component[prop];
@@ -642,7 +642,9 @@ export class Object {
 
         this.image = img;
         
-        Graphics.initContext(ctx); // reset current context
+        if (ctx) {
+            Graphics.initContext(ctx); // reset current context
+        }
         
         // console.log(img);
 

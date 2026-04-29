@@ -1,5 +1,5 @@
 import { Scene } from '/src/core/scene.js';
-import { Editor } from '/src/editor/scripting/editor.js';
+import { Loader } from '/src/core/loader.js';
 
 export class Interpreter {
 
@@ -31,7 +31,7 @@ export class Interpreter {
      */
     static run(source) {
 
-        /* Compilation des sources */
+        /* Source compilation */
         try {
             // Project.lastScript.data = eval('(' + source + ')');
             let data = eval('(' + source + ')');
@@ -80,16 +80,19 @@ export class Interpreter {
             let name = script.data.name.toLowerCase();
             const scene = Scene.main;
             
-            // On change le nom de la ressource par le nom de la classe
-            Project.files[this.window.data.id].name = script.data.name;
+            // Update the resource name with the class name
+            const file = Loader.files[this.window?.data?.id];
+            if (file) {
+                file.name = script.data.name;
+            }
             
-            // Mise à jour de la ressource dans l'éditeur
+            // Update resource in editor
             scene.refresh();
             
             // Update in realtime
             for (let id in scene.objects) {
         
-                const obj = scene.objects[id]; // stockage de l'objet dans une constante
+                const obj = scene.objects[id];
                 
                 if (obj.components) {
                     for (let component in obj.components) {

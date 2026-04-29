@@ -46,7 +46,6 @@ export class Collider {
             {
                 self.onCollision(other);
                 other.onCollision(self);
-                console.log("On collision !"); // TO DELETE
             }
         });
     }
@@ -65,7 +64,7 @@ export class Collider {
 
             if (other != undefined && other != null && other != self && other.active) {
 
-                this.o_collider = other.components.collider || other.components.rectcollider || other.components.circlecollider;
+                this.o_collider = other.components.Collider || other.components.RectCollider || other.components.CircleCollider;
                 
                 if (this.o_collider && this.o_collider.active) {
                     
@@ -73,7 +72,6 @@ export class Collider {
                     {
                         if (!this.#isOnCollision.has(id))
                         {
-                            console.log("Start collision !"); // TO DELETE
                             this.#isOnCollision.set(id, true);
                             this.o_collider.#isOnCollision.set(self.id, true);
                             self.onCollisionStart(other);
@@ -84,7 +82,6 @@ export class Collider {
                     }
                     else if (this.#isOnCollision.has(id))
                     {
-                        console.log("Exit collision..."); // TO DELETE
                         this.#isOnCollision.delete(id);
                         this.o_collider.#isOnCollision.delete(self.id);
                         self.onCollisionExit(other);
@@ -424,7 +421,7 @@ export class CircleCollider extends Collider {
 
 System.addEventListener('setProperty', data => {
     if (data.object?.components) {
-        if (data.object.components.collider || data.object.components.rectcollider) {
+        if (data.object.components.Collider || data.object.components.RectCollider) {
             if (data.prop === 'x' || data.prop === 'y') {
                 console.log(data.object.x);
             }

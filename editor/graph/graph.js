@@ -2,10 +2,13 @@ import { Node } from '/editor/graph/node.js';
 
 export class Graph {
     
+    static main = null;
+
     /**
      * Initialize the visual scripting graph
      */
     constructor() {
+        Graph.main = this;
         this.nodes = {};
         this.boxes = document.getElementsByClassName('box');
         this.graph = document.getElementById('graph');
