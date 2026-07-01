@@ -20,7 +20,7 @@ Pixel Creator is a **no-code / low-code 2D multiplayer game engine** that runs e
 
 - 🌐 **Web-first** — No downloads, no installation
 - 👥 **Multiplayer-first** — Built-in networking, no server setup
-- 🎯 **Beginner-first** — Visual editor, drag & drop, visual scripting
+- 🎯 **Beginner-friendly** — Visual editor, drag & drop, visual scripting
 - 🤝 **Real-time collaboration** — Edit with your team simultaneously
 
 ## 🚀 Quick Start
