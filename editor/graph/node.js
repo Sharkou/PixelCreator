@@ -7,14 +7,19 @@ export class Node {
     /**
      * Create Node in graph editor
      * @constructor
-     * @param {string} type - The node type
+     * @param {string} type - The node type, identifies what the node does
+     *
+     * A node exposes its ports through `inputs`/`outputs`: arrays of connector
+     * elements, each carrying its own identity (`id`, `name`, `direction`,
+     * `dataType`) so a future data-type/connection-rule system can reason
+     * about them individually.
      */
     constructor(type) {
         this.id = System.createID();
         this.type = type;
         this.value = type;
-        this.inputs = [];
-        this.outputs = [];
+        this.inputs = []; // Input connectors (left side)
+        this.outputs = []; // Output connectors (right side)
         this.connected = false;
         this.attachedPaths = []; // SVG Connections
         this.createView();
@@ -160,18 +165,20 @@ export class Node {
             for (let i = 1; i < fields.length; i++) {
 
                 if (!this.inputs[i]) {
-                    this.el.appendChild(this.createConnector('input', fields[i]));
+                    this.el.appendChild(this.createConnector('input', fields[i], { field: true }));
                     this.inputs[i].dataset.value = fields[i];
                 } else {
                     this.inputs[i].setAttribute('title', fields[i]);
+                    this.inputs[i].name = fields[i];
                     this.inputs[i].dataset.value = fields[i];
                 }
 
                 if (!this.outputs[i + 1]) {
-                    this.el.appendChild(this.createConnector('output', fields[i]));
+                    this.el.appendChild(this.createConnector('output', fields[i], { field: true }));
                     this.outputs[i + 1].dataset.value = fields[i];
                 } else {
                     this.outputs[i + 1].setAttribute('title', fields[i]);
+                    this.outputs[i + 1].name = fields[i];
                     this.outputs[i + 1].dataset.value = fields[i];
                 }
 
@@ -262,7 +269,15 @@ export class Node {
         selection.addRange(range);
     }
 
-    createConnector(type, name) {
+    /**
+     * Create a connector (input/output port)
+     * @param {string} type - Connector role: 'input', 'output' or 'error' (error is a kind of output)
+     * @param {string} name - Connector display name, also used to identify it individually
+     * @param {object} [options]
+     * @param {*} [options.dataType] - Reserved for the future data-type/connection-rule system (unconstrained for now)
+     * @param {boolean} [options.field] - True for the dynamic per-token ports created while typing, false for the node's standard ports
+     */
+    createConnector(type, name, options = {}) {
         // The dom element, here is where we could add different input types
         let connector = document.createElement('div');
         connector.node = this;
@@ -271,20 +286,34 @@ export class Node {
         connector.classList.add('connector');
         connector.classList.add('empty');
 
+        // Port identity: lets a future data-type/connection-rule system address and validate each port individually
+        connector.direction = (type === 'error') ? 'output' : type; // canonical 'input' | 'output', regardless of visual sub-type
+        connector.name = name;
+        connector.dataType = options.dataType ?? null;
+        connector.field = options.field === true;
+        connector.classList.toggle('field', connector.field);
+
         switch (type) {
             case 'input':
+                connector.index = this.inputs.length;
                 this.inputs.push(connector);
                 break;
             
             case 'output':
+                connector.index = this.outputs.length;
                 this.outputs.push(connector);
                 break;
 
             case 'error':
+                connector.index = this.outputs.length;
                 this.outputs.push(connector);
                 break;
         }
-            
+
+        // Avoid ':' in the id (would be misread as a pseudo-class by CSS/querySelector id selectors)
+        connector.id = `${this.id}_${connector.direction}_${connector.index}`;
+        connector.dataset.port = connector.id;
+
         // SVG Connector
         connector.path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         connector.path.classList.add('connection');
@@ -379,6 +408,15 @@ export class Node {
             }
         }
         return false;
+    }
+
+    /**
+     * Find one of this node's ports by its individual id
+     * @param {string} id - Connector id (see createConnector)
+     * @returns {Element|null}
+     */
+    getPort(id) {
+        return this.inputs.find(c => c.id === id) || this.outputs.find(c => c.id === id) || null;
     }
 
     updateConnectorsPos() {
