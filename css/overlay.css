@@ -82,6 +82,9 @@
     width: 100%;
     min-height: 4001px;
     min-width: 2001px;
+    /* the SVG establishes its own clipping viewport by default; without this, panning the
+       grid-rect outside the SVG's fixed local box (0..min-width/min-height) hides it entirely */
+    overflow: visible;
 }
 
 #graph svg path.connection {

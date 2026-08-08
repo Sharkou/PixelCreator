@@ -14,6 +14,7 @@ export class Graph {
         this.graph = document.getElementById('graph');
         this.content = document.getElementById('graph-content'); // holds nodes + svg, transformed together for zoom/pan
         this.svg = document.getElementById('svg');
+        this.gridRect = document.getElementById('grid-rect'); // covers the viewport so the SVG grid pattern tiles infinitely
         this.currentConnector = null;
         this.currentNode = null;
         this.code = '';
@@ -27,6 +28,9 @@ export class Graph {
         this.panning = false;
         this.panStart = { x: 0, y: 0 };
         this.updateTransform();
+
+        // Keep the grid rect covering the viewport if the panel is resized without panning/zooming
+        window.addEventListener('resize', () => this.updateGridBounds());
 
         this.graph.addEventListener('dragover', e => {
             e.preventDefault(); // annule l'interdiction de "drop"
@@ -304,6 +308,23 @@ export class Graph {
 
     updateTransform() {
         this.content.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.zoom})`;
+        this.updateGridBounds();
+    }
+
+    // Repositions/resizes the grid rect (in local content coordinates) to always cover the
+    // visible viewport plus a one-viewport margin, so the SVG pattern never shows an edge when panning.
+    updateGridBounds() {
+        if (!this.gridRect) return;
+        const bounds = this.graph.getBoundingClientRect();
+        // #graph is hidden (0x0 rect) until its tab is selected, fall back to the window size so the grid isn't invisible at load
+        const width = bounds.width || window.innerWidth;
+        const height = bounds.height || window.innerHeight;
+        const marginX = width / this.zoom;
+        const marginY = height / this.zoom;
+        this.gridRect.setAttribute('x', -this.panX / this.zoom - marginX);
+        this.gridRect.setAttribute('y', -this.panY / this.zoom - marginY);
+        this.gridRect.setAttribute('width', width / this.zoom + marginX * 2);
+        this.gridRect.setAttribute('height', height / this.zoom + marginY * 2);
     }
 
     // static getAttachPoint(connector) {
