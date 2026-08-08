@@ -270,18 +270,23 @@
                                 <input type="text" id="eventName">
                             </div> -->
 
-                            <svg id="svg">
-                                <defs>
-                                    <pattern id="smallGrid" width="10" height="10" patternUnits="userSpaceOnUse">
-                                        <path d="M 100 0 L 0 0 0 100" fill="none" stroke="rgba(255, 255, 255, 0.05)" stroke-width="1"/>
-                                    </pattern>
-                                    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
-                                        <rect width="100" height="100" fill="url(#smallGrid)"/>
-                                        <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(255, 255, 255, 0.05)" stroke-width="1" stroke-dasharray="0" />
-                                    </pattern>
-                                </defs>
-                                <rect width="100%" height="100%" fill="url(#grid)" />
-                            </svg>
+                            <!-- Zoom/pan transform is applied here so nodes and SVG paths stay in sync -->
+                            <div id="graph-content">
+
+                                <svg id="svg">
+                                    <defs>
+                                        <pattern id="smallGrid" width="10" height="10" patternUnits="userSpaceOnUse">
+                                            <path d="M 100 0 L 0 0 0 100" fill="none" stroke="rgba(255, 255, 255, 0.05)" stroke-width="1"/>
+                                        </pattern>
+                                        <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+                                            <rect width="100" height="100" fill="url(#smallGrid)"/>
+                                            <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(255, 255, 255, 0.05)" stroke-width="1" stroke-dasharray="0" />
+                                        </pattern>
+                                    </defs>
+                                    <rect width="100%" height="100%" fill="url(#grid)" />
+                                </svg>
+
+                            </div>
 
                         </section>
                         
