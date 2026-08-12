@@ -78,19 +78,36 @@ Voir `MIGRATION.md` §4.1. `Controller` → `Keyboard` → `Network.users` (unde
 
 ---
 
-## PROPOSITION V2
+## DÉCISIONS V2
+
+**VALIDÉ :** domaines directement sous `runtime/`, sans couche `Systems/`.
 
 ```
 runtime/
-├── loop.js          orchestration des phases
-├── renderer/        Canvas 2D, projection, tri par layer mis en cache
-├── camera/          Camera (composant) + Viewport (projection)
+├── clock/           temps, delta-time, timers
 ├── physics/         collisions, corps, spatial hash
+├── animation/       animator, animation, tween
+├── rendering/       Canvas 2D, projection, abstraction de rendu
 ├── input/           état des entrées par owner, sans dépendance réseau
-├── anim/            animator, animation, tween
-├── audio/           Web Audio
+├── scripting/       exécution .px et .js
+├── loop.js          orchestration des phases
 └── mod.js           point d'entrée client (le serveur ne l'importe pas)
 ```
+
+`audio/` et `camera/` s'ajoutent selon le besoin ; la liste n'est pas figée, c'est le
+principe qui l'est : **un dossier = un domaine, pas de couche d'abstraction au-dessus.**
+
+### Rendering — VALIDÉ
+
+Backend v2 : **Canvas 2D**. Une abstraction légère est interposée pour qu'un backend
+WebGL ou WebGPU reste possible plus tard, sans être conçue pour lui aujourd'hui.
+
+Concrètement : `draw(self, renderer)` reçoit un objet `renderer` au lieu de lire le
+singleton `Graphics.ctx`. Le vocabulaire se limite à ce que les composants utilisent
+déjà (`rect`, `circle`, `image`, `text`, `fill`, `stroke`, `light`, transformations).
+
+**Ne pas surarchitecturer** : pas de graphe de commandes, pas de batching, pas de
+matériaux, pas de passes tant qu'un besoin réel ne l'exige pas.
 
 ### Phases séparées
 
@@ -137,8 +154,8 @@ La différence n'est pas dans le modèle mais dans les **modules chargés** :
 | | Client | Serveur |
 |---|---|---|
 | `core/` | ✅ | ✅ |
-| `runtime/physics`, `input`, `anim` | ✅ | ✅ |
-| `runtime/renderer`, `audio` | ✅ | ❌ |
+| `runtime/physics`, `input`, `animation`, `clock` | ✅ | ✅ |
+| `runtime/rendering`, `audio` | ✅ | ❌ |
 | `component.update()` | ✅ | ✅ |
 | `component.draw()` | ✅ | ❌ |
 | `editor/` | optionnel | ❌ |

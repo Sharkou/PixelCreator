@@ -75,7 +75,7 @@ et non deux copies synchronisées.
 
 ## 5. Identité des jeux
 
-**PROPOSITION V2.** L'identifiant d'un jeu est un ID opaque, pas son nom :
+**VALIDÉ** (ADR-0010). L'identifiant d'un jeu est un ID opaque, pas son nom :
 
 ```
 play.pixelcreator.io/7f3a91c2

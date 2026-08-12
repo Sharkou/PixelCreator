@@ -48,13 +48,47 @@ Utiliser des helpers explicites (`keysOf`, `valuesOf`) dans les modules concern�
 ### Écriture de propriété : choisir le bon canal
 
 ```js
-object.x = 100;      // simulation, caméra locale — local, pas de réseau
-object.$x = 100;     // intention utilisateur — local + réplication
+object.x = 100;                  // mutation directe de l'état — aucune Operation
+object.setProperty('x', 100);    // mutation contrôlée — Change + Operation
 ```
 
-Règle : **un composant n'écrit jamais avec `$`.** La simulation n'a pas à répliquer,
-c'est le serveur qui fait autorité sur son propre `update()`.
-Seuls l'Editor et les actions utilisateur explicites utilisent `$`.
+**`object.$x` n'existe pas en v2.** Le sigil de Legacy est supprimé.
+
+`setProperty()` n'est pas « la méthode réseau » : c'est le chemin contrôlé du modèle.
+L'Operation produite peut être validée, répliquée, historisée, annulée, partagée — selon
+le contexte.
+
+La distinction n'est pas « répliqué / non répliqué » mais **« sortie de simulation »
+contre « intention »** :
+
+> **Un Component n'appelle jamais `setProperty()`. L'Editor n'écrit jamais sans.**
+
+`self.x += vx` dans un `update()` est un résultat de calcul, pas une décision : le
+serveur fait autorité sur sa propre simulation.
+
+#### ⚠ `setProperty()` porte le même nom dans Legacy, avec un autre sens
+
+| | Legacy | v2 |
+|---|---|---|
+| `object.x = v` | écrit l'état, émet `setProperty` | écrit l'état, émet un `Change` |
+| `setProperty('x', v)` | écrit `_x` directement, **ne réplique pas** | **chemin contrôlé** — `Change` + Operation |
+| `$x` / `syncProperty('x', v)` | répliquent | **n'existent pas** — remplacés par `setProperty()` |
+| Appliquer un changement entrant | écriture simple à la réception | Operation `origin: 'network'` |
+
+Ne jamais raisonner par analogie avec `legacy/` sur ce point.
+
+#### Les couches internes ne sont pas une API
+
+Legacy empile `object.x` → `_x` → `__x`. Ces niveaux restent de simples possibilités
+d'implémentation : **aucun code utilisateur, aucun composant et aucune API publique v2
+ne doit les manipuler ni en dépendre.**
+
+#### Le mode d'échec à surveiller
+
+Appeler `setProperty()` là où `=` suffisait coûte du trafic et une entrée d'historique.
+Écrire `=` là où `setProperty()` était requis produit une modification qui **ne se
+réplique pas et ne s'annule pas** — sans erreur, sans trace. C'est le second cas qui
+fait perdre du temps.
 
 ### Lire une transform en boucle chaude
 

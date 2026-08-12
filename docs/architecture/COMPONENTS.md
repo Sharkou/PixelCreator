@@ -166,6 +166,21 @@ Cela conserve le **hot reload** de Legacy (`import()` → événement `import` �
 dans tous les objets porteurs), qui fonctionne bien, tout en supprimant le couplage des
 plugins à `editor/system/manager.js`.
 
-Question ouverte (Q4) : autoriser plusieurs composants du même type sur un objet
-imposerait de changer la clé de `components{}`, donc le protocole réseau et la
-sérialisation.
+**VALIDÉ (Q4) :** un `Object` ne porte **qu'un seul Component d'un type donné**. La clé
+de `components` reste le nom du type. Le comportement Legacy est confirmé, pas modifié.
+
+### Composants non conformes à corriger — VALIDÉ
+
+La décision « un Component peut faire `update()`, `draw()` ou les deux, et participer
+directement au rendu » nomme explicitement `ParticleSystem`, `Sprite` et `Tilemap`.
+Deux de ces trois ne sont pas conformes aujourd'hui :
+
+| | Legacy | v2 |
+|---|---|---|
+| `ParticleSystem` | conforme | inchangé |
+| `Sprite` | **sous-classe d'`Object`**, pas un Component | devient un **Component** |
+| `Tilemap` | `draw(ctx, camera)` → `TypeError` masquée | `draw(self, renderer)` |
+| `Lighting` / `LightSource` | hors contrat | Components conformes, ou service de rendu explicitement hors modèle |
+
+C'est un abandon délibéré de comportements Legacy erronés, autorisé par la décision
+« pas de migration de projets v1 ».

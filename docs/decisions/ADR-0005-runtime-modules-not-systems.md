@@ -1,6 +1,6 @@
 # ADR-0005 — Le Runtime s'organise par modules de domaine, pas en « Systems »
 
-- **Statut :** proposé
+- **Statut :** **accepté** (2026-08-12)
 - **Répond à :** l'hypothèse `Runtime/Systems/{Physics,Animation,Render,Script}System`
 
 ## Contexte observé
@@ -36,17 +36,18 @@ faux ami.
 
 ## Décision
 
-**Conserver l'organisation par module de domaine.**
+**VALIDÉ : conserver l'organisation par module de domaine**, directement sous
+`runtime/`, sans couche intermédiaire.
 
 ```
 runtime/
-├── loop.js
-├── renderer/
-├── physics/
-├── anim/
-├── input/
-├── audio/
-└── camera/
+├── clock/         temps, delta-time, timers
+├── physics/       collisions, corps, spatial hash
+├── animation/     animator, animation, tween
+├── rendering/     backend Canvas 2D + abstraction
+├── input/         état des entrées par owner
+├── scripting/     exécution .px et .js
+└── loop.js        orchestration des phases
 ```
 
 Le mot « System » n'est pas interdit. Il est **réservé aux modules qui orchestrent

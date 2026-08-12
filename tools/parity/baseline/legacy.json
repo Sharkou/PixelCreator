@@ -1,0 +1,4887 @@
+{
+  "property/direct-write": {
+    "id": "property/direct-write",
+    "title": "Direct write: notifies views, produces no operation",
+    "status": "contract",
+    "returned": {
+      "x": 100
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 100
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "property/controlled-write": {
+    "id": "property/controlled-write",
+    "title": "Controlled write: notifies AND produces an operation",
+    "status": "contract",
+    "returned": {
+      "x": 200
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 200
+      }
+    ],
+    "operations": [
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 200
+      }
+    ],
+    "network": []
+  },
+  "property/controlled-write-string": {
+    "id": "property/controlled-write-string",
+    "title": "Controlled write on a string (name editing)",
+    "status": "contract",
+    "returned": {
+      "name": "Play"
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "P"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Pl"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Pla"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Play"
+      }
+    ],
+    "operations": [
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "P"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Pl"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Pla"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Play"
+      }
+    ],
+    "network": []
+  },
+  "property/remote-apply-no-echo": {
+    "id": "property/remote-apply-no-echo",
+    "title": "Applying an incoming change: notifies without producing an operation",
+    "status": "contract",
+    "returned": {
+      "x": 42
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 42
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "property/component-controlled-write": {
+    "id": "property/component-controlled-write",
+    "title": "Controlled write on a component property",
+    "status": "contract",
+    "returned": {
+      "speed": 8
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "speed",
+        "value": 8
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "property/dynamic-not-reactive": {
+    "id": "property/dynamic-not-reactive",
+    "title": "A property added after construction is not reactive",
+    "status": "bug",
+    "returned": {
+      "health": 50
+    },
+    "notifications": [],
+    "operations": [],
+    "network": []
+  },
+  "property/dollar-write": {
+    "id": "property/dollar-write",
+    "title": "Legacy probe: $x replicates (syntax removed in v2)",
+    "status": "quirk",
+    "returned": {
+      "x": 300
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 300
+      }
+    ],
+    "operations": [
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 300
+      }
+    ],
+    "network": []
+  },
+  "property/legacy-set-property-path": {
+    "id": "property/legacy-set-property-path",
+    "title": "Legacy probe: setProperty() writes without replicating (opposite meaning in v2)",
+    "status": "quirk",
+    "returned": {
+      "afterLoud": 400,
+      "afterSilent": 500
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 400
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "property/internal-layers": {
+    "id": "property/internal-layers",
+    "title": "Legacy probe: internal layers x / _x / __x",
+    "status": "quirk",
+    "returned": {
+      "x": {
+        "public": 123,
+        "underscore": 123,
+        "doubleUnderscore": 123
+      },
+      "name": {
+        "public": "Hero",
+        "underscore": "Hero"
+      }
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 123
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Hero"
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "property/construction-emits-every-property": {
+    "id": "property/construction-emits-every-property",
+    "title": "Constructing an Object emits one notification per property",
+    "status": "quirk",
+    "returned": {
+      "notificationCount": 19,
+      "operationCount": 0,
+      "props": [
+        "id",
+        "uid",
+        "name",
+        "layer",
+        "tag",
+        "type",
+        "active",
+        "visible",
+        "lock",
+        "static",
+        "image",
+        "components",
+        "childs",
+        "x",
+        "y",
+        "width",
+        "height",
+        "rotation",
+        "scale"
+      ]
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "id",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "components",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "y",
+        "value": 2
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "width",
+        "value": 3
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "height",
+        "value": 4
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "property/enumerable-pollution": {
+    "id": "property/enumerable-pollution",
+    "title": "Legacy probe: _prop and $prop pollute the enumerable keys",
+    "status": "quirk",
+    "returned": {
+      "total": 57,
+      "publicKeys": 19,
+      "underscoreKeys": 19,
+      "dollarKeys": 19
+    },
+    "notifications": [],
+    "operations": [],
+    "network": []
+  },
+  "hierarchy/add-child": {
+    "id": "hierarchy/add-child",
+    "title": "Adding a child links both directions and produces an operation",
+    "status": "contract",
+    "returned": {
+      "childCount": 1,
+      "childParent": "Parent"
+    },
+    "notifications": [
+      {
+        "kind": "addChild",
+        "target": "Parent",
+        "child": "Child"
+      }
+    ],
+    "operations": [
+      {
+        "op": "ADD_CHILD",
+        "target": "Parent",
+        "child": "Child"
+      }
+    ],
+    "network": []
+  },
+  "hierarchy/position-propagates-to-child": {
+    "id": "hierarchy/position-propagates-to-child",
+    "title": "Moving the parent in x/y moves its children by the same delta",
+    "status": "contract",
+    "returned": {
+      "parent": {
+        "x": 150,
+        "y": 200
+      },
+      "child": {
+        "x": 170,
+        "y": 240
+      }
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "x",
+        "value": 170
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "x",
+        "value": 150
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "y",
+        "value": 240
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "y",
+        "value": 200
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "hierarchy/size-does-not-propagate": {
+    "id": "hierarchy/size-does-not-propagate",
+    "title": "width / height / rotation do NOT propagate to children",
+    "status": "quirk",
+    "returned": {
+      "parent": {
+        "width": 200,
+        "rotation": 1.5
+      },
+      "child": {
+        "width": 10,
+        "rotation": 0
+      }
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "width",
+        "value": 200
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "rotation",
+        "value": 1.5
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "hierarchy/remove-child": {
+    "id": "hierarchy/remove-child",
+    "title": "Removing a child cuts the link in both directions",
+    "status": "contract",
+    "returned": {
+      "childCount": 0,
+      "childParent": null
+    },
+    "notifications": [
+      {
+        "kind": "removeChild",
+        "target": "Parent",
+        "child": "Child"
+      }
+    ],
+    "operations": [
+      {
+        "op": "REMOVE_CHILD",
+        "target": "Parent",
+        "child": "Child"
+      }
+    ],
+    "network": []
+  },
+  "hierarchy/controlled-write-propagates": {
+    "id": "hierarchy/controlled-write-propagates",
+    "title": "A controlled write on the parent also propagates to children",
+    "status": "contract",
+    "returned": {
+      "parentX": 25,
+      "childX": 75
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "x",
+        "value": 75
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "x",
+        "value": 25
+      }
+    ],
+    "operations": [
+      {
+        "op": "SET_PROPERTY",
+        "target": "Parent",
+        "component": null,
+        "prop": "x",
+        "value": 25
+      }
+    ],
+    "network": []
+  },
+  "component/add": {
+    "id": "component/add",
+    "title": "Adding a component: key = type name, activated, operation emitted",
+    "status": "contract",
+    "returned": {
+      "keys": [
+        "Controller"
+      ],
+      "componentName": "Controller",
+      "active": true,
+      "speed": 4
+    },
+    "notifications": [
+      {
+        "kind": "addComponent",
+        "target": "Player",
+        "component": "Controller"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "speed",
+        "value": 4
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "direction",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "moving",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "vx",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "vy",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "acceleration",
+        "value": 0.4
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "friction",
+        "value": 0.8
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "right",
+        "value": "d"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "left",
+        "value": "q"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "up",
+        "value": "z"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "down",
+        "value": "s"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "name",
+        "value": "Controller"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "active",
+        "value": true
+      }
+    ],
+    "operations": [
+      {
+        "op": "ADD_COMPONENT",
+        "target": "Player",
+        "component": "Controller"
+      }
+    ],
+    "network": []
+  },
+  "component/single-per-type": {
+    "id": "component/single-per-type",
+    "title": "A second component of the same type replaces the first",
+    "status": "contract",
+    "returned": {
+      "keys": [
+        "Controller"
+      ],
+      "speed": 9
+    },
+    "notifications": [
+      {
+        "kind": "addComponent",
+        "target": "Player",
+        "component": "Controller"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "speed",
+        "value": 9
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "direction",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "moving",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "vx",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "vy",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "acceleration",
+        "value": 0.4
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "friction",
+        "value": 0.8
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "right",
+        "value": "d"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "left",
+        "value": "q"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "up",
+        "value": "z"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "down",
+        "value": "s"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "name",
+        "value": "Controller"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "active",
+        "value": true
+      }
+    ],
+    "operations": [
+      {
+        "op": "ADD_COMPONENT",
+        "target": "Player",
+        "component": "Controller"
+      }
+    ],
+    "network": []
+  },
+  "component/remove": {
+    "id": "component/remove",
+    "title": "Removing a component detaches it and produces an operation",
+    "status": "contract",
+    "returned": {
+      "keys": []
+    },
+    "notifications": [
+      {
+        "kind": "removeComponent",
+        "target": "Player",
+        "component": "Controller"
+      }
+    ],
+    "operations": [
+      {
+        "op": "REMOVE_COMPONENT",
+        "target": "Player",
+        "component": "Controller"
+      }
+    ],
+    "network": []
+  },
+  "component/lifecycle-hooks": {
+    "id": "component/lifecycle-hooks",
+    "title": "Which hooks the components actually declare",
+    "status": "contract",
+    "returned": {
+      "Texture": {
+        "update": true,
+        "draw": true,
+        "preview": false
+      },
+      "RectangleRenderer": {
+        "update": false,
+        "draw": true,
+        "preview": false
+      },
+      "CircleRenderer": {
+        "update": true,
+        "draw": true,
+        "preview": false
+      },
+      "Controller": {
+        "update": true,
+        "draw": false,
+        "preview": false
+      },
+      "Rotator": {
+        "update": true,
+        "draw": false,
+        "preview": false
+      },
+      "ParticleSystem": {
+        "update": true,
+        "draw": true,
+        "preview": false
+      },
+      "Camera": {
+        "update": false,
+        "draw": false,
+        "preview": true
+      }
+    },
+    "notifications": [],
+    "operations": [],
+    "network": []
+  },
+  "component/tilemap-signature": {
+    "id": "component/tilemap-signature",
+    "title": "Tilemap.draw(ctx, camera) is incompatible with Object.draw()",
+    "status": "bug",
+    "returned": {
+      "drawArity": 2,
+      "conformsToObjectDraw": false
+    },
+    "notifications": [],
+    "operations": [],
+    "network": []
+  },
+  "component/private-fields-invisible": {
+    "id": "component/private-fields-invisible",
+    "title": "#private fields escape the Property System",
+    "status": "bug",
+    "returned": {
+      "visible": [
+        "source",
+        "image",
+        "flip"
+      ],
+      "hasScaleX": false,
+      "hasScaleFromBox": false
+    },
+    "notifications": [],
+    "operations": [],
+    "network": []
+  },
+  "component/update-swallows-errors": {
+    "id": "component/update-swallows-errors",
+    "title": "Object.update() isolates component errors (contract preserved)",
+    "status": "contract",
+    "returned": {
+      "threw": false,
+      "healthyStillRan": true
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "id",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "components",
+        "value": {
+          "Broken": {
+            "name": "Broken",
+            "active": true
+          },
+          "Healthy": {
+            "name": "Healthy",
+            "active": true
+          }
+        }
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "y",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "add",
+        "target": "Player"
+      }
+    ],
+    "operations": [
+      {
+        "op": "ADD_OBJECT",
+        "target": "Player"
+      }
+    ],
+    "network": []
+  },
+  "scene/add-remove": {
+    "id": "scene/add-remove",
+    "title": "Adding and removing an object: notifications and operations",
+    "status": "contract",
+    "returned": {
+      "afterAdd": 1,
+      "afterRemove": 0
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "id",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "components",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "y",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "add",
+        "target": "Player"
+      },
+      {
+        "kind": "remove",
+        "target": "Player"
+      }
+    ],
+    "operations": [
+      {
+        "op": "ADD_OBJECT",
+        "target": "Player"
+      },
+      {
+        "op": "REMOVE_OBJECT",
+        "target": "Player"
+      }
+    ],
+    "network": []
+  },
+  "scene/event-order": {
+    "id": "scene/event-order",
+    "title": "Exact event order over a realistic editing sequence",
+    "status": "contract",
+    "returned": {
+      "notificationKinds": [
+        "change",
+        "change",
+        "addComponent",
+        "change",
+        "change",
+        "change",
+        "change",
+        "change",
+        "change",
+        "change",
+        "change",
+        "change",
+        "change",
+        "change",
+        "change",
+        "change",
+        "change"
+      ],
+      "operationKinds": [
+        "SET_PROPERTY",
+        "SET_PROPERTY",
+        "ADD_COMPONENT"
+      ]
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Hero"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 64
+      },
+      {
+        "kind": "addComponent",
+        "target": "Player",
+        "component": "Controller"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "speed",
+        "value": 2
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "direction",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "moving",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "vx",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "vy",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "acceleration",
+        "value": 0.4
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "friction",
+        "value": 0.8
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "right",
+        "value": "d"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "left",
+        "value": "q"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "up",
+        "value": "z"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "down",
+        "value": "s"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "name",
+        "value": "Controller"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Controller",
+        "prop": "speed",
+        "value": 5
+      }
+    ],
+    "operations": [
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Hero"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 64
+      },
+      {
+        "op": "ADD_COMPONENT",
+        "target": "Player",
+        "component": "Controller"
+      }
+    ],
+    "network": []
+  },
+  "scene/lookup": {
+    "id": "scene/lookup",
+    "title": "Looking up objects by name and by tag",
+    "status": "contract",
+    "returned": {
+      "byNameFirst": "Enemy",
+      "byNameCount": 2,
+      "byTagCount": 2
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "id",
+        "value": "Enemy"
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "name",
+        "value": "Enemy"
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "components",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "x",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "y",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "id",
+        "value": "Enemy#2"
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "name",
+        "value": "Enemy"
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "components",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "x",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "y",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "id",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "components",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "y",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Enemy",
+        "component": null,
+        "prop": "tag",
+        "value": "hostile"
+      },
+      {
+        "kind": "change",
+        "target": "Enemy#2",
+        "component": null,
+        "prop": "tag",
+        "value": "hostile"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "tag",
+        "value": "friendly"
+      },
+      {
+        "kind": "add",
+        "target": "Enemy"
+      },
+      {
+        "kind": "add",
+        "target": "Enemy#2"
+      },
+      {
+        "kind": "add",
+        "target": "Player"
+      }
+    ],
+    "operations": [
+      {
+        "op": "ADD_OBJECT",
+        "target": "Enemy"
+      },
+      {
+        "op": "ADD_OBJECT",
+        "target": "Enemy#2"
+      },
+      {
+        "op": "ADD_OBJECT",
+        "target": "Player"
+      }
+    ],
+    "network": []
+  },
+  "scene/copy-from-live-object-wipes-containers": {
+    "id": "scene/copy-from-live-object-wipes-containers",
+    "title": "copy() from a live Object sets components / childs / image to undefined",
+    "status": "bug",
+    "returned": {
+      "primitivesSurvive": {
+        "name": "Source",
+        "x": 5,
+        "width": 10
+      },
+      "components": "undefined",
+      "childs": "undefined",
+      "image": "undefined"
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "id",
+        "value": "Clone"
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "name",
+        "value": "Clone"
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "components",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "x",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "y",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "id",
+        "value": "Source"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "name",
+        "value": "Source"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "x",
+        "value": 5
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "y",
+        "value": 6
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "width",
+        "value": 10
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "height",
+        "value": 10
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "component": null,
+        "prop": "id"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "name"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "layer"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "tag"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "type"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "active"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "visible"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "lock"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "static"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "image"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "components"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "childs"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "x"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "y"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "width"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "height"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "rotation"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "scale"
+      }
+    ],
+    "operations": [
+      {
+        "op": "SET_PROPERTY",
+        "component": null,
+        "prop": "id"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "name"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "layer"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "tag"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "type"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "active"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "visible"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "lock"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "static"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "image"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "components"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "childs"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "x"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "y"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "width"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "height"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "rotation"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Source",
+        "component": null,
+        "prop": "scale"
+      }
+    ],
+    "network": []
+  },
+  "scene/instantiate-throws-with-components": {
+    "id": "scene/instantiate-throws-with-components",
+    "title": "instantiate() throws as soon as the source carries a component",
+    "status": "bug",
+    "returned": {
+      "thrown": "TypeError",
+      "instantiatedIntoScene": false
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "id",
+        "value": "internal#2"
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "name",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "components",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "x",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "y",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "internal#2",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "id",
+        "value": "Prefab"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "name",
+        "value": "Prefab"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "x",
+        "value": 5
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "y",
+        "value": 6
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "component": null,
+        "prop": "id"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "name"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "layer"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "tag"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "type"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "active"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "visible"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "lock"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "static"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "image"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "components"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "childs"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "x"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "y"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "width"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "height"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "rotation"
+      },
+      {
+        "kind": "change",
+        "target": "Prefab",
+        "component": null,
+        "prop": "scale"
+      }
+    ],
+    "operations": [
+      {
+        "op": "SET_PROPERTY",
+        "component": null,
+        "prop": "id"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "name"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "layer"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "tag"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "type"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "active"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "visible"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "lock"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "static"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "image"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "components"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "childs"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "x"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "y"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "width"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "height"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "rotation"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Prefab",
+        "component": null,
+        "prop": "scale"
+      }
+    ],
+    "network": []
+  },
+  "scene/copy-from-plain-json-works": {
+    "id": "scene/copy-from-plain-json-works",
+    "title": "copy() from plain JSON works (no $ accessors to walk)",
+    "status": "quirk",
+    "returned": {
+      "thrown": null,
+      "components": [
+        "Rotator"
+      ],
+      "rotatorSpeed": 3,
+      "x": 5
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "id",
+        "value": "Clone"
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "name",
+        "value": "Clone"
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "components",
+        "value": {
+          "Rotator": {
+            "rotation": 0,
+            "speed": 3,
+            "name": "Rotator",
+            "active": true,
+            "_rotation": 0,
+            "_speed": 3,
+            "_name": "Rotator",
+            "_active": true
+          }
+        }
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "x",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "y",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "id",
+        "value": "Source"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "name",
+        "value": "Source"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "x",
+        "value": 5
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "y",
+        "value": 6
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "width",
+        "value": 10
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "height",
+        "value": 10
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": "Rotator",
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": "Rotator",
+        "prop": "speed",
+        "value": 2
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": "Rotator",
+        "prop": "name",
+        "value": "Rotator"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": "Rotator",
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": "Rotator",
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": "Rotator",
+        "prop": "speed",
+        "value": 3
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": "Rotator",
+        "prop": "name",
+        "value": "Rotator"
+      },
+      {
+        "kind": "change",
+        "target": "Source",
+        "component": "Rotator",
+        "prop": "active",
+        "value": true
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "scene/copy-drops-children": {
+    "id": "scene/copy-drops-children",
+    "title": "copy() does not copy children (explicit TODO in Legacy)",
+    "status": "bug",
+    "returned": {
+      "clonedChildCount": 0
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "id",
+        "value": "Clone"
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "name",
+        "value": "Clone"
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "components",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "x",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "y",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Clone",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "id",
+        "value": "Parent"
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "name",
+        "value": "Parent"
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "x",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "y",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "serialization/public-shape": {
+    "id": "serialization/public-shape",
+    "title": "stringify() filters out the _ and $ prefixes",
+    "status": "contract",
+    "returned": {
+      "keys": [
+        "active",
+        "childs",
+        "components",
+        "height",
+        "id",
+        "image",
+        "layer",
+        "lock",
+        "name",
+        "rotation",
+        "scale",
+        "static",
+        "tag",
+        "type",
+        "visible",
+        "width",
+        "x",
+        "y"
+      ],
+      "componentKeys": [
+        "active",
+        "name",
+        "rotation",
+        "speed"
+      ]
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "id",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "components",
+        "value": {
+          "Rotator": {
+            "rotation": 0,
+            "speed": 2,
+            "name": "Rotator",
+            "active": true,
+            "_rotation": 0,
+            "_speed": 2,
+            "_name": "Rotator",
+            "_active": true
+          }
+        }
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 10
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "y",
+        "value": 20
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "width",
+        "value": 32
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "height",
+        "value": 32
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "addComponent",
+        "target": "Player",
+        "component": "Rotator"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "speed",
+        "value": 2
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "name",
+        "value": "Rotator"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "active",
+        "value": true
+      }
+    ],
+    "operations": [
+      {
+        "op": "ADD_COMPONENT",
+        "target": "Player",
+        "component": "Rotator"
+      }
+    ],
+    "network": []
+  },
+  "serialization/underscore-duplication": {
+    "id": "serialization/underscore-duplication",
+    "title": "Raw JSON.stringify duplicates every property as _prop",
+    "status": "bug",
+    "returned": {
+      "rawKeyCount": 36,
+      "filteredKeyCount": 18,
+      "underscoreKeyCount": 18,
+      "sizeRatio": 2.1
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "id",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "components",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 10
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "y",
+        "value": 20
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "width",
+        "value": 32
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "height",
+        "value": 32
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "serialization/children-duplicated": {
+    "id": "serialization/children-duplicated",
+    "title": "A child is serialized inside the parent AND at the scene root",
+    "status": "bug",
+    "returned": {
+      "childEmbeddedInParent": 1,
+      "embeddedIsFullObject": true,
+      "alsoAtSceneRoot": 2
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "id",
+        "value": "Parent"
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "name",
+        "value": "Parent"
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "components",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "childs",
+        "value": {
+          "Child": {
+            "id": "Child",
+            "name": "Child",
+            "layer": 0,
+            "tag": "",
+            "type": "",
+            "active": true,
+            "visible": true,
+            "lock": false,
+            "static": false,
+            "image": null,
+            "components": {},
+            "childs": {},
+            "x": 10,
+            "y": 10,
+            "width": 0,
+            "height": 0,
+            "rotation": 0,
+            "scale": 1,
+            "_id": "Child",
+            "_name": "Child",
+            "_layer": 0,
+            "_tag": "",
+            "_type": "",
+            "_active": true,
+            "_visible": true,
+            "_lock": false,
+            "_static": false,
+            "_image": null,
+            "_components": {},
+            "_childs": {},
+            "__x": 10,
+            "__y": 10,
+            "_width": 0,
+            "_height": 0,
+            "_rotation": 0,
+            "_scale": 1,
+            "parent": "Parent"
+          }
+        }
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "x",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "y",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "id",
+        "value": "Child"
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "name",
+        "value": "Child"
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "components",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "x",
+        "value": 10
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "y",
+        "value": 10
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Child",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "add",
+        "target": "Parent"
+      },
+      {
+        "kind": "add",
+        "target": "Child"
+      },
+      {
+        "kind": "addChild",
+        "target": "Parent",
+        "child": "Child"
+      }
+    ],
+    "operations": [
+      {
+        "op": "ADD_OBJECT",
+        "target": "Parent"
+      },
+      {
+        "op": "ADD_OBJECT",
+        "target": "Child"
+      },
+      {
+        "op": "ADD_CHILD",
+        "target": "Parent",
+        "child": "Child"
+      }
+    ],
+    "network": []
+  },
+  "serialization/round-trip": {
+    "id": "serialization/round-trip",
+    "title": "Round trip stringify -> parse through copy()",
+    "status": "contract",
+    "returned": {
+      "name": "Player",
+      "x": 11,
+      "width": 33,
+      "components": [
+        "Rotator"
+      ],
+      "rotatorSpeed": 7
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "id",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "components",
+        "value": {
+          "Rotator": {
+            "rotation": 0,
+            "speed": 7,
+            "name": "Rotator",
+            "active": true,
+            "_rotation": 0,
+            "_speed": 7,
+            "_name": "Rotator",
+            "_active": true
+          }
+        }
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 11
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "y",
+        "value": 22
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "width",
+        "value": 33
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "height",
+        "value": 44
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "addComponent",
+        "target": "Player",
+        "component": "Rotator"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "speed",
+        "value": 7
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "name",
+        "value": "Rotator"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "id",
+        "value": "Restored"
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "uid"
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "name",
+        "value": "Restored"
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "image",
+        "value": null
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "components",
+        "value": {
+          "Rotator": {
+            "rotation": 0,
+            "speed": 7,
+            "name": "Rotator",
+            "active": true,
+            "_rotation": 0,
+            "_speed": 7,
+            "_name": "Rotator",
+            "_active": true
+          }
+        }
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "childs",
+        "value": {}
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "x",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "y",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "width",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "height",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Restored",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "id",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Player"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "layer",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "tag",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "type",
+        "value": ""
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "visible",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "lock",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "static",
+        "value": false
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 11
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "y",
+        "value": 22
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "width",
+        "value": 33
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "height",
+        "value": 44
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "scale",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "speed",
+        "value": 2
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "name",
+        "value": "Rotator"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "speed",
+        "value": 7
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "name",
+        "value": "Rotator"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": "Rotator",
+        "prop": "active",
+        "value": true
+      }
+    ],
+    "operations": [
+      {
+        "op": "ADD_COMPONENT",
+        "target": "Player",
+        "component": "Rotator"
+      }
+    ],
+    "network": []
+  },
+  "network/controlled-write-is-sent": {
+    "id": "network/controlled-write-is-sent",
+    "title": "A controlled write produces an update message on the wire",
+    "status": "contract",
+    "returned": null,
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 128
+      }
+    ],
+    "operations": [
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 128
+      }
+    ],
+    "network": [
+      {
+        "id": "update",
+        "payload": {
+          "id": "Player",
+          "type": "object",
+          "prop": "x",
+          "value": 128
+        }
+      }
+    ]
+  },
+  "network/direct-write-is-not-sent": {
+    "id": "network/direct-write-is-not-sent",
+    "title": "A direct write does NOT go on the wire",
+    "status": "contract",
+    "returned": null,
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 128
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "network/remote-apply-has-no-echo": {
+    "id": "network/remote-apply-has-no-echo",
+    "title": "Applying an incoming change sends nothing back on the wire",
+    "status": "contract",
+    "returned": null,
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "x",
+        "value": 77
+      }
+    ],
+    "operations": [],
+    "network": []
+  },
+  "network/structural-operations-are-sent": {
+    "id": "network/structural-operations-are-sent",
+    "title": "add / addComponent / addChild go on the wire",
+    "status": "contract",
+    "returned": {
+      "wireIds": [
+        "add",
+        "add",
+        "addComponent",
+        "addChild"
+      ]
+    },
+    "notifications": [
+      {
+        "kind": "add",
+        "target": "Parent"
+      },
+      {
+        "kind": "add",
+        "target": "Child"
+      },
+      {
+        "kind": "addComponent",
+        "target": "Parent",
+        "component": "Rotator"
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": "Rotator",
+        "prop": "rotation",
+        "value": 0
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": "Rotator",
+        "prop": "speed",
+        "value": 1
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": "Rotator",
+        "prop": "name",
+        "value": "Rotator"
+      },
+      {
+        "kind": "change",
+        "target": "Parent",
+        "component": "Rotator",
+        "prop": "active",
+        "value": true
+      },
+      {
+        "kind": "addChild",
+        "target": "Parent",
+        "child": "Child"
+      }
+    ],
+    "operations": [
+      {
+        "op": "ADD_OBJECT",
+        "target": "Parent"
+      },
+      {
+        "op": "ADD_OBJECT",
+        "target": "Child"
+      },
+      {
+        "op": "ADD_COMPONENT",
+        "target": "Parent",
+        "component": "Rotator"
+      },
+      {
+        "op": "ADD_CHILD",
+        "target": "Parent",
+        "child": "Child"
+      }
+    ],
+    "network": [
+      {
+        "id": "add",
+        "payload": "{\"id\":\"Parent\",\"name\":\"Parent\",\"layer\":0,\"tag\":\"\",\"type\":\"object\",\"active\":true,\"visible\":true,\"lock\":false,\"static\":false,\"image\":null,\"components\":{},\"childs\":{},\"x\":0,\"y\":0,\"width\":0,\"height\":0,\"rotation\":0,\"scale\":1}"
+      },
+      {
+        "id": "add",
+        "payload": "{\"id\":\"Child\",\"name\":\"Child\",\"layer\":0,\"tag\":\"\",\"type\":\"object\",\"active\":true,\"visible\":true,\"lock\":false,\"static\":false,\"image\":null,\"components\":{},\"childs\":{},\"x\":0,\"y\":0,\"width\":0,\"height\":0,\"rotation\":0,\"scale\":1}"
+      },
+      {
+        "id": "addComponent",
+        "payload": {
+          "id": "Parent",
+          "component": {
+            "rotation": 0,
+            "speed": 1,
+            "name": "Rotator",
+            "active": true,
+            "_rotation": 0,
+            "_speed": 1,
+            "_name": "Rotator",
+            "_active": true
+          }
+        }
+      },
+      {
+        "id": "addChild",
+        "payload": {
+          "id": "Parent",
+          "child": "Child"
+        }
+      }
+    ]
+  },
+  "network/no-batching": {
+    "id": "network/no-batching",
+    "title": "No batching: every keystroke produces its own operation",
+    "status": "bug",
+    "returned": {
+      "keystrokes": 4,
+      "operationsProduced": 4,
+      "batched": false
+    },
+    "notifications": [
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "P"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Pl"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Pla"
+      },
+      {
+        "kind": "change",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Play"
+      }
+    ],
+    "operations": [
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "P"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Pl"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Pla"
+      },
+      {
+        "op": "SET_PROPERTY",
+        "target": "Player",
+        "component": null,
+        "prop": "name",
+        "value": "Play"
+      }
+    ],
+    "network": "<not compared: time-dependent>"
+  }
+}

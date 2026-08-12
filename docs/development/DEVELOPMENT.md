@@ -96,6 +96,8 @@ Ne pas transformer un problème local en refonte architecturale.
 
 ## Avant d'implémenter la v2
 
-**Rien ne doit être écrit tant que `../ARCHITECTURE.md` §10 n'est pas tranché.**
-La séquence est dans `../MIGRATION.md` §5, et l'étape 1 est l'outillage de test —
-avant toute migration de code.
+Les décisions d'architecture sont **validées** (`../ARCHITECTURE.md` §10).
+
+La séquence est dans `../MIGRATION.md` §5. **L'étape 1 est l'outillage et le harnais de
+parité — avant toute migration de code.** Le risque R1 (rupture silencieuse du Property
+System) n'est détectable d'aucune autre manière.

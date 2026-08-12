@@ -1,10 +1,29 @@
-# Architecture v2 — proposition
+# Architecture v2
 
-> **Statut : PROPOSITION V2.** Rien ici n'est implémenté. Ce document est soumis à
-> validation avant toute écriture de code.
+> **Statut : DÉCISIONS VALIDÉES le 2026-08-12.** Les questions bloquantes de la Phase 0
+> ont été tranchées. Rien n'est encore implémenté.
 >
 > Chaque décision structurante est justifiée par une observation de
-> `migration/LEGACY_ANALYSIS.md`. Les décisions à trancher sont regroupées en §10.
+> `migration/LEGACY_ANALYSIS.md`. Le relevé des décisions et la seule question encore
+> ouverte sont en §10.
+
+## Décisions validées — résumé
+
+| Sujet | Décision |
+|---|---|
+| Property System | `object.x = 100` — mutation directe de l'état |
+| | `object.setProperty('x', 100)` — mutation contrôlée via le Property System → Operation |
+| | **`object.$x` est supprimé** — trop implicite pour une API publique |
+| | Toute mutation du modèle est représentable par une **Operation** |
+| Components | **Un seul Component par type** et par Object |
+| | `Transform` est un Component normal ; `object.x` en est un accès pratique |
+| Runtime | Domaines directement sous `runtime/`, **pas de couche `Systems/`** |
+| | `Object.update()` / `Object.draw()` conservés ; un Component peut faire les deux |
+| Rendering | **Canvas 2D** en v2, derrière une abstraction légère ouvrant WebGL/WebGPU |
+| Multiplayer | **Le serveur est l'autorité de simulation.** Le modèle distingue mutation joueur et mutation éditeur autorisée |
+| Scripting | `.px` = graphe visuel, `.js` = JavaScript natif. `.px` cesse d'être du JS |
+| Editor | Web Components natifs, préfixe **`px-`**. Modèle central, vues réactives |
+| Projets Legacy | **Aucune migration de données à concevoir** — il n'existe pas de projets v1 |
 
 ---
 
@@ -39,13 +58,14 @@ Les problèmes réels sont ailleurs :
           │             │               │             │
         core/        runtime/        editor/       network/
           │             │               │             │
-      Object        renderer/        windows/      protocol
+      Object        clock/           windows/      protocol
       Scene         physics/         inspector/    transport
-      Component     input/           viewport/     replication
-      properties    anim/            graph/
-      resources     audio/           ui/
-      events        camera/
-      logger        loop
+      Component     animation/       viewport/     replication
+      properties    rendering/       graph/        authority
+      operations    input/           ui/
+      resources     scripting/
+      events        loop
+      logger
 ```
 
 **Règle de dépendance, unique et vérifiable :**
@@ -81,10 +101,10 @@ Ce serait alors un vrai service, pas une case dans un schéma.
 ```js
 class Object {
     id            // identité de l'objet
-    owner         // ex-`uid` : le joueur propriétaire   (ADR à valider, §10)
+    owner         // ex-`uid` : le joueur propriétaire
     name, tag, layer
-    active, visible, lock, static
-    components    // Map<string, Component>
+    active, visible, lock
+    components    // Map<string, Component>   — un seul par type
     parent, children
 }
 ```
@@ -93,12 +113,18 @@ Sortent de `Object` (vers `editor/`) : `detectMouse`, `detectSide`, `select`,
 `createImage`, `preview`. Ce sont des opérations d'IDE, elles n'ont pas à empêcher le
 chargement du Core côté serveur.
 
-`childs` → `children` : **renommage à valider** (§10), car le nom circule dans le
-protocole réseau et les données sauvegardées.
+**Renommages retenus.** Ils étaient bloqués par la compatibilité des données ; la
+décision « aucun projet v1 à migrer » lève ce blocage :
+
+| Legacy | v2 | Raison |
+|---|---|---|
+| `childs` | `children` | anglais correct |
+| `uid` | `owner` | `uid` désigne le **joueur propriétaire**, pas l'objet |
+| `static` | *supprimé* | déclaré, jamais lu |
 
 ### 3.2 Transform devient un Component, `object.x` reste `object.x`
 
-**PROPOSITION V2** (ADR-0002). `x`, `y`, `width`, `height`, `rotation`, `scale`
+**VALIDÉ** (ADR-0002). `x`, `y`, `width`, `height`, `rotation`, `scale`
 quittent `Object` pour un composant `Transform`, **avec une seule source de vérité** :
 
 ```js
@@ -136,8 +162,8 @@ Le mécanisme conceptuel est conservé à l'identique. L'implémentation passe d
 **Ce qui ne change pas — l'ergonomie :**
 
 ```js
-object.x = 100;      // change + notifie les vues, ne va pas sur le réseau
-object.$x = 100;     // change + notifie + réplique
+object.x = 100;                   // change + notifie les vues, aucune Operation
+object.setProperty('x', 100);     // change + notifie + produit une Operation
 ```
 
 **Ce que le Proxy corrige, mesuré :**
@@ -150,16 +176,53 @@ object.$x = 100;     // change + notifie + réplique
 | Écriture 301 ms / 3 M ops | ✅ **77 ms** — 4× plus rapide |
 | Pas de valeur précédente | ✅ le trap la lit avant d'écrire |
 
+### Les deux formes d'écriture — VALIDÉ
+
+```js
+object.x = 100;                   // mutation directe de l'état de l'objet
+object.setProperty('x', 100);     // mutation contrôlée via le Property System
+```
+
+**`object.$x` est supprimé** — trop implicite et trop spécifique à Pixel Creator pour
+constituer une API publique. Il n'existe ni en v2, ni comme syntaxe cible du harnais.
+
+| Forme | Effet |
+|---|---|
+| `object.x = 100` | met à jour l'état, émet un `Change` — les vues réagissent. **Aucune Operation.** |
+| `object.setProperty('x', 100)` | `Change` **et** Operation |
+
+```
+setProperty()  →  Property System  →  Operation  →  contexte / autorité / destination
+```
+
+**`setProperty()` n'est pas « la méthode réseau ».** C'est le chemin contrôlé du modèle.
+Ce que devient l'Operation dépend du contexte : validation par l'autorité, réplication,
+historique, undo/redo, collaboration, transmission à un autre système. Le réseau est
+une destination possible, pas la définition.
+
+Une Operation entrante reste explicitement identifiable par `origin: 'network'`.
+
+> **⚠ Même nom, sens différent de Legacy.** Dans Legacy, `setProperty()` écrit `_x`
+> directement et **ne réplique pas** ; c'est `$x` / `syncProperty()` qui répliquent.
+> En v2, le rôle de `$x` / `syncProperty()` est repris par `setProperty()`, et le
+> `setProperty()` historique disparaît en tant que tel. Tout raisonnement par analogie
+> avec `legacy/` induira en erreur — le mapping est explicite dans le harnais de parité.
+
+> **Les couches internes ne sont pas une API.** Legacy empile `object.x` → `_x` → `__x`.
+> Ces niveaux sont documentés parce qu'ils expliquent le comportement observable, mais
+> `_x` et `__x` restent de simples possibilités d'implémentation : ni les utilisateurs
+> ni les composants n'ont à les manipuler, et aucune API publique v2 n'en dépend.
+
 Le `Change` émis devient :
 
 ```js
 { object, component, prop, value, previous, origin }
 ```
 
-`origin` ∈ `local` | `network` | `runtime` | `editor`. Il remplace l'astuce actuelle
-(« quelle méthode a été appelée ») par une donnée explicite, et supprime le besoin de
-`setProperty(prop, value, dispatch=false)` pour éviter les échos : la couche réseau
-ignore simplement les changements d'origine `network`.
+`origin` ∈ `runtime` | `local` | `editor` | `player` | `network`. Il remplace l'astuce
+actuelle (« quelle méthode a été appelée ») par une donnée explicite, et supprime le
+besoin de `setProperty(prop, value, dispatch=false)` pour éviter les échos : la couche
+réseau ignore simplement les changements d'origine `network`.
 
 ### 3.4 Serialization
 
@@ -216,10 +279,53 @@ static schema = {
 ```
 
 Le schéma est **optionnel** : sans lui, l'Inspector retombe sur l'inférence réflexive
-actuelle, qui fonctionne déjà. La rétrocompatibilité des composants utilisateurs est
-donc préservée.
+actuelle, qui fonctionne déjà. Écrire un composant reste une affaire de dix lignes.
 
-### 4.2 Boucle
+**VALIDÉ :** un `Object` ne porte **qu'un seul Component d'un type donné**. La clé de
+`components` reste le nom du type, comme dans Legacy.
+
+**VALIDÉ :** un Component peut implémenter `update()`, `draw()`, ou les deux.
+`ParticleSystem`, `Sprite` et `Tilemap` participent ainsi directement au rendu.
+
+> **Conséquence sur Legacy.** Deux de ces trois cas ne sont pas conformes aujourd'hui :
+> `Sprite` est une **sous-classe d'`Object`**, pas un Component, et `Tilemap` expose
+> `draw(ctx, camera)`, signature incompatible avec `Object.draw()`. En v2, `Sprite`
+> devient un Component et `Tilemap` adopte `draw(self, renderer)`. C'est un abandon
+> délibéré de comportements Legacy erronés.
+
+### 4.2 Organisation
+
+**VALIDÉ.** Les domaines sont directement sous `runtime/`, sans couche intermédiaire :
+
+```
+runtime/
+├── clock/         temps, delta-time, timers
+├── physics/       collisions, corps, spatial hash
+├── animation/     animator, animation, tween
+├── rendering/     backend Canvas 2D + abstraction
+├── input/         état des entrées par owner
+├── scripting/     exécution .px et .js
+└── loop.js        orchestration des phases
+```
+
+Aucun `PhysicsSystem`, `RenderSystem`, `AnimationSystem` ou `ScriptSystem` n'est créé
+par principe (ADR-0005).
+
+### 4.3 Rendering
+
+**VALIDÉ :** le backend v2 est **Canvas 2D**. Une abstraction légère est interposée pour
+qu'un backend WebGL ou WebGPU reste possible plus tard — sans être conçue pour eux
+aujourd'hui.
+
+Concrètement, cela signifie une seule chose : `draw(self, renderer)` reçoit un objet
+`renderer` au lieu de lire le singleton `Graphics.ctx`. L'abstraction se limite au
+vocabulaire réellement utilisé par les composants existants (`rect`, `circle`, `image`,
+`text`, `fill`, `stroke`, `light`, transformations).
+
+**Ne pas surarchitecturer** : pas de graphe de commandes, pas de batching, pas de
+matériaux, pas de passes tant qu'un besoin réel ne l'exige pas.
+
+### 4.4 Boucle
 
 Les phases sont séparées, comme le serveur le fait déjà :
 
@@ -243,7 +349,7 @@ Le picking souris et les poignées de redimensionnement sortent de `Renderer.ren
 vers `editor/viewport/`. **C'est ce qui supprime `import { Dnd } from '/editor/...'`
 dans le Core.**
 
-### 4.3 Input
+### 4.5 Input
 
 `Input` ne dépend plus de `Network` (correctif du bug §6.3 de l'analyse) :
 
@@ -279,23 +385,23 @@ fenêtre porte son propre balisage, ses styles (Shadow DOM) et son cycle de vie.
 ```
 Primitives          Fenêtres construites dessus
 ──────────          ───────────────────────────
-<pc-window>         <pc-hierarchy>
-<pc-panel>          <pc-inspector>
-<pc-split>          <pc-assets>
-<pc-tabs>           <pc-scene>
-<pc-toolbar>        <pc-graph>
-<pc-tree>           <pc-players>
-<pc-list>           <pc-console>
-<pc-property>
-<pc-viewport>
-<pc-modal>, <pc-menu>
+<px-window>         <px-hierarchy>
+<px-panel>          <px-inspector>
+<px-split>          <px-assets>
+<px-tabs>           <px-scene>
+<px-toolbar>        <px-graph>
+<px-tree>           <px-players>
+<px-list>           <px-console>
+<px-property>
+<px-viewport>
+<px-modal>, <px-menu>
 ```
 
 Ajouter une fenêtre devient : écrire un fichier, l'enregistrer auprès du layout.
 
 La liaison propriété↔DOM par classe CSS globale (`<id>-<prop>` +
 `getElementsByClassName` sur `document`) est remplacée par un **binding scopé** : le
-composant `<pc-property>` s'abonne au `Change` de la propriété qu'il affiche et se met
+composant `<px-property>` s'abonne au `Change` de la propriété qu'il affiche et se met
 à jour lui-même. Même comportement observable, sans requête DOM globale, et compatible
 Shadow DOM.
 
@@ -325,16 +431,24 @@ nom. `update {id, component, prop, value}` = `SET_PROPERTY`. `addComponent`, `ad
 
 ### 6.2 Proposition
 
+**VALIDÉ :** toute mutation du modèle doit être représentable par une Operation interne.
+C'est ce qui ouvre, à terme, réseau, historique, undo/redo, collaboration et IA.
+
 On formalise ce qui existe déjà, sans changer l'ergonomie utilisateur (ADR-0008) :
 
 ```
-object.x = 100          → Change { origin: 'editor' }
-                        → Operation SET_PROPERTY { target, prop, value, previous }
-                        → transport
+object.setProperty('x', 100)   → Change { origin: 'editor' }
+                               → Operation SET_PROPERTY { target, prop, value, previous }
+                               → autorité (ADR-0011)
+                               → état autoritaire → propagation
 ```
 
 L'utilisateur n'écrit jamais une Operation à la main. Elle est **produite** par le
 Property System.
+
+`object.x = 100` (mutation directe) ne produit **pas** d'Operation : c'est une sortie de
+simulation, pas une intention. Voir ADR-0003 pour la justification de cette frontière et
+la garde de développement qui la protège.
 
 Opérations : `SET_PROPERTY`, `ADD_OBJECT`, `REMOVE_OBJECT`, `ADD_COMPONENT`,
 `REMOVE_COMPONENT`, `ADD_CHILD`, `REMOVE_CHILD`, `ADD_RESOURCE`, `REMOVE_RESOURCE`.
@@ -360,12 +474,27 @@ remplacé par des **snapshots delta** : seules les propriétés modifiées depui
 accusé de réception sont envoyées. La réconciliation complète reste disponible à la
 connexion et à la demande.
 
-### 6.4 Autorité
+### 6.4 Autorité — VALIDÉ
 
-**QUESTION À VALIDER (§10).** Aujourd'hui le serveur n'a aucune autorité : il applique
-et rediffuse. Pour des jeux compétitifs (.io, MOBA), il faudra au minimum distinguer
-« mutation d'édition » (autorisée à l'auteur du projet) de « action de jeu » (soumise
-au serveur).
+**Le serveur est l'autorité de simulation en multijoueur compétitif.** Voir ADR-0011.
+
+Le modèle distingue deux natures de mutation :
+
+| Nature | Émetteur | Traitement |
+|---|---|---|
+| **Mutation joueur/client** | un joueur en jeu | intention soumise au serveur ; le client peut prédire, le serveur tranche |
+| **Mutation éditeur autorisée** | le créateur, avec les permissions | Operation autorisée → **validée côté serveur** → appliquée à l'état autoritaire → propagée |
+
+Dans les deux cas, le chemin est le même : Operation → validation → état autoritaire →
+propagation. Seules la source et la vérification changent.
+
+**OBSERVÉ :** aujourd'hui le serveur n'a aucune autorité — il applique ce qu'on lui
+envoie et rediffuse. Et l'Editor est de fait autoritaire, sans qu'aucune vérification
+n'existe. C'est un abandon délibéré du comportement Legacy.
+
+Le système de permissions complet **n'est pas implémenté maintenant**. L'architecture
+doit simplement prévoir le point d'insertion : un `authority` qui reçoit chaque
+Operation et répond accepté / rejeté / transformé.
 
 ---
 
@@ -442,18 +571,33 @@ avec les composants de jeu.
 
 ---
 
-## 10. Questions à valider avant implémentation
+## 10. Registre des décisions
 
-| # | Question | Enjeu |
+### Tranchées le 2026-08-12
+
+| # | Question | Décision |
 |---|---|---|
-| Q1 | `childs` → `children` ? | Casse le protocole réseau et les projets sauvegardés. Migration nécessaire. |
-| Q2 | `uid` → `owner` ? | Le nom actuel suggère « id de l'objet » alors qu'il désigne le joueur. |
-| Q3 | Garde-t-on le sigil `$` pour l'écriture répliquée ? | Idiome historique, très ergonomique, mais peu explicite pour un nouveau venu. |
-| Q4 | Un objet peut-il porter deux composants du même type ? | Aujourd'hui non (clé = nom de classe). Changer impacte tout le protocole. |
-| Q5 | Autorité serveur : où placer la frontière édition / jeu ? | Bloquant pour les jeux compétitifs. |
-| Q6 | Le format de projet v2 doit-il lire les projets Legacy ? | Détermine si `serialize()` doit être rétrocompatible. |
-| Q7 | `.px` : interprété ou compilé en JS ? | L'interprétation est plus sûre et débogable ; la compilation est plus rapide. |
-| Q8 | Cible du Renderer : Canvas 2D uniquement, ou préparer WebGL ? | `Environment` détecte déjà WebGL/WebGPU sans que rien ne l'utilise. |
+| Q3 | Garde-t-on le sigil `$` ? | **Non — supprimé définitivement.** `object.x = v` est la mutation directe, `object.setProperty('x', v)` la mutation contrôlée. |
+| Q4 | Deux composants du même type par objet ? | **Non.** Un seul par type, clé = nom du type. |
+| Q5 | Autorité serveur | **Le serveur est l'autorité de simulation.** Le modèle distingue mutation joueur et mutation éditeur autorisée (ADR-0011). |
+| Q6 | Compatibilité des projets Legacy | **Aucune.** Il n'existe pas de projets v1. Ne pas concevoir de migration de données. |
+| Q8 | Cible du Renderer | **Canvas 2D**, derrière une abstraction légère ouvrant WebGL/WebGPU plus tard. Ne pas surarchitecturer. |
+
+### Débloquées par Q6, tranchées par défaut
+
+Ces deux renommages n'étaient bloqués que par la compatibilité des données, désormais
+sans objet. Retenus sauf objection :
+
+| # | Question | Décision |
+|---|---|---|
+| Q1 | `childs` → `children` ? | **Oui.** |
+| Q2 | `uid` → `owner` ? | **Oui.** Le champ désigne le joueur propriétaire. |
+
+| Q7 | `.px` : interprété ou compilé en JS ? | **Interprété**, pour le débogage et la sécurité. Le format n'aura pas à changer si une compilation s'avère nécessaire plus tard. |
+
+**Toutes les questions bloquantes sont tranchées.** Il ne reste que des points mineurs,
+décidables à l'implémentation, listés dans les ADR concernés (ex. `Transform` ajouté par
+défaut ou non).
 
 ---
 

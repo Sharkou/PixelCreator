@@ -33,12 +33,16 @@ core/
 ├── scene.js          Scene : collection d'Object
 ├── component.js      contrat + registre de composants
 ├── properties/       Property System (Proxy, Change, observe)
+├── operations/       Operation, application, historique
 ├── resources/        Resource, registre, chargement
 ├── events.js         bus d'événements synchrone
 ├── serialize.js      sérialisation explicite et versionnée
 ├── id.js             génération d'identifiants
 └── logger.js         journalisation par catégories
 ```
+
+`operations/` est dans le Core, pas dans `network/` : une Operation existe même hors
+ligne (historique, undo/redo). Le réseau en est un **transport**, pas le propriétaire.
 
 ---
 
@@ -108,17 +112,29 @@ scènes, des ressources et une identité (ADR-0010).
 Voir ADR-0003. Résumé du contrat :
 
 ```js
-object.x = 100;      // Change { origin: 'runtime' | 'local' }  → vues, pas de réseau
-object.$x = 100;     // Change { origin: 'editor' }             → vues + réseau
+object.x = 100;                  // mutation directe — vues notifiées, aucune Operation
+object.setProperty('x', 100);    // mutation contrôlée — vues + Operation + autorité
 ```
+
+`object.$x` **n'existe pas en v2**.
 
 ```js
 { object, component, prop, value, previous, origin }
 ```
 
-`origin` ∈ `local` | `editor` | `runtime` | `network`.
+`origin` ∈ `runtime` | `local` | `editor` | `player` | `network`.
 La couche réseau ignore `origin === 'network'` : c'est ce qui empêche l'écho, sans
 recourir au drapeau `dispatch = false` de Legacy.
+
+> **⚠ `setProperty()` porte le même nom dans Legacy, avec un autre sens.** Il y écrit
+> `_x` directement et **ne réplique pas** ; ce sont `$x` et `syncProperty()` qui
+> répliquent. En v2, `setProperty()` reprend ce rôle et les deux formes Legacy
+> disparaissent. Appliquer un changement entrant se fait par une Operation
+> `origin: 'network'`.
+
+> **Les couches internes ne sont pas une API.** `_x` et `__x` restent des possibilités
+> d'implémentation ; aucune API publique v2 n'en dépend, et ni les utilisateurs ni les
+> composants ne les manipulent.
 
 ---
 
@@ -146,6 +162,10 @@ prévisible. Deux corrections :
 - les propriétés dérivées ou d'affichage (`image`, vignettes) sont exclues par nature,
   et non par une liste noire.
 
+**VALIDÉ :** le format est versionné **pour l'avenir**, pas pour le passé. Il n'existe
+aucun projet v1 à relire : `deserialize()` n'a **aucun chemin de compatibilité Legacy**
+à implémenter. Ne pas concevoir de migration de données.
+
 Gain mesuré attendu sur le heartbeat : facteur 3 sur la duplication `_prop`, plus la
 suppression de la duplication des enfants.
 
@@ -165,7 +185,7 @@ Voir `../ARCHITECTURE.md` §9. Points clés :
 
 ## Ce que le Core ne contient pas
 
-- Le rendu (`runtime/renderer/`)
+- Le rendu (`runtime/rendering/`)
 - Les entrées (`runtime/input/`)
 - Le réseau (`network/`)
 - Toute notion de sélection, de fenêtre, de curseur, de vignette (`editor/`)

@@ -1,6 +1,6 @@
 # ADR-0004 — `update()` / `draw()` sont conservés
 
-- **Statut :** proposé
+- **Statut :** **accepté** (2026-08-12)
 - **Décide :** le contrat de cycle de vie d'un Component
 - **Répond à :** « faut-il remplacer `Component.draw()` par un RenderSystem ? »
 
@@ -53,11 +53,14 @@ for (let obj of Object.values(scene.objects).sort(...)) {
 La simulation de particules peut donc tourner côté serveur et être répliquée, tandis que
 le rendu reste client. Aucun autre découpage ne donne cela aussi simplement.
 
-Répartition mesurée sur les composants existants :
+Répartition relevée sur les composants existants :
 
 | | `update` seul | `draw` seul | les deux |
 |---|---|---|---|
-| Composants | `Controller`, `Body`, `Rotator`, `Collider`, `Animator`, `Tilemap` | `RectangleRenderer`, `CircleRenderer`, `Text` | `Texture`, `Light`, `ParticleSystem`, `Lighting` |
+| Composants | `Controller`, `Body`, `Rotator`, `Collider`, `Animator`, `Timer` | `RectangleRenderer`, `Tilemap`\* | `Texture`, `CircleRenderer`, `Text`, `Light`, `Map`, `ParticleSystem` |
+
+\* `Tilemap` déclare bien un `draw`, mais avec la signature `draw(ctx, camera)` —
+incompatible avec `Object.draw()`, qui appelle `draw(this)`. Voir la décision ci-dessous.
 
 ---
 
@@ -65,6 +68,26 @@ Répartition mesurée sur les composants existants :
 
 **Le modèle `update(self)` / `draw(self)` est conservé.** Il n'est pas remplacé par une
 architecture de Systems.
+
+**VALIDÉ :** un Component peut implémenter `update()`, `draw()`, ou **les deux**.
+`ParticleSystem`, `Sprite` et `Tilemap` participent ainsi directement au rendu.
+
+> **Deux de ces trois cas ne sont pas conformes dans Legacy** — la décision v2 implique
+> donc de les corriger, en abandonnant délibérément le comportement historique :
+>
+> | | Legacy | v2 |
+> |---|---|---|
+> | `Sprite` | **sous-classe d'`Object`** qui ajoute `Texture` + `Animator` dans son constructeur | **Component** à part entière |
+> | `Tilemap` | `draw(ctx, camera)` → `TypeError` masquée si attaché | `draw(self, renderer)`, conforme |
+> | `ParticleSystem` | déjà conforme | inchangé |
+>
+> `Lighting` et `LightSource` ne sont pas non plus des Components (`render(ctx, camera)`,
+> `update()` sans `self`). Ils deviennent soit des Components conformes, soit un service
+> de rendu explicitement hors du modèle de composition.
+
+**VALIDÉ :** un `Object` ne porte **qu'un seul Component d'un type donné**. La clé de
+`object.components` reste le nom du type, comme dans Legacy — cela confirme le
+comportement historique plutôt que de le changer.
 
 Trois précisions sont ajoutées :
 
@@ -81,8 +104,15 @@ draw(self, renderer)
 ```
 
 au lieu de lire le singleton global `Graphics.ctx`. Cela permet de tester le rendu, de
-changer de backend, et de rendre hors écran (les vignettes de la Hierarchy, aujourd'hui
-produites par `Object.createImage()` qui manipule un canvas offscreen depuis le Core).
+rendre hors écran (les vignettes de la Hierarchy, aujourd'hui produites par
+`Object.createImage()` qui manipule un canvas offscreen depuis le Core), et de changer
+de backend plus tard.
+
+**VALIDÉ :** le backend v2 est **Canvas 2D**. L'abstraction existe pour qu'un backend
+WebGL/WebGPU reste possible, sans être conçue pour lui — elle se limite au vocabulaire
+réellement utilisé aujourd'hui (`rect`, `circle`, `image`, `text`, `fill`, `stroke`,
+`light`, transformations). **Ne pas surarchitecturer** : pas de graphe de commandes, pas
+de batching, pas de matériaux tant qu'un besoin réel ne l'exige pas.
 
 Cela **n'implique pas** que les composants deviennent des RenderSystems : un composant
 garde sa propre logique de rendu quand c'est pertinent.

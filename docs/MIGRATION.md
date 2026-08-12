@@ -1,6 +1,6 @@
 # Migration v2
 
-> **Statut : PROPOSITION.** Aucune étape n'est engagée. Ce document sert de plan et de
+> **Statut : PLAN ACTIF.** Décisions validées le 2026-08-12 ; aucune étape encore engagée. Ce document sert de plan et de
 > registre de risques.
 
 ---
@@ -12,11 +12,14 @@ Comprendre → Cartographier → Documenter → Comparer → Proposer → FAIRE 
     → Implémenter → Tester → Comparer avec Legacy → Documenter
 ```
 
-**Nous sommes à « Faire valider ».** Phase 0 est terminée : `migration/LEGACY_ANALYSIS.md`
-décrit le fonctionnement réel, `ARCHITECTURE.md` propose la cible.
+**Les décisions ont été validées le 2026-08-12.** Phase 0 est close :
+`migration/LEGACY_ANALYSIS.md` décrit le fonctionnement réel, `ARCHITECTURE.md` fixe la
+cible et §10 enregistre les décisions.
 
-Rien ne doit être implémenté avant que `ARCHITECTURE.md` §10 (questions ouvertes) soit
-tranché.
+Une seule question reste ouverte (Q7, mode d'exécution de `.px`) et elle **n'est pas
+bloquante** : elle n'intervient qu'à l'étape 9.
+
+Nous sommes donc à **« Implémenter »**, dont la première étape est l'outillage (§5).
 
 ---
 
@@ -39,11 +42,11 @@ Format : **Legacy → Limites → À conserver → À simplifier → Proposition
 
 | | |
 |---|---|
-| **Legacy** | `System.sync()` : accesseurs par propriété, stockage `_prop`, canal réseau `$prop` |
+| **Legacy** | `System.sync()` : accesseurs par propriété, stockage `_prop`/`__prop`, canal réseau `$prop` et `syncProperty()` |
 | **Limites** | Propriétés dynamiques muettes ; champs `#` invisibles ; `_`/`$` énumérables (sérialisation ×3) ; écriture 4× plus lente qu'un Proxy ; pas de `previous` ; throttle réseau neutralisé (`delay = 0`) |
-| **À conserver** | **L'ergonomie `object.x = 100`** et la distinction local / répliqué |
+| **À conserver** | **L'ergonomie `object.x = 100`** et la distinction simulation / intention |
 | **À simplifier** | Un `Proxy` par objet remplace N `defineProperty` |
-| **Proposition** | ADR-0003 — `Change { object, component, prop, value, previous, origin }` |
+| **Proposition** | ADR-0003 — `Change { object, component, prop, value, previous, origin }` ; `$prop` **supprimé**, `setProperty()` devient le chemin contrôlé |
 | **Risque** | **Le plus élevé du projet.** Tout en dépend : Inspector, Hierarchy, réseau, ressources. Une régression est invisible (une valeur cesse simplement d'être propagée). Exige des tests avant toute autre migration. |
 
 ### 2.3 Scene
@@ -76,7 +79,7 @@ Format : **Legacy → Limites → À conserver → À simplifier → Proposition
 | **Limites** | `import { Dnd } from '/editor/...'` dans le Core ; update/draw entrelacés (non déterministe) ; `sort()` par frame ; `Camera` à double rôle (composant *et* Object) |
 | **À conserver** | Canvas 2D ; la projection caméra ; `preview()` pour l'affichage éditeur |
 | **À simplifier** | Séparer les phases ; sortir le picking ; cacher le tri |
-| **Proposition** | `runtime/loop.js` + `runtime/renderer/` ; surcouches IDE dans `editor/viewport/` |
+| **Proposition** | `runtime/loop.js` + `runtime/rendering/` ; surcouches IDE dans `editor/viewport/` |
 | **Risque** | Séparer update et draw **change l'ordre d'observation** : un jeu Legacy pourrait dépendre involontairement de l'entrelacement. |
 
 ### 2.6 Network
@@ -134,7 +137,9 @@ Format : **Legacy → Limites → À conserver → À simplifier → Proposition
 | R3 | **Divergence client/serveur** : le serveur ne peut plus importer le Core | Élevé | Le serveur ne démarre plus | Test d'import Core en Node/Deno, sans DOM, dans la CI |
 | R4 | **Régression Network** : protocole modifié d'un seul côté | Élevé | Objets figés, désync | Versionner le protocole ; le serveur privé migre en même temps |
 | R5 | **Deux sources de vérité `Object.x` / `Transform.x`** | Élevé | Valeurs qui divergent après un aller-retour réseau | Test d'identité : `object.x === transform.x` après chaque chemin d'écriture |
-| R6 | **Incompatibilité des composants utilisateurs** | Élevé | Les projets existants cassent | `schema` optionnel ; `self` en argument conservé ; suite de composants de référence |
+| R6 | **Incompatibilité des composants** | ~~Élevé~~ **Faible** | — | **Déclassé** : il n'existe aucun projet v1 à préserver. `schema` reste optionnel et `self` en argument conservé pour l'ergonomie, plus pour la compatibilité |
+| R14 | **`setProperty()` porte le même nom qu'en Legacy avec un autre sens** | Élevé | Un développeur lit `legacy/`, en déduit le mauvais comportement, et écrit du code qui ne produit pas d'Operation | Signalé dans ADR-0003, `CONVENTIONS.md` et le JSDoc ; mapping explicite dans le harnais de parité |
+| R15 | **Écriture `=` là où `setProperty()` était requis** | Élevé | La modification ne se réplique ni ne s'annule — **silencieusement** | Garde en mode développement : avertir sur une écriture directe dans un contexte `editor` (ADR-0003) |
 | R7 | **Perte de comportements historiques non documentés** | Élevé | Détecté par l'utilisateur, tard | `LEGACY_ANALYSIS.md` §15 (liste explicite) ; `legacy/` reste exécutable pour comparaison |
 | R8 | **Perte de performance** (façade Transform, Proxy) | Moyen | Chute de FPS | Benchmark déjà établi (§2.4 de l'analyse) ; le rebâtir en CI |
 | R9 | **Architecture trop abstraite** | Moyen | Le code devient plus dur à lire qu'avant | Règle : toute abstraction doit supprimer plus de lignes qu'elle n'en ajoute |
@@ -167,6 +172,17 @@ Format : **Legacy → Limites → À conserver → À simplifier → Proposition
 11. **`Tilemap.draw(ctx, camera)`** a une signature incompatible avec `Object.draw()` :
     attaché à un objet, il lève une `TypeError` masquée. `Lighting` et `LightSource`
     violent également le contrat de composant tout en étant exportés par `mod.js`.
+12. **`Object.copy()` détruit `components`, `childs` et `image`** quand la source est un
+    `Object` vivant : il lit les accesseurs `$prop` en écriture seule et les réassigne.
+    Conséquence : **`Scene.instantiate()` lève dès que la source porte un composant** —
+    ce qui casse la création de prefab et le chemin `Network.add`. Le heartbeat survit
+    parce qu'il copie depuis du JSON plat, sans accesseurs `$`.
+    *(découvert par le harnais de parité, non par lecture)*
+13. **`gamepad.js`** teste `typeof window !== 'undefined'` là où les autres modules
+    testent `window.document` — il s'exécute donc dans un environnement sans DOM.
+
+Les points 12 et 13 ont été découverts en **exécutant** Legacy via `tools/parity/`.
+C'est précisément ce que l'étape 1 devait produire.
 
 ---
 
@@ -176,19 +192,24 @@ Ordre dicté par les dépendances et par le risque, pas par la facilité.
 
 | Étape | Contenu | Critère de sortie |
 |---|---|---|
-| **0** | *(fait)* Analyse et proposition | `ARCHITECTURE.md` validé, §10 tranché |
-| **1** | Outillage : test runner, serveur de dev corrigé, test de règle de dépendance | Un test passe en CI |
-| **2** | `core/` : events, logger, Property System (Proxy), Object, Component, Scene, serialize | Parité d'événements avec Legacy, prouvée par test |
+| **0** | *(fait)* Analyse, proposition, décisions | §10 tranché — **fait le 2026-08-12** |
+| **1** | **Outillage + harnais de parité** : capture du comportement Legacy | ✅ **fait** — `tools/parity/`, 39 scénarios, `node tools/parity/run.js` |
+| **1 bis** | Serveur de dev corrigé, test de règle de dépendance des couches | à faire |
+| **2** | `core/` : events, logger, Property System (Proxy + Operations), Object, Component, Scene, serialize | Parité prouvée par le harnais de l'étape 1 |
 | **3** | `Transform` + façade | `object.x === transform.x` sur tous les chemins |
-| **4** | `runtime/` : boucle, renderer, input découplé de network | Une scène Legacy s'exécute ; **le solo hors ligne marche** |
-| **5** | `network/` : Operations, delta, batching — **client et serveur ensemble** | Deux clients synchronisés, pas d'écho |
-| **6** | `editor/` : primitives Web Components, binding scopé, Inspector à schéma | Édition lettre par lettre préservée |
+| **4** | `runtime/` : boucle, rendering, input découplé de network | Une scène s'exécute ; **le solo hors ligne marche** |
+| **5** | `network/` + `authority` : Operations, delta, batching — **client et serveur ensemble** | Deux clients synchronisés, pas d'écho, toute Operation traverse `authority.check()` |
+| **6** | `editor/` : primitives `px-*`, binding scopé, Inspector à schéma | **Édition lettre par lettre préservée** |
 | **7** | Viewport en outils | Parité fonctionnelle avec `Handler` |
 | **8** | Ressources : `Resource`, ids stables, IndexedDB | Projet rechargeable |
-| **9** | Visual scripting : modèle `.px`, exécution | Un graphe pilote un objet |
+| **9** | Visual scripting : modèle `.px`, exécution (Q7) | Un graphe pilote un objet |
 
 Étapes 2 et 3 sont indissociables. L'étape 5 exige une fenêtre de migration coordonnée
-avec le serveur privé.
+avec le serveur privé. L'étape 9 est hors chemin critique.
+
+**Ce qui a disparu de la séquence :** aucune étape de migration de données. Il n'existe
+pas de projets v1 (Q6), donc pas de convertisseur, pas de format de transition, pas de
+double lecture dans `deserialize()`.
 
 ---
 

@@ -79,17 +79,26 @@ c'est lui qui cache que le mode solo hors ligne ne fonctionne pas
 ```js
 class Object {
     id             // identité de l'objet
-    owner          // ex-`uid` : joueur propriétaire        (Q2 à valider)
+    owner          // ex-`uid` : joueur propriétaire
     name, tag, layer
     active, visible, lock
-    components     // Map<string, Component>
-    parent, children                                        // (Q1 à valider)
+    components     // Map<string, Component>  — un seul par type
+    parent, children
 
     addComponent / removeComponent / getComponent / hasComponent
     addChild / removeChild
     update(ctx) / draw(renderer)
 }
 ```
+
+**Renommages retenus.** Ils n'étaient bloqués que par la compatibilité des données ;
+la décision « aucun projet v1 à migrer » lève ce blocage.
+
+| Legacy | v2 | Raison |
+|---|---|---|
+| `childs` | `children` | anglais correct |
+| `uid` | `owner` | désigne le joueur propriétaire, pas l'objet |
+| `static` | *supprimé* | déclaré, jamais lu |
 
 ### Ce qui sort
 
@@ -135,10 +144,14 @@ Remplacés par `serialize()` / `deserialize()` explicites :
 
 ---
 
-## Questions ouvertes
+## Décisions tranchées (2026-08-12)
 
-| # | Question | Enjeu |
+| # | Question | Décision |
 |---|---|---|
-| Q1 | `childs` → `children` ? | Casse le protocole et les projets sauvegardés |
-| Q2 | `uid` → `owner` ? | Le nom actuel désigne un joueur, pas l'objet |
-| Q4 | Deux composants du même type sur un objet ? | Aujourd'hui impossible (clé = nom de classe) |
+| Q1 | `childs` → `children` ? | **Oui** |
+| Q2 | `uid` → `owner` ? | **Oui** |
+| Q4 | Deux composants du même type sur un objet ? | **Non** — un seul par type, comme dans Legacy |
+| Q6 | Compatibilité des projets Legacy ? | **Aucune** — pas de projets v1 à migrer |
+
+Point mineur restant, tranchable à l'implémentation : `Transform` est-il ajouté par
+défaut à la construction d'un `Object` ?

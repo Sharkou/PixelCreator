@@ -1,6 +1,6 @@
 # ADR-0009 — `.px` est un graphe, `.js` est du JavaScript
 
-- **Statut :** proposé
+- **Statut :** **accepté** (2026-08-12), y compris le mode d'exécution (Q7 : interprété)
 
 ## Contexte observé
 
@@ -97,20 +97,31 @@ faire, et réciproquement.
 Corollaire : un graphe doit pouvoir être **inspecté** comme un composant (ses
 `variables` sont ses propriétés), et donc apparaître dans l'Inspector via ADR-0007.
 
-## Question ouverte
+## Mode d'exécution — VALIDÉ : interprété
 
-**Interpréter ou compiler ?** (`ARCHITECTURE.md` §10, Q7)
+**Q7 tranchée : `.px` est interprété, pour le débogage et la sécurité.**
 
-| | Interprétation | Compilation en JS |
+| | Interprétation ✅ | Compilation en JS |
 |---|---|---|
 | Débogage | pas à pas, points d'arrêt visuels | difficile (source générée) |
-| Sécurité | pas d'`eval` | dépend de la génération |
+| Sécurité | **pas d'`eval`** | dépend de la génération |
 | Performance | plus lente | proche du natif |
 | Complexité | moyenne | élevée (générateur + source maps) |
 
-Recommandation : **interpréter d'abord.** Un graphe de gameplay débutant exécute
-quelques dizaines de nœuds par frame ; la lisibilité du débogage vaut plus que la
-vitesse. La compilation reste possible plus tard sans changer le format.
+Un graphe de gameplay exécute quelques dizaines de nœuds par frame : la lisibilité du
+pas-à-pas et l'absence d'`eval` valent davantage que la vitesse brute.
+
+Conséquence pratique : `runtime/scripting/` contient un **interpréteur de graphe** —
+il parcourt les nœuds et appelle l'API du moteur. Aucune génération de code, aucun
+`eval`, aucune `Function()`.
+
+Le format `.px` reste inchangé si une compilation s'avérait un jour nécessaire :
+c'est une décision d'exécution, pas de format.
+
+> **Note de sécurité.** `.js` continue de passer par `import()` dynamique, ce qui exécute
+> du code arbitraire — c'est assumé pour les scripts que le créateur écrit lui-même.
+> `.px`, lui, est interprété et n'exécute jamais de code arbitraire : c'est ce qui en
+> fait le format sûr pour du contenu partagé.
 
 ## Conséquences
 

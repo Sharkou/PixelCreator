@@ -119,11 +119,11 @@ editor/
 ### Primitives et fenêtres
 
 ```
-<pc-window> <pc-panel> <pc-split> <pc-tabs> <pc-toolbar>
-<pc-tree>   <pc-list>  <pc-property> <pc-viewport> <pc-modal> <pc-menu>
+<px-window> <px-panel> <px-split> <px-tabs> <px-toolbar>
+<px-tree>   <px-list>  <px-property> <px-viewport> <px-modal> <px-menu>
 
-<pc-hierarchy> <pc-inspector> <pc-assets> <pc-scene>
-<pc-graph>     <pc-players>   <pc-console>
+<px-hierarchy> <px-inspector> <px-assets> <px-scene>
+<px-graph>     <px-players>   <px-console>
 ```
 
 Une fenêtre = un fichier, portant son balisage, ses styles et son cycle de vie.
@@ -168,11 +168,38 @@ est essentiellement une vue sur un état déjà répliqué.
 
 ---
 
+### Le modèle est central, les vues réagissent — VALIDÉ
+
+Règle explicite : **aucune fonctionnalité de l'Editor ne modifie arbitrairement le DOM.**
+Les données restent dans le modèle Pixel Creator ; les vues s'abonnent aux `Change` et
+se mettent à jour elles-mêmes.
+
+**OBSERVÉ :** Legacy respecte déjà cet esprit — la source de vérité est l'`Object` — mais
+l'applique par une requête DOM globale depuis le module qui écrit. La v2 inverse la
+direction : ce n'est plus l'écrivain qui va chercher les vues, c'est chaque vue qui
+écoute sa propriété.
+
+Ce que cela ne change pas : **le comportement historique où une propriété modifiée dans
+l'Inspector est immédiatement reflétée partout ailleurs — notamment lettre par lettre
+dans la Hierarchy — est explicitement conservé.** C'est une exigence, pas un effet de
+bord.
+
+### Mutations et autorité
+
+L'Editor émet des **Operations autorisées** (ADR-0011) via `object.setProperty('x', …)`
+— la seule API de mutation contrôlée en v2 ; `object.$x` n'existe plus. L'application
+reste **optimiste** — la valeur apparaît immédiatement dans toutes les vues — et se
+réconcilie si le serveur refuse. Le pan caméra reste une mutation directe
+(`camera.x = …`), sans Operation.
+
+---
+
 ## Ce qui ne change pas
 
 - La source de vérité reste l'`Object` — **pas de store**.
 - L'édition lettre par lettre.
 - La garde `activeElement`.
 - L'Inspector générique, avec repli réflexif pour les composants sans schéma.
-- L'écriture répliquée explicite depuis le viewport (`$`), le pan caméra local.
+- La distinction entre écriture contrôlée depuis le viewport et pan caméra local —
+  avec `setProperty()` à la place du `$` historique.
 - Le DOM et le Canvas, sans framework.

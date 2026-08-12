@@ -1,8 +1,9 @@
-# ADR-0003 — Property System : Proxy, canal explicite, ergonomie inchangée
+# ADR-0003 — Property System : Proxy, deux API de mutation répliquée
 
-- **Statut :** proposé
+- **Statut :** **accepté** (2026-08-12)
 - **Décide :** comment intercepter les écritures de propriétés en v2
 - **Remplace :** `System.sync()` (`legacy/src/core/system.js:31`)
+- **Lié à :** ADR-0008 (Operations), ADR-0011 (autorité)
 
 ---
 
@@ -53,18 +54,116 @@ propriété dynamique). Le surcoût de réactivité en lecture est déjà payé 
 ## Décision
 
 Un **`Proxy` par objet et par composant**, remplaçant `Object.defineProperty` par
-propriété.
+propriété. **Deux formes d'écriture, et une seule est publique pour la mutation
+contrôlée.**
 
-### L'ergonomie ne change pas
+### Les deux formes d'écriture
 
 ```js
-object.x = 100;      // change + notifie les vues            (inchangé)
-object.$x = 100;     // change + notifie + réplique          (inchangé)
-object.name = 'Player';
-component.speed = 4;
+object.x = 100;                   // mutation directe de l'état de l'objet
+object.setProperty('x', 100);     // mutation contrôlée, via le Property System
 ```
 
-Aucun code utilisateur n'écrit `network.updateProperty(...)`. La magie reste dans l'API.
+**`object.$x` est supprimé.** Le sigil était trop implicite et trop spécifique à Pixel
+Creator pour constituer une API publique. Il n'existe ni en v2, ni comme syntaxe cible
+du harnais de parité.
+
+### Ce que fait chaque forme
+
+| Forme | Effet |
+|---|---|
+| `object.x = 100` | met à jour l'état, émet un `Change` — les vues réagissent. **Aucune Operation.** |
+| `object.setProperty('x', 100)` | passe par le Property System, émet un `Change` **et produit une Operation** |
+
+```
+setProperty()
+    ↓
+Property System
+    ↓
+Operation
+    ↓
+contexte / autorité / destination
+```
+
+**`setProperty()` n'est pas « la méthode réseau ».** C'est le chemin contrôlé du modèle.
+Ce que devient l'Operation ensuite dépend du contexte : elle peut être validée par
+l'autorité, répliquée, enregistrée dans l'historique, annulée/refaite, partagée en
+collaboration, ou transmise à un autre système. Le réseau n'est qu'une destination
+possible parmi d'autres.
+
+Aucun code utilisateur n'écrit `network.updateProperty(...)`, et **aucun point d'appel
+ne porte de drapeau de synchronisation**. Le choix du chemin se fait une seule fois, à
+l'écriture, par le choix de la forme.
+
+### L'origine reste explicite
+
+Une Operation venue du réseau doit rester identifiable :
+
+```js
+{ …, origin: 'network' }
+```
+
+C'est ce qui empêche l'écho, sans recourir au drapeau `dispatch = false` de Legacy.
+`origin` ∈ `runtime` | `local` | `editor` | `player` | `network`.
+
+### ⚠ `setProperty()` ne veut pas dire la même chose dans Legacy
+
+C'est le piège principal, et il concerne un nom identique de part et d'autre.
+
+| | Legacy | v2 |
+|---|---|---|
+| `object.x = v` | écrit l'état, émet `setProperty` | écrit l'état, émet un `Change` — **proche** |
+| `object.setProperty('x', v)` | écrit `_x` directement, émet `setProperty` — **ne réplique pas** | **chemin contrôlé** — `Change` + Operation |
+| `object.$x = v` | écrit + émet `syncProperty` (répliqué) | **n'existe pas** |
+| `object.syncProperty('x', v)` | écrit + émet `syncProperty` (répliqué) | remplacé par `setProperty()` |
+
+Le rôle historique de `$x` / `syncProperty()` est donc **repris par `setProperty()`**,
+tandis que le `setProperty()` de Legacy — un écrivain direct sans réplication —
+disparaît en tant que tel.
+
+Quiconque lit `legacy/` et raisonne par analogie se trompera. Rappelé dans
+`CONVENTIONS.md`, dans le JSDoc de `setProperty()`, et **encodé explicitement dans le
+mapping du harnais de parité**.
+
+### Le sens de `object.x = 100`
+
+L'axe de distinction **n'est pas** « répliqué / non répliqué » : c'est
+**« sortie de simulation » contre « intention »**.
+
+| Forme | Nature | Qui fait autorité |
+|---|---|---|
+| `object.x = 100` | sortie de simulation — un composant intègre une vitesse, une caméra suit une cible | les deux côtés calculent ; le serveur tranche par la réplication d'état |
+| `object.setProperty('x', 100)` | **intention** — un humain (ou une IA) décide d'une valeur | l'autorité valide, puis propage |
+
+Ce cadrage vaut mieux que « non répliqué », pour trois raisons :
+
+1. Il explique pourquoi `self.x += vx` dans `Controller.update()` ne doit **pas**
+   produire d'Operation : ce n'est pas une décision, c'est un résultat.
+2. Il s'aligne sur l'autorité serveur (ADR-0011) : une intention client est *soumise*,
+   une sortie de simulation est *prédite*.
+3. Il donne une règle simple :
+   **un Component n'appelle jamais `setProperty()` ; l'Editor n'écrit jamais sans.**
+
+**Le mode d'échec est asymétrique.** Appeler `setProperty()` là où `=` suffisait coûte
+du trafic et une entrée d'historique. Écrire `=` là où `setProperty()` était requis
+produit une modification qui **ne se réplique pas et ne s'annule pas** —
+silencieusement. C'est ce second cas qu'il faut détecter.
+
+**Garde (développement uniquement).** Le Property System connaît l'origine active
+(`editor`, `runtime`, `player`). Une écriture directe `=` survenant dans un contexte
+`editor` émet un avertissement nommant la propriété et son fichier. Pas de blocage,
+aucun coût en production — juste la fin d'une classe de bugs invisibles.
+
+### Les couches internes ne sont pas une API
+
+Legacy empile `object.x` → `object._x` → `object.__x`. Ces niveaux sont documentés
+(`../migration/LEGACY_ANALYSIS.md` §2.2) parce qu'ils expliquent le comportement
+observable, notamment la propagation hiérarchique.
+
+**Ils ne deviennent pas une API v2.** `_x` et `__x` restent des possibilités
+d'implémentation interne ; ni les utilisateurs ni les composants n'ont à les manipuler,
+et **aucune API publique v2 ne dépend de ces conventions**. Le `Proxy` rend d'ailleurs
+le stockage parasite inutile (voir plus bas).
 
 ### Ce qui change à l'intérieur
 
@@ -151,7 +250,23 @@ Avant de considérer cette décision comme acquise :
    la **séquence d'événements émis** (ordre inclus).
 2. Un benchmark en CI sur une scène réaliste (≥ 500 objets, 60 fps).
 3. Vérification que l'édition lettre par lettre reste identique (Inspector + Hierarchy).
+4. Test que `object.setProperty('x', v)` produit un `Change` **et** une Operation.
+5. Test que `object.x = v` produit un `Change` et **aucune** Operation.
+6. Test qu'une Operation `origin: 'network'` appliquée ne produit **pas** d'Operation
+   sortante (absence d'écho).
 
-Question ouverte : **conserve-t-on le sigil `$`** (`ARCHITECTURE.md` §10, Q3) ?
-Cet ADR suppose que oui — c'est un idiome Pixel Creator identifiable et très court.
-La décision peut changer sans invalider le reste de l'ADR.
+> **Attention au harnais de parité (point 1).** Il compare la *forme* et l'*ordre* des
+> notifications, pas la sémantique de `setProperty()`, dont le nom est identique de part
+> et d'autre mais le sens différent. Le mapping doit être explicite :
+>
+> | Legacy | v2 |
+> |---|---|
+> | `obj.x = v` | `obj.x = v` |
+> | `obj.$x = v` / `obj.syncProperty('x', v)` | `obj.setProperty('x', v)` |
+> | `obj.setProperty('x', v)` | *sonde Legacy uniquement* — pas d'équivalent v2 |
+> | plain assign à la réception réseau | `applyOperation({ origin: 'network' })` |
+>
+> **Aucun scénario v2 n'utilise `.$x`.** Sans ce mapping, le harnais signalerait de
+> fausses régressions.
+
+Le sigil `$` est **supprimé** (décision définitive, 2026-08-12).

@@ -1,6 +1,6 @@
 # ADR-0007 — Inspector piloté par schéma, réflexif en repli
 
-- **Statut :** proposé
+- **Statut :** **accepté** (2026-08-12)
 
 ## Contexte observé
 

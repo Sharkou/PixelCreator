@@ -1,6 +1,6 @@
 # ADR-0006 — Editor modulaire par Web Components natifs
 
-- **Statut :** proposé
+- **Statut :** **accepté** (2026-08-12)
 - **Décide :** comment rendre l'UI de l'Editor modulaire sans framework
 
 ---
@@ -51,16 +51,16 @@ Svelte.
 ### Primitives
 
 ```
-<pc-window>    <pc-panel>   <pc-split>   <pc-tabs>
-<pc-toolbar>   <pc-tree>    <pc-list>    <pc-property>
-<pc-viewport>  <pc-modal>   <pc-menu>
+<px-window>    <px-panel>   <px-split>   <px-tabs>
+<px-toolbar>   <px-tree>    <px-list>    <px-property>
+<px-viewport>  <px-modal>   <px-menu>
 ```
 
 ### Fenêtres construites dessus
 
 ```
-<pc-hierarchy>  <pc-inspector>  <pc-assets>   <pc-scene>
-<pc-graph>      <pc-players>    <pc-console>
+<px-hierarchy>  <px-inspector>  <px-assets>   <px-scene>
+<px-graph>      <px-players>    <px-console>
 ```
 
 Chaque fenêtre est **un fichier** qui porte son balisage, ses styles (Shadow DOM) et son
@@ -76,7 +76,7 @@ temps réel disparaîtrait — silencieusement.
 Remplacement, à comportement observable identique :
 
 ```js
-// <pc-property> s'abonne au Change de la propriété qu'il affiche
+// <px-property> s'abonne au Change de la propriété qu'il affiche
 connectedCallback() {
     this.unsubscribe = properties.observe(this.target, this.prop, change => {
         if (this.input !== this.shadowRoot.activeElement) {   // garde conservée

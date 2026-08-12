@@ -1,6 +1,6 @@
 # ADR-0002 — Transform devient un Component, `object.x` reste une façade
 
-- **Statut :** proposé
+- **Statut :** **accepté** (2026-08-12)
 - **Décide :** où vivent `x`, `y`, `width`, `height`, `rotation`, `scale`
 
 ---
@@ -88,7 +88,8 @@ non).
   claire (« Object has no Transform component ») plutôt que `undefined`, sinon les bugs
   deviennent silencieux.
 - Le format de sérialisation change : `x` passe de propriété d'objet à propriété de
-  composant. Impacte le protocole réseau et les projets sauvegardés (voir Q6).
+  composant. Impacte le protocole réseau — mais **pas** les projets existants : il n'y a
+  aucun projet v1 à migrer (Q6 tranchée).
 
 ---
 
@@ -109,4 +110,5 @@ non).
    `object.x === object.getComponent('Transform').x` après écriture via la façade,
    via le composant, via le réseau, via l'Inspector.
 2. Benchmark de rendu avant/après sur une scène ≥ 500 objets.
-3. Décider si `Transform` est ajouté par défaut (question ouverte ci-dessus).
+3. Décider si `Transform` est ajouté par défaut à la construction (point mineur, non
+   bloquant — tranchable à l'implémentation).

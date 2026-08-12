@@ -1,6 +1,6 @@
 # ADR-0010 — L'identité d'un jeu est un ID, pas son nom
 
-- **Statut :** proposé
+- **Statut :** **accepté** (2026-08-12)
 
 ## Contexte observé
 

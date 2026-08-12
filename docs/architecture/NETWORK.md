@@ -184,11 +184,43 @@ serveur cesse d'importer transitivement le rendu et le DOM.
 
 ---
 
-## Questions à valider
+### Autorité — VALIDÉ (ADR-0011)
 
-| # | Question | Enjeu |
+**Le serveur est l'autorité de simulation en multijoueur compétitif.**
+
+Le modèle distingue deux natures de mutation :
+
+| Nature | Émetteur | Traitement |
 |---|---|---|
-| Q5 | Où placer la frontière autorité « édition » / « jeu » ? | Bloquant pour les jeux compétitifs |
-| — | Le serveur reste-t-il en Deno ? | Il utilise `std@0.117` `ws`, API obsolète ; toute évolution du protocole impose une migration simultanée des deux côtés (risque R4) |
-| — | Persistance : `save` a un corps vide. Où et comment stocker un projet ? | Prérequis de CREATE/PLAY/SHARE |
-| — | Un serveur par jeu, ou un serveur multi-projets ? | Legacy : un serveur = une scène singleton (ADR-0010) |
+| **Mutation joueur / client** | un joueur en jeu | intention soumise au serveur ; le client prédit, le serveur tranche |
+| **Mutation éditeur autorisée** | le créateur, avec permissions | Operation autorisée → **validée côté serveur** → appliquée à l'état autoritaire → propagée |
+
+Chemin commun :
+
+```
+Operation → authority.check(op, actor) → état autoritaire → propagation
+```
+
+Le **système de permissions n'est pas implémenté maintenant**. Ce qui est implémenté :
+le point de passage. Chaque Operation transporte un `actor` et un `origin`, et traverse
+`authority.check()` sans exception — même si la politique initiale accepte tout.
+
+L'Editor applique en **optimiste** et réconcilie si le serveur refuse : la
+synchronisation lettre par lettre reste locale et immédiate, seule la confirmation est
+asynchrone.
+
+En solo / hors ligne, l'autorité est une implémentation locale permissive — aucun
+aller-retour réseau.
+
+---
+
+## Questions restantes
+
+| Question | Enjeu |
+|---|---|
+| Le serveur reste-t-il en Deno ? | Il utilise `std@0.117` `ws`, API obsolète ; toute évolution du protocole impose une migration simultanée des deux côtés (risque R4) |
+| Persistance : `save` a un corps vide. Où et comment stocker un projet ? | Prérequis de CREATE/PLAY/SHARE |
+| Un serveur par jeu, ou un serveur multi-projets ? | Legacy : un serveur = une scène singleton (ADR-0010) |
+
+Ces questions concernent l'infrastructure, pas le modèle. Elles ne bloquent pas les
+étapes 1 à 4 de `../MIGRATION.md` §5.

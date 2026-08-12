@@ -72,6 +72,13 @@ Il en résulte **trois canaux d'écriture distincts**, tous vérifiés ✅ :
 C'est une distinction **intentionnelle et load-bearing**, pas un accident : elle
 empêche la simulation d'inonder le réseau tout en gardant les vues synchronisées.
 
+`obj.syncProperty('x', v)` produit le même effet que `obj.$x = v` : les deux écrivent
+via `this[prop]` puis émettent `syncProperty`.
+
+> **⚠ Ceci décrit Legacy, pas la cible v2.** En v2, `$x` et `syncProperty()` sont
+> **supprimés** ; leur rôle est repris par `setProperty()`, dont le sens Legacy
+> (écriture directe non répliquée) disparaît. Voir ADR-0003.
+
 ### 2.2 Chaîne à trois niveaux pour x/y
 
 `Object` définit sur son prototype (`src/core/object.js:56-96`) :
@@ -84,6 +91,11 @@ obj.x            (accesseur d'instance posé par System.sync)
 
 ✅ Vérifié : parent `x` 300 → 350 déplace l'enfant de 100 → 150. La double indirection
 existe uniquement pour offrir un point d'accroche à la propagation hiérarchique.
+
+> **⚠ `_x` et `__x` sont des détails d'implémentation Legacy.** Ils sont documentés ici
+> parce qu'ils expliquent le comportement observable. Ils ne deviennent **pas** une API
+> v2 : aucune API publique v2 ne dépend de ces conventions, et ni les utilisateurs ni les
+> composants ne les manipulent.
 
 ### 2.3 Limites mesurées
 
@@ -132,8 +144,21 @@ n'applique aucun filtre : il envoie les doublons `_x`, `_name`, `_components`…
 de construire un undo/redo sans relecture préalable.
 
 **g) Le debounce réseau est neutralisé.** `Network.sync()` implémente une logique de
-throttle avec `const delay = 0` (`src/network/network.js:401`) : chaque frappe clavier
-produit un message. `syncInputs()` utilise un vrai `delay = 50` pour la souris.
+throttle avec `const delay = 0` (`src/network/network.js:401`). ✅ Vérifié : quatre
+frappes produisent **quatre opérations**, sans aucun regroupement. Le nombre de messages
+réellement émis dépend en revanche de la milliseconde — donc du hasard.
+`syncInputs()` utilise un vrai `delay = 50` pour la souris.
+
+**h) Construire un `Object` émet 19 notifications.** ✅ `System.sync()` réécrit chaque
+propriété via son propre setter pour « restaurer la valeur » (`obj[prop] = value` en fin
+de boucle), et chaque réécriture émet `setProperty` — avant même que l'objet appartienne
+à une scène. Mesuré : **57 clés énumérables pour 19 propriétés publiques**, et
+19 notifications à la construction d'un objet vide.
+
+**i) Deux gardes différentes pour la même intention.** Quatre modules protègent leur code
+DOM par `if (window.document)` ; `gamepad.js:211` teste `typeof window !== 'undefined'`.
+Le second s'exécute donc dans un environnement sans DOM et appelle
+`window.addEventListener`.
 
 ### 2.4 Performance mesurée ✅
 
@@ -213,6 +238,32 @@ copy(obj) {
   pendant la copie réseau.
 - `copy()` est appelé **par objet et par heartbeat** (`Network.heartbeat`). C'est une
   recopie complète, pas un patch.
+
+#### `copy()` détruit `components`, `childs` et `image` ✅
+
+Vérifié par le harnais de parité (`scene/copy-from-live-object-wipes-containers`).
+
+`for (let prop in obj)` visite aussi les accesseurs `$prop`, qui sont en **écriture
+seule**. Lire `obj.$components` donne donc `undefined`, `typeof undefined !== 'object'`,
+et la branche « primitive » s'exécute : `this.$components = undefined` → le setter `$`
+écrit `this.components = undefined`.
+
+Les primitives survivent parce que `_prop` suit immédiatement `$prop` dans l'ordre des
+clés et restaure la valeur. Les conteneurs, eux, sont des objets : la branche de
+restauration les saute, et la valeur reste `undefined`.
+
+| Source de `copy()` | Résultat |
+|---|---|
+| **Object vivant** (Editor, prefab, `instantiate`) | `components`, `childs`, `image` → `undefined` |
+| **JSON brut** (message réseau, heartbeat) | correct — le JSON n'a pas d'accesseurs `$` |
+
+Conséquence directe, vérifiée : **`Scene.instantiate()` lève une `TypeError` dès que la
+source porte un composant** (`scene/instantiate-throws-with-components`), puisque
+`addComponent()` écrit dans `this.components` devenu `undefined`.
+
+Cela casse la création de prefab (`Project` fait `prefab.copy(instance)`) et le chemin
+`Network.add`. Le heartbeat, lui, fonctionne — parce qu'il copie depuis du JSON plat.
+C'est ce qui a permis au défaut de rester invisible.
 
 ### 3.4 `update()` / `draw()` avalent les erreurs
 

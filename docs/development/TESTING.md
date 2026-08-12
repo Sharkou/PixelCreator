@@ -27,14 +27,32 @@ d'être propagée.**
 
 **1. Property System** (risque R1, le plus élevé)
 
-- `object.x = v` émet un `Change` `{ prop, value, previous, origin }`
-- `object.$x = v` émet un `Change` répliqué
+- `object.x = v` émet un `Change` `{ prop, value, previous, origin }` et **aucune Operation**
+- `object.setProperty('x', v)` émet un `Change` **et** une Operation
 - une propriété **ajoutée après construction** est réactive
   *(échoue sur Legacy — c'est la régression corrigée)*
-- une écriture d'origine `network` ne repart pas sur le réseau
+- une Operation `origin: 'network'` appliquée ne produit pas d'Operation sortante
 - la propagation hiérarchique déplace bien les enfants
+- **`_x` / `__x` ne sont exposés par aucune API publique**
 - **harnais de parité** : exécuter la même séquence d'écritures sur Legacy et v2, et
   comparer la séquence d'événements émis, ordre inclus
+
+> **Le harnais doit encoder le mapping sémantique** (risque R14) :
+>
+> | Legacy | v2 |
+> |---|---|
+> | `obj.x = v` | `obj.x = v` |
+> | `obj.$x = v` / `obj.syncProperty('x', v)` | `obj.setProperty('x', v)` |
+> | `obj.setProperty('x', v)` | *sonde Legacy uniquement* — pas d'équivalent v2 |
+> | écriture simple à la réception réseau | `applyOperation({ origin: 'network' })` |
+>
+> **Aucun scénario v2 n'utilise `.$x`** — la syntaxe est supprimée. Sans ce mapping, le
+> harnais signalerait de fausses régressions.
+
+**1 bis. Garde d'écriture** (risque R15)
+
+En mode développement, une écriture simple `=` dans un contexte `editor` émet un
+avertissement. Tester que la garde se déclenche, et qu'elle est **inerte en production**.
 
 **2. Règle de dépendance des couches**
 
