@@ -18,6 +18,11 @@
 // is a component *type*, resolved by `import()` and registered like any other (ADR-0009).
 // A graph is the other half of that sentence: the behavior of a type, not a type.
 //
+// A type comes either from a class — shipped with the engine or loaded from `.js` — or
+// from a definition a creator wrote in the Editor (core/definition.js, ADR-0016). The
+// seam below is identical for both: it binds a graph to a type name, and never asks where
+// the type came from.
+//
 // WHAT THIS FILE IS NOT. It is not the `.px` language, not the graph model, and not the
 // interpreter. Those are separate steps, and building one here would decide by accident
 // what the graph looks like. What is fixed here is the seam:
@@ -49,6 +54,7 @@
 // server variant (ADR-0005, ADR-0015).
 
 import { componentType } from '../../core/component.js';
+import { componentDefinition } from '../../core/definition.js';
 
 /**
  * What an interpreted graph exposes for one component instance.
@@ -91,14 +97,19 @@ export class Behaviors {
     /**
      * Bind a graph to a component type.
      *
-     * Binding again replaces the graph: editing `Controller.px` takes effect on the next
-     * step, on every Controller, without anything having to be reloaded.
+     * The graph may be left out for a type built from a definition, which already carries
+     * one (ADR-0016) — the definition stays the single place the graph is written down.
+     *
+     * A GRAPH IS IMMUTABLE TO THE RUNTIME. It is read once and identified by its object
+     * identity, so mutating one in place changes nothing. Editing `Controller.px` means
+     * producing a new graph and binding it: the running behaviors are replaced on the
+     * next step, on every Controller, with nothing to reload.
      *
      * @param {string|Function|object} type - Component type name, class or instance
-     * @param {object} graph - The `.px` graph resource
+     * @param {object} [graph] - The `.px` graph resource; the type's own when omitted
      * @returns {Behaviors} This host, so bindings can chain
      */
-    bind(type, graph) {
+    bind(type, graph = componentDefinition(type)?.graph) {
         const name = componentType(type);
         if (!graph || typeof graph !== 'object') {
             throw new TypeError(`Behaviors.bind: "${name}" needs a graph`);

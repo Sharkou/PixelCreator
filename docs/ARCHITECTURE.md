@@ -27,6 +27,7 @@
 | Input | Abstrait, indexé par owner, **passé à `step()`** — jamais un global |
 | Caméra | Un `Object` ordinaire ; le `Viewport` est l'écran ; la matrice de vue est dérivée |
 | Scripting | Un Component peut avoir un graphe `.px` qui définit son comportement. **Pas de Component `Script`**, pas de `ScriptSystem` |
+| Components créés par l'utilisateur | Une **définition** (`type` + propriétés + graphe) produit un Component ordinaire ; la définition appartient au type, jamais à l'instance |
 | Projets Legacy | **Aucune migration de données à concevoir** — il n'existe pas de projets v1 |
 
 ---
@@ -604,6 +605,16 @@ Le graphe est lu une fois et partagé par tous les composants de son type ; **ch
 instance a son propre état d'exécution**. Le comportement vit dans une `WeakMap`, jamais
 dans les données sérialisées du composant. Le runtime exécute le graphe là où il exécute
 le composant : même pas, même ordre, même isolation d'erreur, client comme serveur.
+
+### Un Component créé par un utilisateur (ADR-0016)
+
+Un Component est **propriétés + comportement**. Une **définition** écrit ce couple comme
+donnée — `{ type, properties, graph }` — et `defineComponent()` en fait une classe de
+composant ordinaire, enregistrée comme les autres. La définition appartient au **type** :
+une instance ne porte que ses valeurs, jamais une copie du graphe.
+
+C'est ce qui permettra à l'Editor de créer un Custom Component, de définir ses propriétés,
+d'éditer son graphe, d'enregistrer sa définition et de le réutiliser partout.
 
 `editor/graph/compiler.js` (lexer d'un langage type Rust, jamais exécutable) est
 abandonné. `editor/graph/component.js` est renommé pour ne plus entrer en collision

@@ -1,6 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Object, Scene, Transform, observe, serializeComponent } from '../../core/mod.js';
+import {
+    Object,
+    Scene,
+    Transform,
+    observe,
+    serializeComponent,
+    serializeScene,
+    deserializeScene,
+    ComponentRegistry,
+    defineComponent,
+    componentDefinition
+} from '../../core/mod.js';
 import { Behaviors } from './behaviors.js';
 import { Runtime } from '../runtime.js';
 import { Clock } from '../clock/clock.js';
@@ -416,6 +427,107 @@ test('carrying a graph does not make an object drawn', () => {
 
     assert.equal(runtime.render(), 0);
     assert.deepEqual(renderer.of('setTransform'), []);
+});
+
+// --- a Component a creator makes: properties + graph (ADR-0016) --------------------
+
+test('a defined Component runs its graph, keeps its data, and survives a round trip', () => {
+    // The whole Editor path in one test: a definition becomes a type, its graph becomes
+    // its behavior, its properties are what serializes.
+    const definition = {
+        type: 'Controller',
+        properties: { speed: { type: 'number', default: 120 }, travelled: { type: 'number' } },
+        graph: { version: 1, nodes: ['On Update', 'move'], connections: [] }
+    };
+    const registry = new ComponentRegistry();
+    registry.register(Transform);
+    const Controller = registry.register(defineComponent(definition));
+    // The graph comes from the definition; nobody has to repeat where it lives.
+    const behaviors = new Behaviors(() => component => ({
+        update(self, ctx) {
+            const step = component.speed * ctx.deltaTime;
+            self.x += step;
+            component.travelled += step;
+        }
+    })).bind(Controller);
+
+    const scene = new Scene('Main');
+    const object = scene.add(new Object('Player'));
+    object.addComponent(new Transform());
+    object.addComponent(new Controller());
+
+    const runtime = new Runtime(scene, { behaviors, clock: new Clock({ fixedStep: 0.5 }) });
+    runtime.step();
+
+    assert.equal(object.x, 60, 'the graph moved the object');
+    assert.equal(object.getComponent('Controller').travelled, 60, 'and wrote its own property');
+
+    const data = JSON.parse(JSON.stringify(serializeScene(scene)));
+    assert.deepEqual(data.objects[0].components.Controller, { speed: 120, travelled: 60 },
+        'the instance serializes its properties and no behavior');
+
+    const restored = deserializeScene(data, { registry });
+    const resumed = new Runtime(restored, { behaviors, clock: new Clock({ fixedStep: 0.5 }) });
+    resumed.step();
+
+    assert.equal(restored.objects()[0].getComponent('Controller').travelled, 120,
+        'and picks its behavior back up on the other side of a save');
+});
+
+test('every instance of a type shares one graph and no execution state', () => {
+    const definition = {
+        type: 'Counter',
+        properties: { count: { type: 'number' } },
+        graph: { version: 1, nodes: [] }
+    };
+    const Counter = defineComponent(definition);
+    const graphs = [];
+    const behaviors = new Behaviors(resource => {
+        graphs.push(resource);
+        return component => {
+            let ticks = 0;
+            return { update() { component.count = ++ticks; } };
+        };
+    }).bind(Counter);
+
+    const scene = new Scene('Main');
+    const instances = ['a', 'b', 'c'].map(name =>
+        scene.add(new Object(name)).addComponent(new Counter()));
+
+    const runtime = new Runtime(scene, { behaviors });
+    runtime.step();
+    runtime.step();
+    instances[2].active = false;
+    runtime.step();
+
+    assert.deepEqual(graphs, [definition.graph], 'one graph, read once, for the whole type');
+    assert.deepEqual(instances.map(instance => instance.count), [3, 3, 2],
+        'each instance counted on its own');
+});
+
+test('a graph is immutable to the runtime: editing means binding a new one', () => {
+    // Mutating a bound graph in place is not observed — the Editor produces a new graph
+    // and binds it, which is what makes a hot edit predictable.
+    const Controller = defineComponent({ type: 'Controller', graph: { label: 'v1' } });
+    const seen = [];
+    let interpretations = 0;
+    const behaviors = new Behaviors(resource => {
+        interpretations++;
+        const label = resource.label;        // read when the graph is interpreted
+        return () => ({ update() { seen.push(label); } });
+    }).bind(Controller);
+    const scene = new Scene('Main');
+    scene.add(new Object('Player')).addComponent(new Controller());
+
+    const runtime = new Runtime(scene, { behaviors });
+    runtime.step();
+    componentDefinition(Controller).graph.label = 'edited in place';
+    runtime.step();
+    behaviors.bind(Controller, { label: 'v2' });
+    runtime.step();
+
+    assert.deepEqual(seen, ['v1', 'v1', 'v2']);
+    assert.equal(interpretations, 2, 'the in-place edit caused no re-reading of the graph');
 });
 
 test('the runtime exposes no generic script component', async () => {

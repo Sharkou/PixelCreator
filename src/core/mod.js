@@ -23,6 +23,7 @@ export {
     componentExposes,
     componentSchema
 } from './component.js';
+export { defineComponent, componentDefinition } from './definition.js';
 
 export { Matrix } from './math/matrix.js';
 export { Transform, localMatrix, worldMatrix, worldPosition } from './components/transform.js';

@@ -135,7 +135,7 @@ produit des pixels viendra avec le modèle de graphe, pas avant.
 
 | Point ouvert | Où il sera tranché |
 |---|---|
-| Comment un type de Component **purement graphe** est déclaré (`.js` fournit une classe ; une déclaration de type au niveau projet reste à concevoir) | avec le chargement de ressources |
+| ~~Comment un type de Component purement graphe est déclaré~~ | **tranché** : ADR-0016 (définition = type + propriétés + graphe) |
 | Ce que deviennent les `variables` d'un graphe vis-à-vis du schéma et de l'Inspector | ADR-0007 + modèle de graphe |
 | Le modèle de graphe et l'interprète eux-mêmes | ADR-0009 |
 | Qui appelle `bind()` (chargement du projet, éditeur, serveur) | avec les ressources |
@@ -157,8 +157,8 @@ produit des pixels viendra avec le modèle de graphe, pas avant.
 ### Négatives
 
 - Un type de Component doit exister avant qu'un graphe puisse lui être lié — c'est
-  volontaire (aucun type généré par un `.px`), mais cela demande la brique « déclaration de
-  type » listée ci-dessus.
+  volontaire (aucun type généré par un `.px`). La brique qui déclare un type est
+  ADR-0016.
 - L'interprétation est paresseuse : le premier pas d'un composant paie la lecture du graphe.
 
 ---

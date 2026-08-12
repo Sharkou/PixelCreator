@@ -142,17 +142,26 @@ export class ComponentRegistry {
 
     /**
      * Register a component class.
+     *
+     * A name collision is refused, because two unrelated classes claiming one type name
+     * is the bug this registry exists to catch. Redefining a type on purpose — a creator
+     * editing their custom component in the Editor — is a different act and says so with
+     * `replace`. It rebinds the name for what is created next; components already
+     * attached to objects keep the class they were built from.
+     *
      * @param {Function} ComponentClass - The class to register
+     * @param {object} [options] - Options
+     * @param {boolean} [options.replace] - Deliberately rebind a type name already taken
      * @returns {Function} The same class, so registration can wrap a declaration
      */
-    register(ComponentClass) {
+    register(ComponentClass, { replace = false } = {}) {
         if (typeof ComponentClass !== 'function') {
             throw new TypeError('ComponentRegistry.register: expected a class');
         }
 
         const type = componentType(ComponentClass);
         const existing = this.#types.get(type);
-        if (existing && existing !== ComponentClass) {
+        if (existing && existing !== ComponentClass && !replace) {
             throw new Error(`ComponentRegistry: "${type}" is already registered by another class`);
         }
 

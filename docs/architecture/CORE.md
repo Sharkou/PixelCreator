@@ -32,6 +32,7 @@ core/
 ├── object.js         Object : identité, hiérarchie, composants
 ├── scene.js          Scene : collection d'Object
 ├── component.js      contrat + registre de composants
+├── definition.js     définition d'un type de Component : propriétés + graphe (ADR-0016)
 ├── properties/       Property System (Proxy, Change, observe)
 ├── operations/       Operation, application, historique
 ├── resources/        Resource, registre, chargement

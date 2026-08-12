@@ -196,6 +196,121 @@ test('a disabled component is not simulated', () => {
     assert.equal(mover.updates, 0);
 });
 
+// --- the shapes a component may take (ADR-0004) ------------------------------------
+
+/** Builds a scene holding one object that carries the given components. */
+function sceneWithComponents(...componentsToAttach) {
+    const scene = new Scene('Main');
+    const object = scene.add(new Object('Subject'));
+    object.addComponent(new Transform());
+    for (const component of componentsToAttach) object.addComponent(component);
+    return { scene, object };
+}
+
+class Silent {
+    static type = 'Silent';
+    constructor() { this.value = 1; }
+}
+
+class Painter {
+    static type = 'Painter';
+    constructor() { this.draws = 0; }
+    draw(self, renderer) {
+        this.draws++;
+        renderer.fillRect(0, 0, 1, 1, '#fff');
+    }
+}
+
+class Actor {
+    static type = 'Actor';
+    constructor() { this.updates = 0; this.draws = 0; }
+    update() { this.updates++; }
+    draw(self, renderer) {
+        this.draws++;
+        renderer.fillRect(0, 0, 1, 1, '#fff');
+    }
+}
+
+test('a component with neither update nor draw is simply left alone', () => {
+    const { scene } = sceneWithComponents(new Silent());
+    const renderer = recordingRenderer();
+    const runtime = new Runtime(scene, { renderer });
+
+    assert.doesNotThrow(() => runtime.step());
+    assert.equal(runtime.render(), 0, 'and costs no rendering');
+    assert.deepEqual(renderer.of('setTransform'), []);
+});
+
+test('a component with update only simulates and costs no rendering', () => {
+    const { scene, object } = sceneWithComponents(new Mover(60));
+    const renderer = recordingRenderer();
+    const runtime = new Runtime(scene, { renderer, clock: new Clock({ fixedStep: 0.5 }) });
+
+    runtime.step();
+
+    assert.equal(object.x, 30);
+    assert.equal(runtime.render(), 0);
+});
+
+test('a component with draw only is drawn on a client and ignored on a server', () => {
+    const client = sceneWithComponents(new Painter());
+    const server = sceneWithComponents(new Painter());
+    const clientRuntime = new Runtime(client.scene, { renderer: recordingRenderer() });
+    const serverRuntime = new Runtime(server.scene);
+
+    clientRuntime.step();
+    serverRuntime.step();
+
+    assert.equal(clientRuntime.render(), 1);
+    assert.equal(client.object.getComponent('Painter').draws, 1);
+
+    assert.equal(serverRuntime.render(), 0, 'a server draws nothing');
+    assert.equal(server.object.getComponent('Painter').draws, 0, 'draw() is never required there');
+});
+
+test('a component with update and draw does both, in separate phases', () => {
+    const { scene, object } = sceneWithComponents(new Actor());
+    const runtime = new Runtime(scene, { renderer: recordingRenderer() });
+
+    runtime.step();
+    runtime.step();
+    runtime.render();
+
+    const actor = object.getComponent('Actor');
+    assert.equal(actor.updates, 2);
+    assert.equal(actor.draws, 1, 'drawing follows its own rhythm, not the simulation step');
+});
+
+test('the scene may be edited during a step, and the step stays deterministic', () => {
+    // The Editor mutates a live scene, and so does gameplay when it spawns. A step
+    // iterates snapshots, so what a step runs is decided before it starts: an object
+    // added mid-step joins the next one, and never half of this one.
+    const scene = new Scene('Main');
+    const ran = [];
+    class Spawner {
+        static type = 'Spawner';
+        constructor() { this.spawned = false; }
+        update(self, ctx) {
+            ran.push('spawner');
+            if (this.spawned) return;
+            this.spawned = true;
+            ctx.scene.add(new Object('Spawned')).addComponent(new Witness());
+        }
+    }
+    class Witness {
+        static type = 'Witness';
+        update() { ran.push('witness'); }
+    }
+    scene.add(new Object('Spawner')).addComponent(new Spawner());
+
+    const runtime = new Runtime(scene);
+    runtime.step();
+    assert.deepEqual(ran, ['spawner'], 'the newcomer waits for the next step');
+
+    runtime.step();
+    assert.deepEqual(ran, ['spawner', 'spawner', 'witness']);
+});
+
 test('a paused runtime stops simulating but keeps rendering', () => {
     const { scene, mover } = sceneWithMover();
     const renderer = recordingRenderer();

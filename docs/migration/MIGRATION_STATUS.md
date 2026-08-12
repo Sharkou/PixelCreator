@@ -24,10 +24,12 @@ Aucun fichier de `legacy/` n'a été modifié.
 | **2.9** | Modèle d'erreurs d'exécution — isolation et rapport séparés de la politique (ADR-0012) |
 | **2.10** | `runtime/input/` (ADR-0014) ; `Camera` / `Viewport` et conversions monde↔écran (ADR-0013) ; socle `runtime/scripting/` — **révisé** : un Component peut avoir un graphe `.px` qui définit son comportement, il n'existe pas de Component `Script` (ADR-0015) |
 
-### État vérifié (2026-08-12, après étape 2.10)
+| **2.11** | Définition de Component — propriétés + graphe, `defineComponent()` (ADR-0016) ; quatre formes de Component verrouillées et testées (ADR-0004) ; `preview()` retiré du contrat ; vérification des fondations avant l'Editor |
+
+### État vérifié (2026-08-13, après étape 2.11)
 
 ```bash
-tools/test.sh              # 361 tests, 361 passés
+tools/test.sh              # 381 tests, 381 passés
 node tools/layers/run.js   # v2 : 0 violation — legacy : 1 violation trackée
 node tools/parity/run.js   # 39 identical, 0 problems
 ```
@@ -43,13 +45,17 @@ ces dossiers sont absents.
 | Adaptateur navigateur pour l'input | Appartient à la couche qui possède le DOM, pas au runtime (ADR-0014) |
 | Interprète de graphe `.px` | Demande le modèle de graphe ; l'hôte `Behaviors` le reçoit en paramètre (ADR-0009, ADR-0015) |
 | Chargement des ressources — qui appelle `behaviors.bind()` | Demande `Resource` et le chargement de projet (ADR-0009) |
-| Déclaration d'un type de Component purement graphe | `.js` fournit une classe ; une déclaration au niveau projet reste à concevoir (ADR-0015) |
+| Migration des instances quand une définition change | Décision d'Editor, pas de runtime (ADR-0016) |
 | Picking de l'Editor | `screenToWorld()` fournit le mapping ; la politique de sélection appartient à l'Editor (ADR-0013) |
 | `runtime/physics/`, `animation/`, `audio/` | Domaines non entamés |
 
 ### Prochaine action
 
-Étape 3 — socle `editor/`, ou `runtime/physics/`.
+**Étape 3 — l'Editor et son UX.** Les fondations du Runtime sont suffisantes : cycle de
+vie des Components (les quatre formes), input, caméra/viewport, rendu, comportement par
+graphe, définitions de Components, sérialisation, erreurs, déterminisme et exécution
+headless sont en place et testés. `runtime/physics/` et les autres domaines ne sont pas
+requis pour commencer l'Editor.
 
 ## Décisions validées
 
@@ -68,6 +74,7 @@ ces dossiers sont absents.
 | Camera / Viewport | La caméra est un `Object` ; le viewport est l'écran ; la vue est dérivée | ADR-0013 |
 | Input | Abstrait, indexé par owner, passé à `step()` — jamais un global | ADR-0014 |
 | Scripting | Un Component peut avoir un graphe `.px` qui définit son comportement. Pas de Component `Script`, pas de `ScriptSystem` | ADR-0015 |
+| Components utilisateur | Une définition (`type` + propriétés + graphe) produit un Component ordinaire ; elle appartient au type | ADR-0016 |
 | Projets Legacy | Aucune migration de données à concevoir | — |
 | Renommages | `childs` → `children`, `uid` → `owner`, `static` supprimé | ADR-0001 |
 

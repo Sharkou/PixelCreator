@@ -109,7 +109,7 @@ la décision « aucun projet v1 à migrer » lève ce blocage.
 | `_x` / `__x` et la propagation en delta aux enfants | supprimés | remplacés par une composition de matrices, valeurs locales préservées |
 | `detectMouse`, `detectSide`, `select` | `editor/viewport/` | outillage d'IDE |
 | `createImage` | `editor/` (rendu hors écran) | supprime le DOM du Core |
-| `preview` | reste, mais n'est appelé que par l'Editor | |
+| `preview` | `editor/viewport/` | surcouche d'IDE ; retirée du contrat de Component (ADR-0004) |
 | `image` | `editor/` (cache de vignettes) | ce n'est pas une donnée de jeu |
 | `type` | `editor/` (affichage) ou supprimé | dupliqué par la présence des composants |
 | `static` | supprimé | jamais lu |

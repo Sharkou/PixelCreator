@@ -121,7 +121,6 @@ découpage ne donne cela aussi simplement.** C'est une observation, pas une pré
 update(self, ctx)        // ctx : { time, deltaTime, scene, runtime, input }
 draw(self, renderer)
 bounds(self)             // géométrie optionnelle — voir ci-dessous
-preview(self, renderer)  // éditeur uniquement
 onCollision(self, other) / onCollisionStart / onCollisionExit
 onAttach(self) / onDetach(self)   // remplace constructorAfterLink
 ```
@@ -129,6 +128,26 @@ onAttach(self) / onDetach(self)   // remplace constructorAfterLink
 Les deux paramètres sont optionnels : un composant qui ignore le second continue de
 fonctionner. **Toujours du duck-typing, aucune classe de base obligatoire** — écrire un
 composant doit rester une affaire de dix lignes.
+
+**Les quatre formes sont toutes valides**, et le runtime vérifie l'existence du hook avant
+de l'appeler :
+
+| Forme | Simulation | Rendu |
+|---|---|---|
+| aucune méthode | — | aucun coût |
+| `update()` seul | client **et serveur** | aucun coût |
+| `draw()` seul | — | client uniquement |
+| `update()` + `draw()` | client **et serveur** | client uniquement |
+
+Un composant sans `draw()` ne coûte **rien** au rendu : le `SceneRenderer` n'établit la
+transformation d'un objet que lorsqu'un composant dessine réellement. `draw()` n'est jamais
+requis côté serveur, qui ne construit pas de renderer.
+
+> **`preview()` ne fait pas partie du contrat v2.** Legacy l'appelait depuis
+> `Renderer.render()` pour les surcouches d'IDE ; en v2 ces surcouches appartiennent à
+> `editor/viewport/`, qui dessine par la même abstraction de renderer et définira son
+> propre crochet s'il en a besoin. Un contrat de runtime, lu aussi par le serveur, n'a pas
+> à porter une méthode d'éditeur que rien n'appelle.
 
 `ctx.input` remplace le singleton `Keyboard` : c'est ce qui découple les entrées du
 réseau et **répare le mode solo**. Il est indexé par owner (ADR-0014) :
@@ -168,6 +187,38 @@ même Inspector qu'une écriture de code écrit à la main.
 
 Le runtime exécute, pour un composant actif, son `update` **puis** le graphe lié à son
 type. Dessiner reste l'affaire du type de Component, qui déclare `draw` (ADR-0015 §9).
+
+Le point d'entrée temporel du graphe est le nœud **`On Update`** : ce qu'il déclenche
+participe à la **même simulation** que `update()`, donc au même pas fixe, au même ordre
+déterministe, et tourne **côté serveur comme côté client**.
+
+### Un Component créé par un utilisateur (ADR-0016)
+
+Un Component est **propriétés + comportement**. Un composant livré avec le moteur écrit
+cela en JavaScript ; un composant qu'un créateur fabrique dans l'éditeur le décrit comme
+une **définition**, en JSON :
+
+```json
+{
+  "type": "Controller",
+  "properties": { "speed": { "type": "number", "default": 120 } },
+  "graph": { "version": 1, "nodes": [], "connections": [] }
+}
+```
+
+```js
+const Controller = components.register(defineComponent(definition));
+behaviors.bind(Controller);        // le graphe vient de la définition
+```
+
+`defineComponent()` en fait une **classe de composant ordinaire** : registre,
+`addComponent()`, Inspector, sérialisation — rien en aval ne distingue un composant né
+d'une donnée d'un composant écrit à la main. Toute clé du schéma existe sur une instance
+neuve avec son défaut, donc l'Inspector, la sérialisation et le graphe s'accordent sur ce
+qu'est un `Controller`.
+
+La définition appartient au **type** : mille `Controller` dans une scène, c'est mille
+`speed` et **un seul** graphe.
 
 ### `active` — qui lit, qui écrit (ADR-0012)
 

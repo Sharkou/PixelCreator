@@ -77,7 +77,7 @@ Format : **Legacy → Limites → À conserver → À simplifier → Proposition
 |---|---|
 | **Legacy** | `Renderer.render()` fait tri + update + picking IDE + projection + draw + preview + sélection |
 | **Limites** | `import { Dnd } from '/editor/...'` dans le Core ; update/draw entrelacés (non déterministe) ; `sort()` par frame ; `Camera` à double rôle (composant *et* Object) |
-| **À conserver** | Canvas 2D ; la projection caméra ; `preview()` pour l'affichage éditeur |
+| **À conserver** | Canvas 2D ; la projection caméra ; les surcouches d'affichage éditeur — mais dans `editor/viewport/`, pas comme un hook de Component |
 | **À simplifier** | Séparer les phases ; sortir le picking ; cacher le tri |
 | **Proposition** | `runtime/loop.js` + `runtime/rendering/` ; surcouches IDE dans `editor/viewport/` |
 | **Risque** | Séparer update et draw **change l'ordre d'observation** : un jeu Legacy pourrait dépendre involontairement de l'entrelacement. |

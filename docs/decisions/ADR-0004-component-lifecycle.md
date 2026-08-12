@@ -72,6 +72,18 @@ architecture de Systems.
 **VALIDÉ :** un Component peut implémenter `update()`, `draw()`, ou **les deux**.
 `ParticleSystem`, `Sprite` et `Tilemap` participent ainsi directement au rendu.
 
+> **Précisé le 2026-08-13 — les quatre formes sont valides**, y compris **aucune des
+> deux** : un composant de pure donnée est légitime, et un composant dont le comportement
+> est un graphe `.px` n'a souvent aucune méthode (ADR-0015, ADR-0016). Le runtime et le
+> `SceneRenderer` **vérifient l'existence du hook avant de l'appeler**, et un composant
+> sans `draw()` ne coûte rien au rendu : la transformation d'un objet n'est établie que
+> lorsqu'un composant dessine réellement. `draw()` n'est jamais requis côté serveur.
+>
+> **`preview()` ne fait pas partie du contrat v2.** Legacy l'appelait pour les surcouches
+> d'IDE ; en v2 elles appartiennent à `editor/viewport/`, qui dessine par la même
+> abstraction de renderer. Rien dans le runtime ne l'appelle, et un contrat lu aussi par
+> le serveur n'a pas à porter une méthode d'éditeur.
+
 > **Deux de ces trois cas ne sont pas conformes dans Legacy** — la décision v2 implique
 > donc de les corriger, en abandonnant délibérément le comportement historique :
 >
@@ -120,7 +132,7 @@ garde sa propre logique de rendu quand c'est pertinent.
 ### 3. `update` reçoit un contexte
 
 ```js
-update(self, ctx)   // ctx : { time, input, scene, environment }
+update(self, ctx)   // ctx : { time, deltaTime, scene, runtime, input }
 ```
 
 C'est ce qui découple `Controller` de `Keyboard` → `Network` (`ctx.input` au lieu du
