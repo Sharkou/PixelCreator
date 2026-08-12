@@ -23,6 +23,8 @@
 // Size is not a transform. Width and height describe what is drawn or collided with, so
 // they belong to the rendering and collision components rather than here.
 
+import { Matrix } from '../math/matrix.js';
+
 export class Transform {
 
     static type = 'Transform';
@@ -52,4 +54,53 @@ export class Transform {
         this.scaleX = scaleX;
         this.scaleY = scaleY;
     }
+}
+
+/**
+ * The object's own placement, ignoring its parents.
+ * @param {object} object - The object
+ * @returns {Matrix} The local matrix, identity when the object has no Transform
+ */
+export function localMatrix(object) {
+    const transform = object.getComponent('Transform');
+    if (!transform) return Matrix.identity();
+    return Matrix.compose(
+        transform.x,
+        transform.y,
+        transform.rotation,
+        transform.scaleX,
+        transform.scaleY
+    );
+}
+
+/**
+ * The object's placement in the scene, composed with every parent above it.
+ *
+ * DERIVED, never stored. This is the read API the engine uses for rendering, physics
+ * and picking; it is deliberately a function rather than a property on Object, so that
+ * it can never be mistaken for a second position the user has to maintain. Mutation
+ * stays on the local values: `object.x`, `object.y`, `object.rotation`, and so on.
+ *
+ * Recomputed on demand rather than cached: a cache would need invalidating on every
+ * ancestor's every write, and the cost is one small matrix multiply per level of depth.
+ *
+ * @param {object} object - The object
+ * @returns {Matrix} The world matrix
+ */
+export function worldMatrix(object) {
+    let matrix = localMatrix(object);
+    for (let parent = object.parent; parent; parent = parent.parent) {
+        matrix = localMatrix(parent).multiply(matrix);
+    }
+    return matrix;
+}
+
+/**
+ * The object's position in the scene.
+ * @param {object} object - The object
+ * @returns {{x: number, y: number}} The world position
+ */
+export function worldPosition(object) {
+    const matrix = worldMatrix(object);
+    return { x: matrix.e, y: matrix.f };
 }

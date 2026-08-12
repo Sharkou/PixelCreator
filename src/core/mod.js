@@ -24,7 +24,8 @@ export {
     componentSchema
 } from './component.js';
 
-export { Transform } from './components/transform.js';
+export { Matrix } from './math/matrix.js';
+export { Transform, localMatrix, worldMatrix, worldPosition } from './components/transform.js';
 
 export {
     FORMAT_VERSION,

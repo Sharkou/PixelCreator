@@ -124,8 +124,10 @@ décision « aucun projet v1 à migrer » lève ce blocage :
 
 ### 3.2 Transform devient un Component, `object.x` reste `object.x`
 
-**VALIDÉ** (ADR-0002). `x`, `y`, `width`, `height`, `rotation`, `scale`
-quittent `Object` pour un composant `Transform`, **avec une seule source de vérité** :
+**VALIDÉ** (ADR-0002). `x`, `y`, `rotation`, `scaleX`, `scaleY` quittent `Object` pour
+un composant `Transform`, **avec une seule source de vérité**. `width` et `height` n'en
+font pas partie : une taille appartient aux composants de rendu et de collision.
+Les valeurs sont **locales** ; la transformation monde est dérivée, jamais stockée.
 
 ```js
 // Transform détient les valeurs

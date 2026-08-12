@@ -1,7 +1,7 @@
 # ADR-0002 — Transform devient un Component, `object.x` reste une façade
 
-- **Statut :** **accepté** (2026-08-12)
-- **Décide :** où vivent `x`, `y`, `width`, `height`, `rotation`, `scale`
+- **Statut :** **accepté** (2026-08-12), précisé le 2026-08-13
+- **Décide :** où vivent `x`, `y`, `rotation`, `scaleX`, `scaleY`
 
 ---
 
@@ -62,9 +62,45 @@ object.components.Transform.x = 100;
 **Il n'existe jamais `Object._x` et `Transform.x` comme deux valeurs.** La façade ne
 stocke rien.
 
-`Transform` porte aussi la propagation hiérarchique, de façon uniforme pour toutes ses
-propriétés — ce qui corrige l'asymétrie actuelle (`x`/`y` propagés, `width`/`rotation`
-non).
+### Contenu exact de Transform — précisé le 2026-08-13
+
+`Transform` porte **uniquement la transformation spatiale locale** :
+
+| Propriété | Sens |
+|---|---|
+| `x`, `y` | position, relative au parent |
+| `rotation` | rotation en radians, relative au parent |
+| `scaleX`, `scaleY` | facteurs d'échelle, relatifs au parent |
+
+**`width` et `height` n'appartiennent pas à `Transform`.** Une taille ne décrit pas
+*où* se trouve un objet mais *ce qui* est dessiné ou entre en collision : elle vit donc
+dans les composants qui en ont réellement besoin (`Sprite`, `RectangleRenderer`,
+`Tilemap`, colliders). Elles ne reviennent pas non plus sur `Object`.
+
+`scale` uniforme est remplacé par `scaleX` / `scaleY` : l'échelle non uniforme est un
+besoin courant, et un scalaire unique aurait dû être élargi plus tard.
+
+### Hiérarchie : composition, pas propagation
+
+**Les valeurs stockées sont toujours locales.** Un parent ne réécrit jamais les valeurs
+d'un enfant — c'est exactement ce que faisait Legacy, en poussant un delta dans chaque
+enfant à chaque déplacement, ce qui rendait la position stockée d'un enfant dépendante
+de l'historique de son parent, et laissait `width` et `rotation` incohérents faute
+d'être propagés du tout.
+
+La transformation **monde** est **dérivée** : le moteur compose la transformation locale
+d'un objet avec celles de ses parents quand il en a besoin (rendu, physique, picking).
+
+Elle n'est donc jamais :
+
+- une seconde source de vérité ;
+- sérialisée comme une propriété de l'`Object` ;
+- exposée comme une position que l'utilisateur devrait maintenir.
+
+L'API de mutation reste `object.x`, `object.y`, `object.rotation`, `object.scaleX`,
+`object.scaleY` — un seul système de coordonnées côté utilisateur, **jamais** de couple
+`localX` / `worldX` à démêler. La lecture de la transformation monde est une API
+**dérivée et séparée**, destinée au moteur (`worldMatrix(object)`).
 
 ---
 

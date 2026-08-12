@@ -19,6 +19,21 @@
 // `self` is passed as an argument and never stored. A component holding a reference
 // back to its Object would create a cycle and break serialization and replication.
 //
+// NO `#private` MEMBERS IN A COMPONENT.
+//
+// Attaching a component wraps it in a Proxy so its properties stay observable, and
+// `this` inside its methods is therefore the proxy, not the raw instance. Private
+// members are reachable only from the exact instance that declares them, so
+// `this.#anything` throws "Receiver must be an instance of class X".
+//
+// The alternative — binding methods to the raw instance so private members work — is
+// worse: `this.speed = 0` inside update() would then bypass the Proxy and silently stop
+// notifying the Inspector. Losing reactivity without a sound is the exact class of bug
+// v2 exists to remove, so the Proxy keeps `this` and components use ordinary methods.
+//
+// This costs nothing in practice: prototype methods are not own enumerable properties,
+// so they are never serialized and never shown by the Inspector either way.
+//
 // `draw(self, renderer)` receives a rendering abstraction rather than reading a global
 // 2D context, so a component such as a particle system can produce pixels without the
 // notion of Component being coupled to Canvas 2D. The backend arrives in 2.8.

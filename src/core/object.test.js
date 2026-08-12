@@ -125,6 +125,40 @@ test('a component without lifecycle hooks is fine', () => {
     assert.doesNotThrow(() => object.addComponent(new Bare()));
 });
 
+test('prototype methods are callable and stay out of the data', () => {
+    class Counter {
+        static type = 'Counter';
+        constructor() { this.count = 0; }
+        bump() { this.count++; }
+    }
+
+    const object = new Object('Player');
+    const counter = object.addComponent(new Counter());
+
+    counter.bump();
+
+    assert.equal(counter.count, 1);
+    assert.deepEqual(globalThis.Object.keys(counter), ['count'], 'methods are not data');
+});
+
+test('a #private member in a component is not usable through the Proxy', () => {
+    // Attaching a component wraps it in a Proxy, so `this` inside a method is the proxy
+    // and private members — reachable only from the declaring instance — throw. The
+    // alternative would be to bind methods to the raw instance, which would silently
+    // break reactivity for every `this.x = v` inside a method. Components therefore use
+    // ordinary methods; this test states the rule so it fails loudly if it is forgotten.
+    class Broken {
+        static type = 'Broken';
+        #secret = 1;
+        reveal() { return this.#secret; }
+    }
+
+    const object = new Object('Player');
+    const broken = object.addComponent(new Broken());
+
+    assert.throws(() => broken.reveal(), TypeError);
+});
+
 // --- facade -------------------------------------------------------------------
 
 test('object.x reads through to Transform', () => {

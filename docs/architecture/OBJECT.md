@@ -104,8 +104,9 @@ la décision « aucun projet v1 à migrer » lève ce blocage.
 
 | Sort de `Object` | Vers | Raison |
 |---|---|---|
-| `x`, `y`, `width`, `height`, `rotation`, `scale` | composant `Transform` | ADR-0002 |
-| `_x` / `__x` et la propagation aux enfants | `Transform` | uniformise la propagation |
+| `x`, `y`, `rotation`, `scaleX`, `scaleY` | composant `Transform` | ADR-0002 |
+| `width`, `height` | composants de rendu / collision | une taille n'est pas une transformation |
+| `_x` / `__x` et la propagation en delta aux enfants | supprimés | remplacés par une composition de matrices, valeurs locales préservées |
 | `detectMouse`, `detectSide`, `select` | `editor/viewport/` | outillage d'IDE |
 | `createImage` | `editor/` (rendu hors écran) | supprime le DOM du Core |
 | `preview` | reste, mais n'est appelé que par l'Editor | |
