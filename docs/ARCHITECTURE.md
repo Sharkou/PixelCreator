@@ -1,0 +1,471 @@
+# Architecture v2 — proposition
+
+> **Statut : PROPOSITION V2.** Rien ici n'est implémenté. Ce document est soumis à
+> validation avant toute écriture de code.
+>
+> Chaque décision structurante est justifiée par une observation de
+> `migration/LEGACY_ANALYSIS.md`. Les décisions à trancher sont regroupées en §10.
+
+---
+
+## 1. Principe directeur
+
+L'analyse de Legacy conduit à une conclusion nette : **les concepts sont bons, les
+implémentations sont fragiles.** Le triple canal d'écriture, le Core partagé, le
+`update/draw` avec `self` en argument, l'Inspector réflexif — tout cela fonctionne et
+n'a pas d'équivalent plus simple.
+
+Les problèmes réels sont ailleurs :
+
+| Problème réel | Nature |
+|---|---|
+| Réactivité perdue sur les propriétés dynamiques et les champs `#` | implémentation |
+| Sérialisation ×3 et enfants dupliqués | implémentation |
+| `Core → Editor`, `Input → Network` | couplage |
+| Ajouter une fenêtre = éditer 4 fichiers | modularité UI |
+| Graphe sans modèle de données | fonctionnalité absente |
+| Aucun test | outillage |
+
+**Aucun de ces problèmes n'exige un ECS, une architecture Systems, ni un framework UI.**
+
+---
+
+## 2. Découpage
+
+```
+                          Pixel Creator
+                                │
+          ┌─────────────┬───────┴───────┬─────────────┐
+          │             │               │             │
+        core/        runtime/        editor/       network/
+          │             │               │             │
+      Object        renderer/        windows/      protocol
+      Scene         physics/         inspector/    transport
+      Component     input/           viewport/     replication
+      properties    anim/            graph/
+      resources     audio/           ui/
+      events        camera/
+      logger        loop
+```
+
+**Règle de dépendance, unique et vérifiable :**
+
+```
+editor/  ──►  runtime/  ──►  core/
+network/ ──►  core/
+core/    ──►  (rien)
+```
+
+`core/` n'importe ni `runtime/`, ni `editor/`, ni `network/`, ni le DOM.
+Un test automatisé vérifie cette règle (voir `development/TESTING.md`).
+
+### Pourquoi pas de dossier `systems/`
+
+**OBSERVÉ :** Legacy n'a jamais eu de « System ». La physique vit dans
+`Collider.update()`, l'animation dans `Animator.update()`. L'organisation par module de
+domaine (`physics/`, `anim/`, `input/`) est celle qui existe et qui se lit bien.
+
+**PROPOSITION V2 :** on conserve l'organisation par domaine. Le mot « System » n'est
+employé que lorsqu'un module orchestre réellement plusieurs objets — par exemple un
+`CollisionSystem` qui remplacerait la boucle O(n²) actuelle par un balayage spatial.
+Ce serait alors un vrai service, pas une case dans un schéma.
+
+---
+
+## 3. Core
+
+### 3.1 Object
+
+`Object` reste `Object` (ADR-0001). Il redevient un **conteneur** :
+
+```js
+class Object {
+    id            // identité de l'objet
+    owner         // ex-`uid` : le joueur propriétaire   (ADR à valider, §10)
+    name, tag, layer
+    active, visible, lock, static
+    components    // Map<string, Component>
+    parent, children
+}
+```
+
+Sortent de `Object` (vers `editor/`) : `detectMouse`, `detectSide`, `select`,
+`createImage`, `preview`. Ce sont des opérations d'IDE, elles n'ont pas à empêcher le
+chargement du Core côté serveur.
+
+`childs` → `children` : **renommage à valider** (§10), car le nom circule dans le
+protocole réseau et les données sauvegardées.
+
+### 3.2 Transform devient un Component, `object.x` reste `object.x`
+
+**PROPOSITION V2** (ADR-0002). `x`, `y`, `width`, `height`, `rotation`, `scale`
+quittent `Object` pour un composant `Transform`, **avec une seule source de vérité** :
+
+```js
+// Transform détient les valeurs
+object.components.get('Transform').x   // ← source de vérité unique
+
+// Object expose une façade — pas une copie
+Object.prototype = {
+    get x()  { return this.components.get('Transform').x; },
+    set x(v) {        this.components.get('Transform').x = v; }
+}
+```
+
+Les deux écritures suivantes sont donc strictement équivalentes et ne peuvent pas
+diverger :
+
+```js
+object.x = 100;
+object.getComponent('Transform').x = 100;
+```
+
+Bénéfices : la hiérarchie de transformation (aujourd'hui `_x`/`__x` codé en dur dans
+`Object`) devient la responsabilité de `Transform` ; un objet purement logique n'a pas
+besoin de position ; l'Inspector affiche `Transform` comme n'importe quel composant.
+
+Risque assumé : deux indirections par lecture de `x` dans les boucles chaudes.
+Le benchmark de §4.2 montre que le budget existe, mais le rendu devra lire
+`transform` une fois par objet plutôt que `self.x` répété.
+
+### 3.3 Property System
+
+Le mécanisme conceptuel est conservé à l'identique. L'implémentation passe de
+`Object.defineProperty` par propriété à un **`Proxy` par objet** (ADR-0003).
+
+**Ce qui ne change pas — l'ergonomie :**
+
+```js
+object.x = 100;      // change + notifie les vues, ne va pas sur le réseau
+object.$x = 100;     // change + notifie + réplique
+```
+
+**Ce que le Proxy corrige, mesuré :**
+
+| Défaut Legacy | Résolu |
+|---|---|
+| Propriété ajoutée après coup non réactive | ✅ le trap intercepte toute clé |
+| Champs `#privés` invisibles | ✅ non concerné (état interne, hors modèle) |
+| `_prop`/`$prop` énumérables, sérialisation ×3 | ✅ aucun stockage parasite |
+| Écriture 301 ms / 3 M ops | ✅ **77 ms** — 4× plus rapide |
+| Pas de valeur précédente | ✅ le trap la lit avant d'écrire |
+
+Le `Change` émis devient :
+
+```js
+{ object, component, prop, value, previous, origin }
+```
+
+`origin` ∈ `local` | `network` | `runtime` | `editor`. Il remplace l'astuce actuelle
+(« quelle méthode a été appelée ») par une donnée explicite, et supprime le besoin de
+`setProperty(prop, value, dispatch=false)` pour éviter les échos : la couche réseau
+ignore simplement les changements d'origine `network`.
+
+### 3.4 Serialization
+
+Un `serialize()` explicite remplace la sérialisation implicite par `JSON.stringify` :
+
+- pas de doublons `_`/`$` (il n'y en a plus),
+- les enfants sont référencés par id, **jamais imbriqués en entier**,
+- les images ne partent plus en base64 dans l'état de scène (référence par id de ressource),
+- versionné, pour que les projets existants restent lisibles.
+
+Gain attendu sur le heartbeat : facteur 3 sur la duplication `_prop`, plus la
+suppression de la duplication des enfants.
+
+### 3.5 Events et Logger
+
+Le bus `System.addEventListener/dispatchEvent` est conservé (synchrone, ordonné,
+prévisible). Il est extrait dans `core/events.js` et gagne un `off()` fiable.
+
+`System` est démantelé : c'est aujourd'hui un fourre-tout (id, random, sync, fichiers,
+validation d'`<input>`, événements, logs). Voir `architecture/CORE.md`.
+
+Le logger conserve l'identité visuelle historique (catégories colorées) derrière une
+API nommée — voir `development/LOGGING.md`.
+
+---
+
+## 4. Runtime
+
+### 4.1 Components
+
+Le contrat historique est conservé **et enfin explicite** (ADR-0004) :
+
+```js
+update(self, ctx)   // simulation      — client ET serveur
+draw(self, renderer) // rendu          — client uniquement
+```
+
+`self` reste passé en argument (pas de `this.object`) : c'est ce qui garde les
+composants sérialisables sans cycle. `ParticleSystem` reste l'exemple canonique —
+simulation dans `update`, rendu dans `draw`, serveur sans `draw`.
+
+`draw(self, renderer)` reçoit une abstraction de rendu au lieu de lire le singleton
+`Graphics.ctx`. Cela n'impose **pas** de transformer les composants en « RenderSystems » :
+un composant garde sa logique de rendu quand c'est pertinent.
+
+Nouveauté : un composant **déclare son schéma** (ADR-0007), ce qui alimente l'Inspector,
+la validation, et la sérialisation :
+
+```js
+static schema = {
+    speed:  { type: 'number', default: 2, min: 0, max: 20 },
+    layout: { type: 'enum', values: ['wasd', 'zqsd', 'arrows'], default: 'zqsd' }
+};
+```
+
+Le schéma est **optionnel** : sans lui, l'Inspector retombe sur l'inférence réflexive
+actuelle, qui fonctionne déjà. La rétrocompatibilité des composants utilisateurs est
+donc préservée.
+
+### 4.2 Boucle
+
+Les phases sont séparées, comme le serveur le fait déjà :
+
+```
+frame:
+  input.poll()
+  for each object: object.update()     ← toute la simulation d'abord
+  collisions.resolve()
+  renderer.render(scene, camera)       ← puis tout le rendu
+  editor.overlay()                     ← puis les surcouches IDE (si Editor)
+```
+
+**OBSERVÉ :** Legacy entrelace update et draw par objet, ce qui rend l'ordre
+d'observation dépendant du tri par `layer` — non déterministe pour un moteur
+multijoueur. Le serveur ne fait pas cette erreur.
+
+Le tri par `layer` est mis en cache et invalidé sur changement, au lieu d'un
+`Object.values().sort()` par frame.
+
+Le picking souris et les poignées de redimensionnement sortent de `Renderer.render()`
+vers `editor/viewport/`. **C'est ce qui supprime `import { Dnd } from '/editor/...'`
+dans le Core.**
+
+### 4.3 Input
+
+`Input` ne dépend plus de `Network` (correctif du bug §6.3 de l'analyse) :
+
+```
+core/input   →  état des entrées, indexé par owner ; un owner "local" existe toujours
+network/     →  alimente l'état des entrées des owners distants
+```
+
+Conséquence directe : **le mode solo hors ligne fonctionne**, ce qui n'est pas le cas
+aujourd'hui.
+
+---
+
+## 5. Editor
+
+### 5.1 Ce qu'on garde absolument
+
+La synchronisation temps réel actuelle est **bonne** et ne doit pas être remplacée par
+un store ou un framework :
+
+- source de vérité unique = l'`Object`,
+- le DOM est une projection,
+- la garde `document.activeElement` permet l'édition lettre par lettre.
+
+### 5.2 Ce qu'on change : la modularité
+
+**OBSERVÉ :** ajouter une fenêtre exige d'éditer `index.html` (700 lignes), `app.js`,
+un CSS et le module ; `editor/windows/window.js` est un `// TODO` vide.
+
+**PROPOSITION V2 :** des Web Components natifs comme primitives (ADR-0006). Chaque
+fenêtre porte son propre balisage, ses styles (Shadow DOM) et son cycle de vie.
+
+```
+Primitives          Fenêtres construites dessus
+──────────          ───────────────────────────
+<pc-window>         <pc-hierarchy>
+<pc-panel>          <pc-inspector>
+<pc-split>          <pc-assets>
+<pc-tabs>           <pc-scene>
+<pc-toolbar>        <pc-graph>
+<pc-tree>           <pc-players>
+<pc-list>           <pc-console>
+<pc-property>
+<pc-viewport>
+<pc-modal>, <pc-menu>
+```
+
+Ajouter une fenêtre devient : écrire un fichier, l'enregistrer auprès du layout.
+
+La liaison propriété↔DOM par classe CSS globale (`<id>-<prop>` +
+`getElementsByClassName` sur `document`) est remplacée par un **binding scopé** : le
+composant `<pc-property>` s'abonne au `Change` de la propriété qu'il affiche et se met
+à jour lui-même. Même comportement observable, sans requête DOM globale, et compatible
+Shadow DOM.
+
+### 5.3 Inspector
+
+Piloté par schéma quand il existe, réflexif sinon (ADR-0007). Zéro `if (component === …)`.
+Cela corrige au passage : les décimales tronquées par `parseInt`, l'absence de min/max,
+les couleurs mal détectées (`''` initial), et les branches `TODO Range`/`TODO Array`
+mortes.
+
+### 5.4 Viewport
+
+`Handler` (27 ko, `switch` de 8 cas dupliqué) est découpé en **outils** :
+`SelectTool`, `MoveTool`, `ResizeTool`, `PanTool`, `ZoomTool`. Un seul outil actif,
+une interface commune. Le redimensionnement 8 directions devient une fonction unique
+paramétrée par le côté.
+
+---
+
+## 6. Network et Operations
+
+### 6.1 Constat
+
+**OBSERVÉ :** le protocole actuel *est déjà* un système d'opérations qui ne dit pas son
+nom. `update {id, component, prop, value}` = `SET_PROPERTY`. `addComponent`, `addChild`,
+`add`, `remove` sont déjà des opérations nommées.
+
+### 6.2 Proposition
+
+On formalise ce qui existe déjà, sans changer l'ergonomie utilisateur (ADR-0008) :
+
+```
+object.x = 100          → Change { origin: 'editor' }
+                        → Operation SET_PROPERTY { target, prop, value, previous }
+                        → transport
+```
+
+L'utilisateur n'écrit jamais une Operation à la main. Elle est **produite** par le
+Property System.
+
+Opérations : `SET_PROPERTY`, `ADD_OBJECT`, `REMOVE_OBJECT`, `ADD_COMPONENT`,
+`REMOVE_COMPONENT`, `ADD_CHILD`, `REMOVE_CHILD`, `ADD_RESOURCE`, `REMOVE_RESOURCE`.
+
+Ce que le format ajoute par rapport aux messages actuels :
+
+| Champ | Débloque |
+|---|---|
+| `previous` | undo/redo |
+| `seq` | ordre total, détection de perte |
+| `author` | collaboration, attribution |
+| `batch` | un drag = **une** opération, pas 300 |
+
+Le batching répond directement au `delay = 0` qui neutralise le throttle actuel.
+
+**Ce n'est pas un CRDT et pas de l'OT.** La collaboration multi-utilisateurs reste hors
+périmètre ; on s'assure seulement de ne pas la rendre impossible.
+
+### 6.3 Réplication d'état
+
+Le heartbeat « scène complète toutes les 4 s » (qui écrase les saisies en cours) est
+remplacé par des **snapshots delta** : seules les propriétés modifiées depuis le dernier
+accusé de réception sont envoyées. La réconciliation complète reste disponible à la
+connexion et à la demande.
+
+### 6.4 Autorité
+
+**QUESTION À VALIDER (§10).** Aujourd'hui le serveur n'a aucune autorité : il applique
+et rediffuse. Pour des jeux compétitifs (.io, MOBA), il faudra au minimum distinguer
+« mutation d'édition » (autorisée à l'auteur du projet) de « action de jeu » (soumise
+au serveur).
+
+---
+
+## 7. Client / Serveur
+
+```
+                     core/  (identique des deux côtés)
+                            │
+              ┌─────────────┴─────────────┐
+              │                           │
+           Client                      Serveur
+              │                           │
+    runtime + renderer             runtime sans rendu
+    editor (optionnel)             network + persistance
+```
+
+Pas de `ClientObject` / `ServerObject`. La différence n'est pas dans le modèle mais
+dans les **modules chargés** : le serveur n'importe pas `renderer/`.
+
+`mod.js` reste le point d'entrée partagé. La v2 le scinde en `core/mod.js` (partagé) et
+`runtime/mod.js` (client), pour que le serveur cesse d'importer transitivement le
+rendu et le DOM.
+
+---
+
+## 8. Scripting
+
+Deux langages, un seul modèle objet (ADR-0009) :
+
+| Extension | Nature | Exécution |
+|---|---|---|
+| `.px` | **graphe**, ressource structurée JSON | interprété (ou compilé) par le runtime |
+| `.js` | vrai module JavaScript ES | `import()` dynamique, comme aujourd'hui |
+
+**OBSERVÉ :** aujourd'hui `.px` est dans `allowedScriptsTypes` à côté de
+`text/javascript` et passe par `import()` — c'est donc du JavaScript déguisé, ce que la
+vision refuse explicitement. Le serveur, lui, connaît `application/pixelscript`.
+**Les deux types MIME doivent être unifiés.**
+
+Le graphe reçoit enfin un modèle de données sérialisable, indépendant du DOM :
+
+```json
+{
+  "version": 1,
+  "nodes":       [{ "id": "...", "type": "update", "x": 0, "y": 0, "params": {} }],
+  "connections": [{ "from": ["nodeA", "out", 0], "to": ["nodeB", "in", 1] }],
+  "variables":   [{ "name": "speed", "type": "number", "value": 2 }],
+  "metadata":    { "name": "player" }
+}
+```
+
+L'éditeur de nœuds actuel (pan/zoom/Bézier, récemment amélioré) est conservé ; il
+pilote ce modèle au lieu d'être le modèle.
+
+`.px` et `.js` manipulent les mêmes `Object`, `Component`, `Property`, `Scene`,
+`Resource`, `Event` : ce sont deux façades sur une seule API, pas deux moteurs.
+
+`editor/graph/compiler.js` (lexer d'un langage type Rust, jamais exécutable) est
+abandonné. `editor/graph/component.js` est renommé pour ne plus entrer en collision
+avec les composants de jeu.
+
+---
+
+## 9. Ressources
+
+- `Resource` devient réel et remplace le `File` augmenté (aujourd'hui `Resource` existe
+  mais n'est jamais utilisée).
+- Un id stable, indépendant du chemin (aujourd'hui `id = path + name` : renommer un
+  fichier change son identité et casse les références).
+- Les images ne sont plus stockées en DataURL base64 dans l'état de scène.
+- Les Blob URL sont révoquées (fuite actuelle à chaque réimport).
+- IndexedDB (`Store`, déjà écrit et inutilisé) sert de cache local et de mode hors ligne.
+- Le hot reload par `import()` + événement `import` est conservé tel quel : il marche.
+
+---
+
+## 10. Questions à valider avant implémentation
+
+| # | Question | Enjeu |
+|---|---|---|
+| Q1 | `childs` → `children` ? | Casse le protocole réseau et les projets sauvegardés. Migration nécessaire. |
+| Q2 | `uid` → `owner` ? | Le nom actuel suggère « id de l'objet » alors qu'il désigne le joueur. |
+| Q3 | Garde-t-on le sigil `$` pour l'écriture répliquée ? | Idiome historique, très ergonomique, mais peu explicite pour un nouveau venu. |
+| Q4 | Un objet peut-il porter deux composants du même type ? | Aujourd'hui non (clé = nom de classe). Changer impacte tout le protocole. |
+| Q5 | Autorité serveur : où placer la frontière édition / jeu ? | Bloquant pour les jeux compétitifs. |
+| Q6 | Le format de projet v2 doit-il lire les projets Legacy ? | Détermine si `serialize()` doit être rétrocompatible. |
+| Q7 | `.px` : interprété ou compilé en JS ? | L'interprétation est plus sûre et débogable ; la compilation est plus rapide. |
+| Q8 | Cible du Renderer : Canvas 2D uniquement, ou préparer WebGL ? | `Environment` détecte déjà WebGL/WebGPU sans que rien ne l'utilise. |
+
+---
+
+## 11. Ce qu'on ne fait pas
+
+- Pas d'ECS, pas d'archétypes, pas de stockage colonnaire.
+- Pas de dossier `systems/` par principe.
+- Pas de renommage `Object` → `Entity`.
+- Pas de suppression de `Component.draw()`.
+- Pas de framework UI.
+- Pas de store réactif séparé dans l'Editor — la source de vérité reste l'`Object`.
+- Pas de remplacement du Property System par une API verbeuse.
+- Pas de dépendance à Lya.
+- Pas de publication du serveur privé.
+- Pas de génération massive de fichiers avant validation de ce document.

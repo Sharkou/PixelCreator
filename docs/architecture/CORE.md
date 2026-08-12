@@ -1,0 +1,174 @@
+# Core
+
+> Le Core est la seule couche partagée entre client, serveur et éditeur.
+> Il ne dépend de rien.
+
+## Règle absolue
+
+```
+core/  ──►  (rien)
+```
+
+Pas de DOM, pas de `window`, pas de `document`, pas de Canvas, pas de WebSocket,
+pas d'import vers `runtime/`, `editor/` ou `network/`.
+
+**OBSERVÉ :** Legacy viole cette règle en trois endroits.
+
+| Violation | Fichier | Effet |
+|---|---|---|
+| `import { Dnd } from '/editor/system/dnd.js'` | `src/core/renderer.js:6` | le Core importe l'IDE |
+| `document.createElement('canvas' / 'img')` | `src/core/object.js` (`createImage`) | le Core manipule le DOM |
+| `el.textContent` | `src/core/scene.js` (`updateName`) | le Core lit le DOM |
+
+Le serveur ne charge ces chemins que par chance : il n'appelle jamais `createImage()`
+ni le renderer. La v2 rend la règle vérifiable par un test (voir `../development/TESTING.md`).
+
+---
+
+## Contenu
+
+```
+core/
+├── object.js         Object : identité, hiérarchie, composants
+├── scene.js          Scene : collection d'Object
+├── component.js      contrat + registre de composants
+├── properties/       Property System (Proxy, Change, observe)
+├── resources/        Resource, registre, chargement
+├── events.js         bus d'événements synchrone
+├── serialize.js      sérialisation explicite et versionnée
+├── id.js             génération d'identifiants
+└── logger.js         journalisation par catégories
+```
+
+---
+
+## Démantèlement de `System`
+
+**OBSERVÉ :** `src/core/system.js` est un fourre-tout de 257 lignes réunissant des
+responsabilités sans rapport :
+
+| Contenu actuel | Destination v2 |
+|---|---|
+| `createID()` | `core/id.js` |
+| `random(a, b)` | `math/` (doublon de `Random`) |
+| `sync(object, component)` | `core/properties/` (ADR-0003) |
+| `createFile(...)` | `core/resources/` |
+| `validate(e, event)` — valide un `<input>` DOM | `editor/ui/` |
+| `dispatchEvent` / `addEventListener` / `removeEventListener` | `core/events.js` |
+| `setIntervalX`, `include(url)` | supprimés (inutilisés ou obsolètes) |
+| `stringify` / `parse` — sérialisent des **fonctions** | supprimés (voir ci-dessous) |
+| `getDate()` | `core/logger.js` (aujourd'hui jamais appelé) |
+| `log` / `debug` / `warn` | `core/logger.js` |
+| `document.addEventListener('contextmenu', ...)` en effet de bord au chargement | `editor/` |
+
+Le nom « System » disparaît (ADR-0005) : ce n'est pas un système.
+
+### Note de sécurité
+
+`System.stringify()` sérialise les fonctions en texte, et `System.parse()` était conçu
+pour les réévaluer. La désérialisation a été désactivée (avertissement en console), mais
+**la sérialisation reste**. En v2, aucune fonction ne transite dans l'état : un
+comportement est référencé par le nom de son composant ou par l'id de sa ressource.
+
+---
+
+## Object
+
+Voir `OBJECT.md`.
+
+## Scene
+
+```js
+class Scene {
+    id, name
+    objects        // plat, indexé par id
+    add(obj) / remove(obj) / instantiate(obj)
+    getObjectById / getObjectsByName / getObjectsByTag
+}
+```
+
+Ce qui sort de `Scene` :
+
+- **`current` et `currentComponent`** — état de sélection de l'IDE. Migrent vers
+  `editor/selection.js`. Lus aujourd'hui par Inspector, Hierarchy, Handler, Manager et
+  Network : déplacement transverse à faire d'un bloc.
+- **`updateName(el)`** — lit le DOM. Devient une écriture de propriété normale côté
+  Editor.
+
+Ce qui reste : la platitude de `objects` (la hiérarchie n'est qu'un lien `parent`/
+`children`), les événements `add`/`remove`/`instantiate`, et `refresh()`.
+
+**PROPOSITION V2 :** introduire `Project`, absent de Legacy — un projet contient des
+scènes, des ressources et une identité (ADR-0010).
+
+---
+
+## Property System
+
+Voir ADR-0003. Résumé du contrat :
+
+```js
+object.x = 100;      // Change { origin: 'runtime' | 'local' }  → vues, pas de réseau
+object.$x = 100;     // Change { origin: 'editor' }             → vues + réseau
+```
+
+```js
+{ object, component, prop, value, previous, origin }
+```
+
+`origin` ∈ `local` | `editor` | `runtime` | `network`.
+La couche réseau ignore `origin === 'network'` : c'est ce qui empêche l'écho, sans
+recourir au drapeau `dispatch = false` de Legacy.
+
+---
+
+## Events
+
+Le bus synchrone de Legacy est conservé — l'ordre est déterministe et le débogage
+prévisible. Deux corrections :
+
+- `removeEventListener` existe déjà mais **n'est appelé nulle part** : les écouteurs
+  s'accumulent (chaque `new Properties()`, chaque import de script en ajoute).
+  En v2, tout abonnement retourne une fonction de désabonnement.
+- Une erreur dans un écouteur interrompt aujourd'hui la boucle `for` et prive les
+  écouteurs suivants de l'événement. En v2, les erreurs sont isolées par écouteur.
+
+---
+
+## Serialization
+
+`serialize()` explicite, versionné :
+
+- pas de doublons `_prop` / `$prop` — ils n'existent plus ;
+- **enfants référencés par id**, jamais imbriqués (Legacy sérialise chaque enfant deux
+  fois : dans `parent.childs` et dans `scene.objects`) ;
+- images référencées par id de ressource, jamais en base64 dans l'état de scène ;
+- les propriétés dérivées ou d'affichage (`image`, vignettes) sont exclues par nature,
+  et non par une liste noire.
+
+Gain mesuré attendu sur le heartbeat : facteur 3 sur la duplication `_prop`, plus la
+suppression de la duplication des enfants.
+
+---
+
+## Resources
+
+Voir `../ARCHITECTURE.md` §9. Points clés :
+
+- `Resource` devient réel — la classe existe dans Legacy (`src/core/resource.js`) mais
+  **n'est jamais utilisée** ; `Loader` fabrique des `File` natifs augmentés à la place.
+- Id stable, indépendant du chemin (ADR-0010).
+- La réactivité des ressources (un fichier se comporte comme un `Object`) est conservée :
+  c'est ce qui fait que renommer un script dans l'Inspector recompile le composant.
+
+---
+
+## Ce que le Core ne contient pas
+
+- Le rendu (`runtime/renderer/`)
+- Les entrées (`runtime/input/`)
+- Le réseau (`network/`)
+- Toute notion de sélection, de fenêtre, de curseur, de vignette (`editor/`)
+- `Camera` — qui est aujourd'hui à la fois un composant et un `Object` porteur
+  (`Camera.main` contient un `Object`, pas un `Camera`). Ambiguïté à lever dans
+  `RUNTIME.md`.
