@@ -11,8 +11,8 @@ cd legacy && python -m http.server 8099
 
 puis `http://localhost:8099/index.html`.
 
-> **OBSERVÉ :** `tools/dev-server.sh` sert `engine/` comme racine. Les imports `/src/...`
-> ne résolvent donc pas et l'application ne démarre pas. À corriger.
+`tools/dev-server.sh` sert désormais `legacy/` comme racine par défaut (port et racine
+paramétrables en arguments), ce qui revient au même que la commande ci-dessus.
 
 ### Objets de débogage exposés
 

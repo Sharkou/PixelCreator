@@ -19,8 +19,13 @@ Aucune ligne de code v2 n'a été écrite. Aucun fichier de `legacy/` n'a été 
 node tools/parity/run.js
 ```
 
-Voir `tools/parity/README.md`. Prochaine action : étape 1 bis (serveur de dev corrigé,
-test de règle de dépendance des couches), puis étape 2 — `core/`.
+Voir `tools/parity/README.md`.
+
+**Étape 1 bis faite** : `tools/dev-server.sh` sert désormais `legacy/` comme racine, et
+`tools/layers/run.js` vérifie les dépendances entre couches (une violation connue,
+`renderer.js → editor/system/dnd.js`, y est documentée et suivie explicitement).
+
+Prochaine action : étape 2 — `core/`.
 
 ## Décisions validées
 
