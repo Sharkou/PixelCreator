@@ -94,8 +94,21 @@ d'écriture, donc par le même Property System, donc par la même réplication r
 **Ce ne sont pas deux moteurs.** Un nœud ne peut rien faire qu'un script ne puisse
 faire, et réciproquement.
 
-Corollaire : un graphe doit pouvoir être **inspecté** comme un composant (ses
-`variables` sont ses propriétés), et donc apparaître dans l'Inspector via ADR-0007.
+### Deux rôles distincts, et non deux façons d'obtenir un composant
+
+| Format | Ce qu'il produit |
+|---|---|
+| `.js` | un **type de Component** — la classe exportée par défaut, enregistrée comme les autres |
+| `.px` | le **comportement** d'un type de Component qui existe déjà — `Controller.px` pour `Controller` |
+
+Un `.px` **ne génère aucun type de composant** et n'apparaît pas comme un composant : il
+est le comportement de celui sous lequel l'éditeur l'affiche (ADR-0015). Ce qui est
+inspecté reste donc le **Component** et ses propriétés (ADR-0007), pas le graphe.
+
+> **Point ouvert.** Le devenir des `variables` d'un graphe — pur état d'exécution, ou
+> déclaration reprise dans le schéma du Component — est tranché avec le modèle de graphe.
+> Rien n'en dépend aujourd'hui : l'état d'exécution d'un graphe est déjà, par
+> construction, distinct des données sérialisées du composant.
 
 ## Mode d'exécution — VALIDÉ : interprété
 
@@ -113,7 +126,8 @@ pas-à-pas et l'absence d'`eval` valent davantage que la vitesse brute.
 
 Conséquence pratique : `runtime/scripting/` contient un **interpréteur de graphe** —
 il parcourt les nœuds et appelle l'API du moteur. Aucune génération de code, aucun
-`eval`, aucune `Function()`.
+`eval`, aucune `Function()`. Il est branché sur l'hôte `Behaviors`, qui lie un graphe à un
+type de Component et donne à chaque instance son propre état d'exécution (ADR-0015).
 
 Le format `.px` reste inchangé si une compilation s'avérait un jour nécessaire :
 c'est une décision d'exécution, pas de format.

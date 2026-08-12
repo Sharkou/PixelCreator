@@ -26,7 +26,7 @@
 | Erreurs runtime | Le Runtime **isole et rapporte**, il ne modifie pas le modèle. Pas d'auto-désactivation |
 | Input | Abstrait, indexé par owner, **passé à `step()`** — jamais un global |
 | Caméra | Un `Object` ordinaire ; le `Viewport` est l'écran ; la matrice de vue est dérivée |
-| Scripting | Un script compile vers un **behavior**, exécuté par un Component. Pas de `ScriptSystem` |
+| Scripting | Un Component peut avoir un graphe `.px` qui définit son comportement. **Pas de Component `Script`**, pas de `ScriptSystem` |
 | Projets Legacy | **Aucune migration de données à concevoir** — il n'existe pas de projets v1 |
 
 ---
@@ -310,7 +310,7 @@ runtime/
 ├── animation/     animator, animation, tween
 ├── rendering/     backend Canvas 2D + abstraction
 ├── input/         état des entrées par owner
-├── scripting/     exécution .px et .js
+├── scripting/     comportements de Components définis par un graphe .px
 └── loop.js        orchestration des phases
 ```
 
@@ -577,6 +577,33 @@ pilote ce modèle au lieu d'être le modèle.
 
 `.px` et `.js` manipulent les mêmes `Object`, `Component`, `Property`, `Scene`,
 `Resource`, `Event` : ce sont deux façades sur une seule API, pas deux moteurs.
+
+### Où un graphe entre dans la simulation (ADR-0015)
+
+Un graphe est le **comportement d'un type de Component**, jamais un composant :
+
+```
+Object
+├── Transform
+├── Sprite
+├── Controller
+│   └── Controller.px
+└── Collider
+```
+
+**Il n'existe pas de Component `Script`** et un `.px` ne génère aucun type de composant.
+Un `.js` en fournit un (classe exportée par défaut) ; un `.px` définit le comportement
+d'un type qui existe déjà.
+
+```
+graph ──(interpret)──► create(component) ──► behavior.update(self, ctx)
+        une fois par graphe    une fois par instance      à chaque pas
+```
+
+Le graphe est lu une fois et partagé par tous les composants de son type ; **chaque
+instance a son propre état d'exécution**. Le comportement vit dans une `WeakMap`, jamais
+dans les données sérialisées du composant. Le runtime exécute le graphe là où il exécute
+le composant : même pas, même ordre, même isolation d'erreur, client comme serveur.
 
 `editor/graph/compiler.js` (lexer d'un langage type Rust, jamais exécutable) est
 abandonné. `editor/graph/component.js` est renommé pour ne plus entrer en collision

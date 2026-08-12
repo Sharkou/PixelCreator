@@ -91,7 +91,7 @@ runtime/
 ├── animation/       animator, animation, tween
 ├── rendering/       Canvas 2D, projection, abstraction de rendu
 ├── input/           état des entrées par owner, sans dépendance réseau
-├── scripting/       exécution .px et .js
+├── scripting/       comportements de Components définis par un graphe .px
 ├── loop.js          orchestration des phases
 └── mod.js           point d'entrée client (le serveur ne l'importe pas)
 ```
@@ -169,22 +169,44 @@ nombre de pas qu'une frame doit.
 **L'adaptateur navigateur n'appartient pas ici.** Il vit dans la couche qui possède le
 DOM ; le runtime n'en définit que le contrat.
 
-### Scripting — VALIDÉ (ADR-0015)
+### Comportement d'un Component — VALIDÉ (ADR-0015)
+
+Un Component concret peut avoir un graphe `.px` qui définit son comportement :
 
 ```
-source ──(compilateur de kind)──► behavior ──(Component Script)──► update(self, ctx)
+Object
+├── Transform
+├── Sprite
+├── Controller
+│   └── Controller.px
+└── Collider
 ```
 
-**Il n'y a pas de `ScriptSystem`.** Un script s'exécute parce qu'un Component l'exécute,
-donc il hérite gratuitement de l'isolation des erreurs, du pas fixe, de l'ordre
-déterministe et de l'exécution headless — sans second chemin client/serveur.
+`Controller.px` n'est pas un composant et n'en devient pas un. **Il n'existe pas de
+Component `Script`**, et aucun type de composant n'est généré par un `.px`.
 
-Un hôte `Scripting` est un **registre de kinds** et ne connaît aucun kind à sa création.
-`.px` (graphe interprété) et `.js` (module ES) s'y brancheront ; ni langage, ni interprète,
-ni VM, ni bac à sable n'est construit à ce stade (ADR-0009).
+```
+graph ──(interpret)──► create(component) ──► behavior.update(self, ctx)
+        une fois par graphe    une fois par instance      à chaque pas
+```
 
-Le behavior compilé vit dans une `WeakMap`, jamais sur le composant : ce qui sérialise est
-`kind` + `source`, pas des fonctions.
+L'hôte `Behaviors` lie un **type de Component** à un graphe (`behaviors.bind(Controller,
+graph)`). L'interprète de graphe lui est passé : ni langage, ni modèle de graphe, ni VM
+n'est construit à ce stade (ADR-0009).
+
+Le graphe est lu une fois ; **chaque instance de composant reçoit son propre behavior**,
+donc deux `Controller` ne partagent jamais un état d'exécution. Le behavior vit dans une
+`WeakMap` indexée par le composant : ce qui sérialise, ce sont les propriétés du composant,
+jamais des fonctions.
+
+**Il n'y a pas de `ScriptSystem`.** Le runtime exécute, par composant actif et dans l'ordre
+de la scène, son `update` puis le graphe lié à son type — un composant, une place dans
+l'ordre, un `try`/`catch`. Le graphe hérite ainsi de l'isolation des erreurs, du pas fixe,
+de l'ordre déterministe et de l'exécution headless, sans second chemin client/serveur.
+
+```js
+new Runtime(scene, { behaviors });
+```
 
 ### Erreurs d'exécution — VALIDÉ (ADR-0012)
 

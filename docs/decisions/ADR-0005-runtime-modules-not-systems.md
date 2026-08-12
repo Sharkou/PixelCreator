@@ -46,7 +46,7 @@ runtime/
 ├── animation/     animator, animation, tween
 ├── rendering/     backend Canvas 2D + abstraction
 ├── input/         état des entrées par owner
-├── scripting/     exécution .px et .js
+├── scripting/     comportements de Components définis par un graphe .px
 └── loop.js        orchestration des phases
 ```
 

@@ -9,8 +9,7 @@ export { Clock } from './clock/clock.js';
 export { componentFailure, rethrowLater } from './errors.js';
 
 export { Input, InputState, LOCAL } from './input/input.js';
-export { Scripting } from './scripting/scripting.js';
-export { Script } from './scripting/script.js';
+export { Behaviors } from './scripting/behaviors.js';
 
 export { BlendMode, RENDERER_OPERATIONS, missingOperations, assertRenderer } from './rendering/renderer.js';
 export { Canvas2DRenderer } from './rendering/canvas2d.js';

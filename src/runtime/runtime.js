@@ -26,7 +26,7 @@ export class Runtime {
     #sceneRenderer;
     #onError;
     #input;
-    #scripting;
+    #behaviors;
     #running = true;
 
     /**
@@ -37,9 +37,9 @@ export class Runtime {
      * @param {object} [options.renderer] - Renderer backend; omit it to run headless
      * @param {Function} [options.onError] - Called with a ComponentFailure report (ADR-0012)
      * @param {Input} [options.input] - Default input, used when a step is given none
-     * @param {object} [options.scripting] - Scripting host, reachable as `ctx.scripting`
+     * @param {object} [options.behaviors] - Graph behaviors bound to component types (ADR-0015)
      */
-    constructor(scene, { clock, renderer, onError, input, scripting } = {}) {
+    constructor(scene, { clock, renderer, onError, input, behaviors } = {}) {
         if (!scene) throw new TypeError('Runtime: a scene is required');
 
         this.#scene = scene;
@@ -49,7 +49,7 @@ export class Runtime {
         // input runs on empty input rather than failing — which is the single-player
         // case Legacy broke by routing the keyboard through Network.users.
         this.#input = input ?? new Input();
-        this.#scripting = scripting ?? null;
+        this.#behaviors = behaviors ?? null;
         this.#sceneRenderer = renderer
             ? new SceneRenderer(renderer, {
                 onError: report => this.#onError(report),
@@ -73,9 +73,9 @@ export class Runtime {
         return this.#input;
     }
 
-    /** The scripting host, or null when this runtime runs no scripts. */
-    get scripting() {
-        return this.#scripting;
+    /** The graph behaviors, or null when no component type carries a graph. */
+    get behaviors() {
+        return this.#behaviors;
     }
 
     /** True when the runtime draws; false on a server. */
@@ -110,7 +110,8 @@ export class Runtime {
      * Run exactly one simulation step.
      *
      * Every component's `update(self, ctx)` runs with the same fixed delta, in scene
-     * insertion order. Update is fully separated from draw: the whole scene is
+     * insertion order, followed by the `.px` graph bound to its type when it has one
+     * (ADR-0015). Update is fully separated from draw: the whole scene is
      * simulated, then the whole scene is drawn. Legacy interleaved them per object, so
      * what a component observed depended on the draw order of the objects around it.
      *
@@ -128,8 +129,7 @@ export class Runtime {
             deltaTime: this.#clock.fixedStep,
             scene: this.#scene,
             runtime: this,
-            input: stepInput,
-            scripting: this.#scripting
+            input: stepInput
         };
 
         for (const object of this.#scene.objects()) {
@@ -138,11 +138,15 @@ export class Runtime {
             const components = object.components;
             for (const type of globalThis.Object.keys(components)) {
                 const component = components[type];
-                if (typeof component.update !== 'function') continue;
                 if (component.active === false) continue;
 
                 try {
-                    component.update(object, context);
+                    // A component runs its own code, then the graph bound to its type —
+                    // one component, one unit of isolation, one place in the order. A
+                    // graph is not a second execution path: it is this component's
+                    // behavior, run where the component runs (ADR-0015).
+                    if (typeof component.update === 'function') component.update(object, context);
+                    this.#behaviors?.behaviorFor(component)?.update?.(object, context);
                 } catch (error) {
                     // Isolated, reported, and nothing else. The next component still
                     // runs, and the model is left exactly as the failing component left

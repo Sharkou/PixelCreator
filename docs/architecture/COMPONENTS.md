@@ -118,7 +118,7 @@ découpage ne donne cela aussi simplement.** C'est une observation, pas une pré
 ### Contrat
 
 ```js
-update(self, ctx)        // ctx : { time, deltaTime, scene, runtime, input, scripting }
+update(self, ctx)        // ctx : { time, deltaTime, scene, runtime, input }
 draw(self, renderer)
 bounds(self)             // géométrie optionnelle — voir ci-dessous
 preview(self, renderer)  // éditeur uniquement
@@ -140,8 +140,34 @@ update(self, ctx) {
 }
 ```
 
-`ctx.scripting` est l'hôte de scripting, ou `null` quand le runtime n'exécute aucun
-script (ADR-0015).
+### Un Component peut avoir un graphe `.px` (ADR-0015)
+
+Un type de Component concret — `Controller`, `Health`, `Weapon` — peut voir son
+comportement défini par un graphe portant son nom :
+
+```
+Object
+├── Transform
+├── Sprite
+├── Controller
+│   └── Controller.px
+└── Collider
+```
+
+`Controller.px` est le **comportement interprété** du Component, pas un composant :
+**il n'existe pas de Component `Script`**, et un `.px` ne génère aucun type de composant.
+
+Le graphe est lié au **type** (`behaviors.bind(Controller, graph)`), donc rien du graphe
+n'entre dans les données sérialisées d'un composant : un `Controller` sérialise `speed`,
+et c'est tout. Chaque instance reçoit son propre comportement, si bien que deux
+`Controller` ne partagent jamais leurs variables ni leurs minuteurs.
+
+Le graphe reçoit le composant tel que l'Object le détient — le `Proxy` réactif — donc une
+écriture depuis un graphe est une écriture ordinaire : même `Change`, même réplication,
+même Inspector qu'une écriture de code écrit à la main.
+
+Le runtime exécute, pour un composant actif, son `update` **puis** le graphe lié à son
+type. Dessiner reste l'affaire du type de Component, qui déclare `draw` (ADR-0015 §9).
 
 ### `active` — qui lit, qui écrit (ADR-0012)
 

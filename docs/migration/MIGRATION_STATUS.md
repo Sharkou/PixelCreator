@@ -22,12 +22,12 @@ Aucun fichier de `legacy/` n'a été modifié.
 | **2** | `core/` — `Object`, `Component`, `Scene`, Property System (Proxy), Operations, Authority, événements, sérialisation explicite, identité |
 | **2.8** | `Transform`, matrices et composition hiérarchique ; abstraction de renderer ; backend Canvas 2D ; `SceneRenderer` ; `RectangleRenderer`, `Sprite`, `ParticleSystem`, `Tilemap` ; `Runtime` ; `Clock` |
 | **2.9** | Modèle d'erreurs d'exécution — isolation et rapport séparés de la politique (ADR-0012) |
-| **2.10** | `runtime/input/` (ADR-0014) ; socle `runtime/scripting/` (ADR-0015) ; `Camera` / `Viewport` et conversions monde↔écran (ADR-0013) |
+| **2.10** | `runtime/input/` (ADR-0014) ; `Camera` / `Viewport` et conversions monde↔écran (ADR-0013) ; socle `runtime/scripting/` — **révisé** : un Component peut avoir un graphe `.px` qui définit son comportement, il n'existe pas de Component `Script` (ADR-0015) |
 
 ### État vérifié (2026-08-12, après étape 2.10)
 
 ```bash
-tools/test.sh              # 357 tests, 357 passés
+tools/test.sh              # 361 tests, 361 passés
 node tools/layers/run.js   # v2 : 0 violation — legacy : 1 violation trackée
 node tools/parity/run.js   # 39 identical, 0 problems
 ```
@@ -41,9 +41,10 @@ ces dossiers sont absents.
 | Sujet | Pourquoi |
 |---|---|
 | Adaptateur navigateur pour l'input | Appartient à la couche qui possède le DOM, pas au runtime (ADR-0014) |
-| Kinds `.px` et `.js` | Demandent l'interprète de graphe et le chargement de ressources (ADR-0009, ADR-0015) |
+| Interprète de graphe `.px` | Demande le modèle de graphe ; l'hôte `Behaviors` le reçoit en paramètre (ADR-0009, ADR-0015) |
+| Chargement des ressources — qui appelle `behaviors.bind()` | Demande `Resource` et le chargement de projet (ADR-0009) |
+| Déclaration d'un type de Component purement graphe | `.js` fournit une classe ; une déclaration au niveau projet reste à concevoir (ADR-0015) |
 | Picking de l'Editor | `screenToWorld()` fournit le mapping ; la politique de sélection appartient à l'Editor (ADR-0013) |
-| Plusieurs scripts par Object | Passe par « un script compilé = son propre type de composant » (ADR-0015) |
 | `runtime/physics/`, `animation/`, `audio/` | Domaines non entamés |
 
 ### Prochaine action
@@ -66,7 +67,7 @@ ces dossiers sont absents.
 | Erreurs runtime | Le Runtime isole et rapporte ; il ne modifie pas le modèle. Pas d'auto-désactivation | ADR-0012 |
 | Camera / Viewport | La caméra est un `Object` ; le viewport est l'écran ; la vue est dérivée | ADR-0013 |
 | Input | Abstrait, indexé par owner, passé à `step()` — jamais un global | ADR-0014 |
-| Scripting | Un script compile vers un behavior, exécuté par un Component. Pas de `ScriptSystem` | ADR-0015 |
+| Scripting | Un Component peut avoir un graphe `.px` qui définit son comportement. Pas de Component `Script`, pas de `ScriptSystem` | ADR-0015 |
 | Projets Legacy | Aucune migration de données à concevoir | — |
 | Renommages | `childs` → `children`, `uid` → `owner`, `static` supprimé | ADR-0001 |
 
@@ -90,7 +91,7 @@ concernés (ex. `Transform` ajouté par défaut ou non).
 | Autorité | aucune — le serveur applique et rediffuse | serveur autoritaire, `authority.check()` obligatoire |
 | `Sprite` | sous-classe d'`Object` | Component |
 | `Tilemap` | `draw(ctx, camera)` — cassé si attaché | `draw(self, renderer)` |
-| `.px` | traité comme du JavaScript | ressource graphe JSON |
+| `.px` | traité comme du JavaScript | ressource graphe JSON, **comportement d'un type de Component** |
 | `childs`, `uid` | — | `children`, `owner` |
 | Exception dans un Component | `try/catch` muet — l'erreur disparaît | isolée **et** rapportée (`onError`), jamais convertie en mutation du modèle |
 | Input | singleton `Keyboard` → `Network.users` — solo cassé | état abstrait indexé par owner, passé à `step()` |

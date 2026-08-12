@@ -47,10 +47,12 @@ de ce qu'elle affirme.
 | [0012](decisions/ADR-0012-runtime-error-isolation.md) | Le Runtime isole et rapporte les erreurs, il ne modifie pas le modèle |
 | [0013](decisions/ADR-0013-camera-and-viewport.md) | La caméra est un Object, le viewport est l'écran |
 | [0014](decisions/ADR-0014-input-passed-in.md) | Input abstrait, indexé par owner, passé au pas de simulation |
-| [0015](decisions/ADR-0015-scripting-seam.md) | Un script compile vers un comportement, exécuté par un Component |
+| [0015](decisions/ADR-0015-component-graph-behavior.md) | Un Component peut avoir un graphe `.px` qui définit son comportement |
 
-Toutes acceptées le 2026-08-12. Seul le mode d'exécution de `.px` (ADR-0009, Q7) reste
-ouvert, et il n'est pas bloquant.
+Toutes acceptées le 2026-08-12, y compris le mode d'exécution de `.px` (ADR-0009, Q7 :
+interprété). ADR-0015 a été révisé le même jour : la couture « Component `Script` avec
+`kind` + `source` » est remplacée par « un graphe est le comportement d'un type de
+Component ».
 
 ## Développement
 
