@@ -17,6 +17,7 @@
 import { Clock } from './clock/clock.js';
 import { SceneRenderer } from './rendering/scene-renderer.js';
 import { componentFailure, rethrowLater } from './errors.js';
+import { Input } from './input/input.js';
 
 export class Runtime {
 
@@ -24,6 +25,8 @@ export class Runtime {
     #clock;
     #sceneRenderer;
     #onError;
+    #input;
+    #scripting;
     #running = true;
 
     /**
@@ -33,13 +36,20 @@ export class Runtime {
      * @param {Clock} [options.clock] - Simulation clock
      * @param {object} [options.renderer] - Renderer backend; omit it to run headless
      * @param {Function} [options.onError] - Called with a ComponentFailure report (ADR-0012)
+     * @param {Input} [options.input] - Default input, used when a step is given none
+     * @param {object} [options.scripting] - Scripting host, reachable as `ctx.scripting`
      */
-    constructor(scene, { clock, renderer, onError } = {}) {
+    constructor(scene, { clock, renderer, onError, input, scripting } = {}) {
         if (!scene) throw new TypeError('Runtime: a scene is required');
 
         this.#scene = scene;
         this.#clock = clock ?? new Clock();
         this.#onError = onError ?? rethrowLater;
+        // Always present, never fetched from a global. A runtime with nobody feeding it
+        // input runs on empty input rather than failing — which is the single-player
+        // case Legacy broke by routing the keyboard through Network.users.
+        this.#input = input ?? new Input();
+        this.#scripting = scripting ?? null;
         this.#sceneRenderer = renderer
             ? new SceneRenderer(renderer, {
                 onError: report => this.#onError(report),
@@ -56,6 +66,16 @@ export class Runtime {
 
     get clock() {
         return this.#clock;
+    }
+
+    /** The input the simulation reads when a step is given none. */
+    get input() {
+        return this.#input;
+    }
+
+    /** The scripting host, or null when this runtime runs no scripts. */
+    get scripting() {
+        return this.#scripting;
     }
 
     /** True when the runtime draws; false on a server. */
@@ -75,13 +95,14 @@ export class Runtime {
     /**
      * Feed real time in and run the simulation steps it owes.
      * @param {number} elapsedSeconds - Real time since the previous call
+     * @param {Input} [input] - Input for these steps; the runtime's own when omitted
      * @returns {number} How many steps ran
      */
-    advance(elapsedSeconds) {
+    advance(elapsedSeconds, input) {
         if (!this.#running) return 0;
 
         const steps = this.#clock.advance(elapsedSeconds);
-        for (let i = 0; i < steps; i++) this.step();
+        for (let i = 0; i < steps; i++) this.step(input);
         return steps;
     }
 
@@ -93,14 +114,22 @@ export class Runtime {
      * simulated, then the whole scene is drawn. Legacy interleaved them per object, so
      * what a component observed depended on the draw order of the objects around it.
      *
+     * Input is an argument, not a global. Give the same scene the same inputs and it
+     * reaches the same state, whether it runs in a browser or on a server replaying what
+     * players sent — the property reconciliation is built on.
+     *
+     * @param {Input} [input] - Input for this step; the runtime's own when omitted
      * @returns {number} The simulated time after the step
      */
-    step() {
+    step(input) {
+        const stepInput = input ?? this.#input;
         const context = {
             time: this.#clock.time,
             deltaTime: this.#clock.fixedStep,
             scene: this.#scene,
-            runtime: this
+            runtime: this,
+            input: stepInput,
+            scripting: this.#scripting
         };
 
         for (const object of this.#scene.objects()) {
@@ -128,6 +157,10 @@ export class Runtime {
                 }
             }
         }
+
+        // Closing the step is what makes `pressed()` and `released()` observable on
+        // exactly one step, however many steps a frame owes.
+        stepInput.commit();
 
         return this.#clock.tick();
     }

@@ -22,11 +22,12 @@ Aucun fichier de `legacy/` n'a été modifié.
 | **2** | `core/` — `Object`, `Component`, `Scene`, Property System (Proxy), Operations, Authority, événements, sérialisation explicite, identité |
 | **2.8** | `Transform`, matrices et composition hiérarchique ; abstraction de renderer ; backend Canvas 2D ; `SceneRenderer` ; `RectangleRenderer`, `Sprite`, `ParticleSystem`, `Tilemap` ; `Runtime` ; `Clock` |
 | **2.9** | Modèle d'erreurs d'exécution — isolation et rapport séparés de la politique (ADR-0012) |
+| **2.10** | `runtime/input/` (ADR-0014) ; socle `runtime/scripting/` (ADR-0015) ; `Camera` / `Viewport` et conversions monde↔écran (ADR-0013) |
 
-### État vérifié (2026-08-12, après étape 2.9)
+### État vérifié (2026-08-12, après étape 2.10)
 
 ```bash
-tools/test.sh          # 292 tests, 292 passés
+tools/test.sh              # 357 tests, 357 passés
 node tools/layers/run.js   # v2 : 0 violation — legacy : 1 violation trackée
 node tools/parity/run.js   # 39 identical, 0 problems
 ```
@@ -35,9 +36,19 @@ node tools/parity/run.js   # 39 identical, 0 problems
 les règles de couches qui les concernent sont déclarées mais ne vérifient rien tant que
 ces dossiers sont absents.
 
+### Laissé volontairement pour plus tard
+
+| Sujet | Pourquoi |
+|---|---|
+| Adaptateur navigateur pour l'input | Appartient à la couche qui possède le DOM, pas au runtime (ADR-0014) |
+| Kinds `.px` et `.js` | Demandent l'interprète de graphe et le chargement de ressources (ADR-0009, ADR-0015) |
+| Picking de l'Editor | `screenToWorld()` fournit le mapping ; la politique de sélection appartient à l'Editor (ADR-0013) |
+| Plusieurs scripts par Object | Passe par « un script compilé = son propre type de composant » (ADR-0015) |
+| `runtime/physics/`, `animation/`, `audio/` | Domaines non entamés |
+
 ### Prochaine action
 
-Étape 3 — à arbitrer entre `runtime/input/`, `runtime/scripting/` et le socle `editor/`.
+Étape 3 — socle `editor/`, ou `runtime/physics/`.
 
 ## Décisions validées
 
@@ -53,6 +64,9 @@ ces dossiers sont absents.
 | Scripting | `.px` = graphe **interprété** (débogage, sécurité), `.js` = JS natif | ADR-0009 |
 | Editor | Web Components `px-*`, modèle central, vues réactives | ADR-0006 |
 | Erreurs runtime | Le Runtime isole et rapporte ; il ne modifie pas le modèle. Pas d'auto-désactivation | ADR-0012 |
+| Camera / Viewport | La caméra est un `Object` ; le viewport est l'écran ; la vue est dérivée | ADR-0013 |
+| Input | Abstrait, indexé par owner, passé à `step()` — jamais un global | ADR-0014 |
+| Scripting | Un script compile vers un behavior, exécuté par un Component. Pas de `ScriptSystem` | ADR-0015 |
 | Projets Legacy | Aucune migration de données à concevoir | — |
 | Renommages | `childs` → `children`, `uid` → `owner`, `static` supprimé | ADR-0001 |
 
@@ -79,6 +93,9 @@ concernés (ex. `Transform` ajouté par défaut ou non).
 | `.px` | traité comme du JavaScript | ressource graphe JSON |
 | `childs`, `uid` | — | `children`, `owner` |
 | Exception dans un Component | `try/catch` muet — l'erreur disparaît | isolée **et** rapportée (`onError`), jamais convertie en mutation du modèle |
+| Input | singleton `Keyboard` → `Network.users` — solo cassé | état abstrait indexé par owner, passé à `step()` |
+| `Camera` | le même nom désigne le composant, l'Object porteur et la projection | `Camera` = objectif ; l'`Object` = la position ; `Viewport` = l'écran |
+| `Camera.offset` | seconde position concurrente de `camera.x` | supprimée — une seule API de position |
 
 ## Vérifications exécutées en Phase 0
 

@@ -24,6 +24,9 @@
 | Scripting | `.px` = graphe visuel, `.js` = JavaScript natif. `.px` cesse d'être du JS |
 | Editor | Web Components natifs, préfixe **`px-`**. Modèle central, vues réactives |
 | Erreurs runtime | Le Runtime **isole et rapporte**, il ne modifie pas le modèle. Pas d'auto-désactivation |
+| Input | Abstrait, indexé par owner, **passé à `step()`** — jamais un global |
+| Caméra | Un `Object` ordinaire ; le `Viewport` est l'écran ; la matrice de vue est dérivée |
+| Scripting | Un script compile vers un **behavior**, exécuté par un Component. Pas de `ScriptSystem` |
 | Projets Legacy | **Aucune migration de données à concevoir** — il n'existe pas de projets v1 |
 
 ---
@@ -362,9 +365,24 @@ dans le Core.**
 `Input` ne dépend plus de `Network` (correctif du bug §6.3 de l'analyse) :
 
 ```
-core/input   →  état des entrées, indexé par owner ; un owner "local" existe toujours
-network/     →  alimente l'état des entrées des owners distants
+runtime/input/  →  état abstrait, indexé par owner ; un owner "local" existe toujours
+network/        →  alimente l'état des entrées des owners distants
 ```
+
+> **Correction (ADR-0014).** Ce paragraphe plaçait initialement l'input dans `core/`,
+> en contradiction avec `architecture/RUNTIME.md`. C'est `runtime/` qui est retenu : le
+> Core est le modèle, il n'a ni temps ni entrées.
+
+L'état est **abstrait** — touches, boutons, pointeur, axes — et ne connaît aucun
+événement navigateur. Il est **passé au pas de simulation** :
+
+```js
+runtime.step(input);
+runtime.advance(elapsed, input);
+```
+
+C'est ce qui rend la simulation déterministe et rejouable côté serveur. Un runtime
+construit sans input tourne sur un input vide plutôt que d'aller chercher un global.
 
 Conséquence directe : **le mode solo hors ligne fonctionne**, ce qui n'est pas le cas
 aujourd'hui.

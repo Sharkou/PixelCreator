@@ -45,6 +45,9 @@ de ce qu'elle affirme.
 | [0010](decisions/ADR-0010-game-identity.md) | Identité par ID, pas par nom |
 | [0011](decisions/ADR-0011-authority.md) | Le serveur est l'autorité ; l'Editor émet des opérations autorisées |
 | [0012](decisions/ADR-0012-runtime-error-isolation.md) | Le Runtime isole et rapporte les erreurs, il ne modifie pas le modèle |
+| [0013](decisions/ADR-0013-camera-and-viewport.md) | La caméra est un Object, le viewport est l'écran |
+| [0014](decisions/ADR-0014-input-passed-in.md) | Input abstrait, indexé par owner, passé au pas de simulation |
+| [0015](decisions/ADR-0015-scripting-seam.md) | Un script compile vers un comportement, exécuté par un Component |
 
 Toutes acceptées le 2026-08-12. Seul le mode d'exécution de `.px` (ADR-0009, Q7) reste
 ouvert, et il n'est pas bloquant.

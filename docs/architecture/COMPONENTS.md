@@ -118,7 +118,7 @@ découpage ne donne cela aussi simplement.** C'est une observation, pas une pré
 ### Contrat
 
 ```js
-update(self, ctx)        // ctx : { time, deltaTime, scene, runtime }
+update(self, ctx)        // ctx : { time, deltaTime, scene, runtime, input, scripting }
 draw(self, renderer)
 bounds(self)             // géométrie optionnelle — voir ci-dessous
 preview(self, renderer)  // éditeur uniquement
@@ -129,6 +129,19 @@ onAttach(self) / onDetach(self)   // remplace constructorAfterLink
 Les deux paramètres sont optionnels : un composant qui ignore le second continue de
 fonctionner. **Toujours du duck-typing, aucune classe de base obligatoire** — écrire un
 composant doit rester une affaire de dix lignes.
+
+`ctx.input` remplace le singleton `Keyboard` : c'est ce qui découple les entrées du
+réseau et **répare le mode solo**. Il est indexé par owner (ADR-0014) :
+
+```js
+update(self, ctx) {
+    const input = ctx.input.of(self.owner);
+    if (input.isDown('ArrowRight')) self.x += this.speed * ctx.deltaTime;
+}
+```
+
+`ctx.scripting` est l'hôte de scripting, ou `null` quand le runtime n'exécute aucun
+script (ADR-0015).
 
 ### `active` — qui lit, qui écrit (ADR-0012)
 

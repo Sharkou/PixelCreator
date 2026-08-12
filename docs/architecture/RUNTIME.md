@@ -70,6 +70,8 @@ mais `Camera.main` contient un **`Object`** qui porte ce composant. Le renderer 
 `camera.getComponent('Camera').background` tout en lisant `camera.x`, `camera.scale`.
 Le même identifiant désigne deux choses selon le contexte.
 
+→ Tranché par **ADR-0013**, voir « Camera et Viewport » plus bas.
+
 ### Le runtime est cassé hors ligne
 
 Voir `MIGRATION.md` §4.1. `Controller` → `Keyboard` → `Network.users` (undefined) →
@@ -139,6 +141,51 @@ sera introduit le jour où un profil le demande, et pas avant.
 Un jeu Legacy peut dépendre involontairement de l'entrelacement. À vérifier sur une
 scène de référence.
 
+### Input — VALIDÉ (ADR-0014)
+
+`runtime/input/`, jamais `core/`. L'état est **abstrait** — touches, boutons, pointeur,
+axes nommés — et ne connaît ni `KeyboardEvent`, ni `window`, ni `document`.
+
+```js
+const input = ctx.input.of(self.owner);   // indexé par owner ; l'owner "local" existe toujours
+if (input.isDown('ArrowRight')) self.x += this.speed * ctx.deltaTime;
+```
+
+Il est **passé au pas de simulation**, jamais cherché dans un global :
+
+```js
+runtime.step(input);
+runtime.advance(elapsed, input);
+```
+
+Mêmes scène initiale et mêmes entrées ⇒ même résultat. C'est ce qui permet à un serveur
+de rejouer ce que les joueurs ont envoyé. Un runtime sans input tourne sur un input vide
+— **c'est ce qui répare le mode solo hors ligne.**
+
+`pressed()` / `released()` sont vrais sur exactement un pas : le runtime appelle
+`input.commit()` après chaque pas, donc une pression compte une fois quel que soit le
+nombre de pas qu'une frame doit.
+
+**L'adaptateur navigateur n'appartient pas ici.** Il vit dans la couche qui possède le
+DOM ; le runtime n'en définit que le contrat.
+
+### Scripting — VALIDÉ (ADR-0015)
+
+```
+source ──(compilateur de kind)──► behavior ──(Component Script)──► update(self, ctx)
+```
+
+**Il n'y a pas de `ScriptSystem`.** Un script s'exécute parce qu'un Component l'exécute,
+donc il hérite gratuitement de l'isolation des erreurs, du pas fixe, de l'ordre
+déterministe et de l'exécution headless — sans second chemin client/serveur.
+
+Un hôte `Scripting` est un **registre de kinds** et ne connaît aucun kind à sa création.
+`.px` (graphe interprété) et `.js` (module ES) s'y brancheront ; ni langage, ni interprète,
+ni VM, ni bac à sable n'est construit à ce stade (ADR-0009).
+
+Le behavior compilé vit dans une `WeakMap`, jamais sur le composant : ce qui sérialise est
+`kind` + `source`, pas des fonctions.
+
 ### Erreurs d'exécution — VALIDÉ (ADR-0012)
 
 Le Runtime **isole** une exception levée par un Component et la **rapporte**. Il ne
@@ -168,6 +215,36 @@ l'utilisateur, un Component ou l'Editor.
 Sans `onError`, l'erreur est relancée en différé avec l'originale en `cause` : le
 silence de Legacy n'est jamais reproduit.
 
+### Camera et Viewport — VALIDÉ (ADR-0013)
+
+L'ambiguïté Legacy est tranchée :
+
+| | v2 |
+|---|---|
+| **Caméra** | un `Object` ordinaire, avec un `Transform`. `camera.x` **est** sa position |
+| **Composant `Camera`** | l'objectif seul : `zoom` |
+| **`Viewport`** | l'écran : `width`, `height`. Pas dans la scène, pas de transform |
+| **Matrice de vue** | **dérivée**, jamais stockée |
+
+```
+view = centre(viewport) · zoom · inverse(worldMatrix(camera))
+```
+
+```js
+const view = viewMatrix(camera, viewport);
+runtime.render({ view, clear: '#101018' });
+```
+
+Le renderer reçoit une `Matrix` et **ne sait pas ce qu'est une caméra** — c'est ce qui
+empêche définitivement un `Core → renderer`.
+
+Aucune seconde position : pas d'`offset`. Parenter la caméra au joueur la fait suivre le
+joueur, parce que c'est déjà ce que parenter veut dire.
+
+`worldToScreen()` / `screenToWorld()` complètent l'API. `screenToWorld()` est le premier
+maillon du futur picking de l'Editor — **le runtime fournit le mapping, pas la politique
+de sélection.**
+
 ### Ce qui sort du renderer
 
 `Dnd`, le picking souris, la détection des poignées, le rectangle de sélection et
@@ -183,9 +260,9 @@ ADR-0004) au lieu du singleton `Graphics.ctx`.
 |---|---|
 | Update/draw entrelacés | phases séparées |
 | Erreurs avalées par le `try/catch` | isolées **et** rapportées (`onError`, ADR-0012) |
+| `Input → Network`, solo cassé | input abstrait passé à `step()`, owner « local » toujours présent (ADR-0014) |
+| Ambiguïté `Camera` | `Camera` = objectif ; l'`Object` porteur = la position ; `Viewport` = l'écran (ADR-0013) |
 | `Core → Editor` | picking et surcouches déplacés |
-| `Input → Network` | `ctx.input`, owner « local » toujours présent |
-| Ambiguïté `Camera` | `Camera` = composant ; `Viewport` = projection ; `camera.main` = l'Object porteur, nommé sans ambiguïté |
 | `Collider` O(n²) | `CollisionSystem` sur grille spatiale — **le seul « System » justifié** (ADR-0005) ; `SpatialHash` existe déjà et n'est branché à rien |
 | `environment.js` mal rangé | vers `core/` ou `platform/` — ce n'est pas du runtime |
 
