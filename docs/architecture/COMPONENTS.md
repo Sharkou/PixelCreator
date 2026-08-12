@@ -118,8 +118,9 @@ découpage ne donne cela aussi simplement.** C'est une observation, pas une pré
 ### Contrat
 
 ```js
-update(self, ctx)        // ctx : { time, input, scene, environment }
+update(self, ctx)        // ctx : { time, deltaTime, scene, runtime }
 draw(self, renderer)
+bounds(self)             // géométrie optionnelle — voir ci-dessous
 preview(self, renderer)  // éditeur uniquement
 onCollision(self, other) / onCollisionStart / onCollisionExit
 onAttach(self) / onDetach(self)   // remplace constructorAfterLink
@@ -128,6 +129,41 @@ onAttach(self) / onDetach(self)   // remplace constructorAfterLink
 Les deux paramètres sont optionnels : un composant qui ignore le second continue de
 fonctionner. **Toujours du duck-typing, aucune classe de base obligatoire** — écrire un
 composant doit rester une affaire de dix lignes.
+
+### `active` — qui lit, qui écrit (ADR-0012)
+
+`active` est une **propriété réactive ordinaire**. Aucun mécanisme spécial ne lui est
+attaché. Seule la direction d'usage est normative :
+
+| | |
+|---|---|
+| **Lue** | par le Runtime et le SceneRenderer, pour décider d'exécuter `update()` / `draw()`. Propriété absente = actif |
+| **Écrite** | par le code utilisateur, un Component ou l'Editor, via le Property System normal |
+| **Jamais écrite** | par le Runtime — y compris en réaction à une exception |
+
+Une écriture de `active` est un `Change` comme un autre, donc réplicable. Un Runtime qui
+désactiverait un composant fautif ferait dépendre l'état de simulation du fait qu'un
+script a levé une exception sur telle machine, à telle frame. Voir ADR-0012.
+
+### `bounds(self)` — capacité géométrique optionnelle, **pas** une API de picking
+
+Un composant qui possède réellement une étendue peut la déclarer, **en espace local** de
+l'objet, sous la forme `{ x, y, width, height }`. C'est le cas de `RectangleRenderer`,
+`Sprite` et `Tilemap`. Ce n'est pas le cas de `ParticleSystem` ni d'un composant de pure
+logique, et **il ne faut pas les y forcer** : `bounds()` n'est pas généralisé à tous les
+Components.
+
+**Ce n'est pas le système de sélection.** Le picking de l'Editor doit aussi atteindre des
+objets qui ne portent aucune géométrie de jeu, ce qu'une représentation éditoriale seule
+permet de déterminer. Trois géométries restent distinctes :
+
+- géométrie de **gameplay** (collision) ;
+- géométrie de **rendu** ;
+- géométrie de **picking Editor**.
+
+Aucun code du runtime n'appelle `bounds()` aujourd'hui, et **rien ne doit être construit
+dessus** tant que le modèle de sélection de l'Editor n'est pas conçu. Le picking
+appartient à l'Editor (`architecture/EDITOR.md`), pas au Core.
 
 `ctx.input` remplace le singleton `Keyboard` : c'est ce qui découple les entrées du
 réseau et **répare le mode solo**.

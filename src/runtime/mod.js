@@ -6,6 +6,7 @@
 
 export { Runtime } from './runtime.js';
 export { Clock } from './clock/clock.js';
+export { componentFailure, rethrowLater } from './errors.js';
 
 export { BlendMode, RENDERER_OPERATIONS, missingOperations, assertRenderer } from './rendering/renderer.js';
 export { Canvas2DRenderer } from './rendering/canvas2d.js';

@@ -13,21 +13,27 @@
 import { worldMatrix } from '../../core/components/transform.js';
 import { Matrix } from '../../core/math/matrix.js';
 import { assertRenderer, BlendMode } from './renderer.js';
+import { componentFailure, rethrowLater } from '../errors.js';
 
 export class SceneRenderer {
 
     #renderer;
     #onError;
+    #time;
 
     /**
      * Create a scene renderer.
      * @param {object} renderer - A backend satisfying the renderer contract
      * @param {object} [options] - Options
-     * @param {Function} [options.onError] - Called with (error, component, object) when a draw throws
+     * @param {Function} [options.onError] - Called with a ComponentFailure report (ADR-0012)
+     * @param {Function} [options.time] - Returns the current simulation time, to stamp reports
      */
-    constructor(renderer, { onError } = {}) {
+    constructor(renderer, { onError, time } = {}) {
         this.#renderer = assertRenderer(renderer);
         this.#onError = onError ?? rethrowLater;
+        // Drawing has no clock of its own. A runtime lends it one; a scene renderer used
+        // on its own honestly reports that it does not know the time.
+        this.#time = time ?? (() => null);
     }
 
     get renderer() {
@@ -75,7 +81,15 @@ export class SceneRenderer {
                 try {
                     component.draw(object, renderer);
                 } catch (error) {
-                    this.#onError(error, component, object);
+                    // Isolated and reported; the remaining components of this object,
+                    // and every other object, still draw. Nothing is disabled (ADR-0012).
+                    this.#onError(componentFailure({
+                        error,
+                        object,
+                        component,
+                        phase: 'draw',
+                        time: this.#time()
+                    }));
                 }
             }
 
@@ -89,16 +103,11 @@ export class SceneRenderer {
     }
 
     #drawOrder(scene) {
-        // Sorted per frame: `layer` is free to change at any time, and sorting a few
-        // hundred objects is negligible next to drawing them. Worth caching only once a
-        // profile says so.
+        // Sorted per frame, deliberately. `layer` is free to change at any time, and
+        // sorting a few hundred objects is negligible next to drawing them. A cache
+        // invalidated on every `layer` write would be a speculative optimisation, and
+        // one more piece of state to keep correct; it goes in when a measurement asks
+        // for it and not before.
         return scene.objects().sort((first, second) => first.layer - second.layer);
     }
-}
-
-function rethrowLater(error, component, object) {
-    queueMicrotask(() => {
-        error.message = `draw() failed on ${component?.name ?? 'component'} of object ${object?.id}: ${error.message}`;
-        throw error;
-    });
 }

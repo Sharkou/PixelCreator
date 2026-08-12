@@ -44,6 +44,7 @@ de ce qu'elle affirme.
 | [0009](decisions/ADR-0009-px-and-js.md) | `.px` = graphe, `.js` = JavaScript |
 | [0010](decisions/ADR-0010-game-identity.md) | Identité par ID, pas par nom |
 | [0011](decisions/ADR-0011-authority.md) | Le serveur est l'autorité ; l'Editor émet des opérations autorisées |
+| [0012](decisions/ADR-0012-runtime-error-isolation.md) | Le Runtime isole et rapporte les erreurs, il ne modifie pas le modèle |
 
 Toutes acceptées le 2026-08-12. Seul le mode d'exécution de `.px` (ADR-0009, Q7) reste
 ouvert, et il n'est pas bloquant.

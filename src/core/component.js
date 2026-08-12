@@ -12,9 +12,41 @@
 //
 //       update(self, ctx) { }                     // simulation, client and server
 //       draw(self, renderer) { }                  // rendering, client only
+//       bounds(self) { }                          // optional geometry, see below
 //       onAttach(self) { }
 //       onDetach(self) { }
 //   }
+//
+// `active` — WHO READS IT, WHO WRITES IT.
+//
+// A component may carry an `active` property. It is an ordinary reactive property, with
+// no special machinery behind it, and the rule about it is a rule about direction:
+//
+//   READ by the runtime and the scene renderer, to decide whether to run `update()` and
+//   `draw()`. An absent `active` means active — a component does not have to declare it.
+//
+//   WRITTEN by user code, by a component, or by the Editor, through the normal Property
+//   System. Never by the runtime.
+//
+// The runtime does not switch a component off, in particular not in reaction to an
+// exception. Writing `active` is a model mutation like any other — it emits a Change and
+// is replicable — so a runtime that did it would let a script's failure rewrite the
+// simulation state, differently on each machine. Isolation and policy are separated for
+// exactly this reason (ADR-0012).
+//
+// `bounds(self)` — AN OPTIONAL GEOMETRIC CAPABILITY, NOT A PICKING API.
+//
+// A component that genuinely has an extent may report it, in the object's local space,
+// as `{ x, y, width, height }`. Components shipped with a size do (RectangleRenderer,
+// Sprite, Tilemap); a particle system or a piece of pure logic does not, and must not
+// be made to.
+//
+// This is not the selection system. Editor picking must also reach objects that carry no
+// geometry at all, so it needs an editorial representation that `bounds()` alone cannot
+// provide — and picking belongs to the Editor, not to the Core (docs/architecture/
+// EDITOR.md). Nothing in the runtime calls `bounds()` today, and nothing should be built
+// on top of it until the Editor's selection model is designed. Three kinds of geometry
+// stay distinct: gameplay, rendering, and Editor picking.
 //
 // `self` is passed as an argument and never stored. A component holding a reference
 // back to its Object would create a cycle and break serialization and replication.

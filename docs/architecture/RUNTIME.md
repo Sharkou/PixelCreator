@@ -122,9 +122,51 @@ frame:
 
 C'est ce que le serveur fait déjà. Le client s'aligne.
 
+### Ordre de rendu — tri par frame, assumé
+
+Le `SceneRenderer` trie les objets par `layer` **à chaque frame**. Ce n'est pas un
+oubli : `layer` peut changer à tout moment, et trier quelques centaines d'objets est
+négligeable devant le coût de les dessiner.
+
+Un cache invalidé à chaque écriture de `layer` serait une optimisation spéculative et un
+état de plus à maintenir correct. **Pas d'optimisation sans mesure qui la justifie** ; il
+sera introduit le jour où un profil le demande, et pas avant.
+
+> Ce paragraphe remplace une prescription antérieure de tri mis en cache, écrite avant
+> qu'un renderer existe. Le comportement implémenté est le comportement normatif.
+
 **Attention (risque R7)** : séparer update et draw change l'ordre d'observation.
 Un jeu Legacy peut dépendre involontairement de l'entrelacement. À vérifier sur une
 scène de référence.
+
+### Erreurs d'exécution — VALIDÉ (ADR-0012)
+
+Le Runtime **isole** une exception levée par un Component et la **rapporte**. Il ne
+modifie jamais l'état du modèle en réaction à une erreur.
+
+```js
+new Runtime(scene, { onError: report => { /* politique */ } });
+```
+
+Le rapport est structuré — `{ error, object, component, type, phase, time }` — et
+l'`Error` d'origine n'est jamais modifiée. Le consommateur lit des champs, il ne parse
+pas de message.
+
+| | |
+|---|---|
+| Isolation | Runtime — `try/catch` autour de `update()` et `draw()` |
+| Signalement | Runtime — `onError(report)`, voie unique |
+| Politique (afficher, compter, pauser, désactiver) | couche supérieure — Editor, serveur, hôte |
+| État de simulation | modèle seul — jamais écrit par le Runtime |
+
+**Aucune auto-désactivation.** Un Component qui échoue n'est pas désactivé après N
+erreurs : ce serait transformer une exception en mutation d'état répliquée, et faire
+diverger deux machines selon qu'un script a levé ou non. `component.active` reste une
+propriété réactive normale, **lue** par le Runtime et le SceneRenderer, **écrite** par
+l'utilisateur, un Component ou l'Editor.
+
+Sans `onError`, l'erreur est relancée en différé avec l'originale en `cause` : le
+silence de Legacy n'est jamais reproduit.
 
 ### Ce qui sort du renderer
 
@@ -139,8 +181,8 @@ ADR-0004) au lieu du singleton `Graphics.ctx`.
 
 | Problème | Correction |
 |---|---|
-| `sort()` par frame | tri mis en cache, invalidé sur changement de `layer` |
 | Update/draw entrelacés | phases séparées |
+| Erreurs avalées par le `try/catch` | isolées **et** rapportées (`onError`, ADR-0012) |
 | `Core → Editor` | picking et surcouches déplacés |
 | `Input → Network` | `ctx.input`, owner « local » toujours présent |
 | Ambiguïté `Camera` | `Camera` = composant ; `Viewport` = projection ; `camera.main` = l'Object porteur, nommé sans ambiguïté |

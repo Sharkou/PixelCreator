@@ -9,9 +9,14 @@
 // The application owns the loop. The runtime exposes `advance()` and `render()` and
 // never reaches for requestAnimationFrame or setInterval, which are environment
 // concerns and would drag the DOM into the runtime.
+//
+// The runtime advances the simulation; it never mutates the model on its own account.
+// A component that throws is isolated so the frame survives, and reported through
+// `onError` — never disabled, never repaired, never written to (ADR-0012).
 
 import { Clock } from './clock/clock.js';
 import { SceneRenderer } from './rendering/scene-renderer.js';
+import { componentFailure, rethrowLater } from './errors.js';
 
 export class Runtime {
 
@@ -19,8 +24,6 @@ export class Runtime {
     #clock;
     #sceneRenderer;
     #onError;
-    #maxFailures;
-    #failures = new WeakMap();
     #running = true;
 
     /**
@@ -29,19 +32,20 @@ export class Runtime {
      * @param {object} [options] - Options
      * @param {Clock} [options.clock] - Simulation clock
      * @param {object} [options.renderer] - Renderer backend; omit it to run headless
-     * @param {Function} [options.onError] - Called with (error, component, object, phase)
-     * @param {number} [options.maxFailures] - Consecutive failures before a component is disabled
+     * @param {Function} [options.onError] - Called with a ComponentFailure report (ADR-0012)
      */
-    constructor(scene, { clock, renderer, onError, maxFailures = 3 } = {}) {
+    constructor(scene, { clock, renderer, onError } = {}) {
         if (!scene) throw new TypeError('Runtime: a scene is required');
 
         this.#scene = scene;
         this.#clock = clock ?? new Clock();
         this.#onError = onError ?? rethrowLater;
-        this.#maxFailures = maxFailures;
         this.#sceneRenderer = renderer
             ? new SceneRenderer(renderer, {
-                onError: (error, component, object) => this.#handleFailure(error, component, object, 'draw')
+                onError: report => this.#onError(report),
+                // The scene renderer has no clock of its own, so the runtime lends it
+                // the simulation time a draw failure belongs to.
+                time: () => this.#clock.time
             })
             : null;
     }
@@ -110,9 +114,17 @@ export class Runtime {
 
                 try {
                     component.update(object, context);
-                    this.#failures.delete(component);
                 } catch (error) {
-                    this.#handleFailure(error, component, object, 'update');
+                    // Isolated, reported, and nothing else. The next component still
+                    // runs, and the model is left exactly as the failing component left
+                    // it — see ADR-0012 for why the runtime must not "fix" anything here.
+                    this.#onError(componentFailure({
+                        error,
+                        object,
+                        component,
+                        phase: 'update',
+                        time: context.time
+                    }));
                 }
             }
         }
@@ -129,28 +141,4 @@ export class Runtime {
         if (!this.#sceneRenderer) return 0;
         return this.#sceneRenderer.render(this.#scene, options);
     }
-
-    #handleFailure(error, component, object, phase) {
-        // A broken user script must not take the frame down with it — that isolation is
-        // worth keeping from Legacy. What is not worth keeping is Legacy's habit of
-        // logging the same failure sixty times a second forever, which is how a
-        // systematically broken component stayed invisible. After a few consecutive
-        // failures the component is switched off and stops being asked.
-        const count = (this.#failures.get(component) ?? 0) + 1;
-        this.#failures.set(component, count);
-
-        this.#onError(error, component, object, phase);
-
-        if (count >= this.#maxFailures) {
-            component.active = false;
-            this.#failures.delete(component);
-        }
-    }
-}
-
-function rethrowLater(error, component, object, phase) {
-    queueMicrotask(() => {
-        error.message = `${phase}() failed on ${component?.name ?? 'component'} of object ${object?.id}: ${error.message}`;
-        throw error;
-    });
 }

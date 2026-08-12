@@ -23,6 +23,7 @@
 | Multiplayer | **Le serveur est l'autorité de simulation.** Le modèle distingue mutation joueur et mutation éditeur autorisée |
 | Scripting | `.px` = graphe visuel, `.js` = JavaScript natif. `.px` cesse d'être du JS |
 | Editor | Web Components natifs, préfixe **`px-`**. Modèle central, vues réactives |
+| Erreurs runtime | Le Runtime **isole et rapporte**, il ne modifie pas le modèle. Pas d'auto-désactivation |
 | Projets Legacy | **Aucune migration de données à concevoir** — il n'existe pas de projets v1 |
 
 ---
@@ -344,8 +345,13 @@ frame:
 d'observation dépendant du tri par `layer` — non déterministe pour un moteur
 multijoueur. Le serveur ne fait pas cette erreur.
 
-Le tri par `layer` est mis en cache et invalidé sur changement, au lieu d'un
-`Object.values().sort()` par frame.
+Le tri par `layer` reste fait **à chaque frame**. `layer` peut changer à tout moment et
+le tri est négligeable devant le rendu ; un cache invalidé sur écriture serait une
+optimisation spéculative et un état de plus à maintenir. Il sera introduit si une mesure
+le demande — voir `architecture/RUNTIME.md`.
+
+Une exception levée par un Component est **isolée et rapportée**, jamais transformée en
+mutation du modèle : le Runtime ne désactive rien (ADR-0012).
 
 Le picking souris et les poignées de redimensionnement sortent de `Renderer.render()`
 vers `editor/viewport/`. **C'est ce qui supprime `import { Dnd } from '/editor/...'`

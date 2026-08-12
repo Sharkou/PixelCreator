@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Object, Scene, Transform } from '../core/mod.js';
+import { Object, Scene, Transform, observe } from '../core/mod.js';
 import { Runtime } from './runtime.js';
 import { Clock } from './clock/clock.js';
 import { RectangleRenderer } from './rendering/components/rectangle-renderer.js';
@@ -260,63 +260,175 @@ test('update runs for the whole scene before any draw', () => {
     assert.deepEqual(order, ['update:a', 'update:b', 'draw:a', 'draw:b']);
 });
 
-test('a failing component is isolated', () => {
+// --- error isolation and reporting (ADR-0012) ------------------------------------
+
+class Broken {
+    static type = 'Broken';
+    constructor(error) { this.thrown = error ?? new Error('bad update'); }
+    update() { throw this.thrown; }
+}
+
+test('a failing component does not stop the other components', () => {
     const scene = new Scene('Main');
-    const failures = [];
-    class Broken {
-        static type = 'Broken';
-        update() { throw new Error('bad update'); }
-    }
-    const broken = scene.add(new Object('Broken'));
-    broken.addComponent(new Broken());
-    const healthy = scene.add(new Object('Healthy'));
-    const mover = healthy.addComponent(new Mover());
-    healthy.addComponent(new Transform());
+    const reports = [];
+    const object = scene.add(new Object('Player'));
+    object.addComponent(new Transform());
+    object.addComponent(new Broken());
+    const mover = object.addComponent(new Mover());
+    const other = scene.add(new Object('Other'));
+    other.addComponent(new Transform());
+    const otherMover = other.addComponent(new Mover());
 
-    const runtime = new Runtime(scene, { onError: error => failures.push(error.message) });
-    runtime.step();
+    new Runtime(scene, { onError: report => reports.push(report) }).step();
 
-    assert.deepEqual(failures, ['bad update']);
-    assert.equal(mover.updates, 1, 'the rest of the scene still ran');
+    assert.equal(reports.length, 1);
+    assert.equal(mover.updates, 1, 'the next component of the same object still ran');
+    assert.equal(otherMover.updates, 1, 'and so did the rest of the scene');
 });
 
-test('a repeatedly failing component is switched off', () => {
-    // Legacy logged the same failure sixty times a second forever, which is how a
-    // systematically broken component stayed invisible.
+test('a failing draw does not stop the other components', () => {
     const scene = new Scene('Main');
-    const failures = [];
-    class Broken {
-        static type = 'Broken';
-        update() { throw new Error('bad update'); }
+    const reports = [];
+    class BrokenDraw {
+        static type = 'BrokenDraw';
+        draw() { throw new Error('bad draw'); }
     }
+    let drawn = 0;
+    class Painter {
+        static type = 'Painter';
+        draw() { drawn++; }
+    }
+    const object = scene.add(new Object('Box'));
+    object.addComponent(new Transform());
+    object.addComponent(new BrokenDraw());
+    object.addComponent(new Painter());
+    const other = scene.add(new Object('Other'));
+    other.addComponent(new Transform());
+    other.addComponent(new Painter());
+
+    new Runtime(scene, {
+        renderer: recordingRenderer(),
+        onError: report => reports.push(report)
+    }).render();
+
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0].phase, 'draw');
+    assert.equal(drawn, 2, 'the remaining components of both objects still drew');
+});
+
+test('handling an error mutates nothing in the model', () => {
+    // THE invariant of ADR-0012. Legacy — and an earlier draft of this runtime — switched
+    // a repeatedly failing component off, which is a Change like any other and would let
+    // a script's exception rewrite replicated state.
+    const scene = new Scene('Main');
+    const changes = [];
     const object = scene.add(new Object('Broken'));
     const broken = object.addComponent(new Broken());
+    observe(object, () => changes.push('object'));
+    observe(broken, () => changes.push('component'));
 
-    const runtime = new Runtime(scene, {
-        maxFailures: 3,
-        onError: error => failures.push(error.message)
-    });
-    for (let i = 0; i < 10; i++) runtime.step();
+    const runtime = new Runtime(scene, { onError: () => {} });
+    for (let i = 0; i < 20; i++) runtime.step();
 
-    assert.equal(failures.length, 3, 'reported, then silenced');
-    assert.equal(broken.active, false);
+    assert.deepEqual(changes, [], 'no Change was emitted by the error handling');
 });
 
-test('an occasional failure does not switch a component off', () => {
+test('the runtime never switches a failing component off', () => {
     const scene = new Scene('Main');
     let calls = 0;
-    class Flaky {
-        static type = 'Flaky';
-        update() { calls++; if (calls === 1) throw new Error('one-off'); }
+    const object = scene.add(new Object('Broken'));
+    const broken = object.addComponent(new Broken());
+    broken.update = () => { calls++; throw new Error('always'); };
+
+    const runtime = new Runtime(scene, { onError: () => {} });
+    for (let i = 0; i < 20; i++) runtime.step();
+
+    assert.equal(broken.active, undefined, 'active was never written');
+    assert.equal(calls, 20, 'and the component kept being asked, every single step');
+});
+
+test('onError receives a structured report', () => {
+    const scene = new Scene('Main');
+    const reports = [];
+    const thrown = new Error('bad update');
+    const object = scene.add(new Object('Broken'));
+    const broken = object.addComponent(new Broken(thrown));
+
+    const runtime = new Runtime(scene, {
+        clock: new Clock({ fixedStep: 0.1 }),
+        onError: report => reports.push(report)
+    });
+    runtime.step();
+    runtime.step();
+
+    assert.equal(reports.length, 2, 'each failure is reported independently');
+    const [first, second] = reports;
+
+    assert.equal(first.error, thrown, 'the report carries the original Error itself');
+    assert.equal(first.object, object);
+    assert.equal(first.component, broken);
+    assert.equal(first.type, 'Broken');
+    assert.equal(first.phase, 'update');
+    assert.equal(first.time, 0);
+    assert.equal(second.time, 0.1, 'stamped with the simulation time of its own step');
+});
+
+test('the reported error is never modified', () => {
+    // The old reporter rewrote error.message to add context, mutating an object it did
+    // not own and forcing the consumer to parse a string for what is now a field.
+    const scene = new Scene('Main');
+    const thrown = new Error('bad update');
+    const message = thrown.message;
+    const stack = thrown.stack;
+    const object = scene.add(new Object('Broken'));
+    object.addComponent(new Broken(thrown));
+
+    const runtime = new Runtime(scene, { onError: () => {} });
+    for (let i = 0; i < 5; i++) runtime.step();
+
+    assert.equal(thrown.message, message);
+    assert.equal(thrown.stack, stack);
+    assert.equal(thrown.cause, undefined);
+});
+
+test('a component with no type name is still reported', () => {
+    const scene = new Scene('Main');
+    const reports = [];
+    const object = scene.add(new Object('Odd'));
+    object.addComponent(new Broken());
+    // Reporting must never fail on its own account, or it loses the failure it carries.
+    const component = object.getComponent('Broken');
+
+    new Runtime(scene, { onError: report => reports.push(report) }).step();
+
+    assert.equal(reports[0].component, component);
+    assert.equal(typeof reports[0].type, 'string');
+});
+
+test('without onError a failure is not swallowed', () => {
+    // The default reporter defers the throw so the frame finishes, then hands it to the
+    // environment's uncaught-error path. Captured here rather than actually thrown, so
+    // the assertion is deterministic and does not depend on the test runner.
+    const scene = new Scene('Main');
+    const thrown = new Error('bad update');
+    const object = scene.add(new Object('Broken'));
+    object.addComponent(new Broken(thrown));
+
+    const queue = globalThis.queueMicrotask;
+    const deferred = [];
+    globalThis.queueMicrotask = task => deferred.push(task);
+    try {
+        new Runtime(scene).step();
+    } finally {
+        globalThis.queueMicrotask = queue;
     }
-    const object = scene.add(new Object('Flaky'));
-    const flaky = object.addComponent(new Flaky());
 
-    const runtime = new Runtime(scene, { maxFailures: 3, onError: () => {} });
-    for (let i = 0; i < 10; i++) runtime.step();
-
-    assert.equal(flaky.active, undefined, 'never disabled');
-    assert.equal(calls, 10);
+    assert.equal(deferred.length, 1, 'the failure was scheduled to be thrown');
+    assert.throws(deferred[0], error => {
+        assert.match(error.message, /update\(\) failed on Broken/);
+        assert.equal(error.cause, thrown, 'the original error is carried, not replaced');
+        return true;
+    });
 });
 
 test('the runtime requires a scene', () => {

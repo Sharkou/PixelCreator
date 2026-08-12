@@ -9,23 +9,35 @@ Comprendre → Cartographier → Documenter → Comparer → Proposer → Faire 
     → ◄ IMPLÉMENTER → Tester → Comparer avec Legacy → Documenter
 ```
 
-**Phase 0 close. Décisions validées le 2026-08-12.**
+**Phase 0 close. Décisions validées le 2026-08-12. Implémentation en cours.**
 
-Aucune ligne de code v2 n'a été écrite. Aucun fichier de `legacy/` n'a été modifié.
+Aucun fichier de `legacy/` n'a été modifié.
 
-**Étape 1 faite** : le harnais de parité existe et capture 39 scénarios.
+### Étapes réalisées
+
+| Étape | Contenu |
+|---|---|
+| **1** | Harnais de parité — 39 scénarios capturés depuis Legacy (`tools/parity/`) |
+| **1 bis** | `tools/dev-server.sh` sert `legacy/` ; `tools/layers/run.js` vérifie les couches |
+| **2** | `core/` — `Object`, `Component`, `Scene`, Property System (Proxy), Operations, Authority, événements, sérialisation explicite, identité |
+| **2.8** | `Transform`, matrices et composition hiérarchique ; abstraction de renderer ; backend Canvas 2D ; `SceneRenderer` ; `RectangleRenderer`, `Sprite`, `ParticleSystem`, `Tilemap` ; `Runtime` ; `Clock` |
+| **2.9** | Modèle d'erreurs d'exécution — isolation et rapport séparés de la politique (ADR-0012) |
+
+### État vérifié (2026-08-12, après étape 2.9)
 
 ```bash
-node tools/parity/run.js
+tools/test.sh          # 292 tests, 292 passés
+node tools/layers/run.js   # v2 : 0 violation — legacy : 1 violation trackée
+node tools/parity/run.js   # 39 identical, 0 problems
 ```
 
-Voir `tools/parity/README.md`.
+`src/` contient `core/` et `runtime/`. **`editor/` et `network/` n'existent pas encore** :
+les règles de couches qui les concernent sont déclarées mais ne vérifient rien tant que
+ces dossiers sont absents.
 
-**Étape 1 bis faite** : `tools/dev-server.sh` sert désormais `legacy/` comme racine, et
-`tools/layers/run.js` vérifie les dépendances entre couches (une violation connue,
-`renderer.js → editor/system/dnd.js`, y est documentée et suivie explicitement).
+### Prochaine action
 
-Prochaine action : étape 2 — `core/`.
+Étape 3 — à arbitrer entre `runtime/input/`, `runtime/scripting/` et le socle `editor/`.
 
 ## Décisions validées
 
@@ -40,6 +52,7 @@ Prochaine action : étape 2 — `core/`.
 | Autorité | Serveur autoritaire ; mutation joueur ≠ mutation éditeur autorisée | ADR-0011 |
 | Scripting | `.px` = graphe **interprété** (débogage, sécurité), `.js` = JS natif | ADR-0009 |
 | Editor | Web Components `px-*`, modèle central, vues réactives | ADR-0006 |
+| Erreurs runtime | Le Runtime isole et rapporte ; il ne modifie pas le modèle. Pas d'auto-désactivation | ADR-0012 |
 | Projets Legacy | Aucune migration de données à concevoir | — |
 | Renommages | `childs` → `children`, `uid` → `owner`, `static` supprimé | ADR-0001 |
 
@@ -65,6 +78,7 @@ concernés (ex. `Transform` ajouté par défaut ou non).
 | `Tilemap` | `draw(ctx, camera)` — cassé si attaché | `draw(self, renderer)` |
 | `.px` | traité comme du JavaScript | ressource graphe JSON |
 | `childs`, `uid` | — | `children`, `owner` |
+| Exception dans un Component | `try/catch` muet — l'erreur disparaît | isolée **et** rapportée (`onError`), jamais convertie en mutation du modèle |
 
 ## Vérifications exécutées en Phase 0
 

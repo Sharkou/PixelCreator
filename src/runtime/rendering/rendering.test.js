@@ -202,23 +202,52 @@ test('the renderer knows nothing about component types', () => {
 
 test('a failing draw is isolated and reported', () => {
     const renderer = recordingRenderer();
-    const failures = [];
+    const reports = [];
+    const thrown = new Error('bad draw');
     class Broken {
         static type = 'Broken';
-        draw() { throw new Error('bad draw'); }
+        draw() { throw thrown; }
     }
     const broken = new Object('Broken');
     broken.addComponent(new Transform());
-    broken.addComponent(new Broken());
+    const component = broken.addComponent(new Broken());
     const healthy = new Object('Healthy');
     healthy.addComponent(new Transform());
     healthy.addComponent(new RectangleRenderer());
 
-    new SceneRenderer(renderer, { onError: error => failures.push(error.message) })
+    new SceneRenderer(renderer, { onError: report => reports.push(report) })
         .render(sceneWith(broken, healthy));
 
-    assert.deepEqual(failures, ['bad draw']);
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0].error, thrown, 'the original Error, untouched');
+    assert.equal(reports[0].object, broken);
+    assert.equal(reports[0].component, component);
+    assert.equal(reports[0].type, 'Broken');
+    assert.equal(reports[0].phase, 'draw');
     assert.equal(renderer.of('fillRect').length, 1, 'the healthy object still drew');
+});
+
+test('a scene renderer with no clock reports an unknown time', () => {
+    // Drawing has no clock of its own; a runtime lends it one (ADR-0012).
+    const reports = [];
+    class Broken {
+        static type = 'Broken';
+        draw() { throw new Error('bad draw'); }
+    }
+    const object = new Object('Broken');
+    object.addComponent(new Transform());
+    object.addComponent(new Broken());
+
+    new SceneRenderer(recordingRenderer(), { onError: report => reports.push(report) })
+        .render(sceneWith(object));
+    assert.equal(reports[0].time, null);
+
+    reports.length = 0;
+    new SceneRenderer(recordingRenderer(), {
+        onError: report => reports.push(report),
+        time: () => 1.5
+    }).render(sceneWith(object));
+    assert.equal(reports[0].time, 1.5);
 });
 
 test('transform state is balanced', () => {
