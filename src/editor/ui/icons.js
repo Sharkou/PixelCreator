@@ -1,4 +1,4 @@
-// The Editor's icon set, as inline SVG.
+// The Editor's icon set, as inline SVG — Modern Pixel.
 //
 // No icon font. Legacy pulled the whole of Font Awesome — five weights, twenty webfont
 // files — and ADR-0006 flags icon fonts as a Shadow DOM problem anyway: a font loaded on
@@ -6,11 +6,32 @@
 // the font family happens to be inherited. Inline SVG has no such question, adds no
 // request, and colours itself with `currentColor`.
 //
-// Drawn on a 16-unit grid with a single stroke weight, so they read at 13px in a
-// Hierarchy row and stay coherent side by side. The set is small and stays small: an
-// icon is added when a control needs one, never because a library has it.
+// TWO SIZES, AND ONLY TWO. 16 px in a row or a control, 20 px for the few places that
+// need presence — a toolbar entry, an empty state. Anything else is snapped to one of
+// them, because a 16-unit grid drawn at 13 px puts every stroke between two device
+// pixels, which is what made the set look soft and unaligned. The call sites still pass
+// their historical numbers; they are normalised here, and each window drops its literal
+// as it is rebuilt.
+//
+// THE STROKE IS CONSTANT ON SCREEN, NOT IN THE GRID. `stroke-width` is a user-space
+// length, so a fixed 1.4 rendered as 0.96 px at 11 px and 2.3 px at 26 px — the same set
+// looked hairline in the Inspector and heavy in an empty state. It is now derived from
+// the drawn size so every glyph lands at the same 1.5 px on screen, which is also the
+// weight of the Editor's borders.
+//
+// The set is small and stays small: an icon is added when a control needs one, never
+// because a library has it.
 
-const S = 'fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"';
+/** The only two sizes an icon is ever drawn at. */
+export const IconSize = { SM: 16, MD: 20 };
+
+/** Rendered stroke weight, in CSS pixels — the same as a border. */
+const STROKE = 1.5;
+
+/** The grid every glyph is drawn on. */
+const GRID = 16;
+
+const S = 'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"';
 const F = 'fill="currentColor"';
 
 const PATHS = {
@@ -19,8 +40,8 @@ const PATHS = {
         + `<circle cx="8" cy="8" r="1.35" ${F}/>`,
     rectangle: `<rect x="2.5" y="4" width="11" height="8" rx="1" ${S}/>`,
     circle: `<circle cx="8" cy="8" r="5" ${S}/>`,
-    camera: `<path d="M1.5 5.5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1z" ${S}/>`
-        + `<path d="M9.5 8 14 5.5v5L9.5 10.5z" ${S}/>`,
+    camera: `<path d="M1.8 5.5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1z" ${S}/>`
+        + `<path d="M9.8 8 14.2 5.5v5L9.8 10.5z" ${S}/>`,
     sprite: `<rect x="2.5" y="3.5" width="11" height="9" rx="1" ${S}/>`
         + `<path d="M2.7 10.5 6 7.5l2.4 2.2L10.4 8l2.9 2.6" ${S}/>`
         + `<circle cx="5.6" cy="6.1" r="0.9" ${F}/>`,
@@ -40,7 +61,10 @@ const PATHS = {
         + `<circle cx="6" cy="4.5" r="1.7" ${S}/><circle cx="10.5" cy="8" r="1.7" ${S}/>`
         + `<circle cx="5" cy="11.5" r="1.7" ${S}/>`,
     folder: `<path d="M1.8 12.2V4.3a.8.8 0 0 1 .8-.8h3l1.5 1.8h6.1a.8.8 0 0 1 .8.8v6.1a.8.8 0 0 1-.8.8H2.6a.8.8 0 0 1-.8-.8z" ${S}/>`,
-    timeline: `<path d="M1.8 8h12.4" ${S}/><path d="M2 3.5v2.2M14 3.5v2.2" ${S}/>`
+    // Redrawn: the old glyph spanned y 3.5 to 9.6, so it sat 1.45 units above the centre
+    // of its own box and read as misaligned next to every other icon. The bounds now
+    // straddle y = 8 like the rest of the set.
+    timeline: `<path d="M1.8 8h12.4" ${S}/><path d="M2.2 4.8v6.4M13.8 4.8v6.4" ${S}/>`
         + `<path d="M5.4 6.4 7 8l-1.6 1.6L3.8 8zM11.4 6.4 13 8l-1.6 1.6L9.8 8z" ${S}/>`,
 
     // Actions
@@ -67,17 +91,43 @@ const PATHS = {
 };
 
 /**
+ * The size an icon is actually drawn at.
+ *
+ * Everything below 18 is a control glyph and becomes 16; everything above is a presence
+ * glyph and becomes 20. Nothing else exists, so a caller cannot reintroduce a size that
+ * puts the grid off the pixel grid.
+ *
+ * @param {number} requested - The size a caller asked for
+ * @returns {number} 16 or 20
+ */
+export function iconSize(requested) {
+    return requested >= 18 ? IconSize.MD : IconSize.SM;
+}
+
+/**
  * Build an icon.
+ *
+ * The span carries the exact box so layout never depends on the SVG's intrinsic size,
+ * and the SVG is a block so it cannot sit on a text baseline — the two reasons glyphs
+ * looked a pixel high next to a label.
+ *
  * @param {string} name - One of the known icon names
- * @param {number} [size] - Edge length in pixels
+ * @param {number} [size] - Requested edge length; snapped to 16 or 20
  * @returns {HTMLElement} A span holding the SVG
  */
-export function icon(name, size = 14) {
+export function icon(name, size = IconSize.SM) {
+    const edge = iconSize(size);
+    // User units per CSS pixel, so the drawn weight is the same at both sizes.
+    const stroke = (STROKE * GRID) / edge;
+
     const span = document.createElement('span');
     span.className = 'icon';
     span.setAttribute('aria-hidden', 'true');
+    span.style.width = `${edge}px`;
+    span.style.height = `${edge}px`;
     // Constant markup from the table above, never a caller's string.
-    span.innerHTML = `<svg viewBox="0 0 16 16" width="${size}" height="${size}">${PATHS[name] ?? PATHS.object}</svg>`;
+    span.innerHTML = `<svg viewBox="0 0 ${GRID} ${GRID}" width="${edge}" height="${edge}"`
+        + ` stroke-width="${stroke}">${PATHS[name] ?? PATHS.object}</svg>`;
     return span;
 }
 

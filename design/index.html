@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Pixel Creator — Design prototype (UX-2.5)</title>
+    <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+    <!--
+        PROTOTYPE DE DÉCISION — jetable.
+        Rien ici n'est importé par src/. Supprimer design/ supprime tout.
+    -->
+    <div id="proto">
+        <div class="proto-bar">
+            <span class="tag">Prototype</span>
+
+            <div class="proto-group">
+                <span class="label">Direction</span>
+                <div class="seg">
+                    <button data-dir-btn="A" aria-pressed="true">Modern Pixel<kbd>1</kbd></button>
+                    <button data-dir-btn="B" aria-pressed="false">Pixel Studio<kbd>2</kbd></button>
+                    <button data-dir-btn="C" aria-pressed="false">Minimal<kbd>3</kbd></button>
+                </div>
+            </div>
+
+            <div class="proto-group">
+                <span class="label">Layout</span>
+                <div class="seg">
+                    <button data-layout-btn="L2" aria-pressed="true">L2<kbd>4</kbd></button>
+                    <button data-layout-btn="L4" aria-pressed="false">L4<kbd>5</kbd></button>
+                </div>
+            </div>
+
+            <label class="switch">
+                <input type="checkbox" id="tl-toggle" checked>
+                Timeline (L4)
+            </label>
+
+            <span class="spacer"></span>
+
+            <span class="hint">
+                <b>1 2 3</b> direction · <b>4 5</b> layout · cliquer une ligne, la loupe,
+                <b>+</b>, <b>Add Component</b>, maintenir <b>▴ ▾</b>, glisser <b>X</b>/<b>Y</b>
+            </span>
+        </div>
+
+        <div class="proto-note" id="proto-note"></div>
+
+        <div class="stage" id="stage"></div>
+    </div>
+
+    <script type="module" src="prototype.js"></script>
+</body>
+</html>

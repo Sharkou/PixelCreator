@@ -1,0 +1,1483 @@
+/* ============================================================================
+   Pixel Creator — Design prototype (UX-2.5)
+   ----------------------------------------------------------------------------
+   THROWAWAY. Nothing here is production code and nothing here is imported by
+   `src/`. Deleting `design/` removes the whole thing.
+
+   Reading order:
+     1  prototype chrome — the bar that switches directions, visually neutral
+        so it is never mistaken for one of the designs
+     2  tokens — every design decision lives in a variable; a direction is a
+        block of variables plus a short list of structural overrides
+     3  structure — one markup, shared by the three directions
+     4  direction A / B / C
+     5  layout L2 / L4
+   ============================================================================ */
+
+/* == 1. Prototype chrome ================================================== */
+
+* { box-sizing: border-box; }
+
+html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: #0a0a0c;
+    color: #d4d4dc;
+    font: 12px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+#proto {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.proto-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 18px;
+    height: 40px;
+    flex: 0 0 auto;
+    padding: 0 14px;
+    background: linear-gradient(#101014, #08080a);
+    border-bottom: 1px solid #000;
+    box-shadow: 0 1px 0 #232329 inset;
+    user-select: none;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+/* The direction's own description lives here rather than floating over the mock. */
+.proto-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 26px;
+    flex: 0 0 auto;
+    padding: 0 15px;
+    background: #08080a;
+    border-bottom: 1px solid #1a1a20;
+    color: #6d6d7a;
+    font-size: 11px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.proto-note b { color: #cfcfda; font-weight: 600; }
+.proto-note .dot { width: 7px; height: 7px; border-radius: 2px; flex: 0 0 auto; }
+
+.proto-bar .tag {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    color: #5a5a68;
+    padding-right: 4px;
+}
+
+.proto-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.proto-group > .label {
+    font-size: 10px;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: #55555f;
+}
+
+.seg {
+    display: flex;
+    padding: 2px;
+    background: #17171c;
+    border: 1px solid #000;
+    border-radius: 7px;
+}
+
+.seg button {
+    font: inherit;
+    font-size: 11px;
+    color: #8a8a97;
+    background: none;
+    border: 0;
+    padding: 4px 11px;
+    border-radius: 5px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.seg button:hover { color: #e6e6ee; background: #23232a; }
+.seg button[aria-pressed='true'] { color: #0a0a0c; background: #d8d8e2; font-weight: 600; }
+
+.seg button kbd {
+    font: inherit;
+    font-size: 9px;
+    opacity: 0.55;
+    margin-left: 5px;
+}
+
+.proto-bar .spacer { flex: 1; }
+
+.proto-bar .hint {
+    font-size: 10px;
+    color: #4d4d57;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.proto-bar .hint b { color: #7d7d8c; font-weight: 600; }
+
+@media (max-width: 1180px) { .proto-bar .hint { display: none; } }
+
+.switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    color: #8a8a97;
+    cursor: pointer;
+}
+
+.switch input { accent-color: #7d7d8c; }
+
+.stage {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+}
+
+/* == 2. Tokens ============================================================ */
+
+.app {
+    /* surfaces */
+    --s0: #16171b;          /* deepest — viewport, inputs live below this */
+    --s1: #1b1d22;          /* panel body */
+    --s2: #21242a;          /* headers, raised */
+    --s3: #2a2e36;          /* hover */
+    --s4: #343943;          /* pressed */
+    --line: #0e0f12;        /* hard separator */
+    --line-soft: #2b2f37;   /* internal rule */
+    --input: #101216;
+
+    /* text */
+    --text: #c3c7d1;
+    --dim: #767c8a;
+    --strong: #f0f2f6;
+
+    /* accent + states */
+    --accent: #ff7a45;
+    --accent-hi: #ff9366;
+    --accent-soft: rgba(255, 122, 69, 0.14);
+    --accent-line: rgba(255, 122, 69, 0.5);
+    --danger: #f0555c;
+    --ok: #3dd68c;
+
+    /* per-family hues — only direction B makes them differ */
+    --hue-hierarchy: var(--accent);
+    --hue-inspector: var(--accent);
+    --hue-project: var(--accent);
+    --hue-timeline: var(--accent);
+
+    /* product mark */
+    --mark-body: var(--accent);
+    --mark-face: #16171b;
+    --mark-dot: #ffffff;
+
+    /* geometry — everything is a multiple of 4 */
+    --r: 4px;
+    --r-sm: 3px;
+    --pad: 10px;
+    --gap: 8px;
+
+    /* density */
+    --row: 26px;            /* a hierarchy line */
+    --ctrl: 22px;           /* a field */
+    --hit: 26px;            /* an icon button */
+    --head: 30px;           /* a panel header */
+    --title: 40px;          /* the titlebar */
+
+    /* type */
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, sans-serif;
+    --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'JetBrains Mono', Consolas, monospace;
+    --fs-xs: 10px;
+    --fs-sm: 11px;
+    --fs: 12px;
+    --fs-md: 13px;
+    --head-weight: 600;
+    --head-spacing: 0.6px;
+    --head-transform: uppercase;
+    --head-font: var(--font);
+
+    /* viewport */
+    --vp-bg: #131418;
+    --vp-minor: #1c1e24;
+    --vp-major: #24272f;
+    --vp-axis: #343945;
+    --vp-ruler: #1a1c21;
+
+    /* columns */
+    --left: 236px;
+    --right: 286px;
+    --dock: 190px;   /* Project, bottom of the left column */
+    --tl: 190px;     /* Timeline, L4 only — its own size, or one seam moves two panels */
+
+    /* motion */
+    --fast: 90ms;
+    --slow: 150ms;
+}
+
+/* == 3. Structure ========================================================= */
+
+.app {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--s0);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: var(--fs);
+    user-select: none;
+    overflow: hidden;
+}
+
+.app button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.app input { font: inherit; }
+
+/* scrollbars — carried over from the current Editor, which is a keeper */
+.app *::-webkit-scrollbar { width: 10px; height: 10px; }
+.app *::-webkit-scrollbar-track { background: transparent; }
+.app *::-webkit-scrollbar-thumb {
+    background: var(--s3);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 5px;
+}
+.app *::-webkit-scrollbar-thumb:hover { background-color: var(--s4); background-clip: content-box; }
+.app *::-webkit-scrollbar-corner { background: transparent; }
+.app .scroll { scrollbar-width: thin; scrollbar-color: var(--s3) transparent; }
+
+.ic { display: inline-flex; flex: 0 0 auto; line-height: 0; color: currentColor; }
+.mark { display: inline-flex; line-height: 0; flex: 0 0 auto; }
+
+/* --- titlebar ------------------------------------------------------------ */
+
+.titlebar {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 10px;
+    height: var(--title);
+    flex: 0 0 auto;
+    padding: 0 8px 0 12px;
+    background: var(--s2);
+    border-bottom: 1px solid var(--line);
+    position: relative;
+    z-index: 6;
+    overflow: hidden;
+}
+
+.titlebar .brand { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
+.titlebar .product { font-weight: 600; letter-spacing: 0.2px; color: var(--strong); white-space: nowrap; }
+
+.titlebar .crumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--dim);
+    white-space: nowrap;
+    min-width: 0;
+    overflow: hidden;
+}
+.titlebar .crumb .sep { color: var(--line-soft); }
+/* NOT `.scene` — the viewport already owns that name, and a global class namespace is
+   exactly what the shadow roots of the real Editor exist to avoid. */
+.titlebar .crumb .scene-name { color: var(--text); }
+
+.titlebar .spacer { flex: 1; }
+
+.transport {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    background: var(--s0);
+    border: 1px solid var(--line);
+    border-radius: calc(var(--r) + 2px);
+}
+
+.transport button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 24px;
+    border-radius: var(--r-sm);
+    color: var(--dim);
+    transition: background var(--fast), color var(--fast);
+}
+
+.transport button:hover { background: var(--s3); color: var(--strong); }
+.transport button.primary { color: var(--ok); }
+.transport button.primary:hover { background: rgba(61, 214, 140, 0.14); }
+.transport button[disabled] { opacity: 0.32; cursor: default; }
+.transport button[disabled]:hover { background: none; color: var(--dim); }
+
+.tb-actions { display: flex; align-items: center; gap: 2px; }
+
+.iconbtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--hit);
+    height: var(--hit);
+    border-radius: var(--r-sm);
+    color: var(--dim);
+    transition: background var(--fast), color var(--fast), opacity var(--fast);
+}
+
+.iconbtn:hover { background: var(--s3); color: var(--strong); }
+.iconbtn:active { background: var(--s4); }
+.iconbtn.on { color: var(--accent); background: var(--accent-soft); }
+.iconbtn.danger:hover { color: var(--danger); }
+
+.avatar {
+    width: 22px;
+    height: 22px;
+    margin-left: 6px;
+    border-radius: 50%;
+    background: linear-gradient(140deg, var(--accent), #7b4bff);
+    flex: 0 0 auto;
+}
+
+.kbar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 24px;
+    padding: 0 10px 0 8px;
+    color: var(--dim);
+    background: var(--s0);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    font-size: var(--fs-sm);
+}
+
+.kbar kbd {
+    font: inherit;
+    font-size: 10px;
+    color: var(--dim);
+    background: var(--s2);
+    border: 1px solid var(--line-soft);
+    border-radius: 3px;
+    padding: 0 4px;
+}
+
+/* --- shell --------------------------------------------------------------- */
+
+.body { display: flex; flex: 1; min-height: 0; }
+.stack { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.work { display: flex; flex: 1; min-height: 0; }
+
+.col-left { display: flex; flex-direction: column; width: var(--left); flex: 0 0 auto; min-width: 0; }
+.col-center { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.col-right { display: flex; flex-direction: column; width: var(--right); flex: 0 0 auto; min-width: 0; }
+
+.split {
+    flex: 0 0 auto;
+    position: relative;
+    background: var(--line);
+    z-index: 3;
+    touch-action: none;
+}
+
+.split.v { width: 1px; cursor: col-resize; }
+.split.h { height: 1px; cursor: row-resize; }
+.split::after {
+    content: '';
+    position: absolute;
+    transition: background var(--slow);
+}
+.split.v::after { top: 0; bottom: 0; left: -4px; width: 9px; }
+.split.h::after { left: 0; right: 0; top: -4px; height: 9px; }
+.split:hover::after, .split.dragging::after { background: var(--accent-line); }
+
+/* --- panel --------------------------------------------------------------- */
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    background: var(--s1);
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+    flex: 1;
+}
+
+.panel-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: var(--head);
+    flex: 0 0 auto;
+    padding: 0 5px 0 10px;
+    background: var(--s2);
+    border-bottom: 1px solid var(--line);
+    transition: opacity var(--slow);
+}
+
+.panel-head > .ic { color: var(--dim); }
+.panel-head h2 {
+    margin: 0;
+    flex: 1;
+    font-family: var(--head-font);
+    font-size: var(--fs-sm);
+    font-weight: var(--head-weight);
+    letter-spacing: var(--head-spacing);
+    text-transform: var(--head-transform);
+    color: var(--dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The header slot takes what is left so the tools stay pinned right whatever the
+   direction does to the label width — B's tracked mono is much wider than A's sans. */
+.panel-head .head-slot { flex: 1; min-width: 0; height: 100%; overflow: hidden; }
+.panel-head .tools { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; }
+.panel-body { flex: 1; min-height: 0; overflow: auto; }
+.panel-body.plain { overflow: hidden; }
+
+/* --- search that lives behind a magnifier -------------------------------- */
+
+.searchbar {
+    display: grid;
+    grid-template-rows: 0fr;
+    flex: 0 0 auto;
+    background: var(--s1);
+    border-bottom: 1px solid transparent;
+    transition: grid-template-rows var(--slow) ease, border-color var(--slow) ease;
+}
+
+.searchbar > .inner { overflow: hidden; min-height: 0; }
+.searchbar.open { grid-template-rows: 1fr; border-bottom-color: var(--line); }
+
+.searchbar .field {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 6px 6px 10px;
+    color: var(--dim);
+}
+
+.searchbar input {
+    flex: 1;
+    min-width: 0;
+    height: var(--ctrl);
+    color: var(--strong);
+    background: var(--input);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    padding: 0 8px;
+    outline: none;
+}
+
+.searchbar input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+/* ONE clear control: the native cross is removed outright, the explicit button stays.
+   `appearance: none` alone is not reliable across Chromium versions — `display: none` is. */
+.app input[type='search']::-webkit-search-cancel-button,
+.app input[type='search']::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+    display: none;
+}
+
+/* --- tree ---------------------------------------------------------------- */
+
+.tree { padding: 3px 0 12px; }
+
+.node {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: var(--row);
+    padding-right: 4px;
+    cursor: default;
+    position: relative;
+}
+
+.node:hover { background: var(--s2); }
+
+.node.selected { background: var(--accent-soft); }
+.node.selected::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 2px;
+    background: var(--hue-hierarchy);
+}
+.node.selected .nm { color: var(--strong); }
+.node.hidden .nm, .node.hidden > .ic { opacity: 0.4; }
+.node.locked .nm { font-style: italic; }
+
+.twisty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    border-radius: var(--r-sm);
+    color: var(--dim);
+}
+.twisty .ic { transition: transform var(--fast) ease; }
+.twisty.open .ic { transform: rotate(90deg); }
+.twisty.leaf { visibility: hidden; }
+.twisty:hover { background: var(--s3); color: var(--strong); }
+
+.node > .glyph { color: var(--dim); display: flex; flex: 0 0 auto; }
+.node.selected > .glyph { color: var(--hue-hierarchy); }
+
+.nm {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 2px 3px;
+    border-radius: 3px;
+}
+.node.selected .nm:hover { background: rgba(255, 255, 255, 0.06); cursor: text; }
+
+.node .acts { display: flex; flex: 0 0 auto; opacity: 0.5; transition: opacity var(--fast); }
+.node:hover .acts, .node.selected .acts { opacity: 1; }
+.node .acts .iconbtn { width: 20px; height: 20px; }
+.node .acts .iconbtn.on { color: var(--accent); background: none; }
+
+/* the guide line that says "these are children" */
+.node[data-depth='1']::after, .node[data-depth='2']::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: var(--line-soft);
+}
+.node[data-depth='1']::after { left: 14px; }
+.node[data-depth='2']::after { left: 27px; }
+
+/* --- inspector ----------------------------------------------------------- */
+
+.identity {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--line);
+    flex: 0 0 auto;
+}
+.identity .glyph { color: var(--hue-inspector); }
+.identity .who { flex: 1; min-width: 0; }
+.identity .who b { display: block; font-size: var(--fs-md); font-weight: 600; color: var(--strong); }
+.identity .who span { color: var(--dim); font-size: var(--fs-xs); }
+.pill {
+    font-size: var(--fs-xs);
+    color: var(--dim);
+    background: var(--s0);
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    padding: 1px 7px;
+}
+
+.sect { border-bottom: 1px solid var(--line); }
+
+.sect-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 28px;
+    padding: 0 5px 0 6px;
+    color: var(--dim);
+    cursor: default;
+}
+.sect-head:hover { background: var(--s2); }
+/* Always present, even when the section cannot be dragged: a slot that appears and
+   disappears is what makes every caret below it sit at a different x. */
+.sect-head .grip { color: var(--line-soft); cursor: grab; display: flex; flex: 0 0 auto; width: 12px; }
+.sect-head .grip.fixed { visibility: hidden; cursor: default; }
+.sect-head:hover .grip { color: var(--dim); }
+.sect-head .caret { display: flex; transition: transform var(--fast) ease; }
+.sect.open .sect-head .caret { transform: rotate(90deg); }
+.sect-head .glyph { color: var(--dim); }
+
+/* THE reference: identical to the dropdown headings, by construction */
+.sect-head .label {
+    flex: 1;
+    font-family: var(--head-font);
+    font-size: var(--fs-xs);
+    font-weight: var(--head-weight);
+    letter-spacing: var(--head-spacing);
+    text-transform: var(--head-transform);
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sect-head .tools { display: flex; opacity: 0; transition: opacity var(--fast); }
+.sect-head:hover .tools, .sect:focus-within .sect-head .tools { opacity: 1; }
+.sect-head .tools .iconbtn { width: 20px; height: 20px; }
+.sect-head .tools .iconbtn.on { color: var(--accent); }
+
+.sect-body { padding: 2px 10px 8px; }
+.sect:not(.open) .sect-body { display: none; }
+.sect.off .sect-body { opacity: 0.4; }
+.sect.off .sect-head .label { color: var(--dim); }
+
+/* --- property rows ------------------------------------------------------- */
+
+.row {
+    display: grid;
+    grid-template-columns: 62px minmax(0, 1fr);
+    align-items: center;
+    gap: var(--gap);
+    min-height: calc(var(--ctrl) + 6px);
+}
+
+.row > label {
+    color: var(--dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: default;
+}
+
+.row .fields { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.row .fields.pair { display: grid; grid-template-columns: 1fr 1fr; }
+
+/* A lone number takes one cell of the pair grid, not the whole row: that is what makes
+   Position, Rotation and Scale read as one column of values instead of three widths. */
+.row .fields.single { display: grid; grid-template-columns: 1fr 1fr; }
+.row .fields.single > :nth-child(2) { visibility: hidden; pointer-events: none; }
+
+/* --- the numeric field --------------------------------------------------- */
+
+.num {
+    display: flex;
+    align-items: center;
+    height: var(--ctrl);
+    min-width: 0;
+    background: var(--input);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    overflow: hidden;
+    transition: border-color var(--fast), box-shadow var(--fast);
+}
+
+.num:hover { border-color: var(--line-soft); }
+.num.focused { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* the prefix is the scrub handle — that is why it is a letter and not an icon */
+.num .pre {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 100%;
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    color: var(--dim);
+    cursor: ew-resize;
+    touch-action: none;
+    transition: color var(--fast), background var(--fast);
+}
+.num .pre:hover, .num.scrubbing .pre { color: var(--accent); background: var(--accent-soft); }
+
+.num input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    background: none;
+    outline: none;
+    padding: 0 2px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    color: var(--strong);
+}
+
+.num .unit {
+    flex: 0 0 auto;
+    padding-right: 4px;
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--dim);
+}
+
+/* stacked steppers: 11px of width instead of the 34px two side buttons cost */
+.num .step {
+    display: flex;
+    flex-direction: column;
+    width: 11px;
+    height: 100%;
+    flex: 0 0 auto;
+    opacity: 0;
+    transition: opacity var(--fast);
+    border-left: 1px solid transparent;
+}
+.num:hover .step, .num.focused .step { opacity: 1; border-left-color: var(--line-soft); }
+
+.num .step button {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--dim);
+}
+.num .step button:hover { background: var(--s3); color: var(--strong); }
+.num .step button:active, .num .step button.pressed { background: var(--accent); color: #fff; }
+.num .step i {
+    display: block;
+    width: 0;
+    height: 0;
+    border-left: 3px solid transparent;
+    border-right: 3px solid transparent;
+}
+.num .step .up i { border-bottom: 3px solid currentColor; }
+.num .step .down i { border-top: 3px solid currentColor; }
+
+/* --- other controls ------------------------------------------------------ */
+
+.text-in {
+    flex: 1;
+    min-width: 0;
+    height: var(--ctrl);
+    color: var(--strong);
+    background: var(--input);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    padding: 0 7px;
+    outline: none;
+}
+.text-in:hover { border-color: var(--line-soft); }
+.text-in:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+.swatch {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: var(--ctrl);
+    flex: 1;
+    min-width: 0;
+    background: var(--input);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    padding: 0 3px 0 3px;
+    cursor: pointer;
+}
+.swatch:hover { border-color: var(--line-soft); }
+.swatch .chip {
+    width: 30px;
+    height: 15px;
+    flex: 0 0 auto;
+    border-radius: 2px;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+.swatch code { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); text-transform: uppercase; }
+
+.toggle {
+    position: relative;
+    width: 26px;
+    height: 15px;
+    flex: 0 0 auto;
+    background: var(--s3);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background var(--slow);
+}
+.toggle::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--dim);
+    transition: transform var(--slow), background var(--slow);
+}
+.toggle[aria-checked='true'] { background: var(--accent); border-color: transparent; }
+.toggle[aria-checked='true']::after { transform: translateX(11px); background: #fff; }
+
+.slider { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.slider .track {
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--s3);
+    position: relative;
+    cursor: pointer;
+}
+.slider .fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 2px; }
+.slider .knob {
+    position: absolute;
+    top: 50%;
+    width: 10px; height: 10px;
+    margin: -5px 0 0 -5px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--s1);
+}
+.slider .amount { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); width: 30px; text-align: right; }
+
+/* --- add component ------------------------------------------------------- */
+
+.addbtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: calc(100% - 20px);
+    margin: 12px 10px 16px;
+    height: 28px;
+    color: var(--dim);
+    border: 1px dashed var(--line-soft);
+    border-radius: var(--r);
+    transition: border-color var(--fast), color var(--fast), background var(--fast);
+}
+.addbtn:hover { border-color: var(--accent-line); color: var(--strong); background: var(--accent-soft); }
+.addbtn.open { border-style: solid; border-color: var(--accent); color: var(--strong); background: var(--accent-soft); }
+
+/* --- menus (Add Component / Create Object) ------------------------------- */
+
+.menu {
+    position: fixed;
+    z-index: 60;
+    width: 244px;
+    max-height: 372px;
+    display: flex;
+    flex-direction: column;
+    background: var(--s2);
+    border: 1px solid var(--line);
+    border-radius: calc(var(--r) + 2px);
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+    overflow: hidden;
+}
+
+.menu .m-search {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--line);
+    color: var(--dim);
+    flex: 0 0 auto;
+}
+.menu .m-search input {
+    flex: 1;
+    min-width: 0;
+    height: 22px;
+    background: none;
+    border: 0;
+    outline: none;
+    color: var(--strong);
+}
+.menu .m-search input::placeholder { color: var(--dim); }
+
+.menu .m-list { overflow: auto; padding: 4px; flex: 1; min-height: 0; }
+
+/* the heading style the Inspector section titles copy */
+.menu .m-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 8px 4px;
+    font-family: var(--head-font);
+    font-size: var(--fs-xs);
+    font-weight: var(--head-weight);
+    letter-spacing: var(--head-spacing);
+    text-transform: var(--head-transform);
+    color: var(--dim);
+}
+.menu .m-head::after { content: ''; flex: 1; height: 1px; background: var(--line-soft); }
+
+.menu .m-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    height: 30px;
+    padding: 0 8px;
+    border-radius: var(--r-sm);
+    text-align: left;
+    color: var(--text);
+}
+.menu .m-item .ic { color: var(--dim); }
+.menu .m-item .m-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu .m-item .m-note { font-size: var(--fs-xs); color: var(--dim); opacity: 0; }
+.menu .m-item:hover, .menu .m-item.active {
+    background: var(--accent-soft);
+    color: var(--strong);
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+.menu .m-item:hover .ic, .menu .m-item.active .ic { color: var(--accent); }
+.menu .m-item:hover .m-note, .menu .m-item.active .m-note { opacity: 1; }
+
+.menu .m-foot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 9px;
+    border-top: 1px solid var(--line);
+    background: var(--s1);
+    color: var(--dim);
+    font-size: var(--fs-xs);
+    flex: 0 0 auto;
+}
+.menu .m-foot kbd {
+    font: inherit;
+    font-size: 9px;
+    background: var(--s3);
+    border-radius: 2px;
+    padding: 1px 4px;
+}
+.menu .m-empty { padding: 18px 10px; text-align: center; color: var(--dim); }
+
+/* --- viewport ------------------------------------------------------------ */
+
+.viewport {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    background: var(--vp-bg);
+    overflow: hidden;
+    cursor: default;
+}
+
+.vp-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(to right, var(--vp-minor) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--vp-minor) 1px, transparent 1px),
+        linear-gradient(to right, var(--vp-major) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--vp-major) 1px, transparent 1px);
+    background-size: 16px 16px, 16px 16px, 64px 64px, 64px 64px;
+    background-position: -1px -1px;
+}
+
+.vp-axis-x, .vp-axis-y { position: absolute; background: var(--vp-axis); }
+.vp-axis-x { left: 0; right: 0; height: 1px; top: 62%; }
+.vp-axis-y { top: 0; bottom: 0; width: 1px; left: 34%; }
+
+.rulers { position: absolute; inset: 0; pointer-events: none; }
+.ruler-t, .ruler-l {
+    position: absolute;
+    background: var(--vp-ruler);
+    border-color: var(--line);
+    border-style: solid;
+    border-width: 0;
+    color: var(--dim);
+    font-family: var(--mono);
+    font-size: 9px;
+}
+.ruler-t { top: 0; left: 0; right: 0; height: 18px; border-bottom-width: 1px; }
+.ruler-l { top: 0; left: 0; bottom: 0; width: 18px; border-right-width: 1px; }
+.ruler-t .tick { position: absolute; top: 0; width: 1px; height: 5px; background: var(--vp-axis); }
+.ruler-t .tick.major { height: 9px; }
+.ruler-t .lbl { position: absolute; top: 6px; transform: translateX(3px); white-space: nowrap; }
+.ruler-l .tick { position: absolute; left: 0; height: 1px; width: 5px; background: var(--vp-axis); }
+.ruler-l .tick.major { width: 9px; }
+.ruler-l .lbl {
+    position: absolute;
+    left: 3px;
+    transform: translateY(3px) rotate(-90deg);
+    transform-origin: 0 0;
+    white-space: nowrap;
+}
+
+.scene { position: absolute; inset: 0; }
+
+.obj {
+    position: absolute;
+    cursor: grab;
+}
+.obj .fillbox { position: absolute; inset: 0; }
+.obj:hover .fillbox { outline: 1px solid var(--accent-line); outline-offset: 0; }
+.obj.sel { cursor: grab; }
+
+.obj.sprite .fillbox {
+    background-image:
+        linear-gradient(45deg, #2a2d35 25%, transparent 25%, transparent 75%, #2a2d35 75%),
+        linear-gradient(45deg, #2a2d35 25%, transparent 25%, transparent 75%, #2a2d35 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 4px 4px;
+    background-color: #1e2027;
+}
+
+/* selection — hard geometry, on purpose: this is a pixel tool */
+.selbox { position: absolute; outline: 1px solid var(--accent); pointer-events: none; }
+.selbox .pivot-h, .selbox .pivot-v { position: absolute; background: var(--accent); }
+.selbox .pivot-h { left: 50%; top: 50%; width: 13px; height: 1px; margin: 0 0 0 -6px; }
+.selbox .pivot-v { left: 50%; top: 50%; width: 1px; height: 13px; margin: -6px 0 0 0; }
+
+.handle {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    margin: -4px 0 0 -4px;
+    background: var(--s0);
+    box-shadow: 0 0 0 1px var(--accent);
+    border-radius: 0;
+}
+.handle.hot { background: var(--accent); }
+
+.crosshair-v, .crosshair-h { position: absolute; background: var(--accent); opacity: 0.28; pointer-events: none; }
+.crosshair-v { top: 0; bottom: 0; width: 1px; }
+.crosshair-h { left: 0; right: 0; height: 1px; }
+
+.coord {
+    position: absolute;
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--accent);
+    background: var(--vp-bg);
+    padding: 2px 4px;
+    border-radius: 2px;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.vp-readout {
+    position: absolute;
+    left: 26px;
+    bottom: 8px;
+    display: flex;
+    gap: 12px;
+    pointer-events: none;
+    font-family: var(--mono);
+    font-size: var(--fs-xs);
+    color: var(--dim);
+}
+.vp-readout b { color: var(--text); font-weight: 600; }
+
+.vp-tools {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    background: var(--s1);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+}
+
+.vp-badge {
+    position: absolute;
+    left: 26px;
+    top: 26px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-xs);
+    color: var(--dim);
+    pointer-events: none;
+}
+.vp-badge b { color: var(--text); font-weight: 600; }
+
+/* pixel cursor — a real 1:1 sprite, never scaled */
+.px-cursor { position: absolute; pointer-events: none; }
+.px-cursor svg { shape-rendering: crispEdges; display: block; }
+
+/* --- project ------------------------------------------------------------- */
+
+.tabs { display: flex; align-items: stretch; height: 100%; gap: 2px; }
+.tabs button {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 11px;
+    position: relative;
+    color: var(--dim);
+    font-family: var(--head-font);
+    font-size: var(--fs-sm);
+    font-weight: var(--head-weight);
+    letter-spacing: var(--head-spacing);
+    text-transform: var(--head-transform);
+    white-space: nowrap;
+    transition: color var(--fast);
+}
+.tabs button::after {
+    content: '';
+    position: absolute;
+    left: 8px; right: 8px; bottom: 0;
+    height: 2px;
+    background: transparent;
+    transition: background var(--slow);
+}
+.tabs button:hover { color: var(--text); }
+.tabs button[aria-selected='true'] { color: var(--strong); }
+.tabs button[aria-selected='true']::after { background: var(--hue-project); }
+
+.assets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+    gap: 5px;
+    padding: 8px;
+}
+
+.asset {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 5px;
+    border-radius: var(--r);
+    cursor: grab;
+    border: 1px solid transparent;
+}
+.asset:hover { background: var(--s2); border-color: var(--line-soft); }
+.asset.sel { background: var(--accent-soft); border-color: var(--accent-line); }
+.asset .thumb {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: var(--r-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--dim);
+    background-image:
+        linear-gradient(45deg, #232630 25%, transparent 25%, transparent 75%, #232630 75%),
+        linear-gradient(45deg, #232630 25%, transparent 25%, transparent 75%, #232630 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 4px 4px;
+    background-color: #1a1c22;
+    overflow: hidden;
+}
+.asset .thumb .art { position: absolute; inset: 0; }
+.asset .nm2 {
+    font-size: var(--fs-xs);
+    color: var(--text);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.asset:hover .nm2, .asset.sel .nm2 { color: var(--strong); }
+
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 100%;
+    padding: 20px;
+    text-align: center;
+    color: var(--dim);
+}
+.empty .glyph { opacity: 0.3; }
+.empty strong { color: var(--text); font-weight: 600; }
+.empty span { max-width: 300px; line-height: 1.5; font-size: var(--fs-sm); }
+
+/* --- timeline ------------------------------------------------------------ */
+
+.timeline { flex: 0 0 auto; height: var(--tl); display: flex; flex-direction: column; }
+.timeline .tl-body { display: flex; flex: 1; min-height: 0; }
+.tl-tracks { width: 150px; flex: 0 0 auto; border-right: 1px solid var(--line); overflow: auto; }
+.tl-track {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 8px;
+    color: var(--text);
+    font-size: var(--fs-sm);
+    border-bottom: 1px solid var(--line-soft);
+}
+.tl-track .ic { color: var(--dim); }
+.tl-track.head { color: var(--strong); font-weight: 600; background: var(--s2); }
+.tl-grid { flex: 1; min-width: 0; position: relative; overflow: hidden; background: var(--s0); }
+.tl-ruler {
+    height: 20px;
+    border-bottom: 1px solid var(--line);
+    position: relative;
+    background: var(--s2);
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--dim);
+}
+.tl-ruler .t { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--line-soft); padding-left: 3px; }
+.tl-lane { height: 24px; border-bottom: 1px solid var(--line-soft); position: relative; }
+.tl-key {
+    position: absolute;
+    top: 50%;
+    width: 7px; height: 7px;
+    margin: -4px 0 0 -4px;
+    background: var(--accent);
+    transform: rotate(45deg);
+}
+.tl-key.dim { background: var(--dim); }
+.tl-play { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--ok); }
+.tl-play::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -4px;
+    border-left: 4.5px solid transparent;
+    border-right: 4.5px solid transparent;
+    border-top: 6px solid var(--ok);
+}
+
+/* == 4. Directions ======================================================== */
+
+/* ---------------------------------------------------------------- A ------ */
+/* Modern Pixel is the default token set above. Its structural marks: */
+
+[data-dir='A'] .titlebar .product { letter-spacing: 0.1px; }
+
+/* ---------------------------------------------------------------- B ------ */
+/* Pixel Studio: no radius anywhere, harder edges, a colour per family,
+   a mono/tracked face for every small-caps label, and pixel textures where a
+   surface would otherwise be flat. */
+
+[data-dir='B'] .app,
+.app[data-dir='B'] {
+    --s0: #101015;
+    --s1: #17181f;
+    --s2: #1e2029;
+    --s3: #282b37;
+    --s4: #343948;
+    --line: #06060a;
+    --line-soft: #2e3242;
+    --input: #0b0c10;
+
+    --text: #c6cad8;
+    --dim: #6d7285;
+    --strong: #ffffff;
+
+    --accent: #ff4d6d;
+    --accent-hi: #ff7089;
+    --accent-soft: rgba(255, 77, 109, 0.16);
+    --accent-line: rgba(255, 77, 109, 0.55);
+    --ok: #4ade80;
+    --danger: #ff5470;
+
+    --hue-hierarchy: #45c8ff;
+    --hue-inspector: #a98bff;
+    --hue-project: #ffb648;
+    --hue-timeline: #4ade80;
+
+    --mark-body: var(--accent);
+    --mark-face: #101015;
+
+    --r: 0px;
+    --r-sm: 0px;
+    --row: 28px;
+    --ctrl: 24px;
+    --hit: 28px;
+    --head: 32px;
+    --title: 42px;
+
+    --head-font: var(--mono);
+    --head-spacing: 1.2px;
+    --head-weight: 700;
+
+    --vp-bg: #0e0f14;
+    --vp-minor: #171921;
+    --vp-major: #21242f;
+    --vp-axis: #333849;
+    --vp-ruler: #161821;
+}
+
+/* every panel is stamped with its family colour, and the stamp is 2px hard */
+[data-dir='B'] .panel-head { border-top: 2px solid var(--family, var(--accent)); }
+[data-dir='B'] .panel-head > .ic { color: var(--family, var(--accent)); }
+[data-dir='B'] .panel-head h2 { color: var(--text); }
+
+/* a 2px pixel rail instead of a soft tint */
+[data-dir='B'] .node.selected { background: rgba(255, 255, 255, 0.05); }
+[data-dir='B'] .node.selected::before { width: 3px; }
+
+/* controls get a hard 1px well and a 1px top highlight — chiselled, not bevelled */
+[data-dir='B'] .num,
+[data-dir='B'] .text-in,
+[data-dir='B'] .swatch,
+[data-dir='B'] .searchbar input {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+[data-dir='B'] .num.focused { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 0 2px var(--accent-soft); }
+
+[data-dir='B'] .transport { border-radius: 0; }
+[data-dir='B'] .kbar { border-radius: 0; }
+[data-dir='B'] .pill { border-radius: 0; }
+[data-dir='B'] .toggle { border-radius: 0; }
+[data-dir='B'] .toggle::after { border-radius: 0; }
+[data-dir='B'] .avatar { border-radius: 0; }
+[data-dir='B'] .menu { border-radius: 0; box-shadow: 0 12px 0 rgba(0, 0, 0, 0.35), 0 0 0 1px var(--line); }
+[data-dir='B'] .slider .knob { border-radius: 0; width: 9px; height: 13px; margin: -7px 0 0 -4px; }
+[data-dir='B'] .slider .track { height: 4px; border-radius: 0; }
+[data-dir='B'] .app *::-webkit-scrollbar-thumb { border-radius: 0; }
+
+/* a dithered strip under the titlebar: the pixel texture, used once */
+[data-dir='B'] .titlebar {
+    box-shadow: inset 0 -3px 0 -1px var(--line);
+    background-image: repeating-linear-gradient(90deg,
+        rgba(255, 255, 255, 0.022) 0 1px, transparent 1px 3px);
+}
+
+/* handles are chunkier and outlined in black — they read as sprites */
+[data-dir='B'] .handle {
+    width: 8px; height: 8px; margin: -4px 0 0 -4px;
+    background: var(--accent);
+    box-shadow: 0 0 0 1px #000;
+}
+[data-dir='B'] .handle.hot { background: #fff; }
+[data-dir='B'] .selbox { outline-color: var(--accent); }
+
+[data-dir='B'] .asset .thumb { border: 1px solid var(--line); }
+[data-dir='B'] .addbtn { border-style: solid; border-color: var(--line-soft); }
+
+[data-dir='B'] .menu .m-item:hover, [data-dir='B'] .menu .m-item.active {
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* ---------------------------------------------------------------- C ------ */
+/* Minimal Game Dev: no borders, separation by surface value, one cold accent
+   used only for selection and focus, headers that fade in on approach. */
+
+[data-dir='C'] .app,
+.app[data-dir='C'] {
+    --s0: #121316;
+    --s1: #17181c;
+    --s2: #1c1e22;
+    --s3: #24262c;
+    --s4: #2e3138;
+    --line: #121316;
+    --line-soft: #24262c;
+    --input: #202329;
+
+    --text: #b9bdc6;
+    --dim: #6b6f79;
+    --strong: #f4f5f7;
+
+    --accent: #38bdf8;
+    --accent-hi: #6dd2fb;
+    --accent-soft: rgba(56, 189, 248, 0.13);
+    --accent-line: rgba(56, 189, 248, 0.4);
+    --ok: #4ade80;
+
+    --mark-body: #6b6f79;
+    --mark-face: #121316;
+    --mark-dot: var(--accent);
+
+    --r: 6px;
+    --r-sm: 5px;
+    --row: 24px;
+    --ctrl: 21px;
+    --hit: 24px;
+    --head: 26px;
+    --title: 44px;
+    --pad: 12px;
+
+    --head-spacing: 0.2px;
+    --head-transform: none;
+    --head-weight: 600;
+
+    --left: 224px;
+    --right: 264px;
+
+    --vp-bg: #0f1013;
+    --vp-minor: #16181c;
+    --vp-major: #1d2026;
+    --vp-axis: #2a2d34;
+    --vp-ruler: transparent;
+}
+
+/* borders give way to surface steps */
+[data-dir='C'] .panel-head,
+[data-dir='C'] .titlebar,
+[data-dir='C'] .sect,
+[data-dir='C'] .identity,
+[data-dir='C'] .searchbar.open,
+[data-dir='C'] .tl-ruler,
+[data-dir='C'] .tl-tracks { border-color: transparent; }
+
+[data-dir='C'] .panel-head { background: transparent; }
+[data-dir='C'] .titlebar { background: var(--s1); }
+[data-dir='C'] .split { background: transparent; }
+[data-dir='C'] .col-left .panel { background: var(--s1); }
+[data-dir='C'] .col-right .panel { background: var(--s1); }
+
+/* the title is there when you look for it, out of the way when you do not */
+[data-dir='C'] .panel-head { opacity: 0.4; }
+[data-dir='C'] .panel:hover .panel-head,
+[data-dir='C'] .panel:focus-within .panel-head { opacity: 1; }
+[data-dir='C'] .panel-head h2 { font-size: var(--fs); }
+
+[data-dir='C'] .num,
+[data-dir='C'] .text-in,
+[data-dir='C'] .swatch,
+[data-dir='C'] .searchbar input {
+    border-color: transparent;
+    background: var(--input);
+}
+[data-dir='C'] .num:hover, [data-dir='C'] .text-in:hover, [data-dir='C'] .swatch:hover { background: var(--s3); }
+
+[data-dir='C'] .sect { border-bottom: 0; }
+[data-dir='C'] .sect + .sect { margin-top: 4px; }
+[data-dir='C'] .sect-head { border-radius: var(--r-sm); }
+[data-dir='C'] .sect-body { padding-bottom: 12px; }
+
+[data-dir='C'] .node.selected { background: var(--accent-soft); }
+[data-dir='C'] .node.selected::before { display: none; }
+[data-dir='C'] .node { margin: 0 6px; border-radius: var(--r-sm); width: calc(100% - 12px); }
+
+/* Play is the loudest thing on screen */
+[data-dir='C'] .transport { background: none; border: 0; padding: 0; gap: 6px; }
+[data-dir='C'] .transport button { width: 30px; height: 30px; border-radius: 50%; }
+[data-dir='C'] .transport button.primary {
+    width: 34px; height: 34px;
+    background: var(--ok);
+    color: #0b1a12;
+}
+[data-dir='C'] .transport button.primary:hover { background: #6ef0a4; }
+
+[data-dir='C'] .rulers .ruler-t, [data-dir='C'] .rulers .ruler-l { display: none; }
+[data-dir='C'] .vp-readout { left: 10px; }
+[data-dir='C'] .vp-badge { left: 10px; top: 10px; }
+[data-dir='C'] .vp-tools { background: rgba(20, 21, 25, 0.8); border-color: transparent; }
+
+[data-dir='C'] .tabs button { text-transform: none; letter-spacing: 0; font-size: var(--fs); }
+[data-dir='C'] .menu { border-color: transparent; box-shadow: 0 18px 46px rgba(0, 0, 0, 0.6); }
+[data-dir='C'] .handle { border-radius: 1px; }
+
+/* == 5. Layouts =========================================================== */
+
+/* L2 — three full-height columns; Project sits under the Hierarchy. */
+[data-layout='L2'] .timeline { display: none; }
+[data-layout='L2'] .split.tl { display: none; }
+
+/* L4 — same columns, but the Timeline band spans left + centre only, so the
+   Inspector keeps an uninterrupted full-height column. */
+[data-layout='L4'] .col-left .panel.project { }
+[data-layout='L4'] .timeline { display: flex; }
+[data-layout='L4'] .app:not(.tl-on) .timeline { display: none; }
+
+.app:not(.tl-on) .timeline, .app:not(.tl-on) .split.tl { display: none; }
+
+/* the L4 seam: the right column starts at the titlebar and ends at the floor */
+[data-layout='L4'] .col-right { align-self: stretch; }
+
+/* == misc ================================================================= */
+
+.tabs button { padding: 0 9px; }
