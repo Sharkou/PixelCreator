@@ -59,6 +59,8 @@ export class Object {
                 children: [],
                 parent: null,
                 scene: null,
+                /** Announces structural changes to the scene; see attachToScene(). */
+                notify: null,
                 detachedOperations: null
             },
             enumerable: false,
@@ -230,6 +232,7 @@ export class Object {
         for (const prop of exposes) state.exposed.set(prop, reactive);
 
         reactive.onAttach?.(this);
+        state.notify?.('component:added', { object: this, component: reactive, type });
         return reactive;
     }
 
@@ -251,6 +254,7 @@ export class Object {
 
         attached.onDetach?.(this);
         setOwner(attached, null, null);
+        state.notify?.('component:removed', { object: this, component: attached, type });
         return true;
     }
 
@@ -292,6 +296,10 @@ export class Object {
 
         this[STATE].children.push(child);
         child[STATE].parent = this;
+        // The parent announces, because the parent is where the tree changed shape. A
+        // child that joined a scene before its parent did still gets announced, through
+        // its own notifier.
+        (this[STATE].notify ?? child[STATE].notify)?.('child:added', { parent: this, child });
         return child;
     }
 
@@ -307,17 +315,25 @@ export class Object {
 
         children.splice(index, 1);
         child[STATE].parent = null;
+        (this[STATE].notify ?? child[STATE].notify)?.('child:removed', { parent: this, child });
         return true;
     }
 }
 
 /**
  * Internal wiring: bind an object to a scene, or detach it.
+ *
+ * The scene hands over the function its own structural events are emitted through, so
+ * an Object can announce a change of shape — a component attached, a child reparented —
+ * without importing Scene, and without anyone but the Scene being able to emit on it.
+ *
  * @param {Object} object - The object
  * @param {object|null} scene - The scene, or null
+ * @param {Function|null} [notify] - (event, payload) => void, provided by the scene
  */
-export function attachToScene(object, scene) {
+export function attachToScene(object, scene, notify = null) {
     object[STATE].scene = scene;
+    object[STATE].notify = notify;
 }
 
 /**

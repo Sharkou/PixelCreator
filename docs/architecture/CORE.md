@@ -150,6 +150,31 @@ prévisible. Deux corrections :
 - Une erreur dans un écouteur interrompt aujourd'hui la boucle `for` et prive les
   écouteurs suivants de l'événement. En v2, les erreurs sont isolées par écouteur.
 
+### Les cinq événements de structure de la Scene — IMPLÉMENTÉ
+
+Une écriture de propriété s'observe sur l'objet qui la porte (`object.observe`). Un
+changement de **forme** n'est pas une propriété : il n'a pas de nom de champ auquel
+s'abonner. La `Scene` l'annonce donc, et c'est la liste complète :
+
+| Événement | Charge utile |
+|---|---|
+| `added` / `removed` | l'objet |
+| `component:added` / `component:removed` | `{ object, component, type }` |
+| `child:added` / `child:removed` | `{ parent, child }` |
+
+```js
+scene.on('component:added', ({ object, type }) => …);   // renvoie un désabonnement
+```
+
+Mécanique : en rejoignant une scène, un objet reçoit d'elle la fonction par laquelle
+émettre (`attachToScene(object, scene, notify)`). L'objet n'importe donc pas `Scene`, et
+personne d'autre que la `Scene` ne détient ce point d'entrée. Un objet détaché n'annonce
+rien — il n'y a personne pour l'écouter.
+
+**Ce n'est pas un bus de mutations.** La liste est fermée et ne couvre que ce qu'une
+propriété ne peut pas exprimer. Elle existe pour que l'Editor n'ait pas à pousser ses
+vues depuis le code qui écrit — l'inversion exigée par `EDITOR.md`.
+
 ---
 
 ## Serialization

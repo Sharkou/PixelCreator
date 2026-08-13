@@ -49,11 +49,12 @@ de ce qu'elle affirme.
 | [0014](decisions/ADR-0014-input-passed-in.md) | Input abstrait, indexé par owner, passé au pas de simulation |
 | [0015](decisions/ADR-0015-component-graph-behavior.md) | Un Component peut avoir un graphe `.px` qui définit son comportement |
 | [0016](decisions/ADR-0016-component-definition.md) | Une définition décrit un type de Component : propriétés + graphe |
+| [0017](decisions/ADR-0017-editor-selection.md) | La sélection et le picking appartiennent à l'Editor, jamais aux Colliders |
 
-Toutes acceptées le 2026-08-12, y compris le mode d'exécution de `.px` (ADR-0009, Q7 :
-interprété). ADR-0015 a été révisé le même jour : la couture « Component `Script` avec
-`kind` + `source` » est remplacée par « un graphe est le comportement d'un type de
-Component ».
+ADR-0001 à 0015 acceptées le 2026-08-12, y compris le mode d'exécution de `.px`
+(ADR-0009, Q7 : interprété) ; ADR-0016 et ADR-0017 le 2026-08-13. ADR-0015 a été révisé
+le 2026-08-12 : la couture « Component `Script` avec `kind` + `source` » est remplacée par
+« un graphe est le comportement d'un type de Component ».
 
 ## Développement
 

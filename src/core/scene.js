@@ -24,6 +24,11 @@ export class Scene {
     #emitter = new Emitter();
     #operations;
 
+    // Handed to every object that joins, so a structural change can be announced by the
+    // object it happened on. Bound once: it is the scene's only writable entry point
+    // into its own emitter, and nothing outside holds it.
+    #notify = (event, payload) => this.#emitter.emit(event, payload);
+
     /**
      * Create a scene.
      * @param {string} [name] - Display name
@@ -69,7 +74,18 @@ export class Scene {
     }
 
     /**
-     * Subscribe to scene events: 'added' and 'removed', each with the object.
+     * Subscribe to scene events.
+     *
+     * Structure is announced here, values are not: a property change is observed on the
+     * object that carries it (`object.observe`), because that is what lets a view watch
+     * one field without waking on every mutation in the scene. What a property cannot
+     * express is a change of *shape*, and these five events are exactly that list — no
+     * more, so this never becomes a general mutation bus.
+     *
+     *   'added' / 'removed'                the object
+     *   'component:added' / 'component:removed'   { object, component, type }
+     *   'child:added' / 'child:removed'           { parent, child }
+     *
      * @param {string} event - Event name
      * @param {Function} listener - Called with the payload
      * @returns {Function} Unsubscribe function
@@ -91,7 +107,7 @@ export class Scene {
         if (existing) throw new Error(`Scene.add: id ${object.id} is already used by another object`);
 
         this.#objects.set(object.id, object);
-        attachToScene(object, this);
+        attachToScene(object, this, this.#notify);
         this.#emitter.emit('added', object);
         return object;
     }
@@ -113,7 +129,7 @@ export class Scene {
         target.parent?.removeChild(target);
 
         this.#objects.delete(id);
-        attachToScene(target, null);
+        attachToScene(target, null, null);
         this.#emitter.emit('removed', target);
         return true;
     }

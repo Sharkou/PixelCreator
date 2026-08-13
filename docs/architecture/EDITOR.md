@@ -1,6 +1,60 @@
 # Editor
 
-> Voir ADR-0006 (Web Components) et ADR-0007 (Inspector à schéma).
+> Voir ADR-0006 (Web Components), ADR-0007 (Inspector à schéma) et ADR-0017 (sélection).
+
+## IMPLÉMENTÉ — première tranche verticale (2026-08-13)
+
+`src/editor/` existe et s'ouvre : `src/editor/index.html`, servi depuis la racine du
+dépôt (voir `../development/DEVELOPMENT.md`). Aucune dépendance, aucun build.
+
+```
+src/editor/
+├── index.html          point de montage — un <script type="module">, rien d'autre
+├── editor.js           racine de composition : modèle, caméra, sélection, raccourcis
+├── selection.js        la sélection, locale à l'Editor (ADR-0017)
+├── commands.js         créer / supprimer un Object, ajouter / retirer un Component
+├── registry.js         enregistrement des types livrés — un acte applicatif
+├── project/starter.js  la scène d'ouverture, en attendant le chargement de projet
+├── ui/                 element · styles · icons · panel · menu · field
+├── inspector/schema.js schéma → descripteurs de champs (pur, testé)
+├── viewport/           viewport · picking · grid · overlay
+└── windows/            hierarchy · inspector
+```
+
+### Ce qui fonctionne
+
+| Capacité | Comment |
+|---|---|
+| Voir une Scene réelle | `Runtime` + `SceneRenderer` + backend Canvas 2D — **le moteur, pas un rendu d'IDE** |
+| Naviguer | molette (zoom ancré sur le pointeur), glisser droit ou milieu (pan), `F` (cadrer) |
+| Sélectionner | clic dans le Viewport ou dans la Hierarchy, contour + pivot en surcouche |
+| Hierarchy | arbre réel, plier/déplier, créer, supprimer, renommer, basculer la visibilité |
+| Inspector | en-tête Object + un bloc par Component, **piloté par `componentSchema()`** |
+| Modifier | `setProperty()` — répercuté dans le Viewport et la Hierarchy à la frappe |
+| Components | ajouter depuis le `ComponentRegistry`, retirer par bloc |
+
+### Les cinq décisions locales à connaître
+
+1. **La caméra de l'Editor est un `Object` hors scène.** Transform + Camera comme
+   n'importe quelle caméra (ADR-0013), simplement jamais ajoutée : absente de la
+   Hierarchy, jamais sérialisée, impossible à supprimer par accident. Le pan et le zoom
+   l'écrivent en direct — pas d'Operation.
+2. **Deux canvas empilés.** `SceneRenderer.render()` commence par effacer ; la grille est
+   donc sur une surface en dessous, la scène efface en transparent. Rien n'est ajouté au
+   contrat de renderer.
+3. **Le Viewport détient le `Runtime`.** `Runtime` reçoit son renderer à la construction,
+   et le canvas appartient à l'élément. `running` reste `false` : en mode édition rien ne
+   simule, `render()` dessine quand même.
+4. **Un glisser est une Operation par frame, groupée par `batch`.** C'est le champ prévu
+   par ADR-0008 ; la fusion en une entrée d'historique appartiendra à l'historique.
+5. **Trois primitives UI seulement** — `<px-panel>`, `<px-field>`, `<px-menu>`. Les
+   autres arriveront quand une fenêtre en aura besoin.
+
+### Ce qui n'est pas encore là
+
+Play / Pause · Assets · Console · Graph · Players · undo/redo · sélection multiple ·
+reparentage par glisser-déposer · outils de redimensionnement et de rotation ·
+disposition persistante · Operations structurelles.
 
 ## OBSERVÉ — la synchronisation temps réel, en détail
 

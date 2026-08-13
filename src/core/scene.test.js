@@ -86,6 +86,86 @@ test('removing a child detaches it from its parent', () => {
     assert.equal(scene.size, 1);
 });
 
+test('attaching and detaching a component is announced', () => {
+    const scene = new Scene('Main');
+    const object = scene.add(new Object('Player'));
+    const seen = [];
+    scene.on('component:added', payload => seen.push(['added', payload.type, payload.object.name]));
+    scene.on('component:removed', payload => seen.push(['removed', payload.type, payload.object.name]));
+
+    const rotator = object.addComponent(new Rotator());
+    assert.equal(object.removeComponent(rotator), true);
+
+    assert.deepEqual(seen, [['added', 'Rotator', 'Player'], ['removed', 'Rotator', 'Player']]);
+});
+
+test('a component attached before the object joins a scene is not announced', () => {
+    const scene = new Scene('Main');
+    const object = new Object('Player');
+    object.addComponent(new Rotator());
+
+    const seen = [];
+    scene.on('component:added', payload => seen.push(payload.type));
+    scene.add(object);
+
+    assert.deepEqual(seen, [], 'nobody was watching when it happened');
+});
+
+test('parenting and unparenting are announced', () => {
+    const scene = new Scene('Main');
+    const parent = scene.add(new Object('Parent'));
+    const child = scene.add(new Object('Child'));
+    const seen = [];
+    scene.on('child:added', payload => seen.push(['added', payload.parent.name, payload.child.name]));
+    scene.on('child:removed', payload => seen.push(['removed', payload.parent.name, payload.child.name]));
+
+    parent.addChild(child);
+    parent.removeChild(child);
+
+    assert.deepEqual(seen, [['added', 'Parent', 'Child'], ['removed', 'Parent', 'Child']]);
+});
+
+test('reparenting announces the departure before the arrival', () => {
+    const scene = new Scene('Main');
+    const first = scene.add(new Object('First'));
+    const second = scene.add(new Object('Second'));
+    const child = scene.add(new Object('Child'));
+    first.addChild(child);
+
+    const seen = [];
+    scene.on('child:added', payload => seen.push(`+${payload.parent.name}`));
+    scene.on('child:removed', payload => seen.push(`-${payload.parent.name}`));
+
+    second.addChild(child);
+
+    assert.deepEqual(seen, ['-First', '+Second']);
+});
+
+test('removing an object announces the subtree it takes with it', () => {
+    const scene = new Scene('Main');
+    const parent = scene.add(new Object('Parent'));
+    const child = scene.add(new Object('Child'));
+    parent.addChild(child);
+
+    const removed = [];
+    scene.on('removed', object => removed.push(object.name));
+    scene.remove(parent);
+
+    assert.deepEqual(removed, ['Child', 'Parent']);
+});
+
+test('a detached object announces nothing', () => {
+    const scene = new Scene('Main');
+    const object = scene.add(new Object('Player'));
+    scene.remove(object);
+
+    const seen = [];
+    scene.on('component:added', payload => seen.push(payload.type));
+    object.addComponent(new Rotator());
+
+    assert.deepEqual(seen, []);
+});
+
 test('an object joining a scene adopts its pipeline', () => {
     const scene = new Scene('Main');
     const object = new Object('Player');

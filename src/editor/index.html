@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Pixel Creator</title>
+</head>
+<body>
+    <!--
+        A mount point, and nothing more (ADR-0006). Legacy's index.html was 700 lines of
+        IDE skeleton, which is why adding one window meant editing four files. Every
+        panel below is built and registered by its own module.
+    -->
+    <script type="module">
+        import { start } from './editor.js';
+        start();
+    </script>
+</body>
+</html>

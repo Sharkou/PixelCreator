@@ -1,6 +1,6 @@
 # État de la migration
 
-**Dernière mise à jour :** 2026-08-12
+**Dernière mise à jour :** 2026-08-13
 
 ## Phase actuelle
 
@@ -25,18 +25,32 @@ Aucun fichier de `legacy/` n'a été modifié.
 | **2.10** | `runtime/input/` (ADR-0014) ; `Camera` / `Viewport` et conversions monde↔écran (ADR-0013) ; socle `runtime/scripting/` — **révisé** : un Component peut avoir un graphe `.px` qui définit son comportement, il n'existe pas de Component `Script` (ADR-0015) |
 
 | **2.11** | Définition de Component — propriétés + graphe, `defineComponent()` (ADR-0016) ; quatre formes de Component verrouillées et testées (ADR-0004) ; `preview()` retiré du contrat ; vérification des fondations avant l'Editor |
+| **3** | **Premier vertical slice de l'Editor** — Shell, Viewport sur le Runtime réel, sélection et picking éditoriaux (ADR-0017), Hierarchy, Inspector piloté par schéma, ajout/retrait de Components. Complément Core : les cinq événements de structure de la `Scene` |
 
-### État vérifié (2026-08-13, après étape 2.11)
+### État vérifié (2026-08-13, après étape 3)
 
 ```bash
-tools/test.sh              # 381 tests, 381 passés
+tools/test.sh              # 420 tests, 420 passés
 node tools/layers/run.js   # v2 : 0 violation — legacy : 1 violation trackée
 node tools/parity/run.js   # 39 identical, 0 problems
 ```
 
-`src/` contient `core/` et `runtime/`. **`editor/` et `network/` n'existent pas encore** :
-les règles de couches qui les concernent sont déclarées mais ne vérifient rien tant que
-ces dossiers sont absents.
+Vérifié aussi dans le navigateur, sans erreur console : sélection au clic et depuis la
+Hierarchy, édition du Transform répercutée immédiatement, renommage lettre par lettre
+Inspector ↔ Hierarchy, création et suppression d'Objects, ajout et retrait de Components,
+déplacement au glisser, pan, zoom ancré sur le pointeur, cadrage.
+
+`src/` contient `core/`, `runtime/` et `editor/`. **`network/` n'existe pas encore.**
+
+### Ce que l'étape 3 a ajouté au Core
+
+Un seul complément, volontairement fermé : la `Scene` annonce les changements de
+**structure** — `component:added` / `component:removed` / `child:added` / `child:removed`,
+à côté des `added` / `removed` existants. Une propriété s'observe déjà sur l'objet qui la
+porte ; une forme, non. Voir `../architecture/CORE.md` §Events.
+
+**Ce n'est pas un bus de mutations généralisé** et la liste ne doit pas s'allonger sans
+raison de même nature.
 
 ### Laissé volontairement pour plus tard
 
@@ -46,16 +60,17 @@ ces dossiers sont absents.
 | Interprète de graphe `.px` | Demande le modèle de graphe ; l'hôte `Behaviors` le reçoit en paramètre (ADR-0009, ADR-0015) |
 | Chargement des ressources — qui appelle `behaviors.bind()` | Demande `Resource` et le chargement de projet (ADR-0009) |
 | Migration des instances quand une définition change | Décision d'Editor, pas de runtime (ADR-0016) |
-| Picking de l'Editor | `screenToWorld()` fournit le mapping ; la politique de sélection appartient à l'Editor (ADR-0013) |
+| Operations structurelles (`ADD_OBJECT`, `ADD_COMPONENT`, …) | Seule `SET_PROPERTY` existe ; `editor/commands.js` est le point d'insertion prévu |
+| Play / Pause dans l'Editor | Demande un instantané de scène restauré à l'arrêt ; `serializeScene()` existe, l'échange de scène reste à concevoir |
 | `runtime/physics/`, `animation/`, `audio/` | Domaines non entamés |
 
 ### Prochaine action
 
-**Étape 3 — l'Editor et son UX.** Les fondations du Runtime sont suffisantes : cycle de
-vie des Components (les quatre formes), input, caméra/viewport, rendu, comportement par
-graphe, définitions de Components, sérialisation, erreurs, déterminisme et exécution
-headless sont en place et testés. `runtime/physics/` et les autres domaines ne sont pas
-requis pour commencer l'Editor.
+**Étape 4 — Components utilisateur et graphe `.px`.** L'enchaînement visé : *Add
+Component → Create Component → nom → propriétés → définition → disponible dans le projet*,
+puis l'ouverture de son graphe. Les briques Core existent (`defineComponent()`,
+`ComponentRegistry.register({ replace })`, `Behaviors`) ; ce qui manque est le **modèle de
+graphe et son interprète**, sans lesquels un comportement ne peut pas encore tourner.
 
 ## Décisions validées
 

@@ -93,16 +93,19 @@ fait perdre du temps.
 ### Lire une transform en boucle chaude
 
 La façade `object.x` traverse deux indirections (ADR-0002). Dans le rendu et la
-physique :
+physique, lire le `Transform` une fois plutôt que la façade à chaque accès :
 
 ```js
 // non
-self.x + self.width / 2
+self.x + other.x
 
 // oui
-const t = self.transform;
-t.x + t.width / 2;
+const transform = self.getComponent('Transform');
+transform.x + transform.y;
 ```
+
+Il n'existe pas d'accesseur `object.transform` : `getComponent('Transform')` est la seule
+forme, comme pour tout autre composant.
 
 ### Champs privés `#`
 

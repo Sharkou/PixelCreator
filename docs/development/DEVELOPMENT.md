@@ -1,5 +1,20 @@
 # Développement
 
+## Exécuter l'Editor v2
+
+`src/` utilise des imports **relatifs**, donc la racine servie n'a pas d'importance tant
+que `src/` en fait partie. Depuis la racine du dépôt :
+
+```bash
+tools/dev-server.sh 8099 .
+```
+
+puis `http://localhost:8099/src/editor/index.html`.
+
+Équivalent direct : `python -m http.server 8099`.
+
+Aucune dépendance, aucune étape de build : ce sont des modules ES chargés tels quels.
+
 ## Exécuter Legacy
 
 `legacy/` utilise des imports absolus (`/src/core/object.js`, `/editor/...`).
