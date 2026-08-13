@@ -95,7 +95,9 @@ export class Inspector extends Element {
             align-items: center;
             gap: var(--px-space-1);
             height: 28px;
-            padding: 0 var(--px-space-1) 0 var(--px-space-0);
+            /* The grip hangs exactly one space unit outside the content edge the rows
+               start on, which is the relationship the maquette draws. */
+            padding: 0 var(--px-space-1);
             color: var(--px-text-muted);
             cursor: default;
             -webkit-user-select: none;
@@ -155,14 +157,19 @@ export class Inspector extends Element {
 
         .row {
             display: grid;
-            grid-template-columns: var(--px-label) minmax(0, 1fr);
+            /* 62px is this panel's label column, and only this panel's: it stopped being
+               a design token the moment px-field gave up drawing its own row, because a
+               token with one consumer is a constant with extra steps. */
+            grid-template-columns: 62px minmax(0, 1fr);
             align-items: center;
             gap: var(--px-space-2);
             min-height: calc(var(--px-control) + var(--px-space-1) + 2px);
         }
 
+        /* A property label is quieter than its value — that contrast is what makes a
+           column of numbers legible at a glance. Still 4.6:1 on the panel surface. */
         .row > .label {
-            color: var(--px-text-muted);
+            color: var(--px-text-dim);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -213,7 +220,7 @@ export class Inspector extends Element {
             gap: var(--px-space-2);
             width: calc(100% - var(--px-space-6));
             margin: var(--px-space-3) var(--px-space-3) var(--px-space-4);
-            height: calc(var(--px-control) + var(--px-space-1));
+            height: var(--px-hit);
             border: 1px dashed var(--px-border-subtle);
             border-radius: var(--px-radius);
             color: var(--px-text-muted);

@@ -143,11 +143,6 @@ const tokens = sheet(`
         --px-icon: 16px;
         --px-icon-lg: 20px;
 
-        /* The label column of a property row. A token because px-field and the
-           Inspector's paired rows live in different shadow roots and cannot share a
-           rule, yet have to line up on the same seam. */
-        --px-label: 62px;
-
         /* ─── Radius ──────────────────────────────────────────────────────
            Barely rounded. A 4 px corner reads as care; an 8 px corner reads
            as a web app. */
@@ -279,7 +274,16 @@ const tokens = sheet(`
 `);
 
 const base = sheet(`
+    /* A DOCUMENT RULE DOES NOT CROSS A SHADOW BOUNDARY. The tokens sheet says
+       \`* { box-sizing: border-box }\` and that governs the document only, so every control
+       inside every shadow root was laying out as content-box: a field declared
+       --px-control (22px) with a 1px border rendered 24, and every density token in this
+       file was quietly two pixels off wherever it was actually used. Restating it here is
+       what makes the tokens mean what they say. */
+    *, *::before, *::after { box-sizing: border-box; }
+
     :host {
+        box-sizing: border-box;
         display: block;
         font-family: var(--px-font-sans);
         font-size: var(--px-text-sm);

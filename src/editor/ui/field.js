@@ -79,7 +79,9 @@ export class Field extends Element {
             text-align: right;
             font-family: var(--px-font-mono);
             font-variant-numeric: tabular-nums;
-            font-size: var(--px-text-2xs);
+            /* The same step as the value inside a px-number: a slider's readout is a
+               value too, and the two sit on adjacent rows. */
+            font-size: var(--px-text-xs);
             color: var(--px-text);
         }
 

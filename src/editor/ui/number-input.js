@@ -92,6 +92,10 @@ export class NumberInput extends Element {
             box-shadow: none;
             text-align: center;
             padding: 0 2px;
+            /* A value is set one step below the interface text. Digits are read, not
+               scanned, and the smaller face buys two more characters before a long
+               coordinate starts scrolling inside its own box. */
+            font-size: var(--px-text-xs);
         }
 
         input:focus { outline: none; box-shadow: none; }
