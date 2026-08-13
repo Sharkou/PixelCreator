@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ComponentRegistry, Scene, Transform, defineComponent } from '../core/mod.js';
 import { RectangleRenderer } from '../runtime/mod.js';
-import { registerBuiltIns } from './registry.js';
+import { describeType, groupTypes, registerBuiltIns } from './registry.js';
 import { Selection } from './selection.js';
 import { addComponent, availableComponents, createObject, deleteObject, removeComponent, uniqueName } from './commands.js';
 
@@ -124,4 +124,33 @@ test('the selection is announced and is not part of the model', () => {
     assert.deepEqual(seen, [object.name, null], 'selecting the same object twice says nothing');
     assert.equal(selection.object, null);
     assert.equal('current' in scene, false, 'Legacy kept the selection on the Scene');
+});
+
+test('the Add menu is grouped and reads in plain language', () => {
+    const known = registry();
+    const groups = groupTypes(['RectangleRenderer', 'Camera', 'ParticleSystem', 'Transform'], known);
+
+    assert.deepEqual(groups.map(group => group.category), ['Rendering', 'Scene']);
+    assert.deepEqual(groups[0].entries.map(entry => entry.label), ['Particles', 'Rectangle']);
+    assert.deepEqual(groups[1].entries.map(entry => entry.label), ['Camera', 'Transform']);
+});
+
+test('a component that names its own category keeps it', () => {
+    const known = registry();
+    const Health = defineComponent({ type: 'Health', properties: {} });
+    Health.category = 'Gameplay';
+    Health.label = 'Health';
+    known.register(Health);
+
+    const groups = groupTypes(['Health', 'Camera'], known);
+    assert.deepEqual(groups.map(group => group.category), ['Scene', 'Gameplay']);
+    assert.equal(describeType('Health', known).label, 'Health');
+});
+
+test('an unknown type is grouped rather than dropped', () => {
+    const known = registry();
+    known.register(defineComponent({ type: 'Mystery', properties: {} }));
+
+    const groups = groupTypes(['Mystery'], known);
+    assert.deepEqual(groups, [{ category: 'Other', entries: [{ type: 'Mystery', label: 'Mystery', category: 'Other' }] }]);
 });

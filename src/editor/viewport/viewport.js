@@ -21,22 +21,42 @@
 // Hierarchy, is never serialized, and cannot be deleted by accident. Panning and zooming
 // write to it directly: moving your own point of view is not an intent to record or to
 // replicate, so it produces no Operation (docs/architecture/EDITOR.md).
+//
+// WHAT THIS FILE DOES AND DOES NOT DO. It owns the surfaces, the view matrix and the
+// frame; it routes pointers to a tool and draws what the tool asks for. Every gesture
+// lives in `tools/`, and every piece of geometry in `picking.js`, `resize.js` and
+// `grid.js` — which is what stopped this from becoming Legacy's 27 kB `handler.js`.
 
-import { Matrix, createId, worldMatrix, worldPosition } from '../../core/mod.js';
-import { Canvas2DRenderer, Runtime, Viewport, screenToWorld, viewMatrix } from '../../runtime/mod.js';
-import { PxElement, el } from '../ui/element.js';
+import { Matrix, worldMatrix, worldPosition } from '../../core/mod.js';
+// The runtime's Viewport — the screen rectangle — is aliased, because this element is
+// also called Viewport. Two different things with one good name: the runtime's is the
+// surface being drawn into, this one is the window a creator looks through.
+import {
+    Canvas2DRenderer,
+    Runtime,
+    Viewport as Surface,
+    screenToWorld,
+    viewMatrix
+} from '../../runtime/mod.js';
+import { Element, el } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
+import { icon } from '../ui/icons.js';
 import { drawGrid, matrixScale } from './grid.js';
-import { outline } from './overlay.js';
-import { editorBounds, pick } from './picking.js';
+import { editorBounds } from './picking.js';
+import { GUIDE_STYLES, Guides } from './guides.js';
+import { SelectTool } from './tools/select-tool.js';
+import { PanTool } from './tools/pan-tool.js';
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 40;
 
-/** Device pixels the pointer must travel before a click becomes a drag. */
-const DRAG_THRESHOLD = 3;
+/** How much of the remaining zoom distance is covered each frame. */
+const ZOOM_EASING = 0.28;
 
-export class PxViewport extends PxElement {
+/** Below this relative difference the ease is over; without it, it never quite ends. */
+const ZOOM_SETTLED = 0.001;
+
+export class Viewport extends Element {
 
     static styles = sheet(`
         :host {
@@ -53,10 +73,6 @@ export class PxViewport extends PxElement {
             cursor: default;
         }
 
-        .surface.panning { cursor: grabbing; }
-        .surface.over { cursor: pointer; }
-        .surface.moving { cursor: move; }
-
         canvas {
             position: absolute;
             inset: 0;
@@ -65,28 +81,33 @@ export class PxViewport extends PxElement {
             display: block;
         }
 
-        .hud {
+        .readout {
             position: absolute;
             left: 10px;
             bottom: 8px;
             display: flex;
-            gap: 14px;
+            gap: 12px;
             pointer-events: none;
             font-family: var(--px-mono);
             font-size: 10px;
             color: var(--px-text-dim);
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
         }
 
-        .hint {
+        .actions {
             position: absolute;
-            right: 10px;
+            right: 8px;
             bottom: 8px;
-            pointer-events: none;
-            font-size: 10px;
-            color: var(--px-text-dim);
-            opacity: 0.75;
+            display: flex;
+            gap: 2px;
         }
+
+        .actions .ghost {
+            background: rgba(20, 20, 23, 0.72);
+            backdrop-filter: blur(3px);
+        }
+
+        ${GUIDE_STYLES}
     `);
 
     #scene = null;
@@ -97,17 +118,20 @@ export class PxViewport extends PxElement {
     #surface = null;
     #gridRenderer = null;
     #sceneRenderer = null;
-    #viewport = new Viewport(1, 1);
+    #viewport = new Surface(1, 1);
     #runtime = null;
+    #guides = null;
+
+    #tool = null;
+    #pan = null;
+    #panning = false;
 
     #dpr = 1;
     #frame = 0;
     #gridSignature = '';
-    #hovered = null;
-    #drag = null;
-    #pointerWorld = { x: 0, y: 0 };
+    #zoomTarget = null;
+    #zoomAnchor = null;
     #zoomReadout = null;
-    #positionReadout = null;
 
     /**
      * Point the viewport at what it should show.
@@ -117,13 +141,20 @@ export class PxViewport extends PxElement {
      * @param {object} context.camera - The Object acting as the editor camera
      * @param {object} context.selection - The Editor selection
      * @param {Function} [context.onError] - Receives runtime ComponentFailure reports
-     * @returns {PxViewport} This element
+     * @returns {Viewport} This element
      */
     bind({ scene, camera, selection, onError }) {
         this.#scene = scene;
         this.#camera = camera;
         this.#selection = selection;
         this.#onError = onError ?? null;
+
+        this.#tool = new SelectTool({
+            scene,
+            selection,
+            coarse: () => globalThis.matchMedia?.('(pointer: coarse)').matches ?? false
+        });
+        this.#pan = new PanTool(camera);
         return this;
     }
 
@@ -158,6 +189,45 @@ export class PxViewport extends PxElement {
     }
 
     /**
+     * Whether a page coordinate falls on the scene.
+     * @param {number} clientX - Horizontal page coordinate
+     * @param {number} clientY - Vertical page coordinate
+     * @returns {boolean} True when inside
+     */
+    containsClient(clientX, clientY) {
+        const rect = this.#surface.getBoundingClientRect();
+        return clientX >= rect.left && clientX <= rect.right
+            && clientY >= rect.top && clientY <= rect.bottom;
+    }
+
+    /**
+     * The world point under a page coordinate.
+     *
+     * This is what makes "dropped here" mean here: the toolbar hands over where the
+     * pointer let go and gets back where that is in the scene.
+     *
+     * @param {number} clientX - Horizontal page coordinate
+     * @param {number} clientY - Vertical page coordinate
+     * @returns {{x: number, y: number}} The world point
+     */
+    worldAt(clientX, clientY) {
+        const rect = this.#surface.getBoundingClientRect();
+        return screenToWorld(
+            this.view,
+            (clientX - rect.left) * this.#dpr,
+            (clientY - rect.top) * this.#dpr
+        );
+    }
+
+    /**
+     * The world point at the middle of the view.
+     * @returns {{x: number, y: number}} The world point
+     */
+    worldCentre() {
+        return screenToWorld(this.view, this.#gridRenderer.width / 2, this.#gridRenderer.height / 2);
+    }
+
+    /**
      * Bring an object into view, and zoom so it comfortably fits.
      * @param {object} object - The object to frame
      */
@@ -176,14 +246,16 @@ export class PxViewport extends PxElement {
             this.#viewport.height / (box.height * scale * margin)
         );
 
-        if (globalThis.Number.isFinite(fit) && fit > 0) this.#setZoom(fit);
+        // Eased rather than snapped, and without an anchor: the object was just centred,
+        // so the zoom settles around it.
+        if (globalThis.Number.isFinite(fit) && fit > 0) this.#aimZoom(fit, null);
     }
 
     /** Put the camera back at the world origin, at 1:1. */
     resetView() {
         this.#camera.x = 0;
         this.#camera.y = 0;
-        this.#setZoom(1);
+        this.#aimZoom(1, null);
     }
 
     #build() {
@@ -201,13 +273,28 @@ export class PxViewport extends PxElement {
             oncontextmenu: event => event.preventDefault()
         }, grid, scene);
 
-        this.#zoomReadout = el('span');
-        this.#positionReadout = el('span');
+        this.#guides = new Guides(this.#surface);
+        this.#zoomReadout = el('span', { textContent: '100%' });
 
         this.shadowRoot.append(
             this.#surface,
-            el('div', { class: 'hud' }, this.#zoomReadout, this.#positionReadout),
-            el('div', { class: 'hint', textContent: 'drag right or middle to pan · wheel to zoom · F to frame' })
+            el('div', { class: 'readout' }, this.#zoomReadout),
+            el('div', { class: 'actions' },
+                el('button', {
+                    class: 'ghost',
+                    type: 'button',
+                    title: 'Frame selection',
+                    'aria-label': 'Frame selection',
+                    onclick: () => this.focusOn(this.#selection.object)
+                }, icon('focus', 14)),
+                el('button', {
+                    class: 'ghost',
+                    type: 'button',
+                    title: 'Reset view',
+                    'aria-label': 'Reset view',
+                    onclick: () => this.resetView()
+                }, icon('grid', 14))
+            )
         );
 
         this.#gridRenderer = new Canvas2DRenderer(grid.getContext('2d'));
@@ -241,6 +328,7 @@ export class PxViewport extends PxElement {
 
     #tick = () => {
         this.#frame = requestAnimationFrame(this.#tick);
+        this.#easeZoom();
         this.#draw();
     };
 
@@ -250,21 +338,14 @@ export class PxViewport extends PxElement {
         // The grid only changes when the point of view does, so it is not redrawn sixty
         // times a second for nothing.
         const signature = `${this.#camera.x}|${this.#camera.y}|${this.#camera.rotation}`
-            + `|${this.#camera.getComponent('Camera')?.zoom}|${this.#gridRenderer.width}x${this.#gridRenderer.height}`;
+            + `|${this.#zoom()}|${this.#gridRenderer.width}x${this.#gridRenderer.height}`;
         if (signature !== this.#gridSignature) {
             drawGrid(this.#gridRenderer, view);
             this.#gridSignature = signature;
         }
 
         this.#runtime.render({ view });
-
-        const selected = this.#selection.object;
-        if (this.#hovered && this.#hovered !== selected && this.#scene.has(this.#hovered)) {
-            outline(this.#sceneRenderer, view, this.#hovered, { alpha: 0.4, width: 1 });
-        }
-        if (selected && this.#scene.has(selected)) {
-            outline(this.#sceneRenderer, view, selected, { pivot: true });
-        }
+        this.#tool.draw(this.#sceneRenderer, view, { scale: this.#dpr });
 
         this.#zoomReadout.textContent = `${Math.round(this.#zoom() * 100)}%`;
     }
@@ -272,116 +353,104 @@ export class PxViewport extends PxElement {
     #onPointerDown(event) {
         this.#surface.setPointerCapture(event.pointerId);
 
+        // Middle or right: move the point of view. Both, because a trackpad has no middle
+        // button and a mouse user reaches for it out of habit.
         if (event.button === 1 || event.button === 2) {
             event.preventDefault();
-            this.#drag = { mode: 'pan', from: this.#toWorld(event) };
+            this.#panning = true;
+            this.#pan.press(this.#pointer(event));
             this.#refreshCursor();
             return;
         }
 
         if (event.button !== 0) return;
 
-        const world = this.#toWorld(event);
-        const hit = pick(this.#scene.objects(), this.view, ...this.#toDevice(event));
-
-        this.#selection.set(hit);
-        this.#drag = hit ? this.#beginMove(hit, world, event) : null;
+        this.#tool.press(this.#pointer(event));
         this.#refreshCursor();
     }
 
     #onPointerMove(event) {
-        const world = this.#toWorld(event);
-        this.#pointerWorld = world;
-        this.#positionReadout.textContent = `${Math.round(world.x)}, ${Math.round(world.y)}`;
+        const pointer = this.#pointer(event);
 
-        const drag = this.#drag;
+        if (this.#panning) this.#pan.move(pointer);
+        else this.#tool.move(pointer);
 
-        if (drag?.mode === 'pan') {
-            // Panning keeps the world point grabbed at pointerdown under the pointer, so
-            // the scene follows the hand exactly at any zoom or rotation.
-            this.#camera.x += drag.from.x - world.x;
-            this.#camera.y += drag.from.y - world.y;
-            this.#pointerWorld = this.#toWorld(event);
-            return;
-        }
-
-        if (drag?.mode === 'move') {
-            const [x, y] = this.#toDevice(event);
-            if (!drag.started && Math.hypot(x - drag.fromDevice[0], y - drag.fromDevice[1]) < DRAG_THRESHOLD) return;
-            drag.started = true;
-            this.#moveTo(drag, world);
-            return;
-        }
-
-        const hovered = pick(this.#scene.objects(), this.view, ...this.#toDevice(event));
-        if (hovered !== this.#hovered) {
-            this.#hovered = hovered;
-            this.#refreshCursor();
-        }
+        const rect = this.#surface.getBoundingClientRect();
+        this.#guides.update(event.clientX - rect.left, event.clientY - rect.top, pointer.world);
+        this.#refreshCursor();
     }
 
     #onPointerUp(event) {
         if (this.#surface.hasPointerCapture(event.pointerId)) {
             this.#surface.releasePointerCapture(event.pointerId);
         }
-        this.#drag = null;
+        if (this.#panning) {
+            this.#panning = false;
+            this.#pan.release();
+        }
+        this.#tool.release();
         this.#refreshCursor();
     }
 
     #onPointerLeave() {
-        if (this.#drag) return;
-        this.#hovered = null;
-        this.#refreshCursor();
+        this.#guides.hide();
     }
 
     #onWheel(event) {
         event.preventDefault();
 
-        const before = this.#toWorld(event);
-        this.#setZoom(this.#zoom() * Math.exp(-event.deltaY * 0.0015));
-        const after = this.#toWorld(event);
+        const device = this.#toDevice(event);
+        // Aimed from where the zoom is going, not from where it is: turning the wheel
+        // three notches quickly must add up rather than fight the ease already running.
+        const from = this.#zoomTarget ?? this.#zoom();
 
-        // Anchor the zoom on the pointer: whatever was under it stays under it.
-        this.#camera.x += before.x - after.x;
-        this.#camera.y += before.y - after.y;
+        // The anchor is captured in world coordinates and held until the ease is over.
+        // Re-reading it each frame would chase the very value the ease is changing.
+        this.#aimZoom(from * Math.exp(-event.deltaY * 0.0016), {
+            device,
+            world: screenToWorld(this.view, ...device)
+        });
     }
 
-    #beginMove(object, world, event) {
-        const transform = object.getComponent('Transform');
-        if (!transform) return null;
-
-        return {
-            mode: 'move',
-            started: false,
-            transform,
-            from: world,
-            fromDevice: this.#toDevice(event),
-            startX: transform.x,
-            startY: transform.y,
-            // A drag is one intent, however many frames it spans: every write carries the
-            // same batch id, which is what ADR-0008 groups a history entry by.
-            batch: createId(),
-            // Local values are relative to the parent, so a world-space drag has to be
-            // brought back into the parent's frame before it is written.
-            toParent: object.parent ? worldMatrix(object.parent).invert() : Matrix.identity()
-        };
+    #aimZoom(zoom, anchor) {
+        this.#zoomTarget = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+        this.#zoomAnchor = anchor;
     }
 
-    #moveTo(drag, world) {
-        const moved = drag.toParent.apply(world.x - drag.from.x, world.y - drag.from.y);
-        const origin = drag.toParent.apply(0, 0);
+    #easeZoom() {
+        if (this.#zoomTarget === null) return;
 
-        drag.transform.setProperty('x', drag.startX + moved.x - origin.x, { batch: drag.batch });
-        drag.transform.setProperty('y', drag.startY + moved.y - origin.y, { batch: drag.batch });
+        const camera = this.#camera.getComponent('Camera');
+        if (!camera) return;
+
+        const remaining = this.#zoomTarget - camera.zoom;
+        if (Math.abs(remaining) <= this.#zoomTarget * ZOOM_SETTLED) {
+            camera.zoom = this.#zoomTarget;
+            this.#zoomTarget = null;
+        } else {
+            camera.zoom += remaining * ZOOM_EASING;
+        }
+
+        // Whatever was under the pointer stays under the pointer, on every frame of the
+        // ease and not only at its end.
+        const anchor = this.#zoomAnchor;
+        if (!anchor) return;
+
+        const now = screenToWorld(this.view, ...anchor.device);
+        this.#camera.x += anchor.world.x - now.x;
+        this.#camera.y += anchor.world.y - now.y;
+
+        if (this.#zoomTarget === null) this.#zoomAnchor = null;
     }
 
     #zoom() {
         return this.#camera.getComponent('Camera')?.zoom ?? 1;
     }
 
-    #setZoom(zoom) {
-        const camera = this.#camera.getComponent('Camera');
-        if (camera) camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+    #pointer(event) {
+        const device = this.#toDevice(event);
+        const view = this.view;
+        return { device, view, world: screenToWorld(view, ...device) };
     }
 
     #toDevice(event) {
@@ -389,16 +458,11 @@ export class PxViewport extends PxElement {
         return [(event.clientX - rect.left) * this.#dpr, (event.clientY - rect.top) * this.#dpr];
     }
 
-    #toWorld(event) {
-        return screenToWorld(this.view, ...this.#toDevice(event));
-    }
-
     #refreshCursor() {
-        const classes = this.#surface.classList;
-        classes.toggle('panning', this.#drag?.mode === 'pan');
-        classes.toggle('moving', this.#drag?.mode === 'move');
-        classes.toggle('over', !this.#drag && this.#hovered !== null);
+        this.#surface.style.cursor = this.#panning
+            ? this.#pan.cursor()
+            : this.#tool.cursor(this.view);
     }
 }
 
-customElements.define('px-viewport', PxViewport);
+customElements.define('px-viewport', Viewport);

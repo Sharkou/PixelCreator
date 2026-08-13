@@ -4,11 +4,11 @@
 // panel scrolls and clips and a menu must do neither. It closes on the first thing that
 // means "not that": a pointer outside, Escape, a scroll, a resize.
 
-import { PxElement, el, fill } from './element.js';
+import { Element, el, fill } from './element.js';
 import { sheet } from './styles.js';
 import { icon } from './icons.js';
 
-export class PxMenu extends PxElement {
+export class Menu extends Element {
 
     static styles = sheet(`
         :host {
@@ -44,6 +44,20 @@ export class PxMenu extends PxElement {
             padding: 6px 8px;
             color: var(--px-text-dim);
         }
+
+        .heading {
+            padding: 7px 8px 3px;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            color: var(--px-text-dim);
+        }
+
+        .heading:not(:first-child) {
+            margin-top: 3px;
+            border-top: 1px solid var(--px-line-soft);
+        }
     `);
 
     #onPick = null;
@@ -52,7 +66,7 @@ export class PxMenu extends PxElement {
      * Fill and place the menu.
      *
      * @param {DOMRect} rect - Screen rectangle of the control that opened it
-     * @param {object[]} items - Entries as { id, label, icon, disabled }
+     * @param {object[]} items - Entries as { id, label, icon, disabled }, or { heading }
      * @param {Function} onPick - Called with the chosen entry's id
      */
     open(rect, items, onPick) {
@@ -61,11 +75,13 @@ export class PxMenu extends PxElement {
         fill(this.shadowRoot,
             items.length === 0
                 ? el('div', { class: 'empty', textContent: 'Nothing to add' })
-                : items.map(item => el('button', {
-                    type: 'button',
-                    disabled: Boolean(item.disabled),
-                    onclick: () => this.#pick(item)
-                }, item.icon ? icon(item.icon, 13) : null, el('span', { textContent: item.label })))
+                : items.map(item => (item.heading
+                    ? el('div', { class: 'heading', textContent: item.heading })
+                    : el('button', {
+                        type: 'button',
+                        disabled: Boolean(item.disabled),
+                        onclick: () => this.#pick(item)
+                    }, item.icon ? icon(item.icon, 13) : null, el('span', { textContent: item.label }))))
         );
 
         this.style.left = `${rect.left}px`;
@@ -111,7 +127,7 @@ export class PxMenu extends PxElement {
  * @param {HTMLElement} anchor - The control that opened it
  * @param {object[]} items - Entries as { id, label, icon, disabled }
  * @param {Function} onPick - Called with the chosen entry's id
- * @returns {PxMenu} The open menu
+ * @returns {Menu} The open menu
  */
 export function openMenu(anchor, items, onPick) {
     const menu = document.createElement('px-menu');
@@ -125,4 +141,4 @@ function listen(target, event, handler, capture = false) {
     return () => target.removeEventListener(event, handler, capture);
 }
 
-customElements.define('px-menu', PxMenu);
+customElements.define('px-menu', Menu);

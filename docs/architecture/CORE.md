@@ -195,6 +195,17 @@ aucun projet v1 à relire : `deserialize()` n'a **aucun chemin de compatibilité
 Gain mesuré attendu sur le heartbeat : facteur 3 sur la duplication `_prop`, plus la
 suppression de la duplication des enfants.
 
+### `active` fait partie du contrat, pas du schéma — IMPLÉMENTÉ
+
+Un Component déclarant un `static schema` ne sérialise que ses clés de schéma. Or `active`
+n'est dans aucun schéma : c'est une propriété du **contrat** de Component, lue par le
+Runtime et le SceneRenderer, écrite par l'utilisateur ou l'Editor (ADR-0004, ADR-0012 §2).
+
+Constaté en 2026-08-13 : désactiver un Component depuis l'Editor produisait bien une
+Operation répliquable, **puis disparaissait à la sauvegarde suivante**. `serializeComponent()`
+écrit donc `active` quand le composant le porte. Absent reste absent — un composant qui n'a
+jamais eu d'`active` n'en gagne pas un, parce que « absent » veut déjà dire « actif ».
+
 ---
 
 ## Resources

@@ -4,38 +4,55 @@
 // there must never be one: what to show comes from `componentSchema()`, and from
 // reflection when a component declares none (ADR-0007). A component a creator writes
 // tomorrow — including one built from a definition, which always has a schema
-// (ADR-0016) — inspects correctly without this file changing.
+// (ADR-0016) — inspects correctly without this file changing. Even the paired Position
+// and Size rows come from a table of property names, not from a table of component types.
 //
 // Rebuilt on selection and on the scene's component events; individual values are not
 // rebuilt at all, because each `<px-field>` is bound to its own property and updates
 // itself. Editing `x` does not re-render the panel, which is what keeps focus and caret
 // where the creator put them.
+//
+// WHAT IS DELIBERATELY NOT HERE. The object's `visible` and `lock` live in the Hierarchy
+// row, where every object has them at once; repeating them would be two controls for one
+// value and twice the panel to read. The object's id is not shown at all — a creator does
+// not need it, and a panel that opens with a random string looks like a debugger.
 
-import { PxElement, el, fill } from '../ui/element.js';
+import { observe } from '../../core/mod.js';
+import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
-import { icon } from '../ui/icons.js';
+import { icon, iconForComponent, iconForObject } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import { addComponent, availableComponents, removeComponent } from '../commands.js';
-import { describeComponent, objectFields } from '../inspector/schema.js';
+import { groupTypes } from '../registry.js';
+import { describeComponent, objectFields, rows } from '../inspector/schema.js';
+import '../ui/window.js';
 import '../ui/field.js';
 
-export class PxInspector extends PxElement {
+/** Prefix letters for a paired row, by the property the pair starts on. */
+const PAIR_PREFIXES = {
+    x: ['X', 'Y'],
+    width: ['W', 'H'],
+    scaleX: ['X', 'Y']
+};
+
+export class Inspector extends Element {
 
     static styles = sheet(`
-        :host { display: block; height: 100%; }
-        px-panel { height: 100%; }
+        :host { display: block; }
+        px-window { height: 100%; }
 
         .identity {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 10px 10px 8px;
+            padding: 9px 10px;
             border-bottom: 1px solid var(--px-line);
         }
 
         .identity .glyph { color: var(--px-accent); }
 
         .identity .title {
+            flex: 1;
             font-size: 13px;
             font-weight: 600;
             color: var(--px-text-strong);
@@ -44,21 +61,14 @@ export class PxInspector extends PxElement {
             white-space: nowrap;
         }
 
-        .identity .id {
-            margin-left: auto;
-            font-family: var(--px-mono);
-            font-size: 10px;
-            color: var(--px-text-dim);
-        }
-
-        section { border-bottom: 1px solid var(--px-line); padding-bottom: 6px; }
+        section { border-bottom: 1px solid var(--px-line); padding-bottom: 5px; }
 
         section > header {
             display: flex;
             align-items: center;
-            gap: 6px;
-            height: 26px;
-            padding: 0 6px 0 10px;
+            gap: 7px;
+            height: calc(var(--px-hit) + 4px);
+            padding: 0 5px 0 10px;
             color: var(--px-text-dim);
         }
 
@@ -69,23 +79,34 @@ export class PxInspector extends PxElement {
             letter-spacing: 0.4px;
             text-transform: uppercase;
             color: var(--px-text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        .remove {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            width: 20px;
-            height: 20px;
-            border-radius: 4px;
+        section.off > header .label, section.off .pair, section.off px-field { opacity: 0.45; }
+
+        header .ghost { opacity: 0.6; }
+        section:hover header .ghost { opacity: 1; }
+        header .ghost.on { opacity: 1; color: var(--px-accent); }
+        header .remove:hover { color: var(--px-danger); }
+
+        .pair { padding: 3px 10px 4px; }
+
+        .pair > .label {
+            display: block;
+            margin-bottom: 4px;
             color: var(--px-text-dim);
         }
 
-        section:hover .remove { display: flex; }
-        .remove:hover { background: var(--px-bg-3); color: var(--px-danger); }
+        .pair > .fields {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
 
         .none {
-            padding: 6px 10px 8px;
+            padding: 4px 10px 8px;
             color: var(--px-text-dim);
             font-style: italic;
         }
@@ -94,13 +115,14 @@ export class PxInspector extends PxElement {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
+            gap: 7px;
             width: calc(100% - 20px);
-            margin: 12px 10px;
-            padding: 6px;
+            margin: 12px 10px 16px;
+            height: calc(var(--px-control) + 6px);
             border: 1px dashed var(--px-line-soft);
             border-radius: var(--px-radius);
             color: var(--px-text-dim);
+            transition: border-color 90ms ease, color 90ms ease, background 90ms ease;
         }
 
         .add:hover {
@@ -110,10 +132,17 @@ export class PxInspector extends PxElement {
         }
 
         .empty {
-            padding: 16px 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            padding: 34px 20px;
+            text-align: center;
             color: var(--px-text-dim);
             line-height: 1.5;
         }
+
+        .empty .glyph { opacity: 0.3; }
     `);
 
     #scene = null;
@@ -122,12 +151,12 @@ export class PxInspector extends PxElement {
     #body = null;
 
     /**
-     * Point the panel at the selection it follows.
+     * Point the window at the selection it follows.
      * @param {object} context - Editor context
      * @param {object} context.scene - The scene
      * @param {object} context.selection - The Editor selection
      * @param {object} context.registry - Component registry the Add menu lists
-     * @returns {PxInspector} This element
+     * @returns {Inspector} This element
      */
     bind({ scene, selection, registry }) {
         this.#scene = scene;
@@ -137,8 +166,12 @@ export class PxInspector extends PxElement {
     }
 
     connectedCallback() {
-        this.#body = el('div');
-        this.shadowRoot.replaceChildren(el('px-panel', { label: 'Inspector' }, this.#body));
+        if (this.shadowRoot.childElementCount === 0) {
+            this.#body = el('div');
+            this.shadowRoot.append(
+                el('px-window', { label: 'Inspector', icon: 'inspector' }, this.#body)
+            );
+        }
 
         this.track(this.#selection.observe(() => this.#render()));
 
@@ -154,14 +187,14 @@ export class PxInspector extends PxElement {
     }
 
     #render() {
-        this.release('fields');
+        this.release('panel');
 
         const object = this.#selection.object;
         if (!object) {
-            fill(this.#body, el('div', {
-                class: 'empty',
-                textContent: 'Select an object to inspect it.'
-            }));
+            fill(this.#body, el('div', { class: 'empty' },
+                el('span', { class: 'glyph' }, icon('inspector', 24)),
+                el('span', { textContent: 'Select an object to inspect it.' })
+            ));
             return;
         }
 
@@ -170,7 +203,11 @@ export class PxInspector extends PxElement {
 
         fill(this.#body,
             this.#renderIdentity(object),
-            this.#renderSection('Object', objectFields().map(field => this.#field(object, field))),
+            this.#renderSection({
+                label: 'Object',
+                glyph: 'object',
+                fields: this.#renderRows(object, objectFields())
+            }),
             types.map(type => this.#renderComponent(object, components[type], type)),
             this.#renderAddButton(object)
         );
@@ -178,50 +215,89 @@ export class PxInspector extends PxElement {
 
     #renderIdentity(object) {
         const title = el('span', { class: 'title', textContent: object.name || '(unnamed)' });
+        const glyph = el('span', { class: 'glyph' }, icon(iconForObject(object), 15));
+
         this.track(object.observe('name', change => {
             title.textContent = change.value || '(unnamed)';
-        }), 'fields');
+        }), 'panel');
 
-        return el('div', { class: 'identity' },
-            el('span', { class: 'glyph' }, icon('object', 15)),
-            title,
-            el('span', { class: 'id', textContent: object.id, title: 'Object id' })
-        );
+        return el('div', { class: 'identity' }, glyph, title);
     }
 
     #renderComponent(object, component, type) {
+        const label = el('span', { class: 'label', textContent: type });
+        const section = el('section', {});
+
+        // `active` is the one state a Component really has: the runtime reads it to decide
+        // whether to run `update()` and `draw()` (ADR-0004). There is no per-component
+        // `visible` in the model, and inventing one in the Inspector would show a control
+        // that does nothing.
+        const toggle = el('button', {
+            class: 'ghost',
+            type: 'button',
+            onclick: () => component.setProperty('active', component.active === false)
+        }, icon('eye', 13));
+
+        const syncActive = () => {
+            const on = component.active !== false;
+            toggle.title = on ? `Disable ${type}` : `Enable ${type}`;
+            toggle.setAttribute('aria-label', toggle.title);
+            toggle.classList.toggle('on', !on);
+            section.classList.toggle('off', !on);
+            fill(toggle, icon(on ? 'eye' : 'eye-off', 13));
+        };
+        syncActive();
+        // `active` may not exist yet — a component carries it only once something has
+        // switched it off — and the Property System observes by name either way.
+        this.track(observe(component, 'active', syncActive), 'panel');
+
         const remove = el('button', {
-            class: 'remove',
+            class: 'ghost remove',
             type: 'button',
             title: `Remove ${type}`,
+            'aria-label': `Remove ${type}`,
             onclick: () => removeComponent(object, type)
         }, icon('close', 13));
 
         const fields = describeComponent(component);
 
-        return el('section', {},
+        section.append(
             el('header', {},
-                icon('component', 13),
-                el('span', { class: 'label', textContent: type }),
+                icon(iconForComponent(component, type), 13),
+                label,
+                toggle,
                 remove
             ),
-            fields.length === 0
-                ? el('div', { class: 'none', textContent: 'No properties' })
-                : fields.map(field => this.#field(component, field))
+            ...(fields.length === 0
+                ? [el('div', { class: 'none', textContent: 'No properties' })]
+                : this.#renderRows(component, fields))
         );
+
+        return section;
     }
 
-    #renderSection(label, fields) {
+    #renderSection({ label, glyph, fields }) {
         return el('section', {},
-            el('header', {}, icon('object', 13), el('span', { class: 'label', textContent: label })),
+            el('header', {}, icon(glyph, 13), el('span', { class: 'label', textContent: label })),
             fields
         );
     }
 
-    #field(target, descriptor) {
-        // No tracking needed: a field subscribes on connect and releases on disconnect,
-        // and the next render replaces the whole body.
-        return document.createElement('px-field').bind(target, descriptor);
+    #renderRows(target, fields) {
+        return rows(fields).map(row => {
+            if (row.fields.length === 1) {
+                return el('px-field').bind(target, row.fields[0]);
+            }
+
+            const prefixes = PAIR_PREFIXES[row.fields[0].name] ?? ['', ''];
+            return el('div', { class: 'pair' },
+                el('span', { class: 'label', textContent: row.label }),
+                el('div', { class: 'fields' },
+                    row.fields.map((descriptor, index) =>
+                        el('px-field').bind(target, descriptor, { prefix: prefixes[index], labelled: false }))
+                )
+            );
+        });
     }
 
     #renderAddButton(object) {
@@ -235,13 +311,24 @@ export class PxInspector extends PxElement {
     }
 
     #openAddMenu(anchor, object) {
-        const items = availableComponents(object, this.#registry)
-            .map(type => ({ id: type, label: type, icon: 'component' }));
+        const available = availableComponents(object, this.#registry);
+        const items = [];
+
+        for (const group of groupTypes(available, this.#registry)) {
+            items.push({ heading: group.category });
+            for (const entry of group.entries) {
+                items.push({
+                    id: entry.type,
+                    label: entry.label,
+                    icon: iconForComponent(this.#registry.get(entry.type), entry.type)
+                });
+            }
+        }
 
         // Nothing re-renders by hand afterwards: attaching announces itself on the scene,
-        // and this panel is already listening for that.
+        // and this window is already listening for that.
         openMenu(anchor, items, type => addComponent(object, type, this.#registry));
     }
 }
 
-customElements.define('px-inspector', PxInspector);
+customElements.define('px-inspector', Inspector);

@@ -5,8 +5,19 @@
 // no `static schema` still has to inspect correctly.
 //
 // No DOM here on purpose. This module answers "what fields, of what kind, with what
-// constraints"; building inputs out of that answer is the element's job. That is what
-// makes the hardest part of the Inspector testable under Node.
+// constraints, shown in what unit"; building controls out of that answer is the element's
+// job. That is what makes the hardest part of the Inspector testable under Node.
+//
+// TWO IDEAS BEYOND THE PLAIN MAPPING, both of which exist so the Inspector can be
+// pleasant without any component knowing about the Inspector:
+//
+//   a display scale — the Core keeps rotation in radians because maths does; a creator
+//   thinks in degrees. `unit: 'rad'` is enough for the conversion to happen, exactly, in
+//   one place;
+//
+//   pairing — `x` and `y` are one idea and belong on one line. Declared as a table of
+//   property names, so any component with `width` and `height` gets a Size row without
+//   this file knowing that RectangleRenderer exists.
 //
 // The Legacy defects this closes, all measured in ADR-0007: numbers truncated by
 // parseInt, colours guessed from whether a string happens to start with '#', a hard-coded
@@ -23,6 +34,7 @@ import { componentSchema } from '../../core/mod.js';
 export const FieldKind = {
     NUMBER: 'number',
     INT: 'int',
+    RANGE: 'range',
     BOOLEAN: 'boolean',
     STRING: 'string',
     COLOR: 'color',
@@ -33,11 +45,24 @@ export const FieldKind = {
 const SCHEMA_KINDS = new Set([
     FieldKind.NUMBER,
     FieldKind.INT,
+    FieldKind.RANGE,
     FieldKind.BOOLEAN,
     FieldKind.STRING,
     FieldKind.COLOR,
     FieldKind.ENUM
 ]);
+
+/** Properties shown side by side, and what the pair is called. */
+const PAIRS = [
+    { first: 'x', second: 'y', label: 'Position' },
+    { first: 'width', second: 'height', label: 'Size' },
+    { first: 'scaleX', second: 'scaleY', label: 'Scale' }
+];
+
+/** Model unit -> how it is shown. The Core keeps its unit; only the display converts. */
+const DISPLAY_UNITS = {
+    rad: { scale: 180 / Math.PI, unit: '°', step: 1 }
+};
 
 /**
  * Describe the fields the Inspector should show for a component.
@@ -53,21 +78,52 @@ export function describeComponent(component) {
 /**
  * Describe the fields of the Object itself, above its components.
  *
- * Fixed and hand-written, unlike a component's: these are the Object's own contract
- * (core/serialize.js writes exactly this list), not user data, so there is nothing to
- * discover and nothing that can drift.
+ * Fixed and hand-written, unlike a component's: these are the Object's own contract, not
+ * user data, so there is nothing to discover and nothing that can drift.
+ *
+ * `visible` and `lock` are absent on purpose — the Hierarchy row carries them, where they
+ * are one click away for every object at once instead of one at a time. `id` is absent
+ * because a creator never needs it and showing it makes the panel look like a debugger.
  *
  * @returns {object[]} Field descriptors
  */
 export function objectFields() {
     return [
         field('name', { type: FieldKind.STRING }),
-        field('tag', { type: FieldKind.STRING }),
+        field('tag', { type: FieldKind.STRING, tooltip: 'One free-form tag, used by findByTag()' }),
         field('layer', { type: FieldKind.INT, tooltip: 'Draw order: higher draws later' }),
-        field('active', { type: FieldKind.BOOLEAN, tooltip: 'Simulated and drawn' }),
-        field('visible', { type: FieldKind.BOOLEAN }),
-        field('lock', { type: FieldKind.BOOLEAN, tooltip: 'Ignored by viewport picking' })
+        field('active', { type: FieldKind.BOOLEAN, tooltip: 'Simulated and drawn' })
     ];
+}
+
+/**
+ * Group descriptors into the rows the Inspector draws.
+ *
+ * @param {object[]} fields - Field descriptors
+ * @returns {object[]} Rows, each `{ label, fields }` — one field, or a pair
+ */
+export function rows(fields) {
+    const remaining = new globalThis.Map(fields.map(entry => [entry.name, entry]));
+    const grouped = [];
+
+    for (const entry of fields) {
+        if (!remaining.has(entry.name)) continue;
+
+        const pair = PAIRS.find(candidate => candidate.first === entry.name);
+        const second = pair && remaining.get(pair.second);
+
+        if (pair && second) {
+            remaining.delete(pair.first);
+            remaining.delete(pair.second);
+            grouped.push({ label: pair.label, fields: [entry, second] });
+            continue;
+        }
+
+        remaining.delete(entry.name);
+        grouped.push({ label: entry.label, fields: [entry] });
+    }
+
+    return grouped;
 }
 
 /**
@@ -79,18 +135,19 @@ export function objectFields() {
  * fighting back.
  *
  * @param {object} descriptor - A field descriptor
- * @param {any} raw - The raw value read from the input
- * @returns {any} The value to store, or undefined when the input is incomplete
+ * @param {any} raw - The raw value read from the control, in display units
+ * @returns {any} The value to store, in model units, or undefined when incomplete
  */
 export function parseValue(descriptor, raw) {
     switch (descriptor.kind) {
         case FieldKind.NUMBER:
+        case FieldKind.RANGE:
         case FieldKind.INT: {
             if (typeof raw === 'string' && raw.trim() === '') return undefined;
             const parsed = globalThis.Number(raw);
             if (!globalThis.Number.isFinite(parsed)) return undefined;
             const rounded = descriptor.kind === FieldKind.INT ? Math.round(parsed) : parsed;
-            return clamp(rounded, descriptor.min, descriptor.max);
+            return clamp(rounded / descriptor.scale, descriptor.min, descriptor.max);
         }
         case FieldKind.BOOLEAN:
             return Boolean(raw);
@@ -100,28 +157,51 @@ export function parseValue(descriptor, raw) {
 }
 
 /**
- * Format a model value for display in an input.
+ * Format a model value for display in a control.
  *
  * Numbers keep their decimals — Legacy ran them through `parseInt`, so a speed of 0.4
  * was shown as 0 and saved as 0 the moment the field was touched.
  *
  * @param {object} descriptor - A field descriptor
  * @param {any} value - The value held by the model
- * @returns {string} The text to display
+ * @returns {string} The text to display, in display units
  */
 export function formatValue(descriptor, value) {
     if (value === null || value === undefined) return '';
 
-    if (descriptor.kind === FieldKind.NUMBER || descriptor.kind === FieldKind.INT) {
-        if (typeof value !== 'number' || !globalThis.Number.isFinite(value)) return '';
-        // Rounded only to shake off binary-float noise (0.30000000000000004), never to a
-        // fixed number of decimals, which would silently rewrite the creator's value.
-        return globalThis.String(globalThis.Number(value.toPrecision(12)));
+    if (isNumeric(descriptor)) {
+        const shown = toDisplay(descriptor, value);
+        return shown === null ? '' : globalThis.String(shown);
     }
 
     if (descriptor.kind === FieldKind.READONLY) return describeOpaque(value);
 
     return globalThis.String(value);
+}
+
+/**
+ * A model value as the number a control should hold.
+ * @param {object} descriptor - A field descriptor
+ * @param {any} value - The value held by the model
+ * @returns {number|null} The display number, or null when there is nothing to show
+ */
+export function toDisplay(descriptor, value) {
+    if (typeof value !== 'number' || !globalThis.Number.isFinite(value)) return null;
+    const scaled = value * descriptor.scale;
+    // Rounded only to shake off binary-float noise (0.30000000000000004, or 45.000000001
+    // degrees), never to a fixed number of decimals, which would rewrite the value.
+    return globalThis.Number(scaled.toPrecision(12));
+}
+
+/**
+ * Whether a descriptor holds a number.
+ * @param {object} descriptor - A field descriptor
+ * @returns {boolean} True for number, int and range
+ */
+export function isNumeric(descriptor) {
+    return descriptor.kind === FieldKind.NUMBER
+        || descriptor.kind === FieldKind.INT
+        || descriptor.kind === FieldKind.RANGE;
 }
 
 function fromSchema(schema) {
@@ -140,6 +220,9 @@ function reflect(component) {
         // component without a schema says "runtime state, not project data".
         if (name.startsWith('_')) continue;
         if (typeof value === 'function') continue;
+        // `active` is the contract's, not the component's data, and it already has a
+        // control in the section header.
+        if (name === 'active') continue;
         fields.push(field(name, { type: inferType(value) }));
     }
     return fields;
@@ -157,17 +240,28 @@ function inferType(value) {
 
 function field(name, property = {}) {
     const declared = property.type;
-    const kind = SCHEMA_KINDS.has(declared) ? declared : FieldKind.READONLY;
-    const values = kind === FieldKind.ENUM ? [...(property.values ?? [])] : null;
+    const values = declared === FieldKind.ENUM ? [...(property.values ?? [])] : null;
+    const min = numeric(property.min);
+    const max = numeric(property.max);
+    const display = DISPLAY_UNITS[property.unit] ?? { scale: 1, unit: property.unit ?? null, step: null };
+
+    let kind = SCHEMA_KINDS.has(declared) ? declared : FieldKind.READONLY;
+    if (kind === FieldKind.ENUM && values.length === 0) kind = FieldKind.READONLY;
+    // A number bounded at both ends is a proportion, and a proportion deserves a slider.
+    // ADR-0007 lists `range` as a type; this is the same conclusion reached from the
+    // constraints a component already declares, so no component has to be rewritten.
+    if (kind === FieldKind.NUMBER && min !== null && max !== null) kind = FieldKind.RANGE;
 
     return {
         name,
         label: property.label ?? humanize(name),
-        kind: kind === FieldKind.ENUM && values.length === 0 ? FieldKind.READONLY : kind,
-        min: numeric(property.min),
-        max: numeric(property.max),
-        step: numeric(property.step) ?? (kind === FieldKind.INT ? 1 : null),
-        unit: property.unit ?? null,
+        kind,
+        min,
+        max,
+        step: numeric(property.step) ?? display.step ?? (kind === FieldKind.INT ? 1 : null),
+        unit: display.unit,
+        /** Model value x scale = what the creator sees. */
+        scale: display.scale,
         values,
         readonly: Boolean(property.readonly),
         tooltip: property.tooltip ?? null

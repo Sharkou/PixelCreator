@@ -2,59 +2,133 @@
 
 > Voir ADR-0006 (Web Components), ADR-0007 (Inspector à schéma) et ADR-0017 (sélection).
 
-## IMPLÉMENTÉ — première tranche verticale (2026-08-13)
+## IMPLÉMENTÉ — état au 2026-08-13 (phase UX-2)
 
-`src/editor/` existe et s'ouvre : `src/editor/index.html`, servi depuis la racine du
-dépôt (voir `../development/DEVELOPMENT.md`). Aucune dépendance, aucun build.
+`src/editor/` s'ouvre : `src/editor/index.html`, servi depuis la racine du dépôt (voir
+`../development/DEVELOPMENT.md`). Aucune dépendance, aucun build.
 
 ```
 src/editor/
-├── index.html          point de montage — un <script type="module">, rien d'autre
-├── editor.js           racine de composition : modèle, caméra, sélection, raccourcis
-├── selection.js        la sélection, locale à l'Editor (ADR-0017)
-├── commands.js         créer / supprimer un Object, ajouter / retirer un Component
-├── registry.js         enregistrement des types livrés — un acte applicatif
-├── project/starter.js  la scène d'ouverture, en attendant le chargement de projet
-├── ui/                 element · styles · icons · panel · menu · field
-├── inspector/schema.js schéma → descripteurs de champs (pur, testé)
-├── viewport/           viewport · picking · grid · overlay
-└── windows/            hierarchy · inspector
+├── index.html            point de montage — un <script type="module">, rien d'autre
+├── editor.js             racine de composition : modèle, caméra, sélection, shell
+├── layout.js             tailles et visibilité des fenêtres, persistées
+├── selection.js          la sélection, locale à l'Editor (ADR-0017)
+├── commands.js           créer / supprimer un Object, ajouter / retirer un Component
+├── registry.js           enregistrement des types + présentation du menu Add
+├── project/starter.js    la scène d'ouverture, en attendant le chargement de projet
+├── ui/                   element · styles · icons · window · tabs · splitter
+│                         menu · field · number-input
+├── inspector/schema.js   schéma → descripteurs, unités d'affichage, appariement (pur)
+├── viewport/             viewport · picking · resize · grid · overlay · guides
+│   └── tools/            select-tool · pan-tool
+└── windows/              hierarchy · inspector · toolbar · dock · search
 ```
+
+### Convention de nommage
+
+Les classes de l'Editor **ne portent aucun préfixe** : `Element`, `Window`, `Field`,
+`Viewport`, `Hierarchy`. Les custom elements gardent leur préfixe obligatoire `px-`.
+
+Trois de ces noms masquent quelque chose : `Element` et `Window` masquent des globaux DOM,
+`Viewport` entre en collision avec l'export du runtime. La règle est celle que
+`core/object.js` applique déjà à `Object` (`CONVENTIONS.md`) : **un module qui importe le
+nôtre passe par `globalThis` pour le global, ou alias à l'import.**
+
+> **Piège vécu.** `Element.prototype.prefix` est un getter en lecture seule. Poser
+> `this.prefix = …` sur un élément lève une `TypeError` — silencieuse, parce qu'elle
+> partait d'un écouteur d'`Emitter`. L'état interne d'un élément va dans un champ `#privé`,
+> jamais dans une propriété publique dont le nom pourrait exister côté DOM.
+
+### Disposition
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ titlebar                              [hier] [insp] [dock]   │
+├────┬──────────────────────────────┬──────────────────────────┤
+│ T  │                              │ Hierarchy  (recherche)   │
+│ o  │          Viewport            ├──────────────────────────┤
+│ o  │                              │ Inspector                │
+│ l  │                              │                          │
+├────┴──────────────────────────────┴──────────────────────────┤
+│ Project | Timeline                                           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Flex imbriqué, tailles en variables CSS écrites par `layout.js`, seams déplaçables par
+`<px-splitter>` (double-clic = valeur par défaut). La Hierarchy est bornée à la moitié de
+la colonne : elle liste, l'Inspector édite. Sous 760 px de large, la colonne droite passe
+en survol au lieu d'écraser la scène — **même Editor, pas une version mobile**.
 
 ### Ce qui fonctionne
 
 | Capacité | Comment |
 |---|---|
-| Voir une Scene réelle | `Runtime` + `SceneRenderer` + backend Canvas 2D — **le moteur, pas un rendu d'IDE** |
-| Naviguer | molette (zoom ancré sur le pointeur), glisser droit ou milieu (pan), `F` (cadrer) |
-| Sélectionner | clic dans le Viewport ou dans la Hierarchy, contour + pivot en surcouche |
-| Hierarchy | arbre réel, plier/déplier, créer, supprimer, renommer, basculer la visibilité |
-| Inspector | en-tête Object + un bloc par Component, **piloté par `componentSchema()`** |
-| Modifier | `setProperty()` — répercuté dans le Viewport et la Hierarchy à la frappe |
-| Components | ajouter depuis le `ComponentRegistry`, retirer par bloc |
+| Voir une Scene réelle | `Runtime` + `SceneRenderer` + Canvas 2D — **le moteur, pas un rendu d'IDE** |
+| Naviguer | molette (zoom lissé, ancré au pointeur), glisser droit ou milieu, `F` ou le bouton de cadrage |
+| Repères | position du curseur sur les bords, en DOM — le contrat de renderer n'a pas de texte |
+| Sélectionner | clic Viewport ou Hierarchy, contour + pivot + huit poignées |
+| Déplacer | glisser l'objet, arrondi à l'unité, une `batch` par geste |
+| Redimensionner | huit poignées, l'arête opposée reste ancrée, rotation et parents compris |
+| Hierarchy | recherche conservant les ancêtres, plier/déplier, `lock` / `visible` / delete par ligne |
+| Renommer | clic sur le nom d'une ligne déjà sélectionnée · `Entrée` valide · `Échap` annule |
+| Cadrer | double-clic sur une ligne — **jamais un renommage**, comme Legacy |
+| Inspector | piloté par `componentSchema()` : nombre, entier, slider, booléen, enum, couleur |
+| Créer | glisser un outil de la toolbar → l'objet naît **exactement au point de dépose** |
+| Components | menu groupé (`Rendering ▸ Rectangle`), toggle `active`, retrait |
 
-### Les cinq décisions locales à connaître
+### Les décisions locales à connaître
 
 1. **La caméra de l'Editor est un `Object` hors scène.** Transform + Camera comme
    n'importe quelle caméra (ADR-0013), simplement jamais ajoutée : absente de la
-   Hierarchy, jamais sérialisée, impossible à supprimer par accident. Le pan et le zoom
-   l'écrivent en direct — pas d'Operation.
-2. **Deux canvas empilés.** `SceneRenderer.render()` commence par effacer ; la grille est
-   donc sur une surface en dessous, la scène efface en transparent. Rien n'est ajouté au
+   Hierarchy, jamais sérialisée, impossible à supprimer. Pan et zoom l'écrivent en direct
+   — pas d'Operation.
+2. **Deux canvas empilés.** `SceneRenderer.render()` commence par effacer ; la grille vit
+   donc sur une surface en dessous et la scène efface en transparent. Rien n'est ajouté au
    contrat de renderer.
-3. **Le Viewport détient le `Runtime`.** `Runtime` reçoit son renderer à la construction,
-   et le canvas appartient à l'élément. `running` reste `false` : en mode édition rien ne
-   simule, `render()` dessine quand même.
-4. **Un glisser est une Operation par frame, groupée par `batch`.** C'est le champ prévu
-   par ADR-0008 ; la fusion en une entrée d'historique appartiendra à l'historique.
-5. **Trois primitives UI seulement** — `<px-panel>`, `<px-field>`, `<px-menu>`. Les
-   autres arriveront quand une fenêtre en aura besoin.
+3. **Le Viewport détient le `Runtime`.** `Runtime` reçoit son renderer à la construction et
+   le canvas appartient à l'élément. `running` reste `false` : en édition rien ne simule,
+   `render()` dessine quand même.
+4. **Un outil, trois gestes.** Ce document esquissait `SelectTool` + `MoveTool` +
+   `ResizeTool` ; en faire trois obligerait à choisir un mode avant de pouvoir tirer quoi
+   que ce soit. Le `SelectTool` distingue par l'endroit du clic : sur une poignée il
+   redimensionne, sur la forme il déplace, sur le vide il désélectionne. `PanTool` est
+   **transitoire** — entré au bouton milieu ou droit, quitté au relâchement. `ZoomTool`
+   n'existe pas : la molette est un geste, pas un mode.
+5. **Le calcul est hors des éléments.** `picking.js`, `resize.js`, `grid.js`, `search.js` et
+   `inspector/schema.js` sont purs et testés sous Node. C'est ce qui a évité que
+   `viewport.js` redevienne les 27 ko de `handler.js`.
+6. **Un glisser = une Operation par frame, groupées par `batch`** (ADR-0008). La fusion en
+   une entrée d'historique appartiendra à l'historique.
+7. **Déplacement et redimensionnement arrondissent à l'unité.** Legacy le faisait (`~~`) et
+   c'est juste pour un outil 2D : l'UI n'arrondit pas l'affichage — elle n'écrit que des
+   entiers, donc il n'y a rien à cacher.
+8. **Pointer Events partout, jamais le Drag & Drop HTML5.** C'est la seule API qui couvre
+   souris, stylet et doigt ; Legacy en dépendait et n'a donc jamais fonctionné au tactile.
+
+### Unités et présentation, sans toucher au modèle
+
+Le Core garde ses unités ; l'Inspector convertit à l'affichage, en un seul endroit
+(`inspector/schema.js`) :
+
+- `unit: 'rad'` → affiché en degrés, converti exactement dans les deux sens ;
+- un `number` borné **des deux côtés** devient un slider — la conclusion d'ADR-0007 sur le
+  type `range`, atteinte depuis les contraintes que les composants déclarent déjà ;
+- `x`/`y`, `width`/`height`, `scaleX`/`scaleY` sont appariés en une ligne, par **table de
+  noms de propriétés** — donc n'importe quel composant avec `width` et `height` obtient une
+  ligne Size sans que l'Inspector connaisse son type.
+
+### Ce qui reste hors de l'Inspector, délibérément
+
+`visible` et `lock` de l'Object vivent dans la ligne de Hierarchy, où ils sont accessibles
+pour tous les objets à la fois ; les répéter ferait deux contrôles pour une valeur.
+L'`id` technique n'est affiché nulle part. Un Component n'expose qu'`active` : le modèle n'a
+pas de `visible` par Component, et en inventer un afficherait un contrôle sans effet.
 
 ### Ce qui n'est pas encore là
 
-Play / Pause · Assets · Console · Graph · Players · undo/redo · sélection multiple ·
-reparentage par glisser-déposer · outils de redimensionnement et de rotation ·
-disposition persistante · Operations structurelles.
+Play / Pause · Resources et Assets réels · Timeline fonctionnelle · Console · Graph ·
+Players · undo/redo · sélection multiple · reparentage par glisser-déposer · rotation à la
+poignée · détachement de fenêtre · Operations structurelles.
 
 ## OBSERVÉ — la synchronisation temps réel, en détail
 

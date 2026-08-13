@@ -97,6 +97,37 @@ test('a component with a schema serializes its schema keys only', () => {
     assert.deepEqual(data, { speed: 1 }, 'runtime cache stays out');
 });
 
+test('a component that was switched off says so, schema or not', () => {
+    const object = new Object('Player');
+    const schemaDriven = object.addComponent(new Cached());
+    const reflective = object.addComponent(new Rotator());
+
+    schemaDriven.active = false;
+    reflective.active = false;
+
+    assert.deepEqual(serializeComponent(schemaDriven), { speed: 1, active: false },
+        '`active` is part of the contract, not of the schema (ADR-0004, ADR-0012)');
+    assert.deepEqual(serializeComponent(reflective), { speed: 2, active: false });
+});
+
+test('a component that never had `active` does not gain one', () => {
+    const object = new Object('Player');
+    object.addComponent(new Cached());
+
+    assert.equal('active' in serializeComponent(object.getComponent('Cached')), false,
+        'absent means active; the runtime must not be told otherwise');
+});
+
+test('a deactivated component comes back deactivated', () => {
+    const scene = new Scene('Main');
+    const object = scene.add(new Object('Player'));
+    object.addComponent(new Cached()).active = false;
+
+    const restored = deserializeScene(serializeScene(scene), { registry: registry() });
+
+    assert.equal(restored.get(object.id).getComponent('Cached').active, false);
+});
+
 test('a component without a schema serializes its own data properties', () => {
     const object = new Object('Player');
     object.addComponent(new Rotator(7));

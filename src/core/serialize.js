@@ -57,6 +57,15 @@ export function serializeComponent(component) {
         const value = component[key];
         if (value !== undefined) data[key] = value;
     }
+
+    // `active` belongs to the Component contract rather than to any schema (ADR-0004):
+    // the runtime reads it, the Editor writes it, and ADR-0012 makes that write a real
+    // intent, representable as an Operation. A schema-driven component would otherwise
+    // replicate a deliberate deactivation and then lose it on the next save — the value
+    // being absent from `static schema` is not a statement that it is transient.
+    // Absent stays absent: a component that never carried `active` does not gain one.
+    if (data.active === undefined && component.active !== undefined) data.active = component.active;
+
     return data;
 }
 

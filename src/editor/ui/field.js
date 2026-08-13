@@ -15,27 +15,36 @@
 //     change, so the caret cannot jump.
 //
 // What is added: `disconnectedCallback` releases the subscription (Legacy never did),
-// and numbers keep their decimals.
+// numbers keep their decimals, and the control is chosen from the schema rather than from
+// what the value happens to look like right now.
 //
 // WRITES GO THROUGH setProperty(). The Editor states an intent, so it takes the
 // controlled path and produces an Operation (CONVENTIONS.md). A plain `=` here would
 // change the value and never replicate, never undo, and never say so.
 
 import { observe } from '../../core/mod.js';
-import { PxElement, el } from './element.js';
+import { Element, el, fill } from './element.js';
 import { sheet } from './styles.js';
-import { FieldKind, formatValue, parseValue } from '../inspector/schema.js';
+import { FieldKind, formatValue, isNumeric, parseValue, toDisplay } from '../inspector/schema.js';
+import './number-input.js';
 
-export class PxField extends PxElement {
+export class Field extends Element {
 
     static styles = sheet(`
         :host {
             display: grid;
-            grid-template-columns: 88px minmax(0, 1fr);
+            grid-template-columns: 86px minmax(0, 1fr);
             align-items: center;
             gap: 8px;
-            padding: 2px 10px;
-            min-height: 24px;
+            padding: 3px 10px;
+            min-height: calc(var(--px-control) + 6px);
+        }
+
+        /* Half of a pair: no label, no padding — the row around it provides both. */
+        :host([bare]) {
+            display: block;
+            padding: 0;
+            min-height: 0;
         }
 
         label {
@@ -50,13 +59,21 @@ export class PxField extends PxElement {
             display: flex;
             align-items: center;
             gap: 6px;
+            min-width: 0;
         }
 
-        .unit {
-            color: var(--px-text-dim);
-            font-size: 10px;
+        .control > input[type='range'] { flex: 1; }
+
+        .amount {
             flex: 0 0 auto;
+            width: 38px;
+            text-align: right;
+            font-family: var(--px-mono);
+            font-size: 10px;
+            color: var(--px-text);
         }
+
+        .unit { color: var(--px-text-dim); font-size: 10px; flex: 0 0 auto; }
 
         .readonly {
             color: var(--px-text-dim);
@@ -67,24 +84,36 @@ export class PxField extends PxElement {
             white-space: nowrap;
         }
 
-        input[type='checkbox'] { margin: 0; }
-        input[type='color'] { width: 46px; flex: 0 0 auto; }
+        input[type='color'] { width: 44px; flex: 0 0 auto; }
+        input[type='checkbox'] { justify-self: start; }
     `);
 
     #target = null;
     #descriptor = null;
-    #input = null;
+    #control = null;
+    #echo = null;
+    // Private, and not properties on the host: `prefix` is a read-only DOM getter on
+    // Element, so assigning it throws. Shadowing a global class means living by its
+    // surface (CONVENTIONS.md).
+    #prefix = null;
+    #labelled = true;
 
     /**
      * Point the field at a property.
      *
      * @param {object} target - The reactive Object or component holding the property
      * @param {object} descriptor - A descriptor from inspector/schema.js
-     * @returns {PxField} This field
+     * @param {object} [options] - Options
+     * @param {string} [options.prefix] - A one-letter label inside the control, for pairs
+     * @param {boolean} [options.labelled] - Draw the label; pairs draw their own
+     * @returns {Field} This field
      */
-    bind(target, descriptor) {
+    bind(target, descriptor, { prefix = null, labelled = true } = {}) {
         this.#target = target;
         this.#descriptor = descriptor;
+        this.#prefix = prefix;
+        this.#labelled = labelled;
+        this.toggleAttribute('bare', !labelled);
         if (this.isConnected) this.#render();
         return this;
     }
@@ -100,17 +129,19 @@ export class PxField extends PxElement {
         const target = this.#target;
         const value = target[descriptor.name];
 
-        this.#input = this.#createControl(descriptor, value);
+        this.#echo = null;
+        this.#control = this.#createControl(descriptor, value);
         if (descriptor.tooltip) this.title = descriptor.tooltip;
 
-        const control = el('div', { class: 'control' },
-            this.#input,
-            descriptor.unit ? el('span', { class: 'unit', textContent: descriptor.unit }) : null
-        );
-
-        this.shadowRoot.replaceChildren(
-            el('label', { textContent: descriptor.label, title: descriptor.tooltip ?? descriptor.name }),
-            control
+        fill(this.shadowRoot,
+            this.#labelled
+                ? el('label', { textContent: descriptor.label, title: descriptor.tooltip ?? descriptor.name })
+                : null,
+            el('div', { class: 'control' },
+                this.#control,
+                this.#echo,
+                descriptor.unit && !isNumeric(descriptor) ? el('span', { class: 'unit', textContent: descriptor.unit }) : null
+            )
         );
 
         this.track(observe(target, descriptor.name, change => this.#pull(change.value)), 'binding');
@@ -148,21 +179,47 @@ export class PxField extends PxElement {
             });
         }
 
-        // Numbers use a text input rather than `type="number"`: the spinner and the
-        // browser's own validation get in the way of an incomplete entry like "-" or
-        // "1.", and parsing is already the schema module's job.
+        // Bounded at both ends: a slider, with the number beside it so the value is still
+        // readable and still exact.
+        if (descriptor.kind === FieldKind.RANGE) {
+            this.#echo = el('span', { class: 'amount', textContent: formatValue(descriptor, value) });
+            return el('input', {
+                type: 'range',
+                min: descriptor.min * descriptor.scale,
+                max: descriptor.max * descriptor.scale,
+                step: descriptor.step ?? sliderStep(descriptor),
+                value: toDisplay(descriptor, value) ?? 0,
+                disabled: descriptor.readonly,
+                oninput: event => this.#push(event.target.value)
+            });
+        }
+
+        if (isNumeric(descriptor)) {
+            const number = el('px-number');
+            number.configure({
+                min: descriptor.min === null ? null : descriptor.min * descriptor.scale,
+                max: descriptor.max === null ? null : descriptor.max * descriptor.scale,
+                step: descriptor.step ?? 1,
+                integer: descriptor.kind === FieldKind.INT,
+                prefix: this.#prefix,
+                suffix: descriptor.unit,
+                onInput: amount => this.#push(amount)
+            });
+            number.value = toDisplay(descriptor, value);
+            return number;
+        }
+
         return el('input', {
             type: 'text',
             spellcheck: false,
-            inputMode: numericKind(descriptor.kind) ? 'decimal' : undefined,
             value: formatValue(descriptor, value),
             readOnly: descriptor.readonly,
             oninput: event => this.#push(event.target.value),
-            onblur: () => this.#pull(this.#target[descriptor.name])
+            onkeydown: event => event.stopPropagation()
         });
     }
 
-    /** Send what the creator typed to the model. */
+    /** Send what the creator entered to the model. */
     #push(raw) {
         const descriptor = this.#descriptor;
         const value = parseValue(descriptor, raw);
@@ -174,22 +231,31 @@ export class PxField extends PxElement {
         this.#target.setProperty(descriptor.name, value);
     }
 
-    /** Bring a model change into the input, unless it is being typed into. */
+    /** Bring a model change into the control, unless it is being typed into. */
     #pull(value) {
-        const input = this.#input;
-        if (!input || this.shadowRoot.activeElement === input) return;
+        const control = this.#control;
+        if (!control) return;
 
         const descriptor = this.#descriptor;
+        if (this.#echo) this.#echo.textContent = formatValue(descriptor, value);
 
-        if (descriptor.kind === FieldKind.BOOLEAN) input.checked = Boolean(value);
-        else if (descriptor.kind === FieldKind.COLOR) input.value = colorOrBlack(value);
-        else if (descriptor.kind === FieldKind.READONLY) input.textContent = formatValue(descriptor, value);
-        else input.value = formatValue(descriptor, value);
+        // A `<px-number>` guards its own inner input; everything else is compared here.
+        // Either way the rule is the same one Legacy had: never overwrite what has focus.
+        if (control.tagName !== 'PX-NUMBER' && this.shadowRoot.activeElement === control) return;
+
+        if (descriptor.kind === FieldKind.BOOLEAN) control.checked = Boolean(value);
+        else if (descriptor.kind === FieldKind.COLOR) control.value = colorOrBlack(value);
+        else if (descriptor.kind === FieldKind.READONLY) control.textContent = formatValue(descriptor, value);
+        else if (isNumeric(descriptor)) control.value = toDisplay(descriptor, value) ?? '';
+        else control.value = formatValue(descriptor, value);
     }
 }
 
-function numericKind(kind) {
-    return kind === FieldKind.NUMBER || kind === FieldKind.INT;
+function sliderStep(descriptor) {
+    const span = (descriptor.max - descriptor.min) * descriptor.scale;
+    // A hundred stops across the range: fine enough to feel continuous, coarse enough
+    // that the number beside it stays readable.
+    return span / 100;
 }
 
 function colorOrBlack(value) {
@@ -198,4 +264,4 @@ function colorOrBlack(value) {
     return /^#[0-9a-f]{6}$/i.test(globalThis.String(value)) ? value : '#000000';
 }
 
-customElements.define('px-field', PxField);
+customElements.define('px-field', Field);

@@ -1,8 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Transform, defineComponent } from '../../core/mod.js';
-import { RectangleRenderer } from '../../runtime/mod.js';
-import { FieldKind, describeComponent, formatValue, objectFields, parseValue } from './schema.js';
+import { Camera, RectangleRenderer } from '../../runtime/mod.js';
+import {
+    FieldKind,
+    describeComponent,
+    formatValue,
+    isNumeric,
+    objectFields,
+    parseValue,
+    rows,
+    toDisplay
+} from './schema.js';
 
 class Plain {
     static type = 'Plain';
@@ -40,14 +49,44 @@ test('a schema drives the fields, in declaration order', () => {
     const fields = describeComponent(new Transform());
     assert.deepEqual(fields.map(field => field.name), ['x', 'y', 'rotation', 'scaleX', 'scaleY']);
     assert.equal(fields[0].kind, FieldKind.NUMBER);
-    assert.equal(byName(fields, 'rotation').unit, 'rad');
+    assert.equal(byName(fields, 'rotation').unit, '°', 'radians are a model unit, degrees are what is shown');
 });
 
 test('schema constraints are carried through', () => {
     const alpha = byName(describeComponent(new RectangleRenderer()), 'alpha');
-    assert.equal(alpha.kind, FieldKind.NUMBER);
     assert.equal(alpha.min, 0);
     assert.equal(alpha.max, 1);
+
+    const width = byName(describeComponent(new RectangleRenderer()), 'width');
+    assert.equal(width.kind, FieldKind.NUMBER);
+    assert.equal(width.min, 0);
+    assert.equal(width.max, null);
+});
+
+test('a number bounded at both ends becomes a slider', () => {
+    const alpha = byName(describeComponent(new RectangleRenderer()), 'alpha');
+    assert.equal(alpha.kind, FieldKind.RANGE, 'a proportion deserves a slider, not a text box');
+    assert.equal(isNumeric(alpha), true);
+
+    // Bounded on one side only is still a plain number: there is nothing to slide along.
+    const zoom = byName(describeComponent(new Camera()), 'zoom');
+    assert.equal(zoom.kind, FieldKind.NUMBER);
+});
+
+test('rotation is stated in radians and shown in degrees', () => {
+    const rotation = byName(describeComponent(new Transform()), 'rotation');
+
+    assert.equal(rotation.unit, '°');
+    assert.equal(formatValue(rotation, Math.PI / 4), '45');
+    assert.equal(toDisplay(rotation, Math.PI), 180);
+    assert.equal(parseValue(rotation, '90'), Math.PI / 2);
+    assert.equal(parseValue(rotation, '45'), Math.PI / 4, 'the conversion round-trips exactly');
+});
+
+test('a bound is expressed in model units, whatever the display unit', () => {
+    const alpha = byName(describeComponent(new RectangleRenderer()), 'alpha');
+    assert.equal(parseValue(alpha, '4'), 1);
+    assert.equal(parseValue(alpha, '-2'), 0);
 });
 
 test('a declared colour is a colour, whatever its current value', () => {
@@ -108,11 +147,39 @@ test('a component built from a definition inspects like any other', () => {
     assert.equal(fields[0].min, 0);
 });
 
-test('the Object header shows the serialized contract', () => {
-    assert.deepEqual(
-        objectFields().map(field => field.name),
-        ['name', 'tag', 'layer', 'active', 'visible', 'lock']
-    );
+test('the Object header carries no duplicate of the Hierarchy row', () => {
+    const names = objectFields().map(field => field.name);
+
+    assert.deepEqual(names, ['name', 'tag', 'layer', 'active']);
+    assert.equal(names.includes('visible'), false, 'the Hierarchy row owns visibility');
+    assert.equal(names.includes('lock'), false, 'and the lock');
+    assert.equal(names.includes('id'), false, 'the id is never shown to a creator');
+});
+
+test('x and y are one row, and so are width and height', () => {
+    const transform = rows(describeComponent(new Transform()));
+
+    assert.equal(transform[0].label, 'Position');
+    assert.deepEqual(transform[0].fields.map(field => field.name), ['x', 'y']);
+    assert.deepEqual(transform[1].fields.map(field => field.name), ['rotation']);
+    assert.equal(transform[2].label, 'Scale');
+    assert.deepEqual(transform[2].fields.map(field => field.name), ['scaleX', 'scaleY']);
+
+    const rectangle = rows(describeComponent(new RectangleRenderer()));
+    assert.equal(rectangle[0].label, 'Size');
+    assert.deepEqual(rectangle[0].fields.map(field => field.name), ['width', 'height']);
+});
+
+test('pairing is by property name, so a lone half stays a lone row', () => {
+    class Sized {
+        static type = 'Sized';
+        static schema = { width: { type: 'number' }, depth: { type: 'number' } };
+        constructor() { this.width = 1; this.depth = 1; }
+    }
+
+    const grouped = rows(describeComponent(new Sized()));
+    assert.equal(grouped.length, 2);
+    assert.deepEqual(grouped.map(row => row.label), ['Width', 'Depth']);
 });
 
 test('decimals survive a round trip', () => {
@@ -132,11 +199,7 @@ test('an incomplete entry leaves the model alone', () => {
     assert.equal(parseValue(descriptor, '-12.5'), -12.5);
 });
 
-test('a value is clamped to the declared range and rounded for an int', () => {
-    const alpha = byName(describeComponent(new RectangleRenderer()), 'alpha');
-    assert.equal(parseValue(alpha, '4'), 1);
-    assert.equal(parseValue(alpha, '-2'), 0);
-
+test('an int is rounded', () => {
     const layer = byName(objectFields(), 'layer');
     assert.equal(parseValue(layer, '3.7'), 4);
 });

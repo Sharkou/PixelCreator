@@ -2,13 +2,18 @@
 //
 // Tokens live on `:root` in a document-level sheet, because custom properties cross
 // shadow boundaries and nothing else does. A shadow root then adopts `base`, which is
-// the handful of rules every panel would otherwise repeat.
+// the handful of rules every window would otherwise repeat.
 //
 // This is the answer to Legacy's thirty global stylesheets: two shared sheets, plus one
 // `static styles` per element, scoped by its shadow root and impossible to leak out of.
 //
 // The palette continues Legacy's — dark greys, `#339af0` as the single accent — because
 // the product has a look and this is a modernisation, not a rebrand.
+//
+// TOUCH IS NOT A SEPARATE SKIN. `@media (pointer: coarse)` grows the density tokens and
+// every control follows, so there is one Editor and not a desktop one plus a mobile one.
+// Nothing important is ever revealed by hover alone; hover only strengthens what is
+// already visible.
 
 /**
  * Build a constructable stylesheet.
@@ -23,25 +28,51 @@ export function sheet(css) {
 
 const tokens = sheet(`
     :root {
-        --px-bg-0: #17171a;
-        --px-bg-1: #1e1e22;
-        --px-bg-2: #25252a;
-        --px-bg-3: #2e2e35;
-        --px-line: #121215;
-        --px-line-soft: #303038;
+        --px-bg-0: #141417;
+        --px-bg-1: #1c1c20;
+        --px-bg-2: #232329;
+        --px-bg-3: #2c2c34;
+        --px-bg-4: #383842;
+        --px-line: #0e0e10;
+        --px-line-soft: #2e2e37;
 
-        --px-text: #c9c9d2;
-        --px-text-dim: #7e7e8c;
-        --px-text-strong: #f0f0f5;
+        --px-text: #c6c6d0;
+        --px-text-dim: #7c7c8a;
+        --px-text-strong: #f2f2f7;
 
         --px-accent: #339af0;
-        --px-accent-soft: rgba(51, 154, 240, 0.16);
+        --px-accent-soft: rgba(51, 154, 240, 0.15);
+        --px-accent-line: rgba(51, 154, 240, 0.45);
         --px-danger: #e5484d;
 
-        --px-radius: 5px;
-        --px-row: 24px;
+        --px-radius: 6px;
+        --px-radius-sm: 4px;
+
+        /* Density. These four are what touch changes; everything else follows. */
+        --px-row: 26px;
+        --px-control: 22px;
+        --px-hit: 24px;
+        --px-grip: 8px;
+
         --px-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, sans-serif;
         --px-mono: 'SF Mono', 'Cascadia Mono', 'JetBrains Mono', Consolas, monospace;
+
+        /* Layout, written by layout.js */
+        --px-toolbar: 44px;
+        --px-right: 304px;
+        --px-hierarchy: 250px;
+        --px-dock: 200px;
+
+        color-scheme: dark;
+    }
+
+    @media (pointer: coarse) {
+        :root {
+            --px-row: 34px;
+            --px-control: 30px;
+            --px-hit: 34px;
+            --px-grip: 14px;
+        }
     }
 
     * { box-sizing: border-box; }
@@ -50,70 +81,61 @@ const tokens = sheet(`
         height: 100%;
         margin: 0;
         overflow: hidden;
+        overscroll-behavior: none;
         background: var(--px-bg-0);
         color: var(--px-text);
         font-family: var(--px-font);
         font-size: 12px;
         -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
     }
 
     .shell {
-        display: grid;
-        grid-template-rows: 38px 1fr;
+        display: flex;
+        flex-direction: column;
         height: 100%;
     }
 
-    .titlebar {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 0 12px;
-        background: var(--px-bg-2);
-        border-bottom: 1px solid var(--px-line);
-        -webkit-user-select: none;
-        user-select: none;
-    }
-
-    .titlebar .mark {
-        width: 14px;
-        height: 14px;
-        border-radius: 3px;
-        background: var(--px-accent);
-        box-shadow: 0 0 0 3px var(--px-accent-soft);
-    }
-
-    .titlebar .product {
-        font-weight: 600;
-        letter-spacing: 0.2px;
-        color: var(--px-text-strong);
-    }
-
-    .titlebar .scene {
-        color: var(--px-text-dim);
-    }
-
-    .titlebar .scene::before {
-        content: '/';
-        margin-right: 8px;
-        color: var(--px-line-soft);
-    }
-
-    .titlebar .spacer { flex: 1; }
-
-    .titlebar .hint {
-        color: var(--px-text-dim);
-        font-size: 11px;
-    }
-
     .workspace {
-        display: grid;
-        grid-template-columns: 240px minmax(0, 1fr) 300px;
-        gap: 1px;
-        background: var(--px-line);
+        display: flex;
+        flex-direction: column;
+        flex: 1;
         min-height: 0;
     }
 
-    .workspace > * { min-width: 0; min-height: 0; }
+    .stage {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+    }
+
+    .stage > px-viewport { flex: 1; min-width: 0; }
+
+    .sidebar {
+        display: flex;
+        flex-direction: column;
+        width: var(--px-right);
+        flex: 0 0 auto;
+        min-width: 0;
+    }
+
+    /* The Hierarchy is the shorter of the two, by design: it lists, the Inspector edits.
+       Clamped rather than fixed, so a short window cannot leave the Inspector a sliver —
+       the seam still drags, it just cannot cross half the column. */
+    .sidebar > px-hierarchy {
+        height: clamp(110px, var(--px-hierarchy), 50%);
+        flex: 0 0 auto;
+        min-height: 0;
+    }
+
+    .sidebar > px-inspector { flex: 1; min-height: 0; }
+
+    /* One window left in the sidebar takes all of it, splitter withdrawn. */
+    .sidebar.single > px-hierarchy { flex: 1; height: auto; }
+
+    .workspace > px-dock { height: var(--px-dock); flex: 0 0 auto; min-height: 0; }
+
+    [hidden] { display: none !important; }
 `);
 
 const base = sheet(`
@@ -133,18 +155,48 @@ const base = sheet(`
         border: 0;
         padding: 0;
         cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
     }
 
-    input, select {
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    [tabindex]:focus-visible {
+        outline: 2px solid var(--px-accent);
+        outline-offset: -1px;
+    }
+
+    /* An icon button: square, quiet until touched, always visible. */
+    .ghost {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: var(--px-hit);
+        height: var(--px-hit);
+        border-radius: var(--px-radius-sm);
+        color: var(--px-text-dim);
+        transition: background 90ms ease, color 90ms ease, opacity 90ms ease;
+    }
+
+    .ghost:hover { background: var(--px-bg-3); color: var(--px-text-strong); }
+    .ghost:active { background: var(--px-bg-4); }
+    .ghost.on { color: var(--px-accent); }
+    .ghost[disabled] { opacity: 0.3; cursor: default; }
+    .ghost[disabled]:hover { background: none; color: var(--px-text-dim); }
+
+    input, select, textarea {
         font: inherit;
         color: var(--px-text-strong);
         background: var(--px-bg-0);
         border: 1px solid var(--px-line);
-        border-radius: 4px;
-        padding: 3px 6px;
+        border-radius: var(--px-radius-sm);
+        padding: 0 6px;
+        height: var(--px-control);
         min-width: 0;
         width: 100%;
     }
+
+    input:hover, select:hover { border-color: var(--px-line-soft); }
 
     input:focus, select:focus {
         outline: none;
@@ -152,17 +204,87 @@ const base = sheet(`
         box-shadow: 0 0 0 2px var(--px-accent-soft);
     }
 
-    input[type='checkbox'] {
-        width: 13px;
-        height: 13px;
-        accent-color: var(--px-accent);
-        padding: 0;
+    input::placeholder { color: var(--px-text-dim); }
+
+    select {
+        appearance: none;
+        cursor: pointer;
+        padding-right: 20px;
+        background-image: linear-gradient(45deg, transparent 50%, var(--px-text-dim) 50%),
+                          linear-gradient(135deg, var(--px-text-dim) 50%, transparent 50%);
+        background-position: calc(100% - 11px) center, calc(100% - 7px) center;
+        background-size: 4px 4px, 4px 4px;
+        background-repeat: no-repeat;
     }
 
-    input[type='color'] {
-        padding: 1px;
-        height: 22px;
+    /* A toggle, not a default checkbox. */
+    input[type='checkbox'] {
+        appearance: none;
+        width: 28px;
+        height: 16px;
+        padding: 0;
+        border-radius: 8px;
+        background: var(--px-bg-3);
+        border: 1px solid var(--px-line);
+        position: relative;
         cursor: pointer;
+        flex: 0 0 auto;
+        transition: background 120ms ease;
+    }
+
+    input[type='checkbox']::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--px-text-dim);
+        transition: transform 120ms ease, background 120ms ease;
+    }
+
+    input[type='checkbox']:checked { background: var(--px-accent); border-color: transparent; }
+    input[type='checkbox']:checked::after { transform: translateX(12px); background: #fff; }
+
+    input[type='color'] {
+        padding: 2px;
+        cursor: pointer;
+        background: var(--px-bg-0);
+    }
+
+    input[type='color']::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type='color']::-webkit-color-swatch { border: none; border-radius: 2px; }
+
+    input[type='range'] {
+        appearance: none;
+        height: var(--px-control);
+        padding: 0;
+        background: none;
+        border: 0;
+        cursor: pointer;
+    }
+
+    input[type='range']::-webkit-slider-runnable-track {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--px-bg-3);
+    }
+
+    input[type='range']::-webkit-slider-thumb {
+        appearance: none;
+        width: 12px;
+        height: 12px;
+        margin-top: -4px;
+        border-radius: 50%;
+        background: var(--px-accent);
+        border: 2px solid var(--px-bg-1);
+    }
+
+    input[type='range']::-moz-range-track { height: 4px; border-radius: 2px; background: var(--px-bg-3); }
+    input[type='range']::-moz-range-thumb {
+        width: 12px; height: 12px; border-radius: 50%;
+        background: var(--px-accent); border: 2px solid var(--px-bg-1);
     }
 
     .icon {
@@ -172,15 +294,18 @@ const base = sheet(`
         color: currentColor;
     }
 
-    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    .muted { color: var(--px-text-dim); }
+
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb {
         background: var(--px-bg-3);
-        border: 2px solid transparent;
+        border: 3px solid transparent;
         background-clip: content-box;
         border-radius: 5px;
     }
-    ::-webkit-scrollbar-thumb:hover { background-color: #3d3d47; background-clip: content-box; }
+    ::-webkit-scrollbar-thumb:hover { background-color: var(--px-bg-4); background-clip: content-box; }
+    ::-webkit-scrollbar-corner { background: transparent; }
 `);
 
 /** The sheet every Editor element adopts, on top of its own. */

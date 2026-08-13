@@ -10,10 +10,15 @@
 // no reactivity, no lifecycle beyond what Custom Elements already define — the reactive
 // model is the Property System, and a second one would be the mistake this project
 // deliberately avoids.
+//
+// NAMING. Editor classes carry no prefix, so this one shadows the global `Element` the
+// same way `core/object.js` shadows the global `Object` — and the same rule applies
+// (CONVENTIONS.md): a module that imports ours never reaches for the global's statics.
+// Nothing here needs them. The custom element names keep their mandatory `px-` prefix.
 
 import { baseStyles } from './styles.js';
 
-export class PxElement extends HTMLElement {
+export class Element extends HTMLElement {
 
     /** Own sheet, adopted after the shared one. Subclasses override it. */
     static styles = null;

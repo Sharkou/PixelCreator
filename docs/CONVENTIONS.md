@@ -107,6 +107,25 @@ transform.x + transform.y;
 Il n'existe pas d'accesseur `object.transform` : `getComponent('Transform')` est la seule
 forme, comme pour tout autre composant.
 
+### Nommage dans `editor/`
+
+Les classes de l'Editor **ne portent pas de préfixe** : `Element`, `Window`, `Field`,
+`Viewport`, `Hierarchy`, `Inspector`. Les custom elements gardent leur préfixe obligatoire
+`px-` (`<px-field>`, `<px-window>`). C'est du nommage de classe, rien d'autre.
+
+Trois de ces noms en masquent un autre — `Element` et `Window` masquent des globaux DOM,
+`Viewport` entre en collision avec l'export du runtime. **La règle d'`Object` s'applique
+telle quelle :**
+
+```js
+globalThis.Object.keys(components)                      // jamais Object.keys
+import { Viewport as Surface } from '../runtime/mod.js' // alias à l'import
+```
+
+**Ne jamais poser d'état sur une propriété publique d'un élément.** `Element.prototype`
+possède déjà `prefix`, `slot`, `id`, `title`, `part`… et certaines sont en lecture seule :
+`this.prefix = 'X'` lève une `TypeError`. L'état d'un élément va dans un champ `#privé`.
+
 ### Champs privés `#`
 
 À réserver à l'état **réellement interne**, jamais à une donnée que l'utilisateur doit

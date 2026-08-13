@@ -26,31 +26,41 @@ Aucun fichier de `legacy/` n'a été modifié.
 
 | **2.11** | Définition de Component — propriétés + graphe, `defineComponent()` (ADR-0016) ; quatre formes de Component verrouillées et testées (ADR-0004) ; `preview()` retiré du contrat ; vérification des fondations avant l'Editor |
 | **3** | **Premier vertical slice de l'Editor** — Shell, Viewport sur le Runtime réel, sélection et picking éditoriaux (ADR-0017), Hierarchy, Inspector piloté par schéma, ajout/retrait de Components. Complément Core : les cinq événements de structure de la `Scene` |
+| **3.1** | **Editor UX-2** — shell à fenêtres redimensionnables (`window` / `tabs` / `splitter` / `layout`), Hierarchy avec recherche et actions par ligne, outils de Viewport (`select-tool` / `pan-tool`), resize 8 directions paramétré, zoom lissé, repères de curseur, Inspector à contrôles typés, toolbar de création par glisser, coquilles Project / Timeline |
 
-### État vérifié (2026-08-13, après étape 3)
+### État vérifié (2026-08-13, après étape 3.1)
 
 ```bash
-tools/test.sh              # 420 tests, 420 passés
-node tools/layers/run.js   # v2 : 0 violation — legacy : 1 violation trackée
+tools/test.sh              # 449 tests, 449 passés
+node tools/layers/run.js   # v2 : 0 violation sur 299 imports — legacy : 1 trackée
 node tools/parity/run.js   # 39 identical, 0 problems
 ```
 
 Vérifié aussi dans le navigateur, sans erreur console : sélection au clic et depuis la
-Hierarchy, édition du Transform répercutée immédiatement, renommage lettre par lettre
-Inspector ↔ Hierarchy, création et suppression d'Objects, ajout et retrait de Components,
-déplacement au glisser, pan, zoom ancré sur le pointeur, cadrage.
+Hierarchy, recherche filtrante conservant les ancêtres, renommage lettre par lettre
+Inspector ↔ Hierarchy, `lock` / `visible` / delete par ligne, déplacement et
+redimensionnement aux poignées, pan, zoom lissé ancré sur le pointeur, cadrage, création
+par glisser depuis la toolbar au point exact de dépose, seams déplaçables et persistées,
+repli de la colonne droite en survol sous 760 px de large.
 
 `src/` contient `core/`, `runtime/` et `editor/`. **`network/` n'existe pas encore.**
 
-### Ce que l'étape 3 a ajouté au Core
+### Ce que les étapes 3 et 3.1 ont ajouté au Core
 
-Un seul complément, volontairement fermé : la `Scene` annonce les changements de
+Deux compléments, et deux seulement.
+
+**Étape 3**, volontairement fermé : la `Scene` annonce les changements de
 **structure** — `component:added` / `component:removed` / `child:added` / `child:removed`,
 à côté des `added` / `removed` existants. Une propriété s'observe déjà sur l'objet qui la
 porte ; une forme, non. Voir `../architecture/CORE.md` §Events.
 
 **Ce n'est pas un bus de mutations généralisé** et la liste ne doit pas s'allonger sans
 raison de même nature.
+
+**Étape 3.1** : `serializeComponent()` écrit `active` quand le composant le porte.
+`active` appartient au contrat de Component et à aucun schéma, si bien qu'un Component
+désactivé depuis l'Editor produisait une Operation réplicable puis se perdait à la
+sauvegarde suivante. Voir `../architecture/CORE.md` §Serialization.
 
 ### Laissé volontairement pour plus tard
 
@@ -62,6 +72,8 @@ raison de même nature.
 | Migration des instances quand une définition change | Décision d'Editor, pas de runtime (ADR-0016) |
 | Operations structurelles (`ADD_OBJECT`, `ADD_COMPONENT`, …) | Seule `SET_PROPERTY` existe ; `editor/commands.js` est le point d'insertion prévu |
 | Play / Pause dans l'Editor | Demande un instantané de scène restauré à l'arrêt ; `serializeScene()` existe, l'échange de scène reste à concevoir |
+| Timeline et Project fonctionnels | Les coquilles et leur emplacement existent ; le contenu demande `Resource` et le système d'animation |
+| Renderer présenté comme un type unique dans l'Inspector | Question UX ouverte : un `Type ▼` affirmerait un seul renderer par Object, ce que le modèle n'impose pas |
 | `runtime/physics/`, `animation/`, `audio/` | Domaines non entamés |
 
 ### Prochaine action
@@ -97,6 +109,14 @@ graphe et son interprète**, sans lesquels un comportement ne peut pas encore to
 
 Aucune question bloquante. Q7 (mode d'exécution de `.px`) a été tranchée le
 2026-08-12 : **interprété**, pour le débogage et la sécurité.
+
+**Q8 — l'Inspector doit-il présenter un `Renderer [ Type ▼ ]` unique ?** Ouverte depuis
+2026-08-13. Aujourd'hui un Object peut porter `RectangleRenderer` **et** `Sprite` **et**
+`ParticleSystem` : ils se dessinent tous. Un sélecteur de type unique affirmerait
+« un renderer par Object » et ferait de tout changement de type un retrait + un ajout,
+donc une perte de propriétés. Aucune ligne de Core n'est nécessaire pour l'implémenter :
+c'est le **modèle mental** qui se déciderait, pas la technique. En attendant, le menu Add
+regroupe et renomme (`Rendering ▸ Rectangle`), ce qui est compatible avec les deux issues.
 
 Restent des points mineurs, décidables à l'implémentation et listés dans les ADR
 concernés (ex. `Transform` ajouté par défaut ou non).

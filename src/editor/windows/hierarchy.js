@@ -1,108 +1,125 @@
-// <px-hierarchy> — the scene's objects, as a tree.
+// <px-hierarchy> — the scene's objects, as a searchable tree.
 //
 // It reads the model and nothing else: rows come from `scene.roots()` and
 // `object.children`, and there is no parallel tree to keep in step. The only state that
-// belongs to this element is which branches are folded, because that is a fact about
-// this panel and not about the project.
+// belongs to this element is which branches are folded and what is in the search box —
+// both facts about this window, not about the project.
 //
 // Two levels of update, deliberately:
 //
 //   structure — the scene's five structural events rebuild the tree;
-//   values    — each row subscribes to its object's `name` and `active`, so renaming in
-//               the Inspector retitles the row on every keystroke without touching the
-//               tree at all. That letter-by-letter behaviour is a requirement of the
-//               product, not a side effect (docs/architecture/EDITOR.md).
+//   values    — each row subscribes to its object's `name`, `active`, `visible` and
+//               `lock`, so renaming in the Inspector retitles the row on every keystroke
+//               without touching the tree at all. That letter-by-letter behaviour is a
+//               requirement of the product, not a side effect.
+//
+// THE GESTURES, and why they are these ones (docs/architecture/EDITOR.md):
+//
+//   click a row        select
+//   double-click a row frame it in the viewport — never rename, which is what Legacy
+//                      already got right by stopping the event on the name
+//   click the name of
+//   an already selected
+//   row                rename in place, Enter to keep, Escape to put it back
+//
+// NOTHING IS REVEALED BY HOVER. Lock, visibility and delete are always drawn; hover only
+// strengthens them. A finger has no hover, and these are not decorations.
 
-import { PxElement, el, fill } from '../ui/element.js';
+import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { icon, iconForObject } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import { OBJECT_KINDS, createObject, deleteObject } from '../commands.js';
+import { visibleObjects } from './search.js';
+import '../ui/window.js';
 
-export class PxHierarchy extends PxElement {
+export class Hierarchy extends Element {
 
     static styles = sheet(`
-        :host { display: block; height: 100%; }
-        px-panel { height: 100%; }
+        :host { display: block; }
+        px-window { height: 100%; }
 
-        .actions { display: flex; gap: 2px; }
-
-        .action {
+        .search {
             display: flex;
             align-items: center;
-            justify-content: center;
-            width: 22px;
-            height: 22px;
-            border-radius: 4px;
+            gap: 7px;
+            padding: 6px 10px;
             color: var(--px-text-dim);
         }
 
-        .action:hover { background: var(--px-bg-3); color: var(--px-text-strong); }
-        .action[disabled] { opacity: 0.35; cursor: default; }
-        .action[disabled]:hover { background: none; color: var(--px-text-dim); }
+        .search input { background: var(--px-bg-0); }
 
-        .tree { padding: 4px 0 12px; }
+        .search .clear { width: var(--px-hit); height: var(--px-hit); }
+
+        .tree { padding: 3px 0 14px; }
 
         .row {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 5px;
             height: var(--px-row);
-            padding-right: 8px;
+            padding-right: 4px;
             cursor: default;
             -webkit-user-select: none;
             user-select: none;
         }
 
         .row:hover { background: var(--px-bg-2); }
-        .row.selected { background: var(--px-accent-soft); }
+        .row.selected { background: var(--px-accent-soft); box-shadow: inset 2px 0 0 var(--px-accent); }
         .row.selected .name { color: var(--px-text-strong); }
-        .row.dimmed .name, .row.dimmed .glyph { opacity: 0.4; }
+        .row.hidden .name, .row.hidden .glyph { opacity: 0.4; }
+        .row.locked .name { font-style: italic; }
 
         .twisty {
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 14px;
-            height: 14px;
+            width: var(--px-hit);
+            height: var(--px-hit);
             flex: 0 0 auto;
+            margin-left: -4px;
+            border-radius: var(--px-radius-sm);
             color: var(--px-text-dim);
-            transition: transform 90ms ease;
         }
 
-        .twisty.open { transform: rotate(90deg); }
+        .twisty .icon { transition: transform 100ms ease; }
+        .twisty.open .icon { transform: rotate(90deg); }
         .twisty.leaf { visibility: hidden; }
+        .twisty:hover { background: var(--px-bg-3); color: var(--px-text-strong); }
 
-        .glyph { color: var(--px-text-dim); }
+        .glyph { color: var(--px-text-dim); display: flex; flex: 0 0 auto; }
         .row.selected .glyph { color: var(--px-accent); }
 
         .name {
             flex: 1;
+            min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
             outline: none;
+            padding: 2px 3px;
+            border-radius: 3px;
         }
 
-        .name[contenteditable='true'] {
+        .row.selected .name:hover { background: rgba(255, 255, 255, 0.05); cursor: text; }
+
+        .name.editing {
             background: var(--px-bg-0);
-            border-radius: 3px;
-            padding: 0 3px;
+            box-shadow: 0 0 0 1px var(--px-accent);
             text-overflow: clip;
             cursor: text;
         }
 
-        .visibility {
-            display: flex;
-            opacity: 0;
-            color: var(--px-text-dim);
-        }
+        .actions { display: flex; flex: 0 0 auto; }
 
-        .row:hover .visibility, .visibility.off { opacity: 1; }
-        .visibility:hover { color: var(--px-text-strong); }
+        .actions .ghost { width: var(--px-hit); height: var(--px-hit); opacity: 0.55; }
+        .row:hover .actions .ghost { opacity: 0.9; }
+        .actions .ghost:hover, .actions .ghost.on { opacity: 1; }
+        .actions .ghost.on { color: var(--px-accent); }
+        .actions .remove:hover { color: var(--px-danger); }
 
         .empty {
-            padding: 14px 12px;
+            padding: 16px 12px;
             color: var(--px-text-dim);
             line-height: 1.5;
         }
@@ -110,26 +127,31 @@ export class PxHierarchy extends PxElement {
 
     #scene = null;
     #selection = null;
+    #viewport = null;
+
     #collapsed = new globalThis.Set();
     #rows = new globalThis.Map();
+    #query = '';
     #tree = null;
-    #deleteButton = null;
+    #searchInput = null;
 
     /**
-     * Point the panel at the scene it lists.
+     * Point the window at the scene it lists.
      * @param {object} context - Editor context
      * @param {object} context.scene - The scene
      * @param {object} context.selection - The Editor selection
-     * @returns {PxHierarchy} This element
+     * @param {object} context.viewport - The viewport, for framing on double-click
+     * @returns {Hierarchy} This element
      */
-    bind({ scene, selection }) {
+    bind({ scene, selection, viewport }) {
         this.#scene = scene;
         this.#selection = selection;
+        this.#viewport = viewport;
         return this;
     }
 
     connectedCallback() {
-        this.#build();
+        if (this.shadowRoot.childElementCount === 0) this.#build();
 
         for (const event of ['added', 'removed', 'child:added', 'child:removed', 'component:added', 'component:removed']) {
             this.track(this.#scene.on(event, () => this.#renderTree()));
@@ -142,26 +164,51 @@ export class PxHierarchy extends PxElement {
     #build() {
         this.#tree = el('div', { class: 'tree' });
 
+        this.#searchInput = el('input', {
+            type: 'search',
+            placeholder: 'Search objects',
+            spellcheck: false,
+            autocomplete: 'off',
+            // Reactive to the keystroke, like every other field in the Editor.
+            oninput: event => {
+                this.#query = event.target.value;
+                this.#renderTree();
+            },
+            onkeydown: event => {
+                if (event.key === 'Escape') this.#clearSearch();
+                event.stopPropagation();
+            }
+        });
+
         const create = el('button', {
-            class: 'action',
+            class: 'ghost',
             type: 'button',
             title: 'Create object',
+            'aria-label': 'Create object',
             onclick: () => this.#openCreateMenu(create)
         }, icon('plus'));
 
-        this.#deleteButton = el('button', {
-            class: 'action',
-            type: 'button',
-            title: 'Delete selected object',
-            onclick: () => this.#deleteSelected()
-        }, icon('trash'));
-
-        const panel = el('px-panel', { label: 'Hierarchy' },
-            el('div', { class: 'actions', slot: 'actions' }, create, this.#deleteButton),
+        this.shadowRoot.replaceChildren(el('px-window', { label: 'Hierarchy', icon: 'hierarchy' },
+            el('div', { class: 'actions', slot: 'actions' }, create),
+            el('div', { class: 'search', slot: 'header' },
+                icon('search', 13),
+                this.#searchInput,
+                el('button', {
+                    class: 'ghost clear',
+                    type: 'button',
+                    title: 'Clear search',
+                    'aria-label': 'Clear search',
+                    onclick: () => this.#clearSearch()
+                }, icon('close', 12))
+            ),
             this.#tree
-        );
+        ));
+    }
 
-        this.shadowRoot.replaceChildren(panel);
+    #clearSearch() {
+        this.#searchInput.value = '';
+        this.#query = '';
+        this.#renderTree();
     }
 
     #renderTree() {
@@ -169,32 +216,49 @@ export class PxHierarchy extends PxElement {
         this.#rows.clear();
 
         const roots = this.#scene.roots();
+        const visible = visibleObjects(roots, this.#query);
+
+        if (visible && visible.size === 0) {
+            fill(this.#tree, el('div', {
+                class: 'empty',
+                textContent: `No object matches “${this.#query.trim()}”.`
+            }));
+            return;
+        }
+
         fill(this.#tree,
             roots.length === 0
-                ? el('div', { class: 'empty', textContent: 'No objects yet. Use + to create one.' })
-                : roots.map(object => this.#renderBranch(object, 0))
+                ? el('div', { class: 'empty', textContent: 'No objects yet. Drag one in from the toolbar, or use +.' })
+                : roots.map(object => this.#renderBranch(object, 0, visible))
         );
 
         this.#applySelection();
     }
 
-    #renderBranch(object, depth) {
-        const children = object.children;
-        const open = !this.#collapsed.has(object.id);
+    #renderBranch(object, depth, visible) {
+        if (visible && !visible.has(object)) return [];
 
-        const nodes = [this.#renderRow(object, depth, children.length > 0, open)];
+        const children = visible
+            ? object.children.filter(child => visible.has(child))
+            : object.children;
+
+        // While searching every surviving branch is open: a result the creator cannot see
+        // because its parent happened to be folded is a result they will not believe in.
+        const open = Boolean(visible) || !this.#collapsed.has(object.id);
+
+        const nodes = [this.#renderRow(object, depth, children.length > 0, open, Boolean(visible))];
         if (open) {
-            for (const child of children) nodes.push(...this.#renderBranch(child, depth + 1));
+            for (const child of children) nodes.push(...this.#renderBranch(child, depth + 1, visible));
         }
         return nodes;
     }
 
-    #renderRow(object, depth, hasChildren, open) {
+    #renderRow(object, depth, hasChildren, open, searching) {
         // The row selects on pointerdown, so a control inside it has to stop that event
         // and not merely the click: folding a branch or hiding an object is not a way of
         // saying "select this".
         const twisty = el('span', {
-            class: `twisty${hasChildren ? '' : ' leaf'}${open ? ' open' : ''}`,
+            class: `twisty${hasChildren && !searching ? '' : ' leaf'}${open ? ' open' : ''}`,
             onpointerdown: event => event.stopPropagation(),
             onclick: () => this.#toggle(object)
         }, icon('chevron', 12));
@@ -202,49 +266,95 @@ export class PxHierarchy extends PxElement {
         const name = el('span', { class: 'name', textContent: object.name || '(unnamed)' });
         const glyph = el('span', { class: 'glyph' }, icon(iconForObject(object), 13));
 
-        const visibility = el('button', {
-            class: `visibility${object.visible ? '' : ' off'}`,
+        const lock = this.#stateButton(object, 'lock', {
+            on: () => object.lock,
+            title: () => (object.lock ? 'Unlock' : 'Lock — ignored by the viewport'),
+            glyph: () => (object.lock ? 'lock' : 'unlock')
+        });
+
+        const visibility = this.#stateButton(object, 'visible', {
+            on: () => !object.visible,
+            title: () => (object.visible ? 'Hide' : 'Show'),
+            glyph: () => (object.visible ? 'eye' : 'eye-off')
+        });
+
+        const remove = el('button', {
+            class: 'ghost remove',
             type: 'button',
-            title: 'Toggle visibility',
+            title: 'Delete',
+            'aria-label': `Delete ${object.name}`,
             onpointerdown: event => event.stopPropagation(),
-            onclick: () => object.setProperty('visible', !object.visible)
-        }, icon(object.visible ? 'eye' : 'eye-off', 13));
+            onclick: () => this.#delete(object)
+        }, icon('trash', 13));
 
         const row = el('div', {
             class: 'row',
-            style: `padding-left: ${6 + depth * 13}px`,
+            style: `padding-left: ${4 + depth * 13}px`,
             onpointerdown: () => this.#selection.set(object),
-            ondblclick: () => this.#beginRename(object, name)
-        }, twisty, glyph, name, visibility);
+            ondblclick: () => this.#viewport?.focusOn(object)
+        }, twisty, glyph, name, el('div', { class: 'actions' }, lock, visibility, remove));
 
-        row.classList.toggle('dimmed', !object.active);
+        name.addEventListener('click', () => {
+            // Only once the row is the selected one, so the first click on a row still
+            // just selects it instead of dropping a caret the creator did not ask for.
+            if (this.#selection.has(object)) this.#beginRename(object, name);
+        });
+        name.addEventListener('dblclick', event => event.stopPropagation());
 
-        // Values, watched one by one. A rename or a visibility toggle updates this row
-        // and only this row, whoever made the change.
+        this.#applyState(row, object);
+
         this.track(object.observe('name', change => {
-            if (name.isContentEditable) return;
+            if (name.classList.contains('editing')) return;
             name.textContent = change.value || '(unnamed)';
         }), 'rows');
-        this.track(object.observe('active', change => row.classList.toggle('dimmed', !change.value)), 'rows');
-        this.track(object.observe('visible', change => {
-            visibility.classList.toggle('off', !change.value);
-            visibility.replaceChildren(icon(change.value ? 'eye' : 'eye-off', 13));
-        }), 'rows');
+
+        for (const prop of ['active', 'visible', 'lock']) {
+            this.track(object.observe(prop, () => this.#applyState(row, object)), 'rows');
+        }
 
         this.#rows.set(object, row);
         return row;
     }
 
+    #stateButton(object, prop, { on, title, glyph }) {
+        const button = el('button', {
+            class: 'ghost',
+            type: 'button',
+            onpointerdown: event => event.stopPropagation(),
+            onclick: () => object.setProperty(prop, !object[prop])
+        }, icon(glyph(), 13));
+
+        const sync = () => {
+            button.title = title();
+            button.setAttribute('aria-label', title());
+            button.classList.toggle('on', on());
+            fill(button, icon(glyph(), 13));
+        };
+        sync();
+        this.track(object.observe(prop, sync), 'rows');
+        return button;
+    }
+
+    #applyState(row, object) {
+        row.classList.toggle('hidden', !object.visible || !object.active);
+        row.classList.toggle('locked', object.lock);
+    }
+
     #beginRename(object, name) {
+        if (name.classList.contains('editing')) return;
+
+        const original = object.name;
+        name.classList.add('editing');
         name.contentEditable = 'plaintext-only';
         // Not every engine accepts plaintext-only; falling back keeps renaming working
         // rather than leaving a row that looks editable and is not.
         if (!name.isContentEditable) name.contentEditable = 'true';
-        name.textContent = object.name;
+        name.textContent = original;
         name.focus();
         globalThis.getSelection()?.selectAllChildren(name);
 
-        const commit = () => {
+        const finish = () => {
+            name.classList.remove('editing');
             name.contentEditable = 'false';
             name.textContent = object.name || '(unnamed)';
         };
@@ -252,13 +362,18 @@ export class PxHierarchy extends PxElement {
         // Written on every keystroke, like the Inspector: one model, one behaviour,
         // whichever view the creator happens to be typing into.
         name.oninput = () => object.setProperty('name', name.textContent.trim());
-        name.onblur = commit;
+        name.onblur = finish;
         name.onkeydown = event => {
-            if (event.key === 'Enter' || event.key === 'Escape') {
+            event.stopPropagation();
+            if (event.key === 'Enter') {
                 event.preventDefault();
                 name.blur();
             }
-            event.stopPropagation();
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                object.setProperty('name', original);
+                name.blur();
+            }
         };
     }
 
@@ -272,7 +387,6 @@ export class PxHierarchy extends PxElement {
         for (const [object, row] of this.#rows) {
             row.classList.toggle('selected', this.#selection.has(object));
         }
-        this.#deleteButton.disabled = this.#selection.object === null;
     }
 
     #openCreateMenu(anchor) {
@@ -283,18 +397,19 @@ export class PxHierarchy extends PxElement {
         }));
 
         openMenu(anchor, items, kind => {
-            const created = createObject(this.#scene, { kind });
-            this.#selection.set(created);
+            const centre = this.#viewport?.worldCentre() ?? { x: 0, y: 0 };
+            this.#selection.set(createObject(this.#scene, {
+                kind,
+                x: Math.round(centre.x),
+                y: Math.round(centre.y)
+            }));
         });
     }
 
-    #deleteSelected() {
-        const object = this.#selection.object;
-        if (!object) return;
-
-        this.#selection.clear();
+    #delete(object) {
+        if (this.#selection.has(object)) this.#selection.clear();
         deleteObject(this.#scene, object);
     }
 }
 
-customElements.define('px-hierarchy', PxHierarchy);
+customElements.define('px-hierarchy', Hierarchy);

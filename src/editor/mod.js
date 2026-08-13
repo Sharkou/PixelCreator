@@ -7,10 +7,23 @@
 //
 // Everything here needs a DOM. The core and the runtime do not, which is why they are
 // the layers a server loads.
+//
+// NAMING. Editor classes carry no prefix; the custom elements keep the mandatory `px-`
+// one. Two of these names shadow globals — `Element`, `Window` — and one collides with a
+// runtime export, `Viewport`. That is deliberate: they are the right names here, and the
+// rule is the one `core/object.js` already lives by (CONVENTIONS.md) — a module that
+// imports ours reaches for the global through `globalThis`, or aliases at the import.
 
 export { start, createEditorCamera } from './editor.js';
 export { Selection } from './selection.js';
-export { registerBuiltIns, BUILT_IN } from './registry.js';
+export { Layout } from './layout.js';
+export {
+    BUILT_IN,
+    CATEGORIES,
+    registerBuiltIns,
+    describeType,
+    groupTypes
+} from './registry.js';
 export {
     OBJECT_KINDS,
     createObject,
@@ -22,15 +35,36 @@ export {
 } from './commands.js';
 export { fillStarterScene } from './project/starter.js';
 
-export { FieldKind, describeComponent, objectFields, formatValue, parseValue } from './inspector/schema.js';
-export { HANDLE_SIZE, editorBounds, hitTest, pick, screenCorners } from './viewport/picking.js';
-export { drawGrid, matrixScale, visibleWorldArea } from './viewport/grid.js';
-export { outline } from './viewport/overlay.js';
+export {
+    FieldKind,
+    describeComponent,
+    objectFields,
+    rows,
+    formatValue,
+    parseValue,
+    toDisplay,
+    isNumeric
+} from './inspector/schema.js';
 
-export { PxElement, el, fill } from './ui/element.js';
-export { PxPanel } from './ui/panel.js';
-export { PxMenu, openMenu } from './ui/menu.js';
-export { PxField } from './ui/field.js';
-export { PxViewport } from './viewport/viewport.js';
-export { PxHierarchy } from './windows/hierarchy.js';
-export { PxInspector } from './windows/inspector.js';
+export { HANDLE_SIZE, editorBounds, hitTest, pick, screenCorners } from './viewport/picking.js';
+export { HANDLES, MIN_SIZE, beginResize, isResizable, resizeTo, sizingComponent } from './viewport/resize.js';
+export { drawGrid, matrixScale, visibleWorldArea } from './viewport/grid.js';
+export { outline, handles, handleAt, handleCursor, handlePoints } from './viewport/overlay.js';
+export { Guides } from './viewport/guides.js';
+export { SelectTool } from './viewport/tools/select-tool.js';
+export { PanTool } from './viewport/tools/pan-tool.js';
+
+export { matches, visibleObjects } from './windows/search.js';
+
+export { Element, el, fill } from './ui/element.js';
+export { Window } from './ui/window.js';
+export { Tabs } from './ui/tabs.js';
+export { Splitter } from './ui/splitter.js';
+export { Menu, openMenu } from './ui/menu.js';
+export { Field } from './ui/field.js';
+export { NumberInput } from './ui/number-input.js';
+export { Viewport } from './viewport/viewport.js';
+export { Hierarchy } from './windows/hierarchy.js';
+export { Inspector } from './windows/inspector.js';
+export { Toolbar } from './windows/toolbar.js';
+export { Dock } from './windows/dock.js';
