@@ -100,7 +100,7 @@ export const GUIDE_STYLES = `
         position: absolute;
         inset: 0;
         pointer-events: none;
-        transition: opacity 120ms ease;
+        transition: opacity var(--px-duration) var(--px-ease);
     }
 
     .guide-v, .guide-h {
@@ -114,14 +114,15 @@ export const GUIDE_STYLES = `
 
     .guide-label {
         position: absolute;
-        font-family: var(--px-mono);
-        font-size: 10px;
-        font-weight: 600;
+        font-family: var(--px-font-mono);
+        font-variant-numeric: tabular-nums;
+        font-size: var(--px-text-2xs);
+        font-weight: var(--px-weight-bold);
         line-height: 1;
         color: var(--px-accent);
-        background: var(--px-bg-0);
+        background: var(--px-surface-input);
         border-radius: 2px;
-        padding: 2px 3px;
+        padding: var(--px-space-0) var(--px-space-1);
         white-space: nowrap;
     }
 

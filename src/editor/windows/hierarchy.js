@@ -21,9 +21,13 @@
 //   click the name of
 //   an already selected
 //   row                rename in place, Enter to keep, Escape to put it back
+//   click the magnifier open the search; click it again, Escape, or the cross closes it
+//                      AND clears the query — a filter still applied behind a folded
+//                      control is a tree that lies about what the scene holds
 //
 // NOTHING IS REVEALED BY HOVER. Lock, visibility and delete are always drawn; hover only
-// strengthens them. A finger has no hover, and these are not decorations.
+// strengthens them. A finger has no hover, and these are not decorations. The search is
+// behind a control you press, which is not the same thing as behind a hover.
 
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
@@ -36,56 +40,86 @@ import '../ui/window.js';
 export class Hierarchy extends Element {
 
     static styles = sheet(`
-        :host { display: block; }
+        :host {
+            display: block;
+            /* One step of the spacing scale per level. Everything the row draws — the
+               padding, the guide line — is derived from it, so a change of depth ramp is
+               a change of one value. */
+            --indent: var(--px-space-3);
+        }
+
         px-window { height: 100%; }
 
-        .search {
+        /* The search is behind the magnifier, and collapses to nothing rather than
+           sliding: a grid row animating from 0fr to 1fr changes the panel's height
+           without ever moving what is already on screen. */
+        .searchbar {
+            display: grid;
+            grid-template-rows: 0fr;
+            /* Width, not colour: a transparent 1px border would still cost a pixel of
+               layout while the field is closed. */
+            border-bottom: 0 solid var(--px-border);
+            transition: grid-template-rows var(--px-duration) var(--px-ease),
+                        border-bottom-width var(--px-duration) var(--px-ease);
+        }
+
+        .searchbar > .inner { overflow: hidden; min-height: 0; }
+        .searchbar.open { grid-template-rows: 1fr; border-bottom-width: 1px; }
+
+        .searchbar .field {
             display: flex;
             align-items: center;
-            gap: 7px;
-            padding: 6px 10px;
+            gap: var(--px-space-2);
+            padding: var(--px-space-1) var(--px-space-1) var(--px-space-1) var(--px-space-2);
             color: var(--px-text-dim);
         }
 
-        .search input { background: var(--px-bg-0); }
-
-        .search .clear { width: var(--px-hit); height: var(--px-hit); }
-
-        .tree { padding: 3px 0 14px; }
+        .tree { padding: var(--px-space-1) 0 var(--px-space-3); }
 
         .row {
+            position: relative;
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: var(--px-space-1);
             height: var(--px-row);
-            padding-right: 4px;
+            padding-left: calc(var(--px-space-1) + var(--depth) * var(--indent));
+            padding-right: var(--px-space-1);
             cursor: default;
             -webkit-user-select: none;
             user-select: none;
         }
 
-        .row:hover { background: var(--px-bg-2); }
-        .row.selected { background: var(--px-accent-soft); box-shadow: inset 2px 0 0 var(--px-accent); }
+        /* The guide line that says "these are children": one segment per row, drawn under
+           the parent's twisty, so consecutive rows read as one continuous stem. */
+        .row::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            left: calc(var(--px-space-1) + (var(--depth) - 1) * var(--indent) + var(--px-control) / 2);
+            background: var(--px-border-subtle);
+        }
+
+        .row[data-depth='0']::before { display: none; }
+
+        .row:hover { background: var(--px-surface-hover); }
+        .row.selected { background: var(--px-accent-muted); box-shadow: inset 2px 0 0 var(--px-accent); }
         .row.selected .name { color: var(--px-text-strong); }
         .row.hidden .name, .row.hidden .glyph { opacity: 0.4; }
         .row.locked .name { font-style: italic; }
 
+        /* A ghost, so the twisty is 22 wide and 28 to the finger like every other icon
+           control. It used to be --px-hit tall inside a --px-row line, which is 28 in 26
+           and overflowed the row by a pixel at each end. */
         .twisty {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: var(--px-hit);
-            height: var(--px-hit);
-            flex: 0 0 auto;
-            margin-left: -4px;
-            border-radius: var(--px-radius-sm);
             color: var(--px-text-dim);
+            cursor: pointer;
         }
 
-        .twisty .icon { transition: transform 100ms ease; }
+        .twisty .icon { transition: transform var(--px-duration) var(--px-ease); }
         .twisty.open .icon { transform: rotate(90deg); }
         .twisty.leaf { visibility: hidden; }
-        .twisty:hover { background: var(--px-bg-3); color: var(--px-text-strong); }
 
         .glyph { color: var(--px-text-dim); display: flex; flex: 0 0 auto; }
         .row.selected .glyph { color: var(--px-accent); }
@@ -97,14 +131,16 @@ export class Hierarchy extends Element {
             text-overflow: ellipsis;
             white-space: nowrap;
             outline: none;
-            padding: 2px 3px;
-            border-radius: 3px;
+            padding: var(--px-space-0) var(--px-space-1);
+            border-radius: var(--px-radius-sm);
         }
 
-        .row.selected .name:hover { background: rgba(255, 255, 255, 0.05); cursor: text; }
+        /* The well a value is typed into — the same surface the name takes once it is
+           actually being edited, so the hover is a promise the click keeps. */
+        .row.selected .name:hover { background: var(--px-surface-input); cursor: text; }
 
         .name.editing {
-            background: var(--px-bg-0);
+            background: var(--px-surface-input);
             box-shadow: 0 0 0 1px var(--px-accent);
             text-overflow: clip;
             cursor: text;
@@ -112,16 +148,23 @@ export class Hierarchy extends Element {
 
         .actions { display: flex; flex: 0 0 auto; }
 
-        .actions .ghost { width: var(--px-hit); height: var(--px-hit); opacity: 0.55; }
-        .row:hover .actions .ghost { opacity: 0.9; }
-        .actions .ghost:hover, .actions .ghost.on { opacity: 1; }
-        .actions .ghost.on { color: var(--px-accent); }
-        .actions .remove:hover { color: var(--px-danger); }
+        /* Always drawn, never revealed: hover moves them up one step of emphasis, it does
+           not bring them into existence. Emphasis is a text role rather than an opacity,
+           so the quietest state is still a measured 4.6:1. */
+        .actions .ghost { color: var(--px-text-dim); }
+        .row:hover .actions .ghost { color: var(--px-text-muted); }
+        .row.selected .actions .ghost { color: var(--px-text-muted); }
+        .row .actions .ghost:hover { color: var(--px-text-strong); }
+        /* Colour only: the accent pill a header tool gets would be four filled boxes per
+           row here, which is noise rather than state. */
+        .row .actions .ghost.on { color: var(--px-accent); background: none; }
+        .row .actions .ghost.on:hover { background: var(--px-surface-hover); }
+        .row .actions .remove:hover { color: var(--px-danger); }
 
         .empty {
-            padding: 16px 12px;
+            padding: var(--px-space-4) var(--px-space-3);
             color: var(--px-text-dim);
-            line-height: 1.5;
+            line-height: var(--px-leading);
         }
     `);
 
@@ -134,6 +177,8 @@ export class Hierarchy extends Element {
     #query = '';
     #tree = null;
     #searchInput = null;
+    #searchbar = null;
+    #magnifier = null;
 
     /**
      * Point the window at the scene it lists.
@@ -175,10 +220,35 @@ export class Hierarchy extends Element {
                 this.#renderTree();
             },
             onkeydown: event => {
-                if (event.key === 'Escape') this.#clearSearch();
+                if (event.key === 'Escape') this.#showSearch(false);
                 event.stopPropagation();
             }
         });
+
+        this.#searchbar = el('div', { class: 'searchbar', slot: 'header' },
+            el('div', { class: 'inner' },
+                el('div', { class: 'field' },
+                    icon('search'),
+                    this.#searchInput,
+                    el('button', {
+                        class: 'ghost',
+                        type: 'button',
+                        title: 'Clear and close',
+                        'aria-label': 'Clear and close search',
+                        onclick: () => this.#showSearch(false)
+                    }, icon('close'))
+                )
+            )
+        );
+
+        this.#magnifier = el('button', {
+            class: 'ghost',
+            type: 'button',
+            title: 'Search objects',
+            'aria-label': 'Search objects',
+            'aria-expanded': 'false',
+            onclick: () => this.#showSearch(!this.#searchbar.classList.contains('open'))
+        }, icon('search'));
 
         const create = el('button', {
             class: 'ghost',
@@ -189,23 +259,32 @@ export class Hierarchy extends Element {
         }, icon('plus'));
 
         this.shadowRoot.replaceChildren(el('px-window', { label: 'Hierarchy', icon: 'hierarchy' },
-            el('div', { class: 'actions', slot: 'actions' }, create),
-            el('div', { class: 'search', slot: 'header' },
-                icon('search', 13),
-                this.#searchInput,
-                el('button', {
-                    class: 'ghost clear',
-                    type: 'button',
-                    title: 'Clear search',
-                    'aria-label': 'Clear search',
-                    onclick: () => this.#clearSearch()
-                }, icon('close', 12))
-            ),
+            el('div', { class: 'actions', slot: 'actions' }, this.#magnifier, create),
+            this.#searchbar,
             this.#tree
         ));
     }
 
-    #clearSearch() {
+    /**
+     * Open or close the search.
+     *
+     * Closing clears the query as well as hiding the field: a filter still applied behind
+     * a folded control is a tree that lies about what the scene holds.
+     *
+     * @param {boolean} open - Whether the field is shown
+     */
+    #showSearch(open) {
+        this.#searchbar.classList.toggle('open', open);
+        this.#magnifier.classList.toggle('on', open);
+        this.#magnifier.setAttribute('aria-expanded', globalThis.String(open));
+
+        if (open) {
+            this.#searchInput.focus();
+            this.#searchInput.select();
+            return;
+        }
+
+        if (this.#query === '' && this.#searchInput.value === '') return;
         this.#searchInput.value = '';
         this.#query = '';
         this.#renderTree();
@@ -258,13 +337,13 @@ export class Hierarchy extends Element {
         // and not merely the click: folding a branch or hiding an object is not a way of
         // saying "select this".
         const twisty = el('span', {
-            class: `twisty${hasChildren && !searching ? '' : ' leaf'}${open ? ' open' : ''}`,
+            class: `ghost twisty${hasChildren && !searching ? '' : ' leaf'}${open ? ' open' : ''}`,
             onpointerdown: event => event.stopPropagation(),
             onclick: () => this.#toggle(object)
-        }, icon('chevron', 12));
+        }, icon('chevron'));
 
         const name = el('span', { class: 'name', textContent: object.name || '(unnamed)' });
-        const glyph = el('span', { class: 'glyph' }, icon(iconForObject(object), 13));
+        const glyph = el('span', { class: 'glyph' }, icon(iconForObject(object)));
 
         const lock = this.#stateButton(object, 'lock', {
             on: () => object.lock,
@@ -285,11 +364,15 @@ export class Hierarchy extends Element {
             'aria-label': `Delete ${object.name}`,
             onpointerdown: event => event.stopPropagation(),
             onclick: () => this.#delete(object)
-        }, icon('trash', 13));
+        }, icon('trash'));
 
+        // Depth is a custom property rather than a computed padding, so the row's own
+        // rules derive both the indent and the guide line from it and no arithmetic
+        // leaks into JavaScript.
         const row = el('div', {
             class: 'row',
-            style: `padding-left: ${4 + depth * 13}px`,
+            style: `--depth: ${depth}`,
+            dataset: { depth: globalThis.String(depth) },
             onpointerdown: () => this.#selection.set(object),
             ondblclick: () => this.#viewport?.focusOn(object)
         }, twisty, glyph, name, el('div', { class: 'actions' }, lock, visibility, remove));
@@ -322,13 +405,13 @@ export class Hierarchy extends Element {
             type: 'button',
             onpointerdown: event => event.stopPropagation(),
             onclick: () => object.setProperty(prop, !object[prop])
-        }, icon(glyph(), 13));
+        }, icon(glyph()));
 
         const sync = () => {
             button.title = title();
             button.setAttribute('aria-label', title());
             button.classList.toggle('on', on());
-            fill(button, icon(glyph(), 13));
+            fill(button, icon(glyph()));
         };
         sync();
         this.track(object.observe(prop, sync), 'rows');

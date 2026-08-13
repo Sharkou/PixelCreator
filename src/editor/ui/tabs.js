@@ -14,41 +14,42 @@ export class Tabs extends Element {
         :host {
             display: flex;
             align-items: stretch;
-            gap: 2px;
+            gap: var(--px-space-0);
             height: 100%;
             -webkit-user-select: none;
             user-select: none;
         }
 
+        /* The same type as a panel title, because that is what a tab replaces. */
         button {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: var(--px-space-2);
             height: 100%;
-            padding: 0 11px;
+            padding: 0 var(--px-space-3);
             color: var(--px-text-dim);
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: 0.4px;
+            font-size: var(--px-text-xs);
+            font-weight: var(--px-weight-bold);
+            letter-spacing: var(--px-tracking-caps);
             text-transform: uppercase;
             white-space: nowrap;
             position: relative;
-            transition: color 90ms ease;
+            transition: color var(--px-duration-fast) var(--px-ease);
         }
 
         button::after {
             content: '';
             position: absolute;
-            left: 6px;
-            right: 6px;
+            left: var(--px-space-2);
+            right: var(--px-space-2);
             bottom: 0;
             height: 2px;
             border-radius: 1px;
             background: transparent;
-            transition: background 120ms ease;
+            transition: background var(--px-duration) var(--px-ease);
         }
 
-        button:hover { color: var(--px-text); }
+        button:hover { color: var(--px-text-muted); }
         button[aria-selected='true'] { color: var(--px-text-strong); }
         button[aria-selected='true']::after { background: var(--px-accent); }
     `);
@@ -96,7 +97,7 @@ export class Tabs extends Element {
             role: 'tab',
             'aria-selected': globalThis.String(item.id === this.#active),
             onclick: () => { this.active = item.id; }
-        }, item.icon ? icon(item.icon, 13) : null, el('span', { textContent: item.label }))));
+        }, item.icon ? icon(item.icon) : null, el('span', { textContent: item.label }))));
     }
 }
 

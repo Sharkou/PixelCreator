@@ -17,11 +17,11 @@ src/editor/
 ├── registry.js           enregistrement des types + présentation du menu Add
 ├── project/starter.js    la scène d'ouverture, en attendant le chargement de projet
 ├── ui/                   element · styles · icons · window · tabs · splitter
-│                         menu · field · number-input
+│                         menu · field · number-input · scrub · empty-state
 ├── inspector/schema.js   schéma → descripteurs, unités d'affichage, appariement (pur)
-├── viewport/             viewport · picking · resize · grid · overlay · guides
+├── viewport/             viewport · surface · picking · resize · grid · overlay · guides
 │   └── tools/            select-tool · pan-tool
-└── windows/              hierarchy · inspector · toolbar · dock · search
+└── windows/              hierarchy · inspector · toolbar · project · timeline · search
 ```
 
 ### Convention de nommage
@@ -41,23 +41,34 @@ nôtre passe par `globalThis` pour le global, ou alias à l'import.**
 
 ### Disposition
 
+**L4** (`design/README.md`, D8) : la Timeline s'arrête avant l'Inspector, qui garde une
+colonne ininterrompue du titlebar au plancher ; quand rien n'est animé, la bande n'est pas
+là du tout.
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ titlebar                              [hier] [insp] [dock]   │
-├────┬──────────────────────────────┬──────────────────────────┤
-│ T  │                              │ Hierarchy  (recherche)   │
-│ o  │          Viewport            ├──────────────────────────┤
-│ o  │                              │ Inspector                │
-│ l  │                              │                          │
-├────┴──────────────────────────────┴──────────────────────────┤
-│ Project | Timeline                                           │
-└──────────────────────────────────────────────────────────────┘
+│ titlebar                       [hier] [proj] [time] [insp]   │
+├────┬─────────────┬───────────────────────┬───────────────────┤
+│ T  │ Hierarchy   │                       │ Inspector         │
+│ o  │  (loupe)    │       Viewport        │                   │
+│ o  ├─────────────┤                       │                   │
+│ l  │ Project     │                       │                   │
+│    ├─────────────┴───────────────────────┤                   │
+│    │ Timeline — conditionnelle           │                   │
+└────┴─────────────────────────────────────┴───────────────────┘
 ```
 
 Flex imbriqué, tailles en variables CSS écrites par `layout.js`, seams déplaçables par
-`<px-splitter>` (double-clic = valeur par défaut). La Hierarchy est bornée à la moitié de
-la colonne : elle liste, l'Inspector édite. Sous 760 px de large, la colonne droite passe
-en survol au lieu d'écraser la scène — **même Editor, pas une version mobile**.
+`<px-splitter>` (double-clic = valeur par défaut). Le rail de création tient toute la
+hauteur : il appartient au chrome, pas à une colonne. La Hierarchy prend ce que le Project
+laisse — une liste grandit avec la scène, une étagère est une étagère. Sous 760 px de
+large, l'Inspector passe en survol au lieu d'écraser la scène — **même Editor, pas une
+version mobile**.
+
+Le rail n'existe pas dans le prototype, qui crée par le `+` de la Hierarchy. Il est
+conservé parce qu'il porte une capacité que le menu ne remplace pas : **l'objet naît
+exactement au point de dépose**. Une maquette qui ne dessine pas une fonction n'est pas une
+décision de la supprimer.
 
 ### Ce qui fonctionne
 
@@ -126,9 +137,15 @@ pas de `visible` par Component, et en inventer un afficherait un contrôle sans 
 
 ### Ce qui n'est pas encore là
 
-Play / Pause · Resources et Assets réels · Timeline fonctionnelle · Console · Graph ·
-Players · undo/redo · sélection multiple · reparentage par glisser-déposer · rotation à la
-poignée · détachement de fenêtre · Operations structurelles.
+Play / Pause · barre de commandes `Ctrl K` · Resources et Assets réels · Timeline
+fonctionnelle · Console · Graph · Players · undo/redo · sélection multiple · reparentage
+par glisser-déposer · rotation à la poignée · détachement de fenêtre · Operations
+structurelles.
+
+Le titlebar ne porte **ni transport ni barre de commandes**, bien que la maquette dessine
+les deux : Play demande l'instantané de scène restauré à l'arrêt, `Ctrl K` demande un
+registre de commandes à interroger. Un bouton visible dont rien n'est derrière est la seule
+chose que cet Editor a toujours refusée.
 
 ## OBSERVÉ — la synchronisation temps réel, en détail
 

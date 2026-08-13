@@ -16,7 +16,7 @@
 
 import { Element, el } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
-import { icon } from '../ui/icons.js';
+import { icon, IconSize } from '../ui/icons.js';
 import { OBJECT_KINDS, createObject } from '../commands.js';
 
 /** Pixels the pointer must travel before a press becomes a drag. */
@@ -35,32 +35,36 @@ export class Toolbar extends Element {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 2px;
+            gap: var(--px-space-0);
             width: var(--px-toolbar);
             flex: 0 0 auto;
-            padding: 6px 0;
-            background: var(--px-bg-2);
-            border-right: 1px solid var(--px-line);
+            padding: var(--px-space-2) 0;
+            background: var(--px-surface-raised);
+            border-right: 1px solid var(--px-border);
             -webkit-user-select: none;
             user-select: none;
             touch-action: none;
         }
 
+        /* Wider than a --px-hit control on purpose: this is a presence glyph you aim at
+           and then drag, not a button in a row. --px-text-dim measures 4.25:1 on a raised
+           surface, so the resting colour is --px-text-muted like every other label there. */
         button {
             display: flex;
             align-items: center;
             justify-content: center;
-            width: calc(var(--px-toolbar) - 12px);
-            height: calc(var(--px-toolbar) - 12px);
-            border-radius: var(--px-radius-sm);
-            color: var(--px-text-dim);
+            width: calc(var(--px-toolbar) - var(--px-space-3));
+            height: calc(var(--px-toolbar) - var(--px-space-3));
+            border-radius: var(--px-radius);
+            color: var(--px-text-muted);
             cursor: grab;
-            transition: background 90ms ease, color 90ms ease;
+            transition: background var(--px-duration-fast) var(--px-ease),
+                        color var(--px-duration-fast) var(--px-ease);
         }
 
-        button:hover { background: var(--px-bg-3); color: var(--px-text-strong); }
-        button:active { background: var(--px-bg-4); cursor: grabbing; }
-        button.dragging { background: var(--px-accent-soft); color: var(--px-accent); }
+        button:hover { background: var(--px-surface-hover); color: var(--px-text-strong); }
+        button:active { background: var(--px-surface-active); cursor: grabbing; }
+        button.dragging { background: var(--px-accent-muted); color: var(--px-accent); }
     `);
 
     #context = null;
@@ -91,7 +95,7 @@ export class Toolbar extends Element {
             onpointermove: event => this.#move(event),
             onpointerup: event => this.#drop(event),
             onpointercancel: () => this.#cancel()
-        }, icon(TOOL_ICONS[kind.id] ?? 'object', 18))));
+        }, icon(TOOL_ICONS[kind.id] ?? 'object', IconSize.MD))));
     }
 
     disconnectedCallback() {
@@ -161,15 +165,25 @@ export class Toolbar extends Element {
     }
 }
 
+// The ghost lives on document.body, outside every shadow root, so it is never clipped by
+// the panel the drag started in — and the tokens still reach it, because custom properties
+// are declared on :root and this is a child of the document.
+//
+// It was the last literal Legacy blue in src/: rgba(51, 154, 240, .85), a colour from a
+// palette this Editor no longer has. It is the accent now, with a dark glyph on it (7.0:1
+// against #fff's 2.6:1), at the same size as the rail button it was lifted from. No
+// shadow: depth is a surface step here, and the two shadows the Editor allows itself are
+// the menu and the narrow-mode drawer (ui/styles.js).
 function createGhost(kind) {
-    const ghost = el('div', { class: 'px-drag-ghost' }, icon(TOOL_ICONS[kind.id] ?? 'object', 20));
+    const ghost = el('div', { class: 'px-drag-ghost' }, icon(TOOL_ICONS[kind.id] ?? 'object', IconSize.MD));
     ghost.style.cssText = `
-        position: fixed; left: 0; top: 0; z-index: 200; pointer-events: none;
+        position: fixed; left: 0; top: 0; pointer-events: none;
+        z-index: var(--px-z-drag);
         display: flex; align-items: center; justify-content: center;
-        width: 34px; height: 34px; margin: -17px 0 0 -17px;
-        border-radius: 6px; color: #fff;
-        background: rgba(51, 154, 240, 0.85);
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+        width: 32px; height: 32px; margin: -16px 0 0 -16px;
+        border-radius: var(--px-radius);
+        color: var(--px-background);
+        background: var(--px-accent);
     `;
     document.body.append(ghost);
     return ghost;

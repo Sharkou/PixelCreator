@@ -16,6 +16,16 @@
 // follows, and a reviewer can tell a wrong usage from a right one — neither is possible
 // with a numbered ramp.
 //
+// THE COMPATIBILITY BLOCK IS GONE. It carried the old ramp names while the windows were
+// rebuilt one at a time, and it said it would be empty at the end of the phase. It is:
+// nothing in `src/` reads `--px-bg-*`, `--px-line*`, `--px-accent-soft`, `--px-accent-line`,
+// `--px-font` or `--px-mono` any more. Reintroducing one of them is a step backwards, not
+// a shortcut.
+//
+// SHADOW ROOTS DO NOT SEE THIS FILE'S DOCUMENT RULES. Anything both the shell and a window
+// needs is written once as a string and interpolated into both sheets — see `controls`
+// below, which is why the titlebar's buttons and a Hierarchy row's buttons cannot drift.
+//
 // THE PIXEL IS A GRAMMAR, NOT A SKIN. Nothing here is bitmap, retro or decorative: the
 // chrome is vector, quiet and compact. The pixel moments — the mark, the selection
 // handles, the cursor, the ruler graduations, the transparency checker — belong to the
@@ -41,6 +51,51 @@ export function sheet(css) {
     style.replaceSync(css);
     return style;
 }
+
+// An icon button, written once and used twice: the shell lives in the document and every
+// window lives in a shadow root, and a rule cannot cross that boundary. Restating it in
+// two files is how three panels end up with three slightly different buttons, so the two
+// sheets below interpolate the same string instead.
+//
+// The visible square is control-sized so it fits a 26 px row; the pressable area is
+// hit-sized and reaches past it, invisibly. Separating the two is what lets the Editor be
+// compact without shrinking the target.
+const controls = `
+    .ghost {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        width: var(--px-control);
+        height: var(--px-control);
+        padding: 0;
+        border: 0;
+        border-radius: var(--px-radius-sm);
+        font: inherit;
+        background: none;
+        color: var(--px-text-muted);
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        transition: background var(--px-duration-fast) var(--px-ease),
+                    color var(--px-duration-fast) var(--px-ease),
+                    opacity var(--px-duration-fast) var(--px-ease);
+    }
+
+    .ghost::after {
+        content: '';
+        position: absolute;
+        inset: calc((var(--px-control) - var(--px-hit)) / 2);
+    }
+
+    .ghost:hover { background: var(--px-surface-hover); color: var(--px-text-strong); }
+    .ghost:active { background: var(--px-surface-active); }
+    .ghost.on { color: var(--px-accent); background: var(--px-accent-muted); }
+    .ghost[disabled] { opacity: 0.35; cursor: default; }
+    .ghost[disabled]:hover { background: none; color: var(--px-text-muted); }
+
+    .ghost:focus-visible { outline: 2px solid var(--px-accent); outline-offset: -1px; }
+`;
 
 const tokens = sheet(`
     :root {
@@ -166,27 +221,14 @@ const tokens = sheet(`
         --px-z-overlay: 100;
         --px-z-drag: 200;
 
-        /* ─── Layout, written by layout.js ────────────────────────────── */
+        /* ─── Layout ──────────────────────────────────────────────────────
+           The rail is fixed; the four that follow are defaults, overwritten
+           on the shell by layout.js and persisted per browser. */
         --px-toolbar: 44px;
+        --px-left: 236px;
         --px-right: 304px;
-        --px-hierarchy: 250px;
-        --px-dock: 200px;
-
-        /* ─── Compatibility ───────────────────────────────────────────────
-           TEMPORARY. The windows still name colours by ramp position; each
-           alias disappears when its window is rebuilt, and this block is
-           empty at the end of the phase. Nothing new may use these. */
-        --px-bg-0: var(--px-surface-input);
-        --px-bg-1: var(--px-surface);
-        --px-bg-2: var(--px-surface-raised);
-        --px-bg-3: var(--px-surface-hover);
-        --px-bg-4: var(--px-surface-active);
-        --px-line: var(--px-border);
-        --px-line-soft: var(--px-border-subtle);
-        --px-accent-soft: var(--px-accent-muted);
-        --px-accent-line: var(--px-accent-border);
-        --px-font: var(--px-font-sans);
-        --px-mono: var(--px-font-mono);
+        --px-project: 192px;
+        --px-timeline: 192px;
 
         color-scheme: dark;
     }
@@ -231,46 +273,60 @@ const tokens = sheet(`
         height: 100%;
     }
 
+    /* ─── L4 ──────────────────────────────────────────────────────────────
+       Three bands across, and the order is the decision: the creation rail,
+       then everything that belongs to the scene, then the Inspector — which
+       runs from the titlebar to the floor and is never cut by the band at the
+       bottom. That uninterrupted column is the whole point of L4; the layout
+       it replaced ran the Project the full width and sliced the Inspector in
+       half (design/README.md, D8). */
     .workspace {
         display: flex;
-        flex-direction: column;
         flex: 1;
         min-height: 0;
     }
 
-    .stage {
+    /* Everything the Timeline is allowed to span: the left column and the scene,
+       stopping at the Inspector's seam. */
+    .stack {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
+    }
+
+    .work {
         display: flex;
         flex: 1;
         min-height: 0;
     }
 
-    .stage > px-viewport { flex: 1; min-width: 0; }
+    .work > px-viewport { flex: 1; min-width: 0; }
 
-    .sidebar {
+    .col-left, .col-right {
         display: flex;
         flex-direction: column;
-        width: var(--px-right);
         flex: 0 0 auto;
         min-width: 0;
     }
 
-    /* The Hierarchy is the shorter of the two, by design: it lists, the Inspector edits.
-       Clamped rather than fixed, so a short window cannot leave the Inspector a sliver —
-       the seam still drags, it just cannot cross half the column. */
-    .sidebar > px-hierarchy {
-        height: clamp(110px, var(--px-hierarchy), 50%);
-        flex: 0 0 auto;
-        min-height: 0;
-    }
+    .col-left { width: var(--px-left); }
+    .col-right { width: var(--px-right); }
 
-    .sidebar > px-inspector { flex: 1; min-height: 0; }
+    /* The Hierarchy takes what the Project leaves: a list of everything in the scene
+       grows with the scene, a shelf of assets is a shelf. */
+    .col-left > px-hierarchy { flex: 1; min-height: 0; }
+    .col-left > px-project { height: var(--px-project); flex: 0 0 auto; min-height: 0; }
+    .col-right > px-inspector { flex: 1; min-height: 0; }
+    .stack > px-timeline { height: var(--px-timeline); flex: 0 0 auto; min-height: 0; }
 
-    /* One window left in the sidebar takes all of it, splitter withdrawn. */
-    .sidebar.single > px-hierarchy { flex: 1; height: auto; }
-
-    .workspace > px-dock { height: var(--px-dock); flex: 0 0 auto; min-height: 0; }
+    /* One window left in a column takes all of it, splitter withdrawn. */
+    .col-left.single > px-project { flex: 1; height: auto; }
 
     [hidden] { display: none !important; }
+
+${controls}
 `);
 
 const base = sheet(`
@@ -311,34 +367,7 @@ const base = sheet(`
         outline-offset: -1px;
     }
 
-    /* An icon button. The visible square is control-sized so it fits a 26 px row; the
-       pressable area is hit-sized and reaches past it, invisibly. Separating the two is
-       what lets the Editor be compact without shrinking the target. */
-    .ghost {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: var(--px-control);
-        height: var(--px-control);
-        border-radius: var(--px-radius-sm);
-        color: var(--px-text-muted);
-        transition: background var(--px-duration-fast) var(--px-ease),
-                    color var(--px-duration-fast) var(--px-ease),
-                    opacity var(--px-duration-fast) var(--px-ease);
-    }
-
-    .ghost::after {
-        content: '';
-        position: absolute;
-        inset: calc((var(--px-control) - var(--px-hit)) / 2);
-    }
-
-    .ghost:hover { background: var(--px-surface-hover); color: var(--px-text-strong); }
-    .ghost:active { background: var(--px-surface-active); }
-    .ghost.on { color: var(--px-accent); }
-    .ghost[disabled] { opacity: 0.35; cursor: default; }
-    .ghost[disabled]:hover { background: none; color: var(--px-text-muted); }
+${controls}
 
     input, select, textarea {
         font: inherit;
@@ -487,6 +516,24 @@ const base = sheet(`
     .muted { color: var(--px-text-muted); }
     .dim { color: var(--px-text-dim); }
     .strong { color: var(--px-text-strong); }
+
+    /* The centred "nothing here yet", built by ui/empty-state.js. Two windows already
+       show one; the rules live here so they cannot drift apart. */
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: var(--px-space-2);
+        height: 100%;
+        min-height: 120px;
+        padding: var(--px-space-6);
+        text-align: center;
+        color: var(--px-text-dim);
+    }
+
+    .empty-state strong { font-weight: var(--px-weight-bold); color: var(--px-text); }
+    .empty-state span { max-width: 320px; line-height: var(--px-leading); }
 
     /* Scrollbars: the current ones are a keeper, and Firefox now gets them too. It has no
        ::-webkit-scrollbar and reads these two instead — applied to every element, because

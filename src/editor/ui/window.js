@@ -25,44 +25,66 @@ export class Window extends Element {
         :host {
             display: flex;
             flex-direction: column;
-            background: var(--px-bg-1);
+            background: var(--px-surface);
             min-height: 0;
             min-width: 0;
             overflow: hidden;
         }
 
+        /* The header is a hit target plus one step of space, so it follows the density
+           tokens instead of carrying a number of its own — 36 on a mouse, 42 under
+           a coarse pointer. The prototype draws 30 here; that is off the four-pixel
+           grid and below the touch target, so Modern Pixel wins (design/README.md is a
+           reference, not an authority on density). */
         header {
             display: flex;
             align-items: center;
-            gap: 6px;
-            height: calc(var(--px-hit) + 8px);
-            padding: 0 5px 0 10px;
-            background: var(--px-bg-2);
-            border-bottom: 1px solid var(--px-line);
+            gap: var(--px-space-2);
+            height: calc(var(--px-hit) + var(--px-space-2));
+            padding: 0 var(--px-space-1) 0 var(--px-space-2);
+            background: var(--px-surface-raised);
+            border-bottom: 1px solid var(--px-border);
             flex: 0 0 auto;
             -webkit-user-select: none;
             user-select: none;
         }
 
-        .glyph { color: var(--px-text-dim); }
+        .glyph { color: var(--px-text-muted); }
 
+        /* --px-text-dim measures 4.25:1 against --px-surface-raised — under the 4.5 the
+           token table itself sets. A title on a raised header is --px-text-muted (5.6:1),
+           which is the move styles.js said each window would make as it was rebuilt. */
         h2 {
             margin: 0;
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: var(--px-text-xs);
+            font-weight: var(--px-weight-bold);
+            letter-spacing: var(--px-tracking-caps);
             text-transform: uppercase;
-            color: var(--px-text-dim);
+            color: var(--px-text-muted);
             white-space: nowrap;
         }
 
         .spacer { flex: 1; }
 
+        /* The slot is the row, so a window with one button does not need a wrapper
+           element to get the spacing right. */
+        slot[name='actions'] {
+            display: flex;
+            align-items: center;
+            gap: var(--px-space-0);
+            flex: 0 0 auto;
+        }
+
+        /* No border here: what lands in the slot owns its own, because a second row that
+           can collapse to nothing (the Hierarchy's search) must be able to take its
+           separator with it. */
         .subheader {
             display: none;
             flex: 0 0 auto;
-            border-bottom: 1px solid var(--px-line);
-            background: var(--px-bg-1);
+            background: var(--px-surface);
         }
 
         .subheader.filled { display: block; }
@@ -92,7 +114,7 @@ export class Window extends Element {
 
         this.shadowRoot.append(
             el('header', {},
-                glyph ? el('span', { class: 'glyph' }, icon(glyph, 13)) : null,
+                glyph ? el('span', { class: 'glyph' }, icon(glyph)) : null,
                 el('slot', { name: 'title' }, el('h2', { textContent: label })),
                 el('div', { class: 'spacer' }),
                 el('slot', { name: 'actions' })

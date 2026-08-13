@@ -19,16 +19,31 @@ const STORAGE_KEY = 'pixelcreator.editor.layout';
 
 /** Sizes in pixels, with the bounds a drag is clamped to. */
 const SIZES = {
+    // 236 is the prototype's own left column, measured rather than guessed
+    // (design/prototype.css, --left). The minimum leaves a Hierarchy row its twisty, its
+    // glyph and its three per-row controls with something left for a name.
+    left: { value: 236, min: 180, max: 480, property: '--px-left' },
     // The minimum is measured, not guessed: below 260 the Inspector's paired fields
     // leave under 45 px for the digits, and a six-character coordinate starts scrolling
     // inside its own box (src/editor/ui/field.js).
     right: { value: 304, min: 260, max: 560, property: '--px-right' },
-    hierarchy: { value: 250, min: 120, max: 900, property: '--px-hierarchy' },
-    dock: { value: 180, min: 120, max: 720, property: '--px-dock' }
+    project: { value: 192, min: 120, max: 720, property: '--px-project' },
+    timeline: { value: 192, min: 120, max: 720, property: '--px-timeline' }
 };
 
-/** Windows a creator can hide. The viewport and the toolbar are not negotiable. */
-const PANELS = ['hierarchy', 'inspector', 'dock'];
+/**
+ * Windows a creator can hide, and whether they start shown.
+ *
+ * The Timeline starts hidden because L4 makes it conditional: it takes a band across the
+ * scene, and a project with nothing animated should not pay for it. The viewport and the
+ * creation rail are not negotiable and are absent from this table.
+ */
+const PANELS = {
+    hierarchy: true,
+    inspector: true,
+    project: true,
+    timeline: false
+};
 
 export class Layout {
 
@@ -39,7 +54,7 @@ export class Layout {
 
     constructor() {
         for (const [name, spec] of globalThis.Object.entries(SIZES)) this.#sizes.set(name, spec.value);
-        for (const name of PANELS) this.#visible.set(name, true);
+        for (const [name, shown] of globalThis.Object.entries(PANELS)) this.#visible.set(name, shown);
         this.#restore();
     }
 
@@ -97,7 +112,7 @@ export class Layout {
      * @param {boolean} [shown] - The new state; toggles when omitted
      */
     show(panel, shown = !this.shows(panel)) {
-        if (!PANELS.includes(panel) || shown === this.shows(panel)) return;
+        if (!(panel in PANELS) || shown === this.shows(panel)) return;
         this.#visible.set(panel, shown);
         this.#save();
         this.#emitter.emit('changed', { panel, shown });
@@ -147,7 +162,7 @@ export class Layout {
             }
         }
         for (const [name, shown] of globalThis.Object.entries(state.visible ?? {})) {
-            if (PANELS.includes(name) && typeof shown === 'boolean') this.#visible.set(name, shown);
+            if (name in PANELS && typeof shown === 'boolean') this.#visible.set(name, shown);
         }
     }
 }

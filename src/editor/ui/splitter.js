@@ -18,8 +18,8 @@ export class Splitter extends Element {
         :host {
             position: relative;
             flex: 0 0 auto;
-            background: var(--px-line);
-            z-index: 2;
+            background: var(--px-border);
+            z-index: var(--px-z-splitter);
             touch-action: none;
             -webkit-user-select: none;
             user-select: none;
@@ -31,7 +31,7 @@ export class Splitter extends Element {
         /* The grab area, invisible, centred on the seam. */
         .grip {
             position: absolute;
-            transition: background 120ms ease;
+            transition: background var(--px-duration) var(--px-ease);
         }
 
         :host([axis='x']) .grip {
@@ -50,7 +50,7 @@ export class Splitter extends Element {
             cursor: row-resize;
         }
 
-        .grip:hover, :host([dragging]) .grip { background: var(--px-accent-line); }
+        .grip:hover, :host([dragging]) .grip { background: var(--px-accent-border); }
     `);
 
     #config = null;

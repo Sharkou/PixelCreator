@@ -106,10 +106,10 @@ export class Viewport extends Element {
 
         .readout {
             position: absolute;
-            left: 10px;
-            bottom: 8px;
+            left: var(--px-space-3);
+            bottom: var(--px-space-2);
             display: flex;
-            gap: 12px;
+            gap: var(--px-space-3);
             pointer-events: none;
             font-family: var(--px-font-mono);
             font-variant-numeric: tabular-nums;
@@ -119,11 +119,11 @@ export class Viewport extends Element {
 
         .actions {
             position: absolute;
-            right: 8px;
-            bottom: 8px;
+            right: var(--px-space-2);
+            bottom: var(--px-space-2);
             display: flex;
-            gap: 2px;
-            padding: 2px;
+            gap: var(--px-space-0);
+            padding: var(--px-space-0);
             background: var(--px-surface);
             border: 1px solid var(--px-border);
             border-radius: var(--px-radius);

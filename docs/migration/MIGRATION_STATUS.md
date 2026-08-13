@@ -27,12 +27,16 @@ Aucun fichier de `legacy/` n'a été modifié.
 | **2.11** | Définition de Component — propriétés + graphe, `defineComponent()` (ADR-0016) ; quatre formes de Component verrouillées et testées (ADR-0004) ; `preview()` retiré du contrat ; vérification des fondations avant l'Editor |
 | **3** | **Premier vertical slice de l'Editor** — Shell, Viewport sur le Runtime réel, sélection et picking éditoriaux (ADR-0017), Hierarchy, Inspector piloté par schéma, ajout/retrait de Components. Complément Core : les cinq événements de structure de la `Scene` |
 | **3.1** | **Editor UX-2** — shell à fenêtres redimensionnables (`window` / `tabs` / `splitter` / `layout`), Hierarchy avec recherche et actions par ligne, outils de Viewport (`select-tool` / `pan-tool`), resize 8 directions paramétré, zoom lissé, repères de curseur, Inspector à contrôles typés, toolbar de création par glisser, coquilles Project / Timeline |
+| **3.2** | **Modern Pixel — design system** (`795a545`) : tokens à rôles sémantiques, accent corail, densité `row` / `control` / `hit`, icônes à deux tailles rendues (16 / 20), couches z nommées, easing et durées. Palette Legacy abandonnée |
+| **3.3** | **Modern Pixel — Viewport** (`bb8268a`) : backing store DPR, détection de changement de DPR, resize robuste, picking et grille optimisés, cache des mesures DOM, `pointermove` coalescé, boucle de rendu *dirty*, tactile et pinch zoom |
+| **3.4** | **Modern Pixel — Inspector** (`a38d90e`, `2cc7411`) : `.row > .label + .fields`, la grille appartient à l'Inspector, `px-field` réduit à une cellule, scrub, steppers empilés, valeurs en monospace ; `box-sizing` rétabli dans la feuille adoptée par les Shadow Roots |
+| **3.5** | **Modern Pixel — chrome, fenêtres et layout L4** : `window` / `hierarchy` / `menu` / `splitter` / `tabs` / `toolbar` / `editor` convergés, bloc d'alias temporaires **supprimé**, `px-dock` scindé en `px-project` et `px-timeline`, disposition L4 (Hierarchy et Project à gauche, Inspector en colonne ininterrompue, Timeline conditionnelle) |
 
-### État vérifié (2026-08-13, après étape 3.1)
+### État vérifié (2026-08-13, après étape 3.5)
 
 ```bash
-tools/test.sh              # 449 tests, 449 passés
-node tools/layers/run.js   # v2 : 0 violation sur 299 imports — legacy : 1 trackée
+tools/test.sh              # 480 tests, 480 passés
+node tools/layers/run.js   # v2 : 0 violation sur 318 imports — legacy : 1 trackée
 node tools/parity/run.js   # 39 identical, 0 problems
 ```
 
@@ -83,6 +87,17 @@ Component → Create Component → nom → propriétés → définition → disp
 puis l'ouverture de son graphe. Les briques Core existent (`defineComponent()`,
 `ComponentRegistry.register({ replace })`, `Behaviors`) ; ce qui manque est le **modèle de
 graphe et son interprète**, sans lesquels un comportement ne peut pas encore tourner.
+
+### Décisions d'interface encore ouvertes
+
+Elles bloquent des éléments que la maquette dessine et que le code refuse d'inventer.
+
+| Sujet | Pourquoi c'est ouvert |
+|---|---|
+| Transport Play / Pause / Stop | Demande l'instantané de scène restauré à l'arrêt (voir plus haut). Le titlebar n'en porte **aucun** bouton plutôt qu'un bouton mort |
+| Barre de commandes `Ctrl K` | Il n'existe aucun registre de commandes à interroger. `openMenu()` place une liste, il ne la construit pas. Un système de commandes est un travail à part entière |
+| Couleurs de famille | La direction A du prototype donne `--hue-*: var(--accent)` : les quatre teintes n'existent **que** dans la direction B. La décision retenue les limite à l'icône d'en-tête d'un panneau, mais leur valeur n'est pas arrêtée, donc aucun token de famille n'a été introduit |
+| `px-tabs` | Plus aucun consommateur depuis la scission de `px-dock`. La primitive est conservée et enregistrée ; la supprimer est une décision, pas un nettoyage |
 
 ## Décisions validées
 

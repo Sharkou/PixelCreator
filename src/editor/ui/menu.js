@@ -11,15 +11,18 @@ import { icon } from './icons.js';
 export class Menu extends Element {
 
     static styles = sheet(`
+        /* The popover surface, and one of the only two shadows left in the Editor: depth
+           is a step in the surface ramp everywhere else, but a menu genuinely floats over
+           unrelated content and has to say so (ui/styles.js). */
         :host {
             position: fixed;
-            z-index: 100;
+            z-index: var(--px-z-overlay);
             min-width: 150px;
             max-height: 320px;
             overflow: auto;
-            padding: 4px;
-            background: var(--px-bg-2);
-            border: 1px solid var(--px-line);
+            padding: var(--px-space-1);
+            background: var(--px-surface-overlay);
+            border: 1px solid var(--px-border);
             border-radius: var(--px-radius);
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
         }
@@ -27,21 +30,22 @@ export class Menu extends Element {
         button {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: var(--px-space-2);
             width: 100%;
-            padding: 5px 8px;
-            border-radius: 4px;
+            min-height: var(--px-row);
+            padding: var(--px-space-1) var(--px-space-2);
+            border-radius: var(--px-radius);
             text-align: left;
             white-space: nowrap;
             color: var(--px-text);
         }
 
-        button:hover { background: var(--px-bg-3); color: var(--px-text-strong); }
+        button:hover { background: var(--px-surface-hover); color: var(--px-text-strong); }
         button[disabled] { color: var(--px-text-dim); cursor: default; }
         button[disabled]:hover { background: none; }
 
         .empty {
-            padding: 6px 8px;
+            padding: var(--px-space-2);
             color: var(--px-text-dim);
         }
 
@@ -50,7 +54,7 @@ export class Menu extends Element {
            same kind of thing. Only the colour differs, by role: a group heading is
            quieter than the section it groups. */
         .heading {
-            padding: 7px 8px 3px;
+            padding: var(--px-space-2) var(--px-space-2) var(--px-space-1);
             font-size: var(--px-text-2xs);
             font-weight: var(--px-weight-bold);
             letter-spacing: var(--px-tracking-caps);
@@ -59,7 +63,7 @@ export class Menu extends Element {
         }
 
         .heading:not(:first-child) {
-            margin-top: 3px;
+            margin-top: var(--px-space-1);
             border-top: 1px solid var(--px-border-subtle);
         }
     `);
@@ -85,7 +89,7 @@ export class Menu extends Element {
                         type: 'button',
                         disabled: Boolean(item.disabled),
                         onclick: () => this.#pick(item)
-                    }, item.icon ? icon(item.icon, 13) : null, el('span', { textContent: item.label }))))
+                    }, item.icon ? icon(item.icon) : null, el('span', { textContent: item.label }))))
         );
 
         this.style.left = `${rect.left}px`;

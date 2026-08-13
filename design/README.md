@@ -8,6 +8,30 @@ DESIGN V2 :
 
 Une fois les décisions prises, `rm -rf design/` suffit. Rien d'autre n'est à défaire.
 
+## Décisions prises
+
+- **D7 = A — Modern Pixel.** Chrome vectoriel, neutres froids, accent corail. Le pixel
+  reste réservé au logo, aux poignées, au curseur et au damier.
+- **D8 = L4.** Timeline conditionnelle qui s'arrête avant l'Inspector ; l'Inspector garde
+  une colonne ininterrompue.
+- **Emprunts, tous deux ciblés.** De C : le gros bouton Play vert et la barre `Ctrl K`.
+  De B : la couleur de famille, **réduite au signal de l'icône d'en-tête d'un panneau** —
+  pas de rails multicolores, et le liseré de sélection reste `--px-accent`.
+
+### Ce que le prototype ne suffit pas à décider
+
+- **La couleur de famille n'est pas prototypée en A.** Les `--hue-*` de la direction A
+  valent tous `var(--accent)` ; les quatre teintes (`#45c8ff`, `#a98bff`, `#ffb648`,
+  `#4ade80`) n'existent que dans la direction B, où elles servent aussi des rails et des
+  tampons que la décision rejette. Aucun token de famille n'a donc été introduit dans
+  `src/` : leur valeur en Modern Pixel reste à arrêter.
+- **Le prototype n'est pas une autorité sur la densité.** Là où il contredit une décision
+  Modern Pixel déjà prise, Modern Pixel gagne et l'écart est documenté dans le fichier
+  concerné : en-tête de panneau à 36 et non 30, `--px-hit` à 28 et non 26, colonne
+  Inspector à 304 et non 286 (minimum mesuré, `src/editor/layout.js`).
+- **Le prototype ne dessine pas le rail de création.** Ce n'est pas une décision de le
+  supprimer : il porte le placement exact au point de dépose, que le menu `+` ne fait pas.
+
 ## Ouvrir
 
 Depuis la racine du dépôt (`engine/`) :

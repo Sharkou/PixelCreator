@@ -91,7 +91,7 @@ export class NumberInput extends Element {
             background: none;
             box-shadow: none;
             text-align: center;
-            padding: 0 2px;
+            padding: 0 var(--px-space-0);
             /* A value is set one step below the interface text. Digits are read, not
                scanned, and the smaller face buys two more characters before a long
                coordinate starts scrolling inside its own box. */
@@ -136,7 +136,10 @@ export class NumberInput extends Element {
         }
 
         .steppers button:hover { background: var(--px-surface-hover); color: var(--px-text-strong); }
-        .steppers button:active, .steppers button.held { background: var(--px-accent); color: #fff; }
+        /* The floor colour on the accent, not white: 7.0:1 against 2.6:1, and the same
+           pairing the drag ghost uses, so "pressed" reads the same everywhere. */
+        .steppers button:active,
+        .steppers button.held { background: var(--px-accent); color: var(--px-background); }
 
         .steppers i {
             display: block;

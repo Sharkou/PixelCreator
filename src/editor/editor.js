@@ -33,92 +33,96 @@ import './viewport/viewport.js';
 import './windows/hierarchy.js';
 import './windows/inspector.js';
 import './windows/toolbar.js';
-import './windows/dock.js';
+import './windows/project.js';
+import './windows/timeline.js';
 
-/** Windows that can be shown or hidden, and the button that does it. */
+/**
+ * Windows that can be shown or hidden, and the button that does it.
+ *
+ * In the order they sit in the shell — left column top, left column bottom, the band
+ * across the scene, right column — so the row of buttons is a small map of the layout
+ * rather than an arbitrary list.
+ */
 const TOGGLES = [
     { panel: 'hierarchy', label: 'Hierarchy', icon: 'hierarchy' },
-    { panel: 'inspector', label: 'Inspector', icon: 'inspector' },
-    { panel: 'dock', label: 'Project & Timeline', icon: 'folder' }
+    { panel: 'project', label: 'Project', icon: 'folder' },
+    { panel: 'timeline', label: 'Timeline', icon: 'timeline' },
+    { panel: 'inspector', label: 'Inspector', icon: 'inspector' }
 ];
 
 const shellStyles = sheet(`
+    /* Density, not a number: a hit target plus one step, which is 40 on a mouse and 46
+       under a coarse pointer. */
     .titlebar {
         display: flex;
         align-items: center;
-        gap: 10px;
-        height: 38px;
+        gap: var(--px-space-3);
+        height: calc(var(--px-hit) + var(--px-space-3));
         flex: 0 0 auto;
-        padding: 0 8px 0 12px;
-        background: var(--px-bg-2);
-        border-bottom: 1px solid var(--px-line);
+        padding: 0 var(--px-space-1) 0 var(--px-space-3);
+        background: var(--px-surface-raised);
+        border-bottom: 1px solid var(--px-border);
         -webkit-user-select: none;
         user-select: none;
     }
 
+    /* The one pixel in the chrome: a square with a soft ring, 12 and 4, so the mark reads
+       at exactly the 20 px of a presence glyph. */
     .titlebar .mark {
-        width: 13px;
-        height: 13px;
-        border-radius: 3px;
+        width: 12px;
+        height: 12px;
+        border-radius: var(--px-radius-sm);
         background: var(--px-accent);
-        box-shadow: 0 0 0 3px var(--px-accent-soft);
+        box-shadow: 0 0 0 var(--px-space-1) var(--px-accent-muted);
         flex: 0 0 auto;
     }
 
     .titlebar .product {
-        font-weight: 600;
-        letter-spacing: 0.2px;
+        font-weight: var(--px-weight-bold);
         color: var(--px-text-strong);
         white-space: nowrap;
     }
 
-    .titlebar .scene {
-        color: var(--px-text-dim);
+    /* NOT .scene — the viewport already owns that word, and this sheet is in the document
+       where there are no shadow roots to keep the two apart. */
+    .titlebar .scene-name {
+        color: var(--px-text-muted);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
-    .titlebar .scene::before { content: '/'; margin-right: 9px; color: var(--px-line-soft); }
+    .titlebar .sep { color: var(--px-border-subtle); }
     .titlebar .spacer { flex: 1; }
-    .titlebar .toggles { display: flex; gap: 2px; }
+    .titlebar .toggles { display: flex; gap: var(--px-space-0); }
 
-    .titlebar button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: var(--px-hit);
-        height: var(--px-hit);
-        border-radius: var(--px-radius-sm);
-        border: 0;
-        background: none;
-        color: var(--px-text-dim);
-        cursor: pointer;
-        transition: background 90ms ease, color 90ms ease;
-    }
+    /* The chrome bar has no 26 px row to fit into, so its buttons are hit-sized outright
+       rather than control-sized with the hit area reaching past them. */
+    .titlebar .ghost { width: var(--px-hit); height: var(--px-hit); }
 
-    .titlebar button:hover { background: var(--px-bg-3); color: var(--px-text-strong); }
-    .titlebar button.on { color: var(--px-accent); background: var(--px-accent-soft); }
-
-    .stage { position: relative; }
-
-    /* Narrow: the sidebar stops taking space and floats over the scene instead of
+    /* Narrow: the Inspector stops taking space and floats over the scene instead of
        squeezing it into nothing. Same Editor, not a second one. */
     @media (max-width: 760px) {
-        .stage > .sidebar {
+        .workspace { position: relative; }
+
+        .workspace > .col-right {
             position: absolute;
             top: 0;
             right: 0;
             bottom: 0;
             width: min(var(--px-right), 78vw);
             box-shadow: -10px 0 24px rgba(0, 0, 0, 0.45);
-            z-index: 4;
+            z-index: var(--px-z-drawer);
         }
-        .stage > px-splitter { display: none; }
+
+        .workspace > px-splitter { display: none; }
     }
 
-    .sidebar { width: min(var(--px-right), 46vw); }
-    .workspace > px-dock { height: min(var(--px-dock), 52vh); }
+    /* A size restored from storage must never be able to swallow the window. */
+    .col-left { width: min(var(--px-left), 40vw); }
+    .col-right { width: min(var(--px-right), 46vw); }
+    .col-left > px-project { height: min(var(--px-project), 60%); }
+    .stack > px-timeline { height: min(var(--px-timeline), 45vh); }
 `);
 
 /**
@@ -140,34 +144,47 @@ export function start(mount = document.body) {
     const hierarchy = el('px-hierarchy').bind({ scene, selection, viewport });
     const inspector = el('px-inspector').bind({ scene, selection, registry: components });
     const toolbar = el('px-toolbar').bind({ scene, selection, viewport });
-    const dock = el('px-dock');
+    const project = el('px-project');
+    const timeline = el('px-timeline');
 
-    const hierarchySplit = el('px-splitter').bind({
+    // `invert` is "moving towards the origin grows this size", which is true of every
+    // seam whose window sits after it: the Project and the Timeline below, the Inspector
+    // to the right. The left column is the one that grows the way the pointer travels.
+    const projectSplit = el('px-splitter').bind({
         axis: 'y',
-        get: () => layout.get('hierarchy'),
-        set: value => layout.set('hierarchy', value)
+        invert: true,
+        get: () => layout.get('project'),
+        set: value => layout.set('project', value)
     });
-    const sidebarSplit = el('px-splitter').bind({
+    const leftSplit = el('px-splitter').bind({
+        axis: 'x',
+        get: () => layout.get('left'),
+        set: value => layout.set('left', value)
+    });
+    const timelineSplit = el('px-splitter').bind({
+        axis: 'y',
+        invert: true,
+        get: () => layout.get('timeline'),
+        set: value => layout.set('timeline', value)
+    });
+    const rightSplit = el('px-splitter').bind({
         axis: 'x',
         invert: true,
         get: () => layout.get('right'),
         set: value => layout.set('right', value)
     });
-    const dockSplit = el('px-splitter').bind({
-        axis: 'y',
-        invert: true,
-        get: () => layout.get('dock'),
-        set: value => layout.set('dock', value)
-    });
 
-    const sidebar = el('div', { class: 'sidebar' }, hierarchy, hierarchySplit, inspector);
+    const columnLeft = el('div', { class: 'col-left' }, hierarchy, projectSplit, project);
+    const columnRight = el('div', { class: 'col-right' }, inspector);
+    const stack = el('div', { class: 'stack' },
+        el('div', { class: 'work' }, columnLeft, leftSplit, viewport),
+        timelineSplit,
+        timeline
+    );
+
     const shell = el('div', { class: 'shell' },
         titlebar(scene, layout),
-        el('div', { class: 'workspace' },
-            el('div', { class: 'stage' }, toolbar, viewport, sidebarSplit, sidebar),
-            dockSplit,
-            dock
-        )
+        el('div', { class: 'workspace' }, toolbar, stack, rightSplit, columnRight)
     );
 
     mount.append(shell);
@@ -175,17 +192,21 @@ export function start(mount = document.body) {
 
     const applyVisibility = () => {
         hierarchy.hidden = !layout.shows('hierarchy');
+        project.hidden = !layout.shows('project');
         inspector.hidden = !layout.shows('inspector');
-        dock.hidden = !layout.shows('dock');
-        dockSplit.hidden = !layout.shows('dock');
+        timeline.hidden = !layout.shows('timeline');
+        timelineSplit.hidden = !layout.shows('timeline');
 
-        const sidebarShown = layout.shows('hierarchy') || layout.shows('inspector');
-        sidebar.hidden = !sidebarShown;
-        sidebarSplit.hidden = !sidebarShown;
+        columnRight.hidden = !layout.shows('inspector');
+        rightSplit.hidden = !layout.shows('inspector');
+
+        const leftShown = layout.shows('hierarchy') || layout.shows('project');
+        columnLeft.hidden = !leftShown;
+        leftSplit.hidden = !leftShown;
         // With one window left there is no seam to drag, and the survivor takes the lot.
-        const both = layout.shows('hierarchy') && layout.shows('inspector');
-        hierarchySplit.hidden = !both;
-        sidebar.classList.toggle('single', !both);
+        const both = layout.shows('hierarchy') && layout.shows('project');
+        projectSplit.hidden = !both;
+        columnLeft.classList.toggle('single', !both);
     };
 
     layout.observe(applyVisibility);
@@ -218,16 +239,29 @@ export function createEditorCamera() {
     return camera;
 }
 
+// THERE IS NO TRANSPORT HERE, AND THAT IS DELIBERATE. The prototype draws Play / Pause /
+// Stop, and Play needs a scene snapshot restored on stop, which does not exist yet
+// (docs/migration/MIGRATION_STATUS.md). A green button that does nothing would be the one
+// kind of lie this Editor has consistently refused. It arrives with its mechanism.
+//
+// Nor is there a Ctrl K bar: there is no command registry to search. Both are named in the
+// report rather than mocked up here.
 function titlebar(scene, layout) {
     const buttons = TOGGLES.map(toggle => {
         const button = el('button', {
+            class: 'ghost',
             type: 'button',
             title: `Toggle ${toggle.label}`,
             'aria-label': `Toggle ${toggle.label}`,
+            'aria-pressed': 'true',
             onclick: () => layout.show(toggle.panel)
-        }, icon(toggle.icon, 15));
+        }, icon(toggle.icon));
 
-        const sync = () => button.classList.toggle('on', layout.shows(toggle.panel));
+        const sync = () => {
+            const shown = layout.shows(toggle.panel);
+            button.classList.toggle('on', shown);
+            button.setAttribute('aria-pressed', globalThis.String(shown));
+        };
         layout.observe(sync);
         sync();
         return button;
@@ -236,7 +270,8 @@ function titlebar(scene, layout) {
     return el('div', { class: 'titlebar' },
         el('div', { class: 'mark' }),
         el('span', { class: 'product', textContent: 'Pixel Creator' }),
-        el('span', { class: 'scene', textContent: scene.name }),
+        el('span', { class: 'sep', textContent: '/' }),
+        el('span', { class: 'scene-name', textContent: scene.name }),
         el('div', { class: 'spacer' }),
         el('div', { class: 'toggles' }, buttons)
     );
