@@ -147,6 +147,109 @@ test('results are whole numbers unless asked otherwise', () => {
     const object = box(scene, { width: 100, height: 60 });
 
     const state = beginResize(object, handle('right'), { x: 50, y: 0 });
-    assert.equal(resizeTo(state, { x: 57.4, y: 0 }).width, 107);
+    // 7.4 units of travel round to an even 8, not to 7: half of the size change is what
+    // moves the centre, and half of 7 cannot be written as a whole number.
+    assert.equal(resizeTo(state, { x: 57.4, y: 0 }).width, 108);
     assert.equal(resizeTo(state, { x: 57.4, y: 0 }, { round: false }).width, 107.4);
+});
+
+test('the anchored edge is exact at every step of a drag, not merely close', () => {
+    const scene = new Scene('Main');
+
+    // Both parities, because an odd size puts the edges on half units and that is where
+    // the independent rounding of x and width used to lose half a pixel.
+    for (const width of [100, 101]) {
+        const object = box(scene, { width, height: 60 });
+        const edge = -width / 2;
+        const state = beginResize(object, handle('right'), { x: width / 2, y: 0 });
+
+        for (let travel = 0; travel <= 20; travel += 0.5) {
+            const result = resizeTo(state, { x: width / 2 + travel, y: 0 });
+            assert.equal(result.x - result.width / 2, edge,
+                `width ${width}, travel ${travel}: the left edge moved`);
+            assert.equal(result.width % 2, width % 2, 'the parity of the size is preserved');
+            assert.ok(globalThis.Number.isInteger(result.x), 'the position stays whole');
+            assert.ok(globalThis.Number.isInteger(result.width), 'the size stays whole');
+        }
+
+        scene.remove(object);
+    }
+});
+
+test('every handle keeps its anchored edge exact for odd sizes too', () => {
+    const scene = new Scene('Main');
+
+    for (const entry of HANDLES) {
+        const object = box(scene, { width: 101, height: 61 });
+        const start = { x: entry.x * 50.5, y: entry.y * 30.5 };
+        const result = drag(object, entry.id,
+            start, { x: start.x + entry.x * 7.3, y: start.y + entry.y * 5.1 });
+
+        if (entry.x !== 0) {
+            assert.equal(result.x - entry.x * result.width / 2, -entry.x * 50.5,
+                `${entry.id}: the opposite vertical edge moved`);
+        }
+        if (entry.y !== 0) {
+            assert.equal(result.y - entry.y * result.height / 2, -entry.y * 30.5,
+                `${entry.id}: the opposite horizontal edge moved`);
+        }
+
+        scene.remove(object);
+    }
+});
+
+test('the smallest size a drag can reach keeps the parity it started with', () => {
+    const scene = new Scene('Main');
+
+    const even = box(scene, { width: 100, height: 60 });
+    assert.equal(drag(even, 'right', { x: 50, y: 0 }, { x: -400, y: 0 }).width, 2,
+        'an even size cannot collapse to an odd one');
+    scene.remove(even);
+
+    const odd = box(scene, { width: 101, height: 61 });
+    assert.equal(drag(odd, 'right', { x: 50.5, y: 0 }, { x: -400, y: 0 }).width, 1,
+        'an odd size reaches the true minimum');
+});
+
+test('a scaled parent keeps the anchored edge exact in world space', () => {
+    const scene = new Scene('Main');
+    const parent = box(scene);
+    parent.getComponent('Transform').scaleX = 2;
+    parent.getComponent('Transform').scaleY = 2;
+    const child = box(scene, { width: 40, height: 40 });
+    parent.addChild(child);
+
+    const state = beginResize(child, handle('right'), { x: 40, y: 0 });
+    for (let travel = 0; travel <= 24; travel += 2) {
+        const result = resizeTo(state, { x: 40 + travel, y: 0 });
+        assert.equal(result.x - result.width / 2, -20, `travel ${travel}: the left edge moved`);
+    }
+});
+
+test('a rotated object holds its anchored edge to within the unit it is written in', () => {
+    const scene = new Scene('Main');
+    const object = box(scene, { rotation: Math.PI / 6, width: 100, height: 60 });
+
+    // An integer offset in the object's frame is irrational in the parent's, so writing
+    // whole numbers cannot be exact here. What matters is that the error is bounded by
+    // the rounding itself and never accumulates.
+    const cos = Math.cos(Math.PI / 6);
+    const sin = Math.sin(Math.PI / 6);
+    const state = beginResize(object, handle('right'), { x: 50 * cos, y: 50 * sin });
+
+    // x and y are each rounded, so the anchored edge can be off by half a unit on both
+    // axes at once — but never more, and never cumulatively, because every frame is
+    // computed from the state captured when the drag began.
+    const budget = Math.hypot(0.5, 0.5);
+
+    for (let travel = 0; travel <= 20; travel += 1) {
+        const result = resizeTo(state, { x: (50 + travel) * cos, y: (50 + travel) * sin });
+        // The anchored edge sits half a width back along the object's own +X axis.
+        const edgeX = result.x - (result.width / 2) * cos;
+        const edgeY = result.y - (result.width / 2) * sin;
+        const drift = Math.hypot(edgeX - -50 * cos, edgeY - -50 * sin);
+
+        assert.ok(drift <= budget,
+            `travel ${travel}: the anchored edge drifted ${drift.toFixed(4)}, past the rounding budget`);
+    }
 });

@@ -22,12 +22,27 @@
 // write to it directly: moving your own point of view is not an intent to record or to
 // replicate, so it produces no Operation (docs/architecture/EDITOR.md).
 //
+// ONE UNIT IN THE VIEW CHAIN: DEVICE PIXELS. The surface is measured in whole device
+// pixels (`surface.js`), the pointer is converted with the true device/CSS ratio, and the
+// view matrix is composed so that the centre of the view lands on exactly
+// deviceWidth / 2. Composing a rounded CSS size with `devicePixelRatio` is what used to
+// put the whole scene half a pixel off its own raster grid on any fractional-DPI display
+// — which is most Windows machines.
+//
+// NOTHING IS DRAWN WHEN NOTHING CHANGED. The frame loop is driven by invalidation, not by
+// the clock: the element subscribes to the scene's structure, to every property of every
+// object in it, and to its own camera, and asks for a frame when one of them moves. At
+// rest it schedules nothing at all. The loop restarts by itself for the one thing that
+// genuinely animates without input — the zoom ease — and would run continuously again the
+// day `Runtime.running` becomes true, because a simulation does not announce itself.
+//
 // WHAT THIS FILE DOES AND DOES NOT DO. It owns the surfaces, the view matrix and the
 // frame; it routes pointers to a tool and draws what the tool asks for. Every gesture
-// lives in `tools/`, and every piece of geometry in `picking.js`, `resize.js` and
-// `grid.js` — which is what stopped this from becoming Legacy's 27 kB `handler.js`.
+// lives in `tools/`, and every piece of geometry in `picking.js`, `resize.js`,
+// `surface.js` and `grid.js` — which is what stopped this from becoming Legacy's 27 kB
+// `handler.js`.
 
-import { Matrix, worldMatrix, worldPosition } from '../../core/mod.js';
+import { Matrix, observe, worldMatrix, worldPosition } from '../../core/mod.js';
 // The runtime's Viewport — the screen rectangle — is aliased, because this element is
 // also called Viewport. Two different things with one good name: the runtime's is the
 // surface being drawn into, this one is the window a creator looks through.
@@ -43,6 +58,7 @@ import { sheet } from '../ui/styles.js';
 import { icon } from '../ui/icons.js';
 import { drawGrid, matrixScale } from './grid.js';
 import { editorBounds } from './picking.js';
+import { measureSurface, quantiseCamera, sameSurface } from './surface.js';
 import { GUIDE_STYLES, Guides } from './guides.js';
 import { SelectTool } from './tools/select-tool.js';
 import { PanTool } from './tools/pan-tool.js';
@@ -56,13 +72,19 @@ const ZOOM_EASING = 0.28;
 /** Below this relative difference the ease is over; without it, it never quite ends. */
 const ZOOM_SETTLED = 0.001;
 
+/** Device pixels a finger may wander and still be a tap rather than a pan. */
+const TAP_SLOP = 6;
+
+/** The structural events that change what there is to draw, and what to watch. */
+const STRUCTURE = ['added', 'removed', 'child:added', 'child:removed', 'component:added', 'component:removed'];
+
 export class Viewport extends Element {
 
     static styles = sheet(`
         :host {
             display: block;
             position: relative;
-            background: var(--px-bg-0);
+            background: var(--px-background);
             overflow: hidden;
             touch-action: none;
         }
@@ -71,6 +93,7 @@ export class Viewport extends Element {
             position: absolute;
             inset: 0;
             cursor: default;
+            touch-action: none;
         }
 
         canvas {
@@ -88,10 +111,10 @@ export class Viewport extends Element {
             display: flex;
             gap: 12px;
             pointer-events: none;
-            font-family: var(--px-mono);
-            font-size: 10px;
-            color: var(--px-text-dim);
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+            font-family: var(--px-font-mono);
+            font-variant-numeric: tabular-nums;
+            font-size: var(--px-text-2xs);
+            color: var(--px-text-muted);
         }
 
         .actions {
@@ -100,11 +123,10 @@ export class Viewport extends Element {
             bottom: 8px;
             display: flex;
             gap: 2px;
-        }
-
-        .actions .ghost {
-            background: rgba(20, 20, 23, 0.72);
-            backdrop-filter: blur(3px);
+            padding: 2px;
+            background: var(--px-surface);
+            border: 1px solid var(--px-border);
+            border-radius: var(--px-radius);
         }
 
         ${GUIDE_STYLES}
@@ -124,14 +146,28 @@ export class Viewport extends Element {
 
     #tool = null;
     #pan = null;
-    #panning = false;
 
-    #dpr = 1;
+    // The surface, in both units, plus the exact ratio between them. Everything that
+    // converts a pointer or places the view reads this and never the DOM.
+    #metrics = null;
+    #rect = null;
+    #ratioQuery = null;
+
     #frame = 0;
+    #dirty = true;
     #gridSignature = '';
     #zoomTarget = null;
     #zoomAnchor = null;
     #zoomReadout = null;
+    #zoomShown = '';
+
+    // Active pointers, by id, in client coordinates. Two of them on a touch screen is a
+    // pinch; one on empty space is a pan.
+    #pointers = new globalThis.Map();
+    #gesture = null;
+    #pinch = null;
+    #tap = null;
+    #pending = null;
 
     /**
      * Point the viewport at what it should show.
@@ -163,28 +199,57 @@ export class Viewport extends Element {
         return this.#runtime;
     }
 
-    /** The matrix mapping world space to this surface, device pixels included. */
+    /**
+     * The matrix mapping world space to this surface, in device pixels.
+     *
+     * The scale is the measured device/CSS ratio, not `devicePixelRatio`: composed with
+     * the runtime's view matrix it puts the centre of the view at exactly half the
+     * backing store, whatever rounding the browser did on the way.
+     */
     get view() {
-        return Matrix.compose(0, 0, 0, this.#dpr, this.#dpr)
+        const metrics = this.#metrics;
+        if (!metrics) return viewMatrix(this.#camera, this.#viewport);
+        return Matrix.compose(0, 0, 0, metrics.scaleX, metrics.scaleY)
             .multiply(viewMatrix(this.#camera, this.#viewport));
     }
 
     connectedCallback() {
         if (!this.#surface) this.#build();
 
-        this.track(this.#selection.observe(() => this.#refreshCursor()));
+        this.track(this.#selection.observe(() => {
+            this.#refreshCursor();
+            this.#invalidate();
+        }));
 
-        const observer = new ResizeObserver(() => this.#resize());
-        observer.observe(this);
+        // Whole device pixels when the browser can report them. The option throws where
+        // it is unknown, so the plain observation is the fallback and `surface.js`
+        // estimates from the fractional CSS box instead.
+        const observer = new ResizeObserver(entries => this.#resize(entries[entries.length - 1]));
+        try {
+            observer.observe(this, { box: 'device-pixel-content-box' });
+        } catch {
+            observer.observe(this);
+        }
         this.track(() => observer.disconnect());
 
+        for (const event of STRUCTURE) {
+            this.track(this.#scene.on(event, () => {
+                this.#watch();
+                this.#invalidate();
+            }));
+        }
+
+        this.#watch();
+        this.#watchRatio();
         this.#resize();
-        this.#frame = requestAnimationFrame(this.#tick);
+        this.#invalidate();
     }
 
     disconnectedCallback() {
         cancelAnimationFrame(this.#frame);
         this.#frame = 0;
+        this.#ratioQuery?.();
+        this.#ratioQuery = null;
         super.disconnectedCallback();
     }
 
@@ -195,7 +260,7 @@ export class Viewport extends Element {
      * @returns {boolean} True when inside
      */
     containsClient(clientX, clientY) {
-        const rect = this.#surface.getBoundingClientRect();
+        const rect = this.#bounds();
         return clientX >= rect.left && clientX <= rect.right
             && clientY >= rect.top && clientY <= rect.bottom;
     }
@@ -211,12 +276,7 @@ export class Viewport extends Element {
      * @returns {{x: number, y: number}} The world point
      */
     worldAt(clientX, clientY) {
-        const rect = this.#surface.getBoundingClientRect();
-        return screenToWorld(
-            this.view,
-            (clientX - rect.left) * this.#dpr,
-            (clientY - rect.top) * this.#dpr
-        );
+        return screenToWorld(this.view, ...this.#toDevice(clientX, clientY));
     }
 
     /**
@@ -224,7 +284,10 @@ export class Viewport extends Element {
      * @returns {{x: number, y: number}} The world point
      */
     worldCentre() {
-        return screenToWorld(this.view, this.#gridRenderer.width / 2, this.#gridRenderer.height / 2);
+        // Two other windows call this to place a new object, and one of them can do it
+        // before the first measurement has landed.
+        const metrics = this.#metrics ?? { deviceWidth: 1, deviceHeight: 1 };
+        return screenToWorld(this.view, metrics.deviceWidth / 2, metrics.deviceHeight / 2);
     }
 
     /**
@@ -249,6 +312,7 @@ export class Viewport extends Element {
         // Eased rather than snapped, and without an anchor: the object was just centred,
         // so the zoom settles around it.
         if (globalThis.Number.isFinite(fit) && fit > 0) this.#aimZoom(fit, null);
+        this.#invalidate();
     }
 
     /** Put the camera back at the world origin, at 1:1. */
@@ -256,6 +320,7 @@ export class Viewport extends Element {
         this.#camera.x = 0;
         this.#camera.y = 0;
         this.#aimZoom(1, null);
+        this.#invalidate();
     }
 
     #build() {
@@ -286,14 +351,14 @@ export class Viewport extends Element {
                     title: 'Frame selection',
                     'aria-label': 'Frame selection',
                     onclick: () => this.focusOn(this.#selection.object)
-                }, icon('focus', 14)),
+                }, icon('focus', 16)),
                 el('button', {
                     class: 'ghost',
                     type: 'button',
                     title: 'Reset view',
                     'aria-label': 'Reset view',
                     onclick: () => this.resetView()
-                }, icon('grid', 14))
+                }, icon('grid', 16))
             )
         );
 
@@ -307,57 +372,161 @@ export class Viewport extends Element {
         this.#runtime.running = false;
     }
 
-    #resize() {
-        const width = Math.max(1, this.clientWidth);
-        const height = Math.max(1, this.clientHeight);
+    /* ── surface ─────────────────────────────────────────────────────────── */
 
-        this.#dpr = globalThis.devicePixelRatio || 1;
-        this.#viewport.resize(width, height);
+    #resize(entry = null) {
+        this.#rect = this.#surface.getBoundingClientRect();
+        const metrics = measureSurface(entry, this.#rect, globalThis.devicePixelRatio || 1);
 
-        const deviceWidth = Math.round(width * this.#dpr);
-        const deviceHeight = Math.round(height * this.#dpr);
-        this.#gridRenderer.resize(deviceWidth, deviceHeight);
-        this.#sceneRenderer.resize(deviceWidth, deviceHeight);
+        // Resizing a canvas clears it, so a resize that changed nothing is a frame thrown
+        // away — and ResizeObserver fires for changes that leave the device box alone.
+        if (sameSurface(metrics, this.#metrics)) return;
+        this.#metrics = metrics;
+
+        // The runtime's Viewport keeps the CSS size, so `zoom` still means CSS pixels per
+        // world unit and 100% still means 100%. The device scale is applied above it.
+        this.#viewport.resize(metrics.cssWidth, metrics.cssHeight);
+        this.#gridRenderer.resize(metrics.deviceWidth, metrics.deviceHeight);
+        this.#sceneRenderer.resize(metrics.deviceWidth, metrics.deviceHeight);
 
         this.#gridSignature = '';
-        // Resizing a canvas clears it. Redrawing now rather than waiting for the next
-        // animation frame keeps the surface correct even when frames are not running —
-        // a background tab, or the instant a window is being dragged to a new size.
-        this.#draw();
+        this.#invalidate();
+    }
+
+    /**
+     * Re-arm a listener for the next change of devicePixelRatio.
+     *
+     * There is no event for it. A media query on the current ratio stops matching the
+     * moment it changes — moving the window to another monitor, or zooming the browser —
+     * and has to be replaced with one for the new ratio.
+     */
+    #watchRatio() {
+        this.#ratioQuery?.();
+        this.#ratioQuery = null;
+
+        const ratio = globalThis.devicePixelRatio || 1;
+        const query = globalThis.matchMedia?.(`(resolution: ${ratio}dppx)`);
+        if (!query?.addEventListener) return;
+
+        const onChange = () => {
+            this.#resize();
+            this.#watchRatio();
+        };
+        query.addEventListener('change', onChange, { once: true });
+        this.#ratioQuery = () => query.removeEventListener('change', onChange);
+    }
+
+    #bounds() {
+        if (!this.#rect) this.#rect = this.#surface.getBoundingClientRect();
+        return this.#rect;
+    }
+
+    #toDevice(clientX, clientY) {
+        const rect = this.#bounds();
+        const metrics = this.#metrics;
+        const scaleX = metrics?.scaleX ?? 1;
+        const scaleY = metrics?.scaleY ?? 1;
+        return [(clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY];
+    }
+
+    /* ── frame loop ──────────────────────────────────────────────────────── */
+
+    /** Ask for a frame. Cheap, idempotent, and the only way anything gets drawn. */
+    #invalidate() {
+        this.#dirty = true;
+        if (!this.#frame) this.#frame = requestAnimationFrame(this.#tick);
+    }
+
+    /**
+     * Subscribe to everything that changes what the viewport shows.
+     *
+     * Every property of every object and of every component, plus the camera. The
+     * Property System already publishes a wildcard observer, so this is a subscription
+     * and not a poll — and rebuilding it on a structural change is what keeps a newly
+     * created object drawn without the Inspector having to tell anyone.
+     */
+    #watch() {
+        this.release('watch');
+        const invalidate = () => this.#invalidate();
+
+        this.track(observe(this.#camera, invalidate), 'watch');
+        const lens = this.#camera.getComponent('Camera');
+        if (lens) this.track(observe(lens, invalidate), 'watch');
+
+        for (const object of this.#scene.objects()) {
+            this.track(observe(object, invalidate), 'watch');
+            const components = object.components;
+            for (const type of globalThis.Object.keys(components)) {
+                this.track(observe(components[type], invalidate), 'watch');
+            }
+        }
     }
 
     #tick = () => {
-        this.#frame = requestAnimationFrame(this.#tick);
-        this.#easeZoom();
+        this.#frame = 0;
+
+        this.#flushPointer();
+        if (this.#easeZoom()) this.#invalidate();
+        // A running simulation changes the scene without writing through the Property
+        // System on every frame, so it is the one case that needs a standing loop.
+        if (this.#runtime?.running) this.#invalidate();
+
+        if (!this.#dirty) return;
+        this.#dirty = false;
         this.#draw();
     };
 
     #draw() {
         const view = this.view;
+        const metrics = this.#metrics;
+        const density = metrics?.scaleX ?? 1;
 
-        // The grid only changes when the point of view does, so it is not redrawn sixty
-        // times a second for nothing.
+        // The grid only changes when the point of view does, so it is not rebuilt for
+        // nothing on a frame that only moved an object.
         const signature = `${this.#camera.x}|${this.#camera.y}|${this.#camera.rotation}`
             + `|${this.#zoom()}|${this.#gridRenderer.width}x${this.#gridRenderer.height}`;
         if (signature !== this.#gridSignature) {
-            drawGrid(this.#gridRenderer, view);
+            drawGrid(this.#gridRenderer, view, { density });
             this.#gridSignature = signature;
         }
 
         this.#runtime.render({ view });
-        this.#tool.draw(this.#sceneRenderer, view, { scale: this.#dpr });
+        this.#tool.draw(this.#sceneRenderer, view, { scale: density });
 
-        this.#zoomReadout.textContent = `${Math.round(this.#zoom() * 100)}%`;
+        const zoom = `${Math.round(this.#zoom() * 100)}%`;
+        if (zoom !== this.#zoomShown) {
+            this.#zoomReadout.textContent = zoom;
+            this.#zoomShown = zoom;
+        }
     }
+
+    /* ── pointers ────────────────────────────────────────────────────────── */
 
     #onPointerDown(event) {
         this.#surface.setPointerCapture(event.pointerId);
+        // A gesture is the one moment the cached rectangle is worth re-reading: a splitter
+        // drag or a hidden panel moves the viewport without resizing it.
+        this.#rect = this.#surface.getBoundingClientRect();
+
+        this.#pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+        const touch = event.pointerType === 'touch';
+
+        // Two fingers is a pinch, whatever the first one had started.
+        if (touch && this.#pointers.size === 2) {
+            event.preventDefault();
+            this.#abandonGesture();
+            this.#beginPinch();
+            this.#refreshCursor();
+            return;
+        }
+        if (this.#pointers.size > 2) return;
 
         // Middle or right: move the point of view. Both, because a trackpad has no middle
         // button and a mouse user reaches for it out of habit.
-        if (event.button === 1 || event.button === 2) {
+        if (!touch && (event.button === 1 || event.button === 2)) {
             event.preventDefault();
-            this.#panning = true;
+            this.#gesture = 'pan';
             this.#pan.press(this.#pointer(event));
             this.#refreshCursor();
             return;
@@ -365,41 +534,118 @@ export class Viewport extends Element {
 
         if (event.button !== 0) return;
 
-        this.#tool.press(this.#pointer(event));
+        const pointer = this.#pointer(event);
+
+        // A finger has no second button, so a press on empty space is how you pan. It is
+        // still one tool and three gestures: what is under the pointer decides, and a
+        // press that did not travel is still a tap that deselects.
+        if (touch && !this.#tool.wouldGrab(pointer)) {
+            event.preventDefault();
+            this.#gesture = 'pan';
+            this.#tap = { x: event.clientX, y: event.clientY };
+            this.#pan.press(pointer);
+            this.#refreshCursor();
+            return;
+        }
+
+        this.#gesture = 'tool';
+        this.#tool.press(pointer);
         this.#refreshCursor();
+        this.#invalidate();
     }
 
     #onPointerMove(event) {
-        const pointer = this.#pointer(event);
+        if (this.#pointers.has(event.pointerId)) {
+            this.#pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        }
 
-        if (this.#panning) this.#pan.move(pointer);
-        else this.#tool.move(pointer);
+        // Kept, not processed. A high-polling mouse fires several hundred times a second
+        // and every one of them would invert a matrix, hit-test the scene and write two
+        // properties; there is no point doing that more than once per frame, and doing it
+        // once per frame is also what makes a drag one Operation per frame as documented.
+        this.#pending = { clientX: event.clientX, clientY: event.clientY, pointerType: event.pointerType };
+        this.#invalidate();
+    }
 
-        const rect = this.#surface.getBoundingClientRect();
-        this.#guides.update(event.clientX - rect.left, event.clientY - rect.top, pointer.world);
+    #flushPointer() {
+        const pending = this.#pending;
+        if (!pending) return;
+        this.#pending = null;
+
+        if (this.#gesture === 'pinch') {
+            this.#movePinch();
+        } else if (this.#gesture === 'pan') {
+            this.#pan.move(this.#pointerAt(pending.clientX, pending.clientY, pending.pointerType));
+            this.#snapCamera();
+        } else {
+            this.#tool.move(this.#pointerAt(pending.clientX, pending.clientY, pending.pointerType));
+        }
+
+        const rect = this.#bounds();
+        this.#guides.update(
+            pending.clientX - rect.left,
+            pending.clientY - rect.top,
+            screenToWorld(this.view, ...this.#toDevice(pending.clientX, pending.clientY))
+        );
         this.#refreshCursor();
     }
 
     #onPointerUp(event) {
+        // Whatever was still pending belongs to this gesture, not to the next frame.
+        this.#flushPointer();
+
         if (this.#surface.hasPointerCapture(event.pointerId)) {
             this.#surface.releasePointerCapture(event.pointerId);
         }
-        if (this.#panning) {
-            this.#panning = false;
-            this.#pan.release();
+        this.#pointers.delete(event.pointerId);
+
+        if (this.#gesture === 'pinch') {
+            // The surviving finger keeps panning rather than jumping the view.
+            this.#pinch = null;
+            this.#gesture = this.#pointers.size === 1 ? 'pan' : null;
+            if (this.#gesture === 'pan') {
+                const [remaining] = [...this.#pointers.values()];
+                this.#pan.press(this.#pointerAt(remaining.x, remaining.y, 'touch'));
+            }
+            this.#refreshCursor();
+            this.#invalidate();
+            return;
         }
+
+        if (this.#gesture === 'pan') {
+            this.#pan.release();
+            this.#snapCamera();
+            // A finger that pressed empty space and did not travel meant "deselect".
+            if (this.#tap && Math.hypot(event.clientX - this.#tap.x, event.clientY - this.#tap.y) <= TAP_SLOP) {
+                this.#selection.clear();
+            }
+        }
+
+        this.#tap = null;
+        this.#gesture = null;
         this.#tool.release();
         this.#refreshCursor();
+        this.#invalidate();
     }
 
     #onPointerLeave() {
         this.#guides.hide();
+        this.#invalidate();
     }
+
+    #abandonGesture() {
+        if (this.#gesture === 'pan') this.#pan.release();
+        if (this.#gesture === 'tool') this.#tool.release();
+        this.#tap = null;
+        this.#gesture = null;
+    }
+
+    /* ── zoom ────────────────────────────────────────────────────────────── */
 
     #onWheel(event) {
         event.preventDefault();
 
-        const device = this.#toDevice(event);
+        const device = this.#toDevice(event.clientX, event.clientY);
         // Aimed from where the zoom is going, not from where it is: turning the wheel
         // three notches quickly must add up rather than fight the ease already running.
         const from = this.#zoomTarget ?? this.#zoom();
@@ -410,6 +656,48 @@ export class Viewport extends Element {
             device,
             world: screenToWorld(this.view, ...device)
         });
+        this.#invalidate();
+    }
+
+    #beginPinch() {
+        const [a, b] = [...this.#pointers.values()];
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+
+        // A pinch is already continuous, so it drives the zoom directly and cancels any
+        // ease that was running — easing a gesture that is itself the animation is what
+        // makes a pinch feel like it is fighting back.
+        this.#zoomTarget = null;
+        this.#zoomAnchor = null;
+
+        this.#gesture = 'pinch';
+        this.#pinch = {
+            distance: Math.hypot(a.x - b.x, a.y - b.y),
+            zoom: this.#zoom(),
+            world: this.worldAt(midX, midY)
+        };
+    }
+
+    #movePinch() {
+        const pinch = this.#pinch;
+        if (!pinch || this.#pointers.size < 2 || !(pinch.distance > 0)) return;
+
+        const [a, b] = [...this.#pointers.values()];
+        const distance = Math.hypot(a.x - b.x, a.y - b.y);
+        if (!(distance > 0)) return;
+
+        const lens = this.#camera.getComponent('Camera');
+        if (!lens) return;
+
+        lens.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pinch.zoom * (distance / pinch.distance)));
+
+        // Exactly the anchoring the wheel uses: whatever was between the fingers stays
+        // between the fingers, which is also what makes the pinch pan for free.
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+        const now = screenToWorld(this.view, ...this.#toDevice(midX, midY));
+        this.#camera.x += pinch.world.x - now.x;
+        this.#camera.y += pinch.world.y - now.y;
     }
 
     #aimZoom(zoom, anchor) {
@@ -417,16 +705,25 @@ export class Viewport extends Element {
         this.#zoomAnchor = anchor;
     }
 
+    /**
+     * Advance the zoom ease by one frame.
+     * @returns {boolean} True while the ease still owes another frame
+     */
     #easeZoom() {
-        if (this.#zoomTarget === null) return;
+        if (this.#zoomTarget === null) return false;
 
         const camera = this.#camera.getComponent('Camera');
-        if (!camera) return;
+        if (!camera) {
+            this.#zoomTarget = null;
+            return false;
+        }
 
         const remaining = this.#zoomTarget - camera.zoom;
+        let settled = false;
         if (Math.abs(remaining) <= this.#zoomTarget * ZOOM_SETTLED) {
             camera.zoom = this.#zoomTarget;
             this.#zoomTarget = null;
+            settled = true;
         } else {
             camera.zoom += remaining * ZOOM_EASING;
         }
@@ -434,34 +731,60 @@ export class Viewport extends Element {
         // Whatever was under the pointer stays under the pointer, on every frame of the
         // ease and not only at its end.
         const anchor = this.#zoomAnchor;
-        if (!anchor) return;
+        if (anchor) {
+            const now = screenToWorld(this.view, ...anchor.device);
+            this.#camera.x += anchor.world.x - now.x;
+            this.#camera.y += anchor.world.y - now.y;
+        }
 
-        const now = screenToWorld(this.view, ...anchor.device);
-        this.#camera.x += anchor.world.x - now.x;
-        this.#camera.y += anchor.world.y - now.y;
-
-        if (this.#zoomTarget === null) this.#zoomAnchor = null;
+        if (settled) {
+            this.#zoomAnchor = null;
+            // Snapped once the motion is over, never during it: a step is one device
+            // pixel, which is invisible at rest and would be a stutter mid-ease.
+            this.#snapCamera();
+            return false;
+        }
+        return true;
     }
 
     #zoom() {
         return this.#camera.getComponent('Camera')?.zoom ?? 1;
     }
 
-    #pointer(event) {
-        const device = this.#toDevice(event);
-        const view = this.view;
-        return { device, view, world: screenToWorld(view, ...device) };
+    /**
+     * Put the point of view back on the device pixel grid.
+     *
+     * The camera is the Editor's own Object, never serialized and never replicated, so
+     * this changes nothing the Runtime owns and no object moves (ADR-0013).
+     */
+    #snapCamera() {
+        const snapped = quantiseCamera(this.#camera.x, this.#camera.y, matrixScale(this.view));
+        if (snapped.x !== this.#camera.x) this.#camera.x = snapped.x;
+        if (snapped.y !== this.#camera.y) this.#camera.y = snapped.y;
     }
 
-    #toDevice(event) {
-        const rect = this.#surface.getBoundingClientRect();
-        return [(event.clientX - rect.left) * this.#dpr, (event.clientY - rect.top) * this.#dpr];
+    /* ── plumbing ────────────────────────────────────────────────────────── */
+
+    #pointer(event) {
+        return this.#pointerAt(event.clientX, event.clientY, event.pointerType);
+    }
+
+    #pointerAt(clientX, clientY, pointerType) {
+        const device = this.#toDevice(clientX, clientY);
+        const view = this.view;
+        return {
+            device,
+            view,
+            world: screenToWorld(view, ...device),
+            coarse: pointerType === 'touch'
+        };
     }
 
     #refreshCursor() {
-        this.#surface.style.cursor = this.#panning
+        const cursor = this.#gesture === 'pan' || this.#gesture === 'pinch'
             ? this.#pan.cursor()
             : this.#tool.cursor(this.view);
+        if (this.#surface.style.cursor !== cursor) this.#surface.style.cursor = cursor;
     }
 }
 

@@ -14,7 +14,7 @@ import { editorBounds } from './picking.js';
 import { matrixScale } from './grid.js';
 import { HANDLES } from './resize.js';
 
-/** Side of a resize handle, in screen pixels. */
+/** Side of a resize handle, in device pixels. */
 export const HANDLE_SIZE = 7;
 
 /** How far from a handle's centre a press still counts as grabbing it. */
@@ -22,6 +22,24 @@ export const HANDLE_REACH = 9;
 
 /** The same, for a finger, which has no pixel to aim with. */
 export const HANDLE_REACH_COARSE = 16;
+
+/**
+ * How many reaches the shorter side must span before handles appear at all.
+ *
+ * Derived, not chosen. The eight handles sit on the corners and the edge midpoints, so
+ * two adjacent ones are half a side apart. For their round hit zones not to overlap that
+ * spacing must be at least two reaches, which makes the side at least four — and the same
+ * number leaves a central corridor two reaches wide, which is the area that has to keep
+ * meaning "move me". Below it the handles would cover the object and it would become
+ * impossible to drag, which is exactly what used to happen when zoomed out.
+ */
+export const HANDLE_MIN_REACHES = 4;
+
+/** The Editor's accent, as the renderer contract takes colours: a literal. */
+const ACCENT = '#ff7a45';
+
+/** The fill of an idle handle — the deepest surface, so the accent outline reads. */
+const HANDLE_FILL = '#101216';
 
 /**
  * Outline an object.
@@ -39,7 +57,7 @@ export const HANDLE_REACH_COARSE = 16;
  * @param {number} [options.width] - Outline width in device pixels
  * @param {boolean} [options.pivot] - Also mark the object's origin
  */
-export function outline(renderer, view, object, { color = '#339af0', alpha = 1, width = 1.5, pivot = false } = {}) {
+export function outline(renderer, view, object, { color = ACCENT, alpha = 1, width = 1.5, pivot = false } = {}) {
     const matrix = view.multiply(worldMatrix(object));
     const scale = matrixScale(matrix);
     if (!(scale > 0)) return;
@@ -89,6 +107,45 @@ export function handlePoints(object, view) {
 }
 
 /**
+ * How long the object's two sides are on screen, in device pixels.
+ *
+ * Measured through the matrices rather than from the bounds, so rotation and a scaled
+ * parent are included: what decides whether handles fit is what the creator sees, not
+ * what the model says.
+ *
+ * @param {object} object - The object
+ * @param {object} view - The view matrix in use
+ * @returns {{x: number, y: number}} The two side lengths on screen
+ */
+export function screenSpan(object, view) {
+    const matrix = view.multiply(worldMatrix(object));
+    const box = editorBounds(object);
+
+    const origin = matrix.apply(0, 0);
+    const alongX = matrix.apply(box.width, 0);
+    const alongY = matrix.apply(0, box.height);
+
+    return {
+        x: Math.hypot(alongX.x - origin.x, alongX.y - origin.y),
+        y: Math.hypot(alongY.x - origin.x, alongY.y - origin.y)
+    };
+}
+
+/**
+ * Whether the object is big enough on screen for its handles to be usable.
+ *
+ * @param {object} object - The object
+ * @param {object} view - The view matrix in use
+ * @param {number} [reach] - Radius counting as a grab, in device pixels
+ * @returns {boolean} True when handles should be offered
+ */
+export function handlesFit(object, view, reach = HANDLE_REACH) {
+    const span = screenSpan(object, view);
+    if (!Number.isFinite(span.x) || !Number.isFinite(span.y)) return false;
+    return Math.min(span.x, span.y) >= reach * HANDLE_MIN_REACHES;
+}
+
+/**
  * Draw the resize handles.
  *
  * @param {object} renderer - The renderer backend
@@ -99,7 +156,9 @@ export function handlePoints(object, view) {
  * @param {number} [options.scale] - Device pixels per CSS pixel
  */
 export function handles(renderer, view, object, { active = null, scale = 1 } = {}) {
-    const size = HANDLE_SIZE * scale;
+    // A whole number of device pixels: HANDLE_SIZE x 1.25 is 8.75, and a handle drawn on
+    // three quarters of a pixel is a grey smudge on both of its edges.
+    const size = Math.max(3, Math.round(HANDLE_SIZE * scale));
 
     // Flat on the surface: handles keep their pixel size at any zoom.
     renderer.save();
@@ -107,13 +166,13 @@ export function handles(renderer, view, object, { active = null, scale = 1 } = {
 
     for (const point of handlePoints(object, view)) {
         const highlighted = active === point.handle;
-        renderer.fillRect(point.x - size / 2, point.y - size / 2, size, size, {
-            color: highlighted ? '#339af0' : '#0e0e10'
-        });
-        renderer.strokeRect(point.x - size / 2, point.y - size / 2, size, size, {
-            color: '#339af0',
-            lineWidth: scale
-        });
+        // Whole device pixels, and no radius: a resize handle is the one control in the
+        // Editor that is literally made of pixels, and a blurred one is a handle you
+        // cannot tell you are on.
+        const left = Math.round(point.x - size / 2);
+        const top = Math.round(point.y - size / 2);
+        renderer.fillRect(left, top, size, size, { color: highlighted ? ACCENT : HANDLE_FILL });
+        renderer.strokeRect(left, top, size, size, { color: ACCENT, lineWidth: scale });
     }
 
     renderer.restore();

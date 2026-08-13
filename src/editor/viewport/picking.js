@@ -88,14 +88,27 @@ export function hitTest(object, view, screenX, screenY) {
  * @returns {object|null} The object under the point, or null
  */
 export function pick(objects, view, screenX, screenY) {
-    const drawOrder = [...objects].sort((first, second) => first.layer - second.layer);
+    // Topmost is the largest (layer, position) pair, which is what sorting by layer and
+    // walking backwards found — the scene renderer's sort is stable, so equal layers keep
+    // scene order. Reading it as a single pass costs no copy and no sort, and skips the
+    // hit test entirely for anything that could not win anyway. This runs on every
+    // pointer move over a whole scene, so the allocation was the expensive part.
+    let found = null;
+    let bestLayer = -Infinity;
 
-    for (let i = drawOrder.length - 1; i >= 0; i--) {
-        const object = drawOrder[i];
+    for (let i = 0; i < objects.length; i++) {
+        const object = objects[i];
         if (!object.active || !object.visible || object.lock) continue;
-        if (hitTest(object, view, screenX, screenY)) return object;
+        // Equal layers are decided by position, and i only ever grows, so a later object
+        // always wins a tie: no comparison against the found index is needed.
+        if (object.layer < bestLayer) continue;
+        if (!hitTest(object, view, screenX, screenY)) continue;
+
+        found = object;
+        bestLayer = object.layer;
     }
-    return null;
+
+    return found;
 }
 
 /**

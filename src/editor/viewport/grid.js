@@ -13,7 +13,13 @@
 /** World units between the finest grid lines, before adaptive scaling. */
 const BASE_SPACING = 32;
 
-/** Screen pixels a spacing must stay within, so the grid never turns into a fog. */
+/**
+ * CSS pixels a spacing must stay within, so the grid never turns into a fog.
+ *
+ * CSS pixels, not device pixels. Expressed in device pixels the grid was twice as dense
+ * on a 2x display as on a 1x one, for the same camera — the same scene looked different
+ * depending on the monitor, and drew twice as many lines for the privilege.
+ */
 const MIN_SCREEN_SPACING = 14;
 const MAX_SCREEN_SPACING = 160;
 
@@ -30,43 +36,58 @@ const MAJOR_EVERY = 4;
  * @param {string} [options.minor] - Colour of the fine lines
  * @param {string} [options.major] - Colour of the emphasised lines
  * @param {string} [options.axis] - Colour of the x = 0 and y = 0 lines
+ * @param {number} [options.density] - Device pixels per CSS pixel
  */
 export function drawGrid(renderer, view, {
-    background = '#17171a',
-    minor = '#212127',
-    major = '#2a2a32',
-    axis = '#3a3a46'
+    background = '#131418',
+    minor = '#1c1e24',
+    major = '#24272f',
+    axis = '#343945',
+    density = 1
 } = {}) {
     renderer.clear(background);
 
     const scale = matrixScale(view);
     if (!(scale > 0)) return;
 
-    const spacing = adaptiveSpacing(scale);
+    const spacing = adaptiveSpacing(scale, density);
     const area = visibleWorldArea(view, renderer.width, renderer.height);
 
     // One device pixel, expressed in the world units the transform is about to be set to.
     const thickness = 1 / scale;
 
-    renderer.save();
-    renderer.setTransform(view);
+    // Collected first, drawn second. The backend writes fillStyle on every call, so a
+    // grid drawn in source order alternates between three colours a few hundred times
+    // per frame; drawn in three passes it writes it three times. The pixels are
+    // identical — minor, major and axis lines never overlap, because a position belongs
+    // to exactly one of the three.
+    const passes = [[], [], []];
+    const push = (index, x, y, width, height) => passes[index].push(x, y, width, height);
 
     const firstColumn = Math.floor(area.left / spacing);
     const lastColumn = Math.ceil(area.right / spacing);
     for (let column = firstColumn; column <= lastColumn; column++) {
         const x = column * spacing;
-        renderer.fillRect(x, area.top, thickness, area.bottom - area.top, {
-            color: lineColor(column, x, minor, major, axis)
-        });
+        push(lineKind(column, x), x, area.top, thickness, area.bottom - area.top);
     }
 
     const firstRow = Math.floor(area.top / spacing);
     const lastRow = Math.ceil(area.bottom / spacing);
     for (let row = firstRow; row <= lastRow; row++) {
         const y = row * spacing;
-        renderer.fillRect(area.left, y, area.right - area.left, thickness, {
-            color: lineColor(row, y, minor, major, axis)
-        });
+        push(lineKind(row, y), area.left, y, area.right - area.left, thickness);
+    }
+
+    renderer.save();
+    renderer.setTransform(view);
+
+    const colors = [minor, major, axis];
+    for (let kind = 0; kind < passes.length; kind++) {
+        const rects = passes[kind];
+        const color = colors[kind];
+        for (let i = 0; i < rects.length; i += 4) {
+            renderer.fillRect(rects[i], rects[i + 1], rects[i + 2], rects[i + 3], { color });
+        }
     }
 
     renderer.restore();
@@ -109,14 +130,22 @@ export function visibleWorldArea(view, width, height) {
     };
 }
 
-function adaptiveSpacing(scale) {
+function adaptiveSpacing(scale, density) {
+    // The bounds are CSS pixels; the scale is device pixels per world unit.
+    const perCss = scale / (density > 0 ? density : 1);
     let spacing = BASE_SPACING;
-    while (spacing * scale < MIN_SCREEN_SPACING) spacing *= 2;
-    while (spacing * scale > MAX_SCREEN_SPACING) spacing /= 2;
+    while (spacing * perCss < MIN_SCREEN_SPACING) spacing *= 2;
+    while (spacing * perCss > MAX_SCREEN_SPACING) spacing /= 2;
     return spacing;
 }
 
-function lineColor(index, position, minor, major, axis) {
-    if (position === 0) return axis;
-    return index % MAJOR_EVERY === 0 ? major : minor;
+/**
+ * Which of the three passes a line belongs to.
+ * @param {number} index - The line's index in the grid
+ * @param {number} position - Its world coordinate
+ * @returns {number} 0 minor, 1 major, 2 axis
+ */
+function lineKind(index, position) {
+    if (position === 0) return 2;
+    return index % MAJOR_EVERY === 0 ? 1 : 0;
 }

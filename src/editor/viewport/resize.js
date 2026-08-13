@@ -9,6 +9,24 @@
 // DOES NOT MOVE. That is the whole specification, and it is what makes the object appear
 // to be pulled rather than to grow around its centre.
 //
+// WHY THE SIZE MOVES IN TWOS, AND WHY IT HAS TO. The origin is the centre (ADR-0002 and
+// every shipped renderer), so half of a size change is what moves the centre. The Editor
+// writes whole units for both the size and the position. Those three facts together admit
+// exactly one arithmetic: an odd change would put the centre on a half unit, and rounding
+// it back is what used to shift the anchored edge by half a unit on every other pixel of
+// the drag — a visible shimmer on the edge that is supposed to be nailed down. So the
+// change on each axis is rounded to an even number of units and the parity of the size is
+// preserved. A 64-wide box resizes 64, 66, 68; a 65-wide box resizes 65, 67, 69.
+//
+// This is a consequence of the model, not a preference. Reaching an odd size from an even
+// one would need either a half-unit position or a declared anchor, and both are decisions
+// well outside a rendering fix.
+//
+// The invariant is EXACT while the object is axis-aligned and unscaled relative to its
+// parent. Under rotation or a scaled parent, an integer offset in the object's frame is
+// an irrational one in the parent's, so writing whole units bounds the error at half a
+// unit — inherent to integers, and measured by the tests rather than assumed away.
+//
 // WHERE THE NUMBERS GO. Size is not on Transform (ADR-0002): width and height describe
 // what is drawn, so they live on the drawing component. Keeping the opposite edge still
 // therefore takes two writes — the size on that component, and the position on Transform,
@@ -151,7 +169,27 @@ export function resizeTo(drag, pointerWorld, { round = true } = {}) {
 
 function resizeAxis(size, direction, travelled, round) {
     if (direction === 0) return size;
-    return Math.max(MIN_SIZE, maybeRound(size + direction * travelled, round));
+
+    const raw = size + direction * travelled;
+    if (!round) return Math.max(MIN_SIZE, raw);
+
+    // An even number of units, so that half of it — the distance the centre travels —
+    // is a whole number and survives being written as an integer.
+    const steps = Math.round((raw - size) / 2);
+    return Math.max(smallest(size), size + steps * 2);
+}
+
+/**
+ * The smallest size this axis may reach without breaking the parity it started with.
+ * @param {number} size - The size the drag began at
+ * @returns {number} MIN_SIZE, or one unit more when that is the wrong parity
+ */
+function smallest(size) {
+    return isEven(size - MIN_SIZE) ? MIN_SIZE : MIN_SIZE + 1;
+}
+
+function isEven(value) {
+    return Math.abs(value % 2) < Number.EPSILON;
 }
 
 function maybeRound(value, round) {

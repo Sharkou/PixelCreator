@@ -14,7 +14,15 @@
 
 import { createId, worldMatrix } from '../../../core/mod.js';
 import { pick } from '../picking.js';
-import { HANDLE_REACH, HANDLE_REACH_COARSE, handleAt, handleCursor, handles, outline } from '../overlay.js';
+import {
+    HANDLE_REACH,
+    HANDLE_REACH_COARSE,
+    handleAt,
+    handleCursor,
+    handles,
+    handlesFit,
+    outline
+} from '../overlay.js';
 import { beginResize, isResizable, resizeTo } from '../resize.js';
 
 /** Device pixels the pointer must travel before a press becomes a drag. */
@@ -58,16 +66,35 @@ export class SelectTool {
     }
 
     /**
+     * Whether a press on this point would start a gesture on an object.
+     *
+     * The viewport asks before deciding what an empty-space press means: on a finger,
+     * a press on nothing is how you pan, and there is no second button to reach for.
+     *
+     * @param {object} pointer - { device: [x, y], world: {x, y}, view, coarse }
+     * @returns {boolean} True when a handle or an object is under the pointer
+     */
+    wouldGrab(pointer) {
+        this.hover(pointer);
+        return Boolean(this.#handle || this.#hovered);
+    }
+
+    /**
      * Track the pointer without any button held.
      * @param {object} pointer - { device: [x, y], world: {x, y}, view }
      */
     hover(pointer) {
         const selected = this.#context.selection.object;
+        const reach = this.#reach(pointer);
 
         // Handles win over everything: they sit on the outline, half of them outside the
-        // shape, and a press there must never be read as "select what is behind".
-        this.#handle = selected && isResizable(selected)
-            ? handleAt(selected, pointer.view, ...pointer.device, this.#reach())
+        // shape, and a press there must never be read as "select what is behind". That is
+        // also why they have to disappear once the object is small on screen — eight
+        // reaches of 9 device pixels around a shape 10 pixels wide leave nothing that
+        // means "move me", which is exactly how a zoomed-out object became impossible to
+        // drag.
+        this.#handle = selected && isResizable(selected) && handlesFit(selected, pointer.view, reach)
+            ? handleAt(selected, pointer.view, ...pointer.device, reach)
             : null;
 
         this.#hovered = this.#handle
@@ -164,7 +191,9 @@ export class SelectTool {
         if (!selected || !scene.has(selected)) return;
 
         outline(renderer, view, selected, { pivot: true });
-        if (isResizable(selected)) {
+        // Drawn under exactly the condition that makes them grabbable, so a handle is
+        // never shown where pressing it would do something else.
+        if (isResizable(selected) && handlesFit(selected, view, this.#reach())) {
             handles(renderer, view, selected, { active: this.#drag?.handle ?? this.#handle, scale });
         }
     }
@@ -175,21 +204,35 @@ export class SelectTool {
             ? subtract(drag.toParent.apply(delta.x, delta.y), drag.toParent.apply(0, 0))
             : delta;
 
-        drag.transform.setProperty('x', Math.round(drag.startX + local.x), { batch: drag.batch });
-        drag.transform.setProperty('y', Math.round(drag.startY + local.y), { batch: drag.batch });
+        const x = Math.round(drag.startX + local.x);
+        const y = Math.round(drag.startY + local.y);
+
+        // A drag rounds to whole units, so most pointer moves land on the value already
+        // written. Sending it anyway would mean an Operation per pointer event — up to a
+        // thousand a second on a high-polling mouse — for a value that did not change.
+        this.#write(drag, drag.transform, 'x', x);
+        this.#write(drag, drag.transform, 'y', y);
     }
 
     #applyResize(drag, pointer) {
         const next = resizeTo(drag.state, pointer.world);
 
-        drag.state.component.setProperty('width', next.width, { batch: drag.batch });
-        drag.state.component.setProperty('height', next.height, { batch: drag.batch });
-        drag.state.transform.setProperty('x', next.x, { batch: drag.batch });
-        drag.state.transform.setProperty('y', next.y, { batch: drag.batch });
+        this.#write(drag, drag.state.component, 'width', next.width);
+        this.#write(drag, drag.state.component, 'height', next.height);
+        this.#write(drag, drag.state.transform, 'x', next.x);
+        this.#write(drag, drag.state.transform, 'y', next.y);
     }
 
-    #reach() {
-        return this.#context.coarse() ? HANDLE_REACH_COARSE : HANDLE_REACH;
+    #write(drag, target, prop, value) {
+        if (target[prop] === value) return;
+        target.setProperty(prop, value, { batch: drag.batch });
+    }
+
+    #reach(pointer = null) {
+        // The event knows better than the media query: a hybrid laptop reports a coarse
+        // pointer for its screen while a mouse is being used on the very same surface.
+        const coarse = pointer?.coarse ?? this.#context.coarse();
+        return coarse ? HANDLE_REACH_COARSE : HANDLE_REACH;
     }
 }
 

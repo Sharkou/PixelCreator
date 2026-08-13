@@ -22,6 +22,11 @@ export class Guides {
     #horizontal;
     #xLabel;
     #yLabel;
+    // What is already on screen. A pointer that moves within one pixel, or along one
+    // axis only, must not rewrite four transforms and two text nodes: this runs on every
+    // pointer event, and a style write is a style invalidation.
+    #shown = null;
+    #last = { x: null, y: null, worldX: null, worldY: null };
 
     /**
      * Build the guides inside a container.
@@ -46,18 +51,46 @@ export class Guides {
      * @param {object} world - The world point under it
      */
     update(x, y, world) {
-        this.#root.style.opacity = '1';
-        this.#vertical.style.transform = `translateX(${x}px)`;
-        this.#horizontal.style.transform = `translateY(${y}px)`;
-        this.#xLabel.style.transform = `translateX(${x}px)`;
-        this.#yLabel.style.transform = `translateY(${y}px)`;
-        this.#xLabel.textContent = `${Math.round(world.x)}`;
-        this.#yLabel.textContent = `${Math.round(world.y)}`;
+        if (this.#shown !== true) {
+            this.#root.style.opacity = '1';
+            this.#shown = true;
+        }
+
+        const left = Math.round(x);
+        const top = Math.round(y);
+        const worldX = Math.round(world.x);
+        const worldY = Math.round(world.y);
+
+        if (left !== this.#last.x) {
+            this.#vertical.style.transform = `translateX(${left}px)`;
+            this.#xLabel.style.transform = `translateX(${left}px)`;
+            this.#last.x = left;
+        }
+
+        if (top !== this.#last.y) {
+            this.#horizontal.style.transform = `translateY(${top}px)`;
+            this.#yLabel.style.transform = `translateY(${top}px)`;
+            this.#last.y = top;
+        }
+
+        // The unit is written out. Legacy's ruler did it (`Npx`) and it is the difference
+        // between a number and a measurement.
+        if (worldX !== this.#last.worldX) {
+            this.#xLabel.textContent = `${worldX} px`;
+            this.#last.worldX = worldX;
+        }
+
+        if (worldY !== this.#last.worldY) {
+            this.#yLabel.textContent = `${worldY} px`;
+            this.#last.worldY = worldY;
+        }
     }
 
     /** Take the guides away, when the pointer leaves. */
     hide() {
+        if (this.#shown === false) return;
         this.#root.style.opacity = '0';
+        this.#shown = false;
     }
 }
 
