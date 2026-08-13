@@ -19,7 +19,10 @@ const STORAGE_KEY = 'pixelcreator.editor.layout';
 
 /** Sizes in pixels, with the bounds a drag is clamped to. */
 const SIZES = {
-    right: { value: 304, min: 232, max: 560, property: '--px-right' },
+    // The minimum is measured, not guessed: below 260 the Inspector's paired fields
+    // leave under 45 px for the digits, and a six-character coordinate starts scrolling
+    // inside its own box (src/editor/ui/field.js).
+    right: { value: 304, min: 260, max: 560, property: '--px-right' },
     hierarchy: { value: 250, min: 120, max: 900, property: '--px-hierarchy' },
     dock: { value: 180, min: 120, max: 720, property: '--px-dock' }
 };

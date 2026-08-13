@@ -143,6 +143,11 @@ const tokens = sheet(`
         --px-icon: 16px;
         --px-icon-lg: 20px;
 
+        /* The label column of a property row. A token because px-field and the
+           Inspector's paired rows live in different shadow roots and cannot share a
+           rule, yet have to line up on the same seam. */
+        --px-label: 62px;
+
         /* ─── Radius ──────────────────────────────────────────────────────
            Barely rounded. A 4 px corner reads as care; an 8 px corner reads
            as a web app. */

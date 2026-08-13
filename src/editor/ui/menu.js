@@ -45,18 +45,22 @@ export class Menu extends Element {
             color: var(--px-text-dim);
         }
 
+        /* THE REFERENCE. A Component's title in the Inspector uses this exact type, so
+           that "Rendering" in this menu and "Rectangle Renderer" over there read as the
+           same kind of thing. Only the colour differs, by role: a group heading is
+           quieter than the section it groups. */
         .heading {
             padding: 7px 8px 3px;
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
+            font-size: var(--px-text-2xs);
+            font-weight: var(--px-weight-bold);
+            letter-spacing: var(--px-tracking-caps);
             text-transform: uppercase;
             color: var(--px-text-dim);
         }
 
         .heading:not(:first-child) {
             margin-top: 3px;
-            border-top: 1px solid var(--px-line-soft);
+            border-top: 1px solid var(--px-border-subtle);
         }
     `);
 

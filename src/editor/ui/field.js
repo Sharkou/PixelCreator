@@ -1,5 +1,12 @@
 // <px-field> — one property, bound both ways.
 //
+// A CONTROL, NOT A ROW. It used to draw its own label and its own `label | value` grid,
+// which meant the Inspector carried a second copy of that grid for paired properties and
+// the two were kept in step by a shared token. One layout, defined twice, in two shadow
+// roots. The row now belongs to the panel that arranges rows (`windows/inspector.js`) and
+// this element is the cell that goes in it — which is also how the design prototype is
+// built, and the reason its Inspector reads as a single grid.
+//
 // This is the scoped binding ADR-0006 requires. Legacy found its views with
 // `document.getElementsByClassName(id + '-' + prop)` and wrote into all of them from the
 // module that made the change; a shadow root makes that query return nothing, silently.
@@ -14,9 +21,14 @@
 //   - the focus guard — the field being typed into is never overwritten by an incoming
 //     change, so the caret cannot jump.
 //
-// What is added: `disconnectedCallback` releases the subscription (Legacy never did),
-// numbers keep their decimals, and the control is chosen from the schema rather than from
-// what the value happens to look like right now.
+// THE LABEL IS STILL A HANDLE, even though the field no longer owns it. `bindLabel()`
+// takes the element the panel drew and makes it scrub this property. The panel keeps the
+// layout, the field keeps every line of value logic — nothing about reading, converting
+// or writing a property leaves this file.
+//
+// WHAT A GESTURE STARTS FROM. A stepper, a scrub or an arrow key moves the value the
+// MODEL holds (`toDisplayExact`), never the shortened form the box is showing. Typing is
+// the exception, and it has to be: a creator types over what they can see.
 //
 // WRITES GO THROUGH setProperty(). The Editor states an intent, so it takes the
 // controlled path and produces an Operation (CONVENTIONS.md). A plain `=` here would
@@ -25,78 +37,79 @@
 import { observe } from '../../core/mod.js';
 import { Element, el, fill } from './element.js';
 import { sheet } from './styles.js';
-import { FieldKind, formatValue, isNumeric, parseValue, toDisplay } from '../inspector/schema.js';
+import { attachScrub } from './scrub.js';
+import {
+    FieldKind,
+    formatValue,
+    isNumeric,
+    parseValue,
+    toDisplay,
+    toDisplayExact
+} from '../inspector/schema.js';
 import './number-input.js';
 
 export class Field extends Element {
 
     static styles = sheet(`
         :host {
-            display: grid;
-            grid-template-columns: 86px minmax(0, 1fr);
-            align-items: center;
-            gap: 8px;
-            padding: 3px 10px;
-            min-height: calc(var(--px-control) + 6px);
-        }
-
-        /* Half of a pair: no label, no padding — the row around it provides both. */
-        :host([bare]) {
             display: block;
-            padding: 0;
-            min-height: 0;
-        }
-
-        label {
-            color: var(--px-text-dim);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            cursor: default;
+            min-width: 0;
         }
 
         .control {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: var(--px-space-1);
             min-width: 0;
         }
 
-        .control > input[type='range'] { flex: 1; }
+        /* Anything that holds a value fills its cell; anything that is a switch or a
+           swatch takes only what it needs. */
+        .control > px-number,
+        .control > input[type='text'],
+        .control > input[type='range'],
+        .control > select { flex: 1; min-width: 0; }
+
+        .control > input[type='checkbox'] { flex: 0 0 auto; }
+        .control > input[type='color'] { width: 44px; flex: 0 0 auto; }
 
         .amount {
             flex: 0 0 auto;
-            width: 38px;
+            width: 34px;
             text-align: right;
-            font-family: var(--px-mono);
-            font-size: 10px;
+            font-family: var(--px-font-mono);
+            font-variant-numeric: tabular-nums;
+            font-size: var(--px-text-2xs);
             color: var(--px-text);
         }
 
-        .unit { color: var(--px-text-dim); font-size: 10px; flex: 0 0 auto; }
+        .unit {
+            flex: 0 0 auto;
+            font-family: var(--px-font-mono);
+            font-size: var(--px-text-2xs);
+            color: var(--px-text-dim);
+        }
 
         .readonly {
+            flex: 1;
+            min-width: 0;
             color: var(--px-text-dim);
-            font-family: var(--px-mono);
-            font-size: 11px;
+            font-family: var(--px-font-mono);
+            font-size: var(--px-text-xs);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
-
-        input[type='color'] { width: 44px; flex: 0 0 auto; }
-        input[type='checkbox'] { justify-self: start; }
     `);
 
     #target = null;
     #descriptor = null;
     #control = null;
     #echo = null;
-    // Private, and not properties on the host: `prefix` is a read-only DOM getter on
+    // Private, and not a property on the host: `prefix` is a read-only DOM getter on
     // Element, so assigning it throws. Shadowing a global class means living by its
     // surface (CONVENTIONS.md).
     #prefix = null;
-    #labelled = true;
 
     /**
      * Point the field at a property.
@@ -105,17 +118,52 @@ export class Field extends Element {
      * @param {object} descriptor - A descriptor from inspector/schema.js
      * @param {object} [options] - Options
      * @param {string} [options.prefix] - A one-letter label inside the control, for pairs
-     * @param {boolean} [options.labelled] - Draw the label; pairs draw their own
      * @returns {Field} This field
      */
-    bind(target, descriptor, { prefix = null, labelled = true } = {}) {
+    bind(target, descriptor, { prefix = null } = {}) {
         this.#target = target;
         this.#descriptor = descriptor;
         this.#prefix = prefix;
-        this.#labelled = labelled;
-        this.toggleAttribute('bare', !labelled);
+        this.toggleAttribute('disabled', Boolean(descriptor?.readonly));
+        if (descriptor?.tooltip) this.title = descriptor.tooltip;
         if (this.isConnected) this.#render();
         return this;
+    }
+
+    /**
+     * Make an element the scrub handle for this property.
+     *
+     * The panel owns the label — it is part of the row's grid — so the field is handed it
+     * and decides whether dragging it means anything. Tracked apart from the binding, so
+     * a re-render does not silently drop it.
+     *
+     * @param {HTMLElement} element - The label the panel drew
+     * @returns {boolean} True when the element became a handle
+     */
+    bindLabel(element) {
+        this.release('label');
+
+        const descriptor = this.#descriptor;
+        if (!descriptor) return false;
+
+        const scrubbable = isNumeric(descriptor)
+            && descriptor.kind !== FieldKind.RANGE
+            && !descriptor.readonly;
+
+        if (!scrubbable) {
+            element.title = descriptor.tooltip ?? descriptor.name;
+            return false;
+        }
+
+        element.classList.add('handle');
+        element.title = `Drag to change ${descriptor.label}`;
+        this.track(attachScrub(element, {
+            read: () => toDisplayExact(descriptor, this.#target[descriptor.name]) ?? 0,
+            write: amount => this.#push(amount),
+            step: () => descriptor.step ?? 1
+        }), 'label');
+
+        return true;
     }
 
     connectedCallback() {
@@ -131,16 +179,14 @@ export class Field extends Element {
 
         this.#echo = null;
         this.#control = this.#createControl(descriptor, value);
-        if (descriptor.tooltip) this.title = descriptor.tooltip;
 
         fill(this.shadowRoot,
-            this.#labelled
-                ? el('label', { textContent: descriptor.label, title: descriptor.tooltip ?? descriptor.name })
-                : null,
             el('div', { class: 'control' },
                 this.#control,
                 this.#echo,
-                descriptor.unit && !isNumeric(descriptor) ? el('span', { class: 'unit', textContent: descriptor.unit }) : null
+                descriptor.unit && !isNumeric(descriptor)
+                    ? el('span', { class: 'unit', textContent: descriptor.unit })
+                    : null
             )
         );
 
@@ -203,6 +249,8 @@ export class Field extends Element {
                 integer: descriptor.kind === FieldKind.INT,
                 prefix: this.#prefix,
                 suffix: descriptor.unit,
+                // What the box shows is shortened; what a stepper moves is not.
+                source: () => toDisplayExact(descriptor, this.#target[descriptor.name]),
                 onInput: amount => this.#push(amount)
             });
             number.value = toDisplay(descriptor, value);

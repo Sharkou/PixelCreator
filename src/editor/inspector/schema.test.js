@@ -10,7 +10,8 @@ import {
     objectFields,
     parseValue,
     rows,
-    toDisplay
+    toDisplay,
+    toDisplayExact
 } from './schema.js';
 
 class Plain {
@@ -202,4 +203,87 @@ test('an incomplete entry leaves the model alone', () => {
 test('an int is rounded', () => {
     const layer = byName(objectFields(), 'layer');
     assert.equal(parseValue(layer, '3.7'), 4);
+});
+
+test('a converted value is shown at a length a creator can act on', () => {
+    const rotation = byName(describeComponent(new Transform()), 'rotation');
+
+    // 0.3 rad is 17.188733853924695 degrees. Twelve significant digits of that is noise
+    // in a field ninety pixels wide.
+    assert.equal(formatValue(rotation, 0.3), '17.189');
+    assert.equal(toDisplay(rotation, 0.3), 17.189);
+});
+
+test('rounding for display never rewrites the model', () => {
+    const rotation = byName(describeComponent(new Transform()), 'rotation');
+    const shown = toDisplay(rotation, 0.3);
+
+    // The field shows the short form and reports nothing, so the stored value keeps
+    // every digit it was given until the creator actually edits it.
+    assert.notEqual(parseValue(rotation, String(shown)), 0.3, 'the short form is not the stored one');
+    assert.ok(Math.abs(parseValue(rotation, String(shown)) - 0.3) < 1e-5,
+        'and editing it back lands within a thousandth of a degree');
+});
+
+test('the readable form and the value are two different numbers', () => {
+    const x = byName(describeComponent(new Transform()), 'x');
+    const stored = 0.1 + 0.2;                       // 0.30000000000000004
+
+    assert.equal(toDisplay(x, stored), 0.3, 'what the box shows is short');
+    assert.equal(toDisplayExact(x, stored), stored, 'what a gesture starts from is not');
+    assert.notEqual(toDisplay(x, stored), toDisplayExact(x, stored));
+});
+
+test('a gesture starts from the model, so the display rounding cannot become the value', () => {
+    // Rotation, because the conversion to degrees is what makes the two forms visibly
+    // different: 0.3 rad is 17.188733853924695 degrees and the box shows 17.189.
+    const rotation = byName(describeComponent(new Transform()), 'rotation');
+    const stored = 0.3;
+
+    const fromModel = toDisplayExact(rotation, stored);
+    const fromBox = toDisplay(rotation, stored);
+    assert.notEqual(fromModel, fromBox, 'the readable form is not the value');
+
+    // What a stepper, a scrub or an arrow key does: base + steps x step.
+    const nudgedFromModel = parseValue(rotation, fromModel + 1);
+    const nudgedFromBox = parseValue(rotation, fromBox + 1);
+
+    assert.notEqual(nudgedFromModel, nudgedFromBox,
+        'starting from the box would land somewhere the creator never asked for');
+
+    // One degree more than what was stored, to the last bit the model can hold.
+    assert.ok(Math.abs(nudgedFromModel - (stored + Math.PI / 180)) < 1e-15,
+        'a nudge of one degree from the stored value is exactly that');
+});
+
+test('the exact form converts units like the readable one, without shortening', () => {
+    const rotation = byName(describeComponent(new Transform()), 'rotation');
+
+    assert.equal(toDisplay(rotation, 0.3), 17.189, 'readable');
+    assert.equal(toDisplayExact(rotation, 0.3), 0.3 * 180 / Math.PI, 'exact, and still in degrees');
+    assert.equal(toDisplayExact(rotation, null), null);
+    assert.equal(toDisplayExact(rotation, NaN), null);
+});
+
+test('a value too small for three decimals is not shown as nothing', () => {
+    const scale = byName(describeComponent(new Transform()), 'scaleX');
+
+    assert.equal(toDisplay(scale, 0.0004), 0.0004, 'showing 0 would invite typing over it');
+    assert.equal(toDisplay(scale, 0), 0);
+});
+
+test('an int never shows a decimal point', () => {
+    const layer = byName(objectFields(), 'layer');
+
+    assert.equal(toDisplay(layer, 3.7), 4);
+    assert.equal(formatValue(layer, 3.2), '3');
+});
+
+test('float noise still disappears', () => {
+    const x = byName(describeComponent(new Transform()), 'x');
+    const rotation = byName(describeComponent(new Transform()), 'rotation');
+
+    assert.equal(formatValue(x, 0.1 + 0.2), '0.3');
+    assert.equal(formatValue(rotation, Math.PI / 4), '45');
+    assert.equal(formatValue(rotation, Math.PI), '180');
 });

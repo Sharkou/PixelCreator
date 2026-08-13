@@ -180,17 +180,60 @@ export function formatValue(descriptor, value) {
 }
 
 /**
- * A model value as the number a control should hold.
+ * Most decimals a value is ever shown with.
+ *
+ * A rotation of 0.3 rad is 17.188733853924695 degrees, and `toPrecision(12)` showed
+ * 17.1887338539 — twelve characters of noise in a field ninety pixels wide, for a value
+ * nobody can act on past the second decimal.
+ *
+ * THIS IS A DISPLAY RULE, NOT A STORAGE ONE. The model keeps every digit it was given,
+ * and a field the creator does not touch is never written back — so the precision is
+ * lost only if they deliberately edit the value, which is exactly when they have said
+ * what they want it to be. Blender and Unity both round the same way, for the same
+ * reason.
+ */
+export const MAX_DECIMALS = 3;
+
+/**
+ * A model value in display units, with nothing rounded away.
+ *
+ * THE READABLE FORM IS NOT THE VALUE. `toDisplay()` shortens a number so it fits a field
+ * and can be read; this one converts it and stops there. Every gesture that changes a
+ * value by an amount — a stepper, a scrub, an arrow key — starts from this one, so that
+ * nudging a stored 0.30000000000000004 by one gives 1.3000000000000000 and not 1.3.
+ * Starting from what the box happens to show would let a rounding meant for the eye
+ * quietly become the value.
+ *
+ * @param {object} descriptor - A field descriptor
+ * @param {any} value - The value held by the model
+ * @returns {number|null} The display number at full precision, or null
+ */
+export function toDisplayExact(descriptor, value) {
+    if (typeof value !== 'number' || !globalThis.Number.isFinite(value)) return null;
+    return value * descriptor.scale;
+}
+
+/**
+ * A model value as the number a control should SHOW.
  * @param {object} descriptor - A field descriptor
  * @param {any} value - The value held by the model
  * @returns {number|null} The display number, or null when there is nothing to show
  */
 export function toDisplay(descriptor, value) {
     if (typeof value !== 'number' || !globalThis.Number.isFinite(value)) return null;
+
     const scaled = value * descriptor.scale;
-    // Rounded only to shake off binary-float noise (0.30000000000000004, or 45.000000001
-    // degrees), never to a fixed number of decimals, which would rewrite the value.
-    return globalThis.Number(scaled.toPrecision(12));
+    if (descriptor.kind === FieldKind.INT) return Math.round(scaled);
+
+    // Rounding also shakes off the binary-float noise `toPrecision` was there for:
+    // 0.30000000000000004 and 45.000000001 both land where they should.
+    const rounded = globalThis.Number(scaled.toFixed(MAX_DECIMALS));
+
+    // A value too small to survive three decimals is still not nothing. Showing 0 for a
+    // scale of 0.0004 would invite the creator to believe it, and to type over it.
+    if (rounded === 0 && scaled !== 0) return globalThis.Number(scaled.toPrecision(2));
+
+    return rounded;
 }
 
 /**
