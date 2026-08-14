@@ -31,6 +31,10 @@ de ce qu'elle affirme.
 
 ## Décisions
 
+**ADR = Architecture Decision Record** — un enregistrement de décision d'architecture.
+Un ADR consigne une décision **prise**, datée et acceptée : il fait autorité. Une
+proposition non encore tranchée n'est jamais un ADR (voir la section suivante).
+
 | ADR | Décision |
 |---|---|
 | [0001](decisions/ADR-0001-object-stays-object.md) | `Object` reste `Object` |
@@ -55,6 +59,17 @@ ADR-0001 à 0015 acceptées le 2026-08-12, y compris le mode d'exécution de `.p
 (ADR-0009, Q7 : interprété) ; ADR-0016 et ADR-0017 le 2026-08-13. ADR-0015 a été révisé
 le 2026-08-12 : la couture « Component `Script` avec `kind` + `source` » est remplacée par
 « un graphe est le comportement d'un type de Component ».
+
+## Propositions en cours d'arbitrage
+
+Documents d'audit et de proposition. **Ils ne font pas autorité** : rien de ce qu'ils
+proposent n'est décidé ni implémenté tant qu'un ADR ne l'a pas enregistré.
+
+- [migration/PHASE_2_ARCHITECTURE_AUDIT.md](migration/PHASE_2_ARCHITECTURE_AUDIT.md) —
+  fondations du modèle de données : ordre structurel, Operations structurelles,
+  `Resource` / `ResourceId`, Components utilisateur, Undo/Redo, `.px` et fenêtre `Graph`.
+  Audité contre `19107304` le 2026-08-14. **Cinq points attendent un arbitrage ; aucune
+  implémentation n'a commencé.**
 
 ## Développement
 
