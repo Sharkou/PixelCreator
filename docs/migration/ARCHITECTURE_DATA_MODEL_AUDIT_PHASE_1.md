@@ -410,7 +410,7 @@ C'est le trou le plus large de l'audit, et il conditionne tout le reste :
 
 Autrement dit : les relations Document ↔ Resource ↔ Scene ↔ `.px` ne sont pas « à retrouver
 dans les ADR » — **elles n'y sont pas**. C'est le point qui demandera une vraie décision
-d'architecture en Phase 2, et c'est aussi le préalable de `px-tabs`, du Composer, du
+d'architecture en Phase 2, et c'est aussi le préalable de `px-tabs`, du `Graph`, du
 chargement de projet et de `behaviors.bind()`.
 
 Ce que le code impose déjà comme contraintes à cette future décision :
@@ -517,7 +517,7 @@ partir du code ou des ADR :
    `MOVE_CHILD`, `MOVE_OBJECT`), donc réplicable et annulable — ou reste-t-il hors du
    protocole ? ADR-0008 ne l'a pas prévu.
 3. **Qu'est-ce qu'une `Resource`, et existe-t-il un `Document` ?** C'est le préalable du
-   `.px`, du Composer, du chargement de projet et de `px-tabs`. Rien dans le dépôt ne
+   `.px`, du `Graph`, du chargement de projet et de `px-tabs`. Rien dans le dépôt ne
    permet de le déduire.
 4. **Une définition de Component a-t-elle une identité stable distincte de son nom ?**
    Sans réponse, renommer un Component utilisateur casse les projets qui l'utilisent.

@@ -65,11 +65,19 @@ le 2026-08-12 : la couture « Component `Script` avec `kind` + `source` » est r
 Documents d'audit et de proposition. **Ils ne font pas autorité** : rien de ce qu'ils
 proposent n'est décidé ni implémenté tant qu'un ADR ne l'a pas enregistré.
 
-- [migration/PHASE_2_ARCHITECTURE_AUDIT.md](migration/PHASE_2_ARCHITECTURE_AUDIT.md) —
-  fondations du modèle de données : ordre structurel, Operations structurelles,
-  `Resource` / `ResourceId`, Components utilisateur, Undo/Redo, `.px` et fenêtre `Graph`.
-  Audité contre `19107304` le 2026-08-14. **Cinq points attendent un arbitrage ; aucune
-  implémentation n'a commencé.**
+Chantier « fondations du modèle de données », en trois passes :
+
+- [migration/ARCHITECTURE_DATA_MODEL_AUDIT_PHASE_1.md](migration/ARCHITECTURE_DATA_MODEL_AUDIT_PHASE_1.md)
+  — **audit** : ce que le modèle est réellement, et ce qui lui manque
+- [migration/ARCHITECTURE_DATA_MODEL_AUDIT_PHASE_2.md](migration/ARCHITECTURE_DATA_MODEL_AUDIT_PHASE_2.md)
+  — **proposition** : ordre structurel, Operations structurelles, `Resource` / `ResourceId`,
+  Components utilisateur, Undo/Redo, `.px` et fenêtre `Graph`
+- [migration/ARCHITECTURE_DATA_MODEL_AUDIT_PHASE_3.md](migration/ARCHITECTURE_DATA_MODEL_AUDIT_PHASE_3.md)
+  — **consolidation** : séquence d'implémentation, dépendances, risques, et les décisions
+  requises avant de commencer
+
+**Aucune implémentation n'a commencé.** Sept décisions attendent un arbitrage
+(Phase 3, § « Décisions requises avant implémentation »).
 
 ## Développement
 
