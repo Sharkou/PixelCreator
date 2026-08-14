@@ -10,8 +10,19 @@ function registry() {
     return registerBuiltIns(new ComponentRegistry());
 }
 
+/**
+ * A scene that knows the shipped types.
+ *
+ * A Scene builds components through its own registry now, because ADD_OBJECT and
+ * ADD_COMPONENT rebuild from a payload — which is what lets any node, including a server,
+ * apply the same operation (ADR-0019).
+ */
+function sceneWith(known = registry()) {
+    return new Scene('Main', { registry: known });
+}
+
 test('a created object joins the scene with a Transform', () => {
-    const scene = new Scene('Main');
+    const scene = sceneWith();
     const object = createObject(scene, { kind: 'rectangle', x: 30, y: -10 });
 
     assert.equal(scene.has(object), true);
@@ -22,7 +33,7 @@ test('a created object joins the scene with a Transform', () => {
 });
 
 test('each kind carries what it is meant to', () => {
-    const scene = new Scene('Main');
+    const scene = sceneWith();
 
     assert.equal(createObject(scene, { kind: 'camera' }).hasComponent('Camera'), true);
 
@@ -31,7 +42,7 @@ test('each kind carries what it is meant to', () => {
 });
 
 test('creating under a parent announces the link', () => {
-    const scene = new Scene('Main');
+    const scene = sceneWith();
     const parent = createObject(scene, { kind: 'empty' });
 
     const links = [];
@@ -43,7 +54,7 @@ test('creating under a parent announces the link', () => {
 });
 
 test('names do not collide inside a scene', () => {
-    const scene = new Scene('Main');
+    const scene = sceneWith();
     const names = [
         createObject(scene, { kind: 'rectangle' }).name,
         createObject(scene, { kind: 'rectangle' }).name,
@@ -55,7 +66,7 @@ test('names do not collide inside a scene', () => {
 });
 
 test('deleting takes the subtree with it', () => {
-    const scene = new Scene('Main');
+    const scene = sceneWith();
     const parent = createObject(scene, { kind: 'empty' });
     createObject(scene, { kind: 'empty', parent });
 
@@ -65,8 +76,8 @@ test('deleting takes the subtree with it', () => {
 });
 
 test('components are added and removed through the registry', () => {
-    const scene = new Scene('Main');
     const known = registry();
+    const scene = sceneWith(known);
     const object = createObject(scene, { kind: 'empty' });
 
     const component = addComponent(object, 'RectangleRenderer', known);
@@ -78,8 +89,8 @@ test('components are added and removed through the registry', () => {
 });
 
 test('the add menu never offers a type already attached', () => {
-    const scene = new Scene('Main');
     const known = registry();
+    const scene = sceneWith(known);
     const object = createObject(scene, { kind: 'rectangle' });
 
     const available = availableComponents(object, known);
@@ -89,17 +100,18 @@ test('the add menu never offers a type already attached', () => {
 });
 
 test('a component built from a definition is offered like any other', () => {
-    const scene = new Scene('Main');
     const known = registry();
+    const scene = sceneWith(known);
     known.register(defineComponent({
-        type: 'Health',
+        type: 'res_health',
+        label: 'Health',
         properties: { maxHealth: { type: 'number', default: 100 } }
     }));
 
     const object = createObject(scene, { kind: 'empty' });
-    assert.equal(availableComponents(object, known).includes('Health'), true);
+    assert.equal(availableComponents(object, known).includes('res_health'), true);
 
-    const health = addComponent(object, 'Health', known);
+    const health = addComponent(object, 'res_health', known);
     assert.equal(health.maxHealth, 100);
 });
 
@@ -110,7 +122,7 @@ test('registering the built-ins twice is not an error', () => {
 });
 
 test('the selection is announced and is not part of the model', () => {
-    const scene = new Scene('Main');
+    const scene = sceneWith();
     const selection = new Selection();
     const object = createObject(scene, { kind: 'empty' });
 
@@ -137,20 +149,27 @@ test('the Add menu is grouped and reads in plain language', () => {
 
 test('a component that names its own category keeps it', () => {
     const known = registry();
-    const Health = defineComponent({ type: 'Health', properties: {} });
-    Health.category = 'Gameplay';
-    Health.label = 'Health';
+    const Health = defineComponent({
+        type: 'res_health',
+        label: 'Health',
+        category: 'Gameplay',
+        properties: {}
+    });
     known.register(Health);
 
-    const groups = groupTypes(['Health', 'Camera'], known);
+    const groups = groupTypes(['res_health', 'Camera'], known);
     assert.deepEqual(groups.map(group => group.category), ['Scene', 'Gameplay']);
-    assert.equal(describeType('Health', known).label, 'Health');
+    assert.equal(describeType('res_health', known).label, 'Health',
+        'the menu reads the label, never the identity (ADR-0021)');
 });
 
 test('an unknown type is grouped rather than dropped', () => {
     const known = registry();
-    known.register(defineComponent({ type: 'Mystery', properties: {} }));
+    known.register(defineComponent({ type: 'res_mystery', label: 'Mystery', properties: {} }));
 
-    const groups = groupTypes(['Mystery'], known);
-    assert.deepEqual(groups, [{ category: 'Other', entries: [{ type: 'Mystery', label: 'Mystery', category: 'Other' }] }]);
+    const groups = groupTypes(['res_mystery'], known);
+    assert.deepEqual(groups, [{
+        category: 'Other',
+        entries: [{ type: 'res_mystery', label: 'Mystery', category: 'Other' }]
+    }]);
 });

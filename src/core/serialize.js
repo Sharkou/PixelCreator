@@ -14,15 +14,28 @@
 //   - children and parents are references by id, never nested;
 //   - internal state is symbol-keyed, so it cannot leak here.
 //
-// No compatibility layer with Legacy projects: there are none to preserve.
+// STRUCTURAL ORDER IS DATA (ADR-0018, format 2).
+//
+// `components` is an ARRAY, and the scene carries an ordered `roots` list. Format 1 wrote
+// components as an object with alphabetically sorted keys — a shape that cannot carry an
+// order, and a sort that actively destroyed the one the model had. The order now decides
+// which component updates first, which one draws on top, and how the Inspector reads: it
+// is project data, so it is written down.
+//
+// An array also makes the determinism the sort was reaching for free: two serializations
+// of the same model are byte-identical because the model itself is ordered, not because
+// the writer imposed an order over it.
+//
+// No compatibility layer with Legacy projects, and none with format 1: there are none to
+// preserve (ARCHITECTURE.md §10).
 
-import { Object } from './object.js';
 import { Scene } from './scene.js';
 import { components as defaultRegistry, componentSchema } from './component.js';
 import { ownKeys } from './properties/reactive.js';
+import { rebuildObject, restoreSubtree } from './rebuild.js';
 
 /** Bumped when the shape changes; guards a future format migration, not a Legacy one. */
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2;
 
 /** Object fields that are part of the serialized contract, in a fixed order. */
 const OBJECT_FIELDS = ['id', 'name', 'tag', 'layer', 'active', 'visible', 'lock', 'owner'];
@@ -44,7 +57,7 @@ export function serializeObject(object) {
 }
 
 /**
- * Serialize a component.
+ * Serialize a component's values.
  * @param {object} component - The component to serialize
  * @returns {object} A plain, JSON-safe structure
  */
@@ -70,6 +83,18 @@ export function serializeComponent(component) {
 }
 
 /**
+ * Serialize an object's components as an ordered list.
+ * @param {object} object - The object
+ * @returns {object[]} `{ type, values }` entries, in collection order
+ */
+export function serializeComponents(object) {
+    return object.componentTypes().map(type => ({
+        type,
+        values: serializeComponent(object.getComponent(type))
+    }));
+}
+
+/**
  * Serialize a scene.
  * @param {Scene} scene - The scene to serialize
  * @returns {object} A plain, JSON-safe structure
@@ -79,38 +104,50 @@ export function serializeScene(scene) {
         version: FORMAT_VERSION,
         id: scene.id,
         name: scene.name,
-        objects: scene.objects().map(serializeObject)
+        // The parentless objects, in the order the scene holds them. `objects` keeps the
+        // flat storage; `roots` is what says which comes first at the top level.
+        roots: scene.roots().map(object => object.id),
+        objects: hierarchyOrder(scene).map(serializeObject)
     };
 }
 
 /**
+ * Every object, roots first and depth first under each of them.
+ *
+ * WHY NOT INSERTION ORDER. The scene's flat storage keeps objects in the order they
+ * joined, which is an accident of history: delete a subtree, undo, and the same model
+ * serializes differently because the restored objects joined last. Order in the format is
+ * either data or it is noise, and this one is noise (ADR-0018) — so the writer derives it
+ * from the structure that IS data, `roots` and `children`. Two identical models now
+ * produce identical bytes however they were built, which is what makes an undo comparable
+ * to what came before it.
+ *
+ * Every object is reached: one that has no parent is a root by definition.
+ *
+ * @param {Scene} scene - The scene
+ * @returns {object[]} The objects, in hierarchy order
+ */
+function hierarchyOrder(scene) {
+    const ordered = [];
+
+    const walk = object => {
+        ordered.push(object);
+        for (const child of object.children) walk(child);
+    };
+    for (const root of scene.roots()) walk(root);
+
+    return ordered;
+}
+
+/**
  * Rebuild an object, without its hierarchy links.
- *
- * Links are restored by deserializeScene() in a second pass, because a child may be
- * described before its parent.
- *
  * @param {object} data - Data produced by serializeObject()
  * @param {object} [options] - Options
  * @param {object} [options.registry] - Component registry used to resolve type names
  * @returns {object} The object
  */
 export function deserializeObject(data, { registry = defaultRegistry } = {}) {
-    const object = new Object(data.name ?? '', {
-        id: data.id,
-        tag: data.tag ?? '',
-        layer: data.layer ?? 0,
-        owner: data.owner ?? null
-    });
-
-    object.active = data.active ?? true;
-    object.visible = data.visible ?? true;
-    object.lock = data.lock ?? false;
-
-    for (const [type, componentData] of globalThis.Object.entries(data.components ?? {})) {
-        object.addComponent(deserializeComponent(type, componentData, registry));
-    }
-
-    return object;
+    return rebuildObject(data, { registry });
 }
 
 /**
@@ -126,7 +163,7 @@ export function deserializeScene(data, { registry = defaultRegistry, authority }
         throw new Error(`deserializeScene: unsupported format version ${data?.version}`);
     }
 
-    const scene = new Scene(data.name ?? '', { id: data.id, authority });
+    const scene = new Scene(data.name ?? '', { id: data.id, authority, registry });
 
     for (const objectData of data.objects ?? []) {
         scene.add(deserializeObject(objectData, { registry }));
@@ -143,23 +180,14 @@ export function deserializeScene(data, { registry = defaultRegistry, authority }
         }
     }
 
+    // Third pass: the roots, in their recorded order. Reparenting each one to `null` at
+    // its rank is the same primitive the Editor uses, so there is no second way to order
+    // the top level (ADR-0018).
+    (data.roots ?? []).forEach((id, index) => {
+        if (scene.has(id)) scene.reparent(id, null, index);
+    });
+
     return scene;
 }
 
-function serializeComponents(object) {
-    const data = {};
-    // Sorted: component type carries no ordering meaning, and a stable key order keeps
-    // two serializations of the same model byte-identical.
-    for (const type of globalThis.Object.keys(object.components).sort()) {
-        data[type] = serializeComponent(object.components[type]);
-    }
-    return data;
-}
-
-function deserializeComponent(type, data, registry) {
-    const component = registry.create(type);
-    for (const [key, value] of globalThis.Object.entries(data ?? {})) {
-        component[key] = value;
-    }
-    return component;
-}
+export { restoreSubtree };

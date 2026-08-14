@@ -19,6 +19,7 @@ import { Selection } from './selection.js';
 import { Layout } from './layout.js';
 import { registerBuiltIns } from './registry.js';
 import { deleteObject } from './commands.js';
+import { Histories } from './history.js';
 import { fillStarterScene } from './project/starter.js';
 import { installDocumentStyles, sheet } from './ui/styles.js';
 import { el } from './ui/element.js';
@@ -135,10 +136,15 @@ export function start(mount = document.body) {
     document.adoptedStyleSheets = [...document.adoptedStyleSheets, shellStyles];
     registerBuiltIns(components);
 
-    const scene = fillStarterScene(new Scene('Untitled Scene'));
+    const scene = fillStarterScene(new Scene('Untitled Scene', { registry: components }));
     const selection = new Selection();
     const camera = createEditorCamera();
     const layout = new Layout();
+
+    // One stack per resource (ADR-0024). Only the scene is editable today; a Graph window
+    // and the Project panel get their own by asking for theirs, not by sharing this one.
+    const histories = new Histories();
+    const history = histories.for(scene.id, scene.operations);
 
     const viewport = el('px-viewport').bind({ scene, camera, selection, onError: reportFailure });
     const hierarchy = el('px-hierarchy').bind({ scene, selection, viewport });
@@ -226,9 +232,9 @@ export function start(mount = document.body) {
         if (selection.has(object)) selection.clear();
     });
 
-    bindShortcuts({ scene, selection, viewport });
+    bindShortcuts({ scene, selection, viewport, history });
 
-    return { scene, camera, selection, layout, viewport };
+    return { scene, camera, selection, layout, viewport, history, histories };
 }
 
 /**
@@ -285,9 +291,26 @@ function titlebar(scene, layout) {
     );
 }
 
-function bindShortcuts({ scene, selection, viewport }) {
+function bindShortcuts({ scene, selection, viewport, history }) {
     globalThis.addEventListener('keydown', event => {
-        if (isEditing() || event.metaKey || event.ctrlKey) return;
+        // Undo is the one shortcut that must work while a field has focus — a creator
+        // mid-edit expects Ctrl Z to take back the last thing they did, and letting the
+        // browser undo the input's text instead is the wrong answer.
+        if (event.metaKey || event.ctrlKey) {
+            const key = event.key.toLowerCase();
+            if (key === 'z' && !event.shiftKey) {
+                if (history?.canUndo) event.preventDefault();
+                history?.undo();
+                return;
+            }
+            if ((key === 'z' && event.shiftKey) || key === 'y') {
+                if (history?.canRedo) event.preventDefault();
+                history?.redo();
+            }
+            return;
+        }
+
+        if (isEditing()) return;
 
         if (event.key === 'Delete' || event.key === 'Backspace') {
             const object = selection.object;

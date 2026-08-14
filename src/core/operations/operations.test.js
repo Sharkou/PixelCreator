@@ -171,10 +171,43 @@ test('an operation targeting an unknown object is neither applied nor announced'
     assert.equal(operations.apply(write('x', 1, 0)), true, 'a known target still resolves');
 });
 
-test('operations carry an increasing sequence number', () => {
-    const first = write('x', 1, 0);
-    const second = write('x', 2, 1);
-    assert.ok(second.seq > first.seq);
+test('a pipeline stamps its own increasing sequence numbers', () => {
+    // Per pipeline, not per module: a sequence number orders the operations of ONE
+    // replicated unit. A counter shared by every scene in the process is a lie the day it
+    // becomes a network sequence number or a history ordering key (ADR-0019).
+    const { operations } = setup();
+
+    assert.equal(write('x', 1, 0).seq, null, 'unsubmitted, so unnumbered');
+    assert.equal(operations.submit(write('x', 1, 0)).operation.seq, 1);
+    assert.equal(operations.submit(write('x', 2, 1)).operation.seq, 2);
+});
+
+test('two pipelines number their operations independently', () => {
+    const first = setup();
+    const second = setup();
+
+    first.operations.submit(write('x', 1, 0));
+    second.operations.submit(write('x', 1, 0));
+    second.operations.submit(write('x', 2, 1));
+
+    assert.equal(first.operations.submit(write('x', 2, 1)).operation.seq, 2);
+    assert.equal(second.operations.submit(write('x', 3, 2)).operation.seq, 3);
+});
+
+test('a replicated operation keeps the sequence number its author gave it', () => {
+    // Identifiers and ordering are minted by the author and travel in the payload. A
+    // receiver that renumbered would make two machines disagree about the order.
+    const { operations } = setup();
+    const authored = setPropertyOperation({
+        target: { object: 'obj-1', component: null },
+        prop: 'x',
+        value: 7,
+        previous: 0,
+        origin: Origin.NETWORK
+    });
+    const numbered = globalThis.Object.freeze({ ...authored, seq: 4096 });
+
+    assert.equal(operations.submit(numbered).operation.seq, 4096);
 });
 
 test('an operation is frozen', () => {

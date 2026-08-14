@@ -7,16 +7,25 @@
 // NO CONSUMER TODAY, AND IT STAYS. It was the Project/Timeline strip of the old bottom
 // dock; L4 gave each of those its own zone, so nothing renders it at the moment. It is
 // kept deliberately, as a primitive rather than as dead code, because the surfaces that
-// will want it are already named in the roadmap: Project alongside a Composer, several
-// scenes open at once, a graph per .px resource (ADR-0009), and eventually more than one
-// document. Every one of those is a strip of choices over a single body — this element,
-// unchanged.
+// will want it are already named in the roadmap: Project alongside a Graph window, several
+// scenes open at once, a Graph per `.px` resource (ADR-0009, ADR-0016). Every one of those
+// is a strip of choices over a single body — this element, unchanged.
 //
-// What is NOT built here, and must not be until something asks: document lifecycle,
-// closable tabs, overflow scrolling, drag to reorder, detachment. Speculating on those is
-// how a primitive becomes a framework before it has a user. It is registered by
-// editor.js so it stays loadable and testable; the day a window slots one in, this file
-// is the whole of the work.
+// `Graph` is the name of the visual-programming window, always. `Composer` is reserved for
+// a possible future music-composition window and must never be used for this one
+// (PROJECT.md §2) — a comment reading otherwise gets taken for normative two years later.
+//
+// WHAT A TAB DESIGNATES, now that the model can say it: an `OpenEditor` —
+// `{ resourceId, kind, viewState, history }`, an Editor object, never serialized into the
+// project (ADR-0020). It is not a Resource, and it is not a `Document`, because there is
+// no such concept in the model. A tab's "modified" mark is the `dirty` flag its resource's
+// operation pipeline raises, and its undo stack is that resource's (ADR-0024). None of it
+// needs building here.
+//
+// What is NOT built here, and must not be until something asks: closable tabs, overflow
+// scrolling, drag to reorder, detachment. Speculating on those is how a primitive becomes
+// a framework before it has a user. It is registered by editor.js so it stays loadable and
+// testable; the day a window slots one in, this file is the whole of the work.
 
 import { Element, el, fill } from './element.js';
 import { sheet } from './styles.js';

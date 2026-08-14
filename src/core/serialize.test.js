@@ -4,6 +4,7 @@ import { Scene } from './scene.js';
 import { Object } from './object.js';
 import { Transform } from './components/transform.js';
 import { ComponentRegistry } from './component.js';
+import { isMissingComponent } from './missing.js';
 import {
     FORMAT_VERSION,
     serializeObject,
@@ -77,7 +78,7 @@ test('a facade property belongs to its component, not to the object', () => {
     const data = serializeObject(object);
 
     assert.equal(data.x, undefined, 'the facade stores nothing, so it serializes nothing');
-    assert.equal(data.components.Transform.x, 55);
+    assert.deepEqual(data.components[0], { type: 'Transform', values: { x: 55, y: 20, rotation: 0, scaleX: 1, scaleY: 1 } });
 });
 
 test('ad-hoc properties on an Object are not serialized', () => {
@@ -171,7 +172,11 @@ test('serialization is deterministic', () => {
     assert.equal(JSON.stringify(serializeScene(scene)), JSON.stringify(serializeScene(scene)));
 });
 
-test('component keys are sorted, so key order carries no accident', () => {
+test('the serialized component order is the collection order', () => {
+    // THIS TEST WAS THE OPPOSITE ONE. It used to assert that two objects whose components
+    // were attached in different orders serialized identically, which encoded the decision
+    // that order carried no meaning. Order is now project data: it decides which component
+    // updates first, which one draws on top, and how the Inspector reads (ADR-0018).
     const first = new Object('A');
     first.addComponent(new Transform());
     first.addComponent(new Rotator());
@@ -180,10 +185,38 @@ test('component keys are sorted, so key order carries no accident', () => {
     second.addComponent(new Rotator());
     second.addComponent(new Transform());
 
-    assert.deepEqual(
-        globalThis.Object.keys(serializeObject(first).components),
-        globalThis.Object.keys(serializeObject(second).components)
-    );
+    assert.deepEqual(serializeObject(first).components.map(entry => entry.type),
+        ['Transform', 'Rotator']);
+    assert.deepEqual(serializeObject(second).components.map(entry => entry.type),
+        ['Rotator', 'Transform']);
+});
+
+test('a serialized scene carries its roots in order', () => {
+    const scene = new Scene('Main');
+    const first = scene.add(new Object('First'));
+    const second = scene.add(new Object('Second'));
+    const child = scene.add(new Object('Child'));
+    first.addChild(child);
+
+    const data = serializeScene(scene);
+
+    assert.deepEqual(data.roots, [first.id, second.id]);
+    assert.equal(data.objects.length, 3, 'the flat storage still holds every object');
+});
+
+test('the order of components and of roots survives a round trip', () => {
+    const scene = new Scene('Main');
+    const object = scene.add(new Object('Player'));
+    const other = scene.add(new Object('Other'));
+    object.addComponent(new Rotator());
+    object.addComponent(new Transform());
+    scene.reparent(other, null, 0);
+
+    const restored = deserializeScene(
+        JSON.parse(JSON.stringify(serializeScene(scene))), { registry: registry() });
+
+    assert.deepEqual(restored.get(object.id).componentTypes(), ['Rotator', 'Transform']);
+    assert.deepEqual(restored.roots().map(entry => entry.name), ['Other', 'Player']);
 });
 
 test('a scene survives a round trip', () => {
@@ -260,15 +293,32 @@ test('restored objects submit to the restored scene pipeline', () => {
     assert.equal(operations.length, 1);
 });
 
-test('an unknown component type fails loudly', () => {
+test('an unknown component type keeps its data instead of losing the scene', () => {
     const scene = new Scene('Main');
-    scene.add(new Object('Player')).addComponent(new Rotator());
+    const object = scene.add(new Object('Player'));
+    object.addComponent(new Transform(10, 20));
+    object.addComponent(new Rotator(7));
 
+    // Losing a whole scene because one definition is absent is the worst behaviour an
+    // editor can have. The slot, the values and the rank are all preserved (ADR-0021).
+    const partial = new ComponentRegistry();
+    partial.register(Transform);
+    const restored = deserializeScene(
+        JSON.parse(JSON.stringify(serializeScene(scene))), { registry: partial });
+
+    const placeholder = restored.get(object.id).getComponent('Rotator');
+    assert.ok(isMissingComponent(placeholder), 'it says what it is');
+    assert.equal(placeholder.speed, 7, 'and keeps every value');
+    assert.deepEqual(restored.get(object.id).componentTypes(), ['Transform', 'Rotator'],
+        'and its rank');
+});
+
+test('resolving a component type by hand still fails loudly', () => {
     // Legacy resolved components by name in a module namespace and failed silently.
-    assert.throws(
-        () => deserializeScene(serializeScene(scene), { registry: new ComponentRegistry() }),
-        /unknown component type "Rotator"/
-    );
+    // Deserialization is forgiving; asking the registry for a type it does not have is
+    // still a programming error.
+    assert.throws(() => new ComponentRegistry().create('Rotator'),
+        /unknown component type "Rotator"/);
 });
 
 test('an unsupported format version is refused', () => {
@@ -287,7 +337,7 @@ test('a dangling child reference fails loudly', () => {
         name: 'Main',
         objects: [{
             id: 'a', name: 'A', tag: '', layer: 0, active: true, visible: true, lock: false,
-            owner: null, parent: null, children: ['missing'], components: {}
+            owner: null, parent: null, children: ['missing'], components: []
         }]
     };
 
@@ -298,4 +348,25 @@ test('an empty scene round trips', () => {
     const restored = deserializeScene(serializeScene(new Scene('Empty')), { registry: registry() });
     assert.equal(restored.size, 0);
     assert.equal(restored.name, 'Empty');
+});
+
+test('the serialized object list follows the hierarchy, not the order objects joined', () => {
+    // Insertion order is an accident of history: delete a subtree, undo, and the same
+    // model would serialize differently because the restored objects joined last. The
+    // writer derives the list from `roots` and `children`, which ARE data (ADR-0018).
+    const scene = new Scene('Main');
+    const first = scene.add(new Object('First'));
+    const second = scene.add(new Object('Second'));
+    const child = scene.add(new Object('Child'));
+    const grandchild = scene.add(new Object('Grandchild'));
+
+    child.addChild(grandchild);
+    first.addChild(child);
+    scene.reparent(second, null, 0);
+
+    assert.deepEqual(serializeScene(scene).objects.map(entry => entry.name),
+        ['Second', 'First', 'Child', 'Grandchild']);
+
+    const restored = deserializeScene(serializeScene(scene), { registry: registry() });
+    assert.equal(JSON.stringify(serializeScene(restored)), JSON.stringify(serializeScene(scene)));
 });

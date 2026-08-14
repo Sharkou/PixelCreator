@@ -19,8 +19,13 @@ import { createId } from './id.js';
 import { makeReactive, observe, ownKeys, setOwner, setFacadeResolver } from './properties/reactive.js';
 import { Origin } from './properties/origin.js';
 import { Operations } from './operations/operations.js';
-import { setPropertyOperation } from './operations/operation.js';
-import { componentType, componentExposes } from './component.js';
+import { OperationType, setPropertyOperation } from './operations/operation.js';
+import {
+    componentType,
+    componentExposes,
+    instantiateComponent,
+    components as defaultRegistry
+} from './component.js';
 
 const STATE = globalThis.Symbol('pixelcreator.object.state');
 
@@ -87,9 +92,18 @@ export class Object {
         const state = this[STATE];
         if (state.scene) return state.scene.operations;
 
-        state.detachedOperations ??= new Operations({
-            resolve: target => resolveTarget(this, target)
-        });
+        if (!state.detachedOperations) {
+            state.detachedOperations = new Operations({
+                resolve: target => resolveTarget(this, target)
+            });
+            // Component operations target this object alone; the hierarchy ones need a
+            // Scene to resolve a parent, so a detached object cannot carry them.
+            registerComponentHandlers(
+                state.detachedOperations,
+                id => (id === this.id ? this : null),
+                { registry: defaultRegistry }
+            );
+        }
         return state.detachedOperations;
     }
 
@@ -118,13 +132,73 @@ export class Object {
     }
 
     /**
-     * The components, keyed by type name.
+     * The components, keyed by type name, IN THEIR COLLECTION ORDER (ADR-0018).
+     *
+     * The shape is unchanged on purpose — every reader written against it still works —
+     * but the key order is now meaningful rather than incidental: it is the order the
+     * runtime runs `update()` in, the order the scene renderer runs `draw()` in, the
+     * order the Inspector shows, and the order that is persisted.
+     *
+     * `Object.keys()` on a plain object preserves insertion order for non-numeric string
+     * keys, and a component type is never a numeric string, so the snapshot carries the
+     * order faithfully.
+     *
      * @returns {object} A frozen snapshot, so mutating it cannot corrupt the object
      */
     get components() {
         const snapshot = {};
         for (const [type, component] of this[STATE].components) snapshot[type] = component;
         return globalThis.Object.freeze(snapshot);
+    }
+
+    /**
+     * The component type names, in collection order.
+     * @returns {string[]} The type names
+     */
+    componentTypes() {
+        return [...this[STATE].components.keys()];
+    }
+
+    /**
+     * The components themselves, in collection order.
+     * @returns {object[]} The components
+     */
+    componentList() {
+        return [...this[STATE].components.values()];
+    }
+
+    /**
+     * The rank of a component within the ordered collection.
+     * @param {string|Function|object} component - Type name, class or instance
+     * @returns {number} The index, or -1 when not attached
+     */
+    componentIndex(component) {
+        return this.componentTypes().indexOf(componentType(component));
+    }
+
+    /**
+     * Move a component to another rank in the collection.
+     *
+     * Nothing is detached, nothing is re-instantiated, no value is touched — this is a
+     * splice on the ordered collection. That is the difference between reordering and
+     * "remove then add again", which loses the values and the rank both (ADR-0018).
+     *
+     * @param {string|Function|object} component - Type name, class or instance
+     * @param {number} index - The rank to move it to; clamped to the collection
+     * @returns {boolean} True when the order changed
+     */
+    moveComponent(component, index) {
+        const type = componentType(component);
+        const state = this[STATE];
+        if (!state.components.has(type)) return false;
+
+        const from = this.componentIndex(type);
+        const to = clampIndex(index, state.components.size - 1);
+        if (from === to) return false;
+
+        reorderComponent(state, type, to);
+        state.notify?.('component:moved', { object: this, type, index: to, previousIndex: from });
+        return true;
     }
 
     /**
@@ -193,9 +267,11 @@ export class Object {
      * is exactly the kind of accident v2 should surface.
      *
      * @param {object} component - The component instance
+     * @param {object} [options] - Options
+     * @param {number} [options.index] - Rank in the ordered collection; appended when omitted
      * @returns {object} The component, made reactive
      */
-    addComponent(component) {
+    addComponent(component, { index } = {}) {
         if (!component || typeof component !== 'object') {
             throw new TypeError('addComponent: expected a component instance');
         }
@@ -228,11 +304,16 @@ export class Object {
         setOwner(reactive, this, exposes);
         installComponentSetProperty(this, reactive, type);
 
-        state.components.set(type, reactive);
+        insertComponent(state, type, reactive, index);
         for (const prop of exposes) state.exposed.set(prop, reactive);
 
         reactive.onAttach?.(this);
-        state.notify?.('component:added', { object: this, component: reactive, type });
+        state.notify?.('component:added', {
+            object: this,
+            component: reactive,
+            type,
+            index: this.componentIndex(type)
+        });
         return reactive;
     }
 
@@ -247,6 +328,8 @@ export class Object {
         const attached = state.components.get(type);
         if (!attached) return false;
 
+        const index = this.componentIndex(type);
+
         for (const [prop, provider] of [...state.exposed]) {
             if (provider === attached) state.exposed.delete(prop);
         }
@@ -254,7 +337,7 @@ export class Object {
 
         attached.onDetach?.(this);
         setOwner(attached, null, null);
-        state.notify?.('component:removed', { object: this, component: attached, type });
+        state.notify?.('component:removed', { object: this, component: attached, type, index });
         return true;
     }
 
@@ -277,11 +360,28 @@ export class Object {
     }
 
     /**
+     * The rank of a child within this object's ordered children.
+     * @param {Object} child - The child
+     * @returns {number} The index, or -1 when it is not a child of this object
+     */
+    childIndex(child) {
+        return this[STATE].children.indexOf(child);
+    }
+
+    /**
      * Attach a child, detaching it from its previous parent when needed.
+     *
+     * KEEPS THE LOCAL TRANSFORM, deliberately. This is what a script expects when it
+     * parents a bullet to a turret. Preserving the *world* placement instead is an editor
+     * policy, composed as a batch of Operations by the Editor (ADR-0022), never hidden
+     * inside the Core.
+     *
      * @param {Object} child - The object to attach
+     * @param {object} [options] - Options
+     * @param {number} [options.index] - Rank among the children; appended when omitted
      * @returns {Object} The child
      */
-    addChild(child) {
+    addChild(child, { index } = {}) {
         if (!child || typeof child !== 'object') {
             throw new TypeError('addChild: expected an object');
         }
@@ -293,13 +393,7 @@ export class Object {
         }
 
         child.parent?.removeChild(child);
-
-        this[STATE].children.push(child);
-        child[STATE].parent = this;
-        // The parent announces, because the parent is where the tree changed shape. A
-        // child that joined a scene before its parent did still gets announced, through
-        // its own notifier.
-        (this[STATE].notify ?? child[STATE].notify)?.('child:added', { parent: this, child });
+        linkChild(this, child, index);
         return child;
     }
 
@@ -309,15 +403,89 @@ export class Object {
      * @returns {boolean} True when the child was attached
      */
     removeChild(child) {
-        const children = this[STATE].children;
-        const index = children.indexOf(child);
-        if (index === -1) return false;
-
-        children.splice(index, 1);
-        child[STATE].parent = null;
-        (this[STATE].notify ?? child[STATE].notify)?.('child:removed', { parent: this, child });
-        return true;
+        return unlinkChild(this, child);
     }
+}
+
+/**
+ * Internal wiring: put a child under a parent at a rank, and announce it.
+ *
+ * The one place the parent/child link is written. Both the public `addChild()` and the
+ * REPARENT operation handler go through it, so a structural Operation mutates internal
+ * storage directly and can never re-submit an Operation of its own (ADR-0019).
+ *
+ * @param {Object} parent - The parent
+ * @param {Object} child - The child
+ * @param {number} [index] - Rank among the children; appended when omitted
+ */
+export function linkChild(parent, child, index) {
+    const children = parent[STATE].children;
+    const at = index === undefined || index === null
+        ? children.length
+        : clampIndex(index, children.length);
+
+    children.splice(at, 0, child);
+    child[STATE].parent = parent;
+    // The parent announces, because the parent is where the tree changed shape. A child
+    // that joined a scene before its parent did still gets announced, through its own
+    // notifier.
+    (parent[STATE].notify ?? child[STATE].notify)?.('child:added', { parent, child, index: at });
+}
+
+/**
+ * Internal wiring: detach a child from its parent, and announce it.
+ * @param {Object} parent - The parent
+ * @param {Object} child - The child
+ * @returns {boolean} True when the child was attached
+ */
+export function unlinkChild(parent, child) {
+    const children = parent[STATE].children;
+    const index = children.indexOf(child);
+    if (index === -1) return false;
+
+    children.splice(index, 1);
+    child[STATE].parent = null;
+    (parent[STATE].notify ?? child[STATE].notify)?.('child:removed', { parent, child, index });
+    return true;
+}
+
+/**
+ * Teach a pipeline the component operations, applied by direct writes.
+ *
+ * ANTI-ECHO. Every handler mutates through the object's own API, which produces no
+ * Operation of its own — `addComponent`, `removeComponent` and `moveComponent` emit scene
+ * events, never operations. Applying a replicated operation therefore submits nothing
+ * back, and the loop stays unrepresentable rather than merely guarded (ADR-0019).
+ *
+ * @param {object} operations - The pipeline to register on
+ * @param {(id: string) => object|null} resolveObject - Object lookup by identifier
+ * @param {object} options - Options
+ * @param {object} options.registry - Component registry used to build instances
+ */
+export function registerComponentHandlers(operations, resolveObject, { registry }) {
+    operations.register(OperationType.ADD_COMPONENT, operation => {
+        const object = resolveObject(operation.target.object);
+        if (!object) return false;
+        if (object.hasComponent(operation.component)) return false;
+
+        object.addComponent(
+            instantiateComponent(registry, operation.component, operation.values),
+            { index: operation.index }
+        );
+        return true;
+    }, { resolveTarget: false });
+
+    operations.register(OperationType.REMOVE_COMPONENT, operation => {
+        const object = resolveObject(operation.target.object);
+        if (!object) return false;
+        return object.removeComponent(operation.component);
+    }, { resolveTarget: false });
+
+    operations.register(OperationType.MOVE_COMPONENT, operation => {
+        const object = resolveObject(operation.target.object);
+        if (!object) return false;
+        return object.moveComponent(operation.component, operation.index);
+    }, { resolveTarget: false });
 }
 
 /**
@@ -373,9 +541,60 @@ function installComponentSetProperty(owner, component, type) {
     });
 }
 
-function isAncestorOf(candidate, object) {
+/**
+ * Tell whether an object sits anywhere above another in the tree.
+ *
+ * The cycle guard. It lives here because it reads the parent chain, and it is exported so
+ * the REPARENT handler can refuse an operation instead of throwing (ADR-0019): a throw
+ * inside a pipeline would reach the transport.
+ *
+ * @param {Object} candidate - The possible ancestor
+ * @param {Object} object - The object to walk up from
+ * @returns {boolean} True when candidate is object, or above it
+ */
+export function isAncestorOf(candidate, object) {
     for (let current = object; current; current = current.parent) {
         if (current === candidate) return true;
     }
     return false;
+}
+
+/**
+ * Clamp an index into a collection, treating anything unusable as "at the end".
+ * @param {number} index - The requested index
+ * @param {number} last - The highest legal index
+ * @returns {number} The index to use
+ */
+export function clampIndex(index, last) {
+    if (typeof index !== 'number' || !globalThis.Number.isFinite(index)) return last;
+    return Math.max(0, Math.min(Math.trunc(index), last));
+}
+
+/** Insert a component into the ordered collection, appending when no index is given. */
+function insertComponent(state, type, component, index) {
+    if (index === undefined || index === null || index >= state.components.size) {
+        state.components.set(type, component);
+        return;
+    }
+
+    const entries = [...state.components];
+    entries.splice(clampIndex(index, entries.length), 0, [type, component]);
+    rewrite(state.components, entries);
+}
+
+/** Move an already-present component to another rank. */
+function reorderComponent(state, type, index) {
+    const entries = [...state.components];
+    const from = entries.findIndex(([key]) => key === type);
+    const [entry] = entries.splice(from, 1);
+    entries.splice(index, 0, entry);
+    rewrite(state.components, entries);
+}
+
+// A Map keeps insertion order and has no splice, so a reorder is a rewrite. It is O(n) on
+// a collection that holds a handful of components, and it keeps ONE storage rather than a
+// Map plus an order array that could drift apart.
+function rewrite(map, entries) {
+    map.clear();
+    for (const [key, value] of entries) map.set(key, value);
 }

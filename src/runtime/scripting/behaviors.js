@@ -54,7 +54,6 @@
 // server variant (ADR-0005, ADR-0015).
 
 import { componentType } from '../../core/component.js';
-import { componentDefinition } from '../../core/definition.js';
 
 /**
  * What an interpreted graph exposes for one component instance.
@@ -95,10 +94,14 @@ export class Behaviors {
     }
 
     /**
-     * Bind a graph to a component type.
+     * Bind a resolved graph to a component type.
      *
-     * The graph may be left out for a type built from a definition, which already carries
-     * one (ADR-0016) — the definition stays the single place the graph is written down.
+     * THE GRAPH IS PASSED IN, ALWAYS. A definition references its graph by ResourceId
+     * (ADR-0016 as amended by ADR-0020), and neither the Core nor the Runtime reaches
+     * storage — the Project layer resolves the identifier and calls this, which is the
+     * answer to the "who calls bind()" left open by ADR-0009, ADR-0015 and ADR-0016.
+     * Accepting an identifier here would put resolution behind a runtime API and give the
+     * Runtime a dependency on the project's storage.
      *
      * A GRAPH IS IMMUTABLE TO THE RUNTIME. It is read once and identified by its object
      * identity, so mutating one in place changes nothing. Editing `Controller.px` means
@@ -106,13 +109,19 @@ export class Behaviors {
      * next step, on every Controller, with nothing to reload.
      *
      * @param {string|Function|object} type - Component type name, class or instance
-     * @param {object} [graph] - The `.px` graph resource; the type's own when omitted
+     * @param {object} graph - The resolved `.px` graph resource
      * @returns {Behaviors} This host, so bindings can chain
      */
-    bind(type, graph = componentDefinition(type)?.graph) {
+    bind(type, graph) {
         const name = componentType(type);
+        if (typeof graph === 'string') {
+            throw new TypeError(
+                `Behaviors.bind: "${name}" was given a ResourceId; the Project layer resolves ` +
+                'a graph before binding it (ADR-0020)'
+            );
+        }
         if (!graph || typeof graph !== 'object') {
-            throw new TypeError(`Behaviors.bind: "${name}" needs a graph`);
+            throw new TypeError(`Behaviors.bind: "${name}" needs a resolved graph`);
         }
         this.#graphs.set(name, graph);
         return this;

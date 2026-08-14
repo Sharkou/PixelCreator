@@ -9,8 +9,7 @@ import {
     serializeScene,
     deserializeScene,
     ComponentRegistry,
-    defineComponent,
-    componentDefinition
+    defineComponent
 } from '../../core/mod.js';
 import { Behaviors } from './behaviors.js';
 import { Runtime } from '../runtime.js';
@@ -435,21 +434,24 @@ test('a defined Component runs its graph, keeps its data, and survives a round t
     // The whole Editor path in one test: a definition becomes a type, its graph becomes
     // its behavior, its properties are what serializes.
     const definition = {
-        type: 'Controller',
+        type: 'res_c3',
+        label: 'Controller',
         properties: { speed: { type: 'number', default: 120 }, travelled: { type: 'number' } },
-        graph: { version: 1, nodes: ['On Update', 'move'], connections: [] }
+        graph: 'res_d4'
     };
+    // The definition names its graph by ResourceId; the Project layer resolves it and
+    // binds the resolved graph (ADR-0020). Standing in for that here.
+    const resolved = { version: 1, nodes: ['On Update', 'move'], connections: [] };
     const registry = new ComponentRegistry();
     registry.register(Transform);
     const Controller = registry.register(defineComponent(definition));
-    // The graph comes from the definition; nobody has to repeat where it lives.
     const behaviors = new Behaviors(() => component => ({
         update(self, ctx) {
             const step = component.speed * ctx.deltaTime;
             self.x += step;
             component.travelled += step;
         }
-    })).bind(Controller);
+    })).bind(Controller, resolved);
 
     const scene = new Scene('Main');
     const object = scene.add(new Object('Player'));
@@ -460,26 +462,30 @@ test('a defined Component runs its graph, keeps its data, and survives a round t
     runtime.step();
 
     assert.equal(object.x, 60, 'the graph moved the object');
-    assert.equal(object.getComponent('Controller').travelled, 60, 'and wrote its own property');
+    assert.equal(object.getComponent('res_c3').travelled, 60, 'and wrote its own property');
 
     const data = JSON.parse(JSON.stringify(serializeScene(scene)));
-    assert.deepEqual(data.objects[0].components.Controller, { speed: 120, travelled: 60 },
-        'the instance serializes its properties and no behavior');
+    assert.deepEqual(data.objects[0].components[1], {
+        type: 'res_c3',
+        values: { speed: 120, travelled: 60 }
+    }, 'the instance serializes its properties, in its rank, and no behavior');
 
     const restored = deserializeScene(data, { registry });
     const resumed = new Runtime(restored, { behaviors, clock: new Clock({ fixedStep: 0.5 }) });
     resumed.step();
 
-    assert.equal(restored.objects()[0].getComponent('Controller').travelled, 120,
+    assert.equal(restored.objects()[0].getComponent('res_c3').travelled, 120,
         'and picks its behavior back up on the other side of a save');
 });
 
 test('every instance of a type shares one graph and no execution state', () => {
     const definition = {
-        type: 'Counter',
+        type: 'res_counter',
+        label: 'Counter',
         properties: { count: { type: 'number' } },
-        graph: { version: 1, nodes: [] }
+        graph: 'res_counter_graph'
     };
+    const resolved = { version: 1, nodes: [] };
     const Counter = defineComponent(definition);
     const graphs = [];
     const behaviors = new Behaviors(resource => {
@@ -488,7 +494,7 @@ test('every instance of a type shares one graph and no execution state', () => {
             let ticks = 0;
             return { update() { component.count = ++ticks; } };
         };
-    }).bind(Counter);
+    }).bind(Counter, resolved);
 
     const scene = new Scene('Main');
     const instances = ['a', 'b', 'c'].map(name =>
@@ -500,7 +506,7 @@ test('every instance of a type shares one graph and no execution state', () => {
     instances[2].active = false;
     runtime.step();
 
-    assert.deepEqual(graphs, [definition.graph], 'one graph, read once, for the whole type');
+    assert.deepEqual(graphs, [resolved], 'one graph, read once, for the whole type');
     assert.deepEqual(instances.map(instance => instance.count), [3, 3, 2],
         'each instance counted on its own');
 });
@@ -508,20 +514,21 @@ test('every instance of a type shares one graph and no execution state', () => {
 test('a graph is immutable to the runtime: editing means binding a new one', () => {
     // Mutating a bound graph in place is not observed — the Editor produces a new graph
     // and binds it, which is what makes a hot edit predictable.
-    const Controller = defineComponent({ type: 'Controller', graph: { label: 'v1' } });
+    const Controller = defineComponent({ type: 'res_c3', label: 'Controller', graph: 'res_d4' });
+    const first = { label: 'v1' };
     const seen = [];
     let interpretations = 0;
     const behaviors = new Behaviors(resource => {
         interpretations++;
         const label = resource.label;        // read when the graph is interpreted
         return () => ({ update() { seen.push(label); } });
-    }).bind(Controller);
+    }).bind(Controller, first);
     const scene = new Scene('Main');
     scene.add(new Object('Player')).addComponent(new Controller());
 
     const runtime = new Runtime(scene, { behaviors });
     runtime.step();
-    componentDefinition(Controller).graph.label = 'edited in place';
+    first.label = 'edited in place';
     runtime.step();
     behaviors.bind(Controller, { label: 'v2' });
     runtime.step();

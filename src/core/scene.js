@@ -7,6 +7,12 @@
 // The scene owns the operation pipeline, since a scene is what a server arbitrates and
 // what a transport replicates.
 //
+// THE ROOTS ARE AN ORDERED LIST, NOT A FILTER (ADR-0018). They used to be derived by
+// filtering the objects for the parentless ones, which meant their order was the order
+// they happened to be created in and could not be changed, saved, or undone. They are now
+// a list the scene owns — the children of an implicit `null` parent — so reordering a root
+// is the same gesture, and the same Operation, as reordering any other child.
+//
 // What deliberately does NOT live here: the Editor's selection. Legacy kept
 // `scene.current` and `scene.currentComponent` in the Core, which is IDE state leaking
 // into the model, read by five different modules.
@@ -14,20 +20,41 @@
 import { createId } from './id.js';
 import { Emitter } from './events.js';
 import { Operations } from './operations/operations.js';
-import { attachToScene } from './object.js';
+import { OperationType } from './operations/operation.js';
+import { components as defaultRegistry } from './component.js';
+import {
+    attachToScene,
+    clampIndex,
+    isAncestorOf,
+    linkChild,
+    registerComponentHandlers,
+    unlinkChild
+} from './object.js';
+import { restoreSubtree } from './rebuild.js';
 
 export class Scene {
 
     #id;
     #name;
     #objects = new Map();
+    #roots = [];
     #emitter = new Emitter();
     #operations;
+    #registry;
+
+    // Raised while reparent() is rearranging the tree itself, so the structural events it
+    // causes do not also try to maintain the root list behind its back. Outside that
+    // window the same events are exactly how a plain `parent.addChild(child)` from a
+    // script keeps the roots correct.
+    #rearranging = false;
 
     // Handed to every object that joins, so a structural change can be announced by the
     // object it happened on. Bound once: it is the scene's only writable entry point
     // into its own emitter, and nothing outside holds it.
-    #notify = (event, payload) => this.#emitter.emit(event, payload);
+    #notify = (event, payload) => {
+        this.#trackRoots(event, payload);
+        this.#emitter.emit(event, payload);
+    };
 
     /**
      * Create a scene.
@@ -35,14 +62,18 @@ export class Scene {
      * @param {object} [options] - Options
      * @param {string} [options.id] - Existing identifier, used when deserializing
      * @param {object} [options.authority] - Object exposing check(operation) => decision
+     * @param {object} [options.registry] - Component registry used by ADD_COMPONENT
      */
-    constructor(name = '', { id, authority } = {}) {
+    constructor(name = '', { id, authority, registry = defaultRegistry } = {}) {
         this.#id = id ?? createId();
         this.#name = name;
+        this.#registry = registry;
         this.#operations = new Operations({
             authority,
             resolve: target => this.#resolveTarget(target)
         });
+
+        this.#registerHandlers();
     }
 
     get id() {
@@ -55,6 +86,14 @@ export class Scene {
 
     set name(name) {
         this.#name = name;
+    }
+
+    /**
+     * The component registry this scene builds components from.
+     * @returns {object} The registry
+     */
+    get registry() {
+        return this.#registry;
     }
 
     /**
@@ -79,12 +118,20 @@ export class Scene {
      * Structure is announced here, values are not: a property change is observed on the
      * object that carries it (`object.observe`), because that is what lets a view watch
      * one field without waking on every mutation in the scene. What a property cannot
-     * express is a change of *shape*, and these five events are exactly that list — no
-     * more, so this never becomes a general mutation bus.
+     * express is a change of *shape*, and these events are exactly that list — no more, so
+     * this never becomes a general mutation bus.
      *
-     *   'added' / 'removed'                the object
-     *   'component:added' / 'component:removed'   { object, component, type }
-     *   'child:added' / 'child:removed'           { parent, child }
+     *   'added' / 'removed'                              the object
+     *   'component:added' / 'component:removed'          { object, component, type, index }
+     *   'component:moved'                                { object, type, index, previousIndex }
+     *   'child:added' / 'child:removed'                  { parent, child, index }
+     *   'roots:reordered'                                { index, previousIndex }
+     *
+     * These stay a different layer from the Operations. An Operation is an intent that can
+     * be arbitrated, replicated and undone; an event is a notification that the shape
+     * changed, whatever caused it — including a plain `addChild()` from a script that
+     * produces no Operation at all. Merging the two would make every script call
+     * replicable and every replicated change unobservable (ADR-0019).
      *
      * @param {string} event - Event name
      * @param {Function} listener - Called with the payload
@@ -97,9 +144,11 @@ export class Scene {
     /**
      * Add an object to the scene.
      * @param {object} object - The object to add
+     * @param {object} [options] - Options
+     * @param {number} [options.index] - Rank among the roots, when the object has no parent
      * @returns {object} The object
      */
-    add(object) {
+    add(object, { index } = {}) {
         if (!object?.id) throw new TypeError('Scene.add: expected an object with an id');
 
         const existing = this.#objects.get(object.id);
@@ -107,6 +156,8 @@ export class Scene {
         if (existing) throw new Error(`Scene.add: id ${object.id} is already used by another object`);
 
         this.#objects.set(object.id, object);
+        if (!object.parent) this.#insertRoot(object.id, index);
+
         attachToScene(object, this, this.#notify);
         this.#emitter.emit('added', object);
         return object;
@@ -129,6 +180,7 @@ export class Scene {
         target.parent?.removeChild(target);
 
         this.#objects.delete(id);
+        this.#removeRoot(id);
         attachToScene(target, null, null);
         this.#emitter.emit('removed', target);
         return true;
@@ -161,11 +213,84 @@ export class Scene {
     }
 
     /**
-     * Objects that have no parent.
-     * @returns {object[]} The roots, in insertion order
+     * The parentless objects, in their persisted order.
+     * @returns {object[]} The roots
      */
     roots() {
-        return this.objects().filter(object => !object.parent);
+        return this.#roots.map(id => this.#objects.get(id)).filter(Boolean);
+    }
+
+    /**
+     * Move an object to another parent, at a given rank.
+     *
+     * ONE PRIMITIVE FOR FOUR GESTURES: reparent, unparent (`parent: null`), reorder among
+     * siblings (same parent, new index), reorder among the roots (`parent: null`, new
+     * index). They are one mutation, so they get one primitive and one inverse (ADR-0019).
+     *
+     * Carried by the Scene rather than by Object because reordering a root has no owning
+     * Object — the Scene owns that list — and because a reparent touches two parents, so
+     * hanging it off either of them would be arbitrary.
+     *
+     * REFUSES rather than throws: an invalid reparent is answered with `false`, which the
+     * pipeline turns into `applied: false`. A throw would travel up into the transport.
+     *
+     * @param {object|string} object - The object to move, or its id
+     * @param {object|string|null} parent - The new parent, its id, or null for a root
+     * @param {number} [index] - Rank among the new siblings; appended when omitted
+     * @returns {boolean} True when the tree changed
+     */
+    reparent(object, parent = null, index) {
+        const moved = this.#resolveObject(object);
+        if (!moved) return false;
+
+        const target = parent === null || parent === undefined ? null : this.#resolveObject(parent);
+        if (parent !== null && parent !== undefined && !target) return false;
+
+        // A cycle is refused wherever the operation came from, including replication —
+        // which is why the guard lives here and not only in addChild() (ADR-0019).
+        if (target && isAncestorOf(moved, target)) return false;
+
+        const previousParent = moved.parent;
+        const previousIndex = previousParent
+            ? previousParent.childIndex(moved)
+            : this.#roots.indexOf(moved.id);
+
+        const siblings = target ? target.children.length : this.#roots.length;
+        // Moving within the same collection, the object first leaves it, so the highest
+        // reachable rank is one less than the current count.
+        const staying = previousParent === target;
+        const last = staying ? siblings - 1 : siblings;
+        const to = clampIndex(index, last);
+
+        if (staying && to === previousIndex) return false;
+
+        this.#rearranging = true;
+        try {
+            if (previousParent) unlinkChild(previousParent, moved);
+            else this.#removeRoot(moved.id);
+
+            if (target) linkChild(target, moved, to);
+            else this.#insertRoot(moved.id, to);
+        } finally {
+            this.#rearranging = false;
+        }
+
+        if (!previousParent && !target) {
+            this.#emitter.emit('roots:reordered', { object: moved, index: to, previousIndex });
+        }
+
+        return true;
+    }
+
+    /**
+     * The rank an object holds among its siblings, or among the roots.
+     * @param {object|string} object - The object or its id
+     * @returns {number} The index, or -1 when the scene does not hold it
+     */
+    indexOf(object) {
+        const target = this.#resolveObject(object);
+        if (!target) return -1;
+        return target.parent ? target.parent.childIndex(target) : this.#roots.indexOf(target.id);
     }
 
     /**
@@ -195,9 +320,62 @@ export class Scene {
         return this.objects().filter(object => object.hasComponent(component));
     }
 
+    #resolveObject(object) {
+        if (typeof object === 'string') return this.#objects.get(object) ?? null;
+        return object && this.#objects.has(object.id) ? object : null;
+    }
+
     #resolveTarget(target) {
         const object = this.#objects.get(target.object);
         if (!object) return null;
         return target.component ? object.getComponent(target.component) ?? null : object;
+    }
+
+    #insertRoot(id, index) {
+        if (this.#roots.includes(id)) return;
+        const at = index === undefined || index === null
+            ? this.#roots.length
+            : clampIndex(index, this.#roots.length);
+        this.#roots.splice(at, 0, id);
+    }
+
+    #removeRoot(id) {
+        const index = this.#roots.indexOf(id);
+        if (index !== -1) this.#roots.splice(index, 1);
+    }
+
+    // Keeps the root list true when the tree is rearranged by anything other than
+    // reparent() — `parent.addChild(child)` from a script, or from deserialization.
+    #trackRoots(event, payload) {
+        if (this.#rearranging) return;
+        if (event === 'child:added' && this.#objects.has(payload.child?.id)) {
+            this.#removeRoot(payload.child.id);
+        }
+        if (event === 'child:removed' && this.#objects.has(payload.child?.id) && !payload.child.parent) {
+            this.#insertRoot(payload.child.id);
+        }
+    }
+
+    #registerHandlers() {
+        registerComponentHandlers(
+            this.#operations,
+            id => this.#objects.get(id) ?? null,
+            { registry: this.#registry }
+        );
+
+        // Every handler below writes through the Scene's own primitives, which produce no
+        // Operation. Applying a replicated operation therefore submits nothing back — the
+        // echo is unrepresentable rather than merely prevented (ADR-0019).
+        this.#operations.register(OperationType.ADD_OBJECT, operation => {
+            return restoreSubtree(this, operation, { registry: this.#registry });
+        }, { resolveTarget: false });
+
+        this.#operations.register(OperationType.REMOVE_OBJECT, operation => {
+            return this.remove(operation.target.object);
+        }, { resolveTarget: false });
+
+        this.#operations.register(OperationType.REPARENT, operation => {
+            return this.reparent(operation.target.object, operation.parent, operation.index);
+        }, { resolveTarget: false });
     }
 }

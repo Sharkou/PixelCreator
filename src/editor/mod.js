@@ -30,13 +30,18 @@ export {
     deleteObject,
     addComponent,
     removeComponent,
+    moveComponent,
+    reparentObject,
     availableComponents,
+    descendants,
     uniqueName
 } from './commands.js';
+export { History, Histories } from './history.js';
 export { fillStarterScene } from './project/starter.js';
 
 export {
     FieldKind,
+    fieldKindFor,
     describeComponent,
     objectFields,
     rows,

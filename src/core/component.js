@@ -75,10 +75,16 @@
 // components would otherwise collide on ordinary names like `speed` or `color`, and an
 // Object's public surface would change unpredictably as components are added.
 
+import { isMissingComponent, missingComponent } from './missing.js';
+
 /**
  * Resolve the type name that keys a component on an Object.
  *
  * `static type` is preferred over the constructor name, which minification rewrites.
+ *
+ * For a component born from a definition, `static type` is the ResourceId of that
+ * definition and `static label` is the name a creator reads (ADR-0021). Nothing here
+ * needs to know which of the two it is holding: the type is an opaque key.
  *
  * @param {Function|object} component - A component class or instance
  * @returns {string} The type name
@@ -128,6 +134,73 @@ export function componentSchema(component) {
     const ctor = typeof component === 'function' ? component : component?.constructor;
     return ctor?.schema ?? null;
 }
+
+/**
+ * Read the name a component type is shown under (ADR-0021).
+ *
+ * The type is an identity and may be an opaque ResourceId; the label is what a creator
+ * reads. Renaming a definition rewrites the label alone, so no instance is touched.
+ *
+ * @param {Function|object} component - A component class, instance or type name
+ * @returns {string} The displayed name, falling back to the type
+ */
+export function componentLabel(component) {
+    if (typeof component === 'string') return component;
+    const ctor = typeof component === 'function' ? component : component?.constructor;
+    return ctor?.label ?? componentType(component);
+}
+
+/**
+ * Write serialized values onto a component, filtered by its current schema.
+ *
+ * STRUCTURAL RECONCILIATION (S1, ADR-0021): a key the schema no longer declares is
+ * dropped, a key it declares but the payload lacks keeps the constructor default. That is
+ * ADR-0016 §4 — "a fresh instance has exactly the declared properties" — applied at load
+ * time and not only at construction, and it is what makes a definition editable without
+ * writing a migration.
+ *
+ * A component with no schema keeps everything it was given: the reflective path is a
+ * requirement, not a tolerance (ADR-0007), and a beginner's component has no schema to
+ * filter against.
+ *
+ * `active` is never filtered: it belongs to the Component contract rather than to any
+ * schema (ADR-0004).
+ *
+ * @param {object} component - The component to fill
+ * @param {object} [values] - Serialized values
+ * @returns {object} The same component
+ */
+export function reconcileValues(component, values = {}) {
+    const schema = componentSchema(component);
+    const entries = globalThis.Object.entries(values ?? {});
+
+    for (const [key, value] of entries) {
+        if (key === 'active') {
+            component.active = value;
+            continue;
+        }
+        if (schema && !globalThis.Object.hasOwn(schema, key)) continue;
+        component[key] = value;
+    }
+
+    return component;
+}
+
+/**
+ * Build a component of a type, preserving its values when the type cannot be resolved.
+ *
+ * @param {object} registry - The registry to resolve the type in
+ * @param {string} type - The component type name
+ * @param {object} [values] - Serialized values
+ * @returns {object} The component, or a MissingComponent carrying the values
+ */
+export function instantiateComponent(registry, type, values = {}) {
+    const ComponentClass = registry?.get?.(type);
+    const component = ComponentClass ? new ComponentClass() : missingComponent(type);
+    return reconcileValues(component, values);
+}
+
+export { isMissingComponent, missingComponent };
 
 /**
  * Registry of known component types.

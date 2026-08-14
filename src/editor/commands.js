@@ -1,16 +1,37 @@
 // Structural edits the Editor performs on the model.
 //
-// Thin on purpose: every function here is a couple of Core calls with a name on it. The
-// value is not abstraction, it is having ONE place where "the creator created an object"
-// is written down — which is where ADD_OBJECT and its siblings will be produced when the
-// structural Operations of ADR-0008 land, and where undo will hook in.
+// THIS IS WHERE STRUCTURAL OPERATIONS ARE PRODUCED (ADR-0019). Every function here turns
+// a creator's gesture into one Operation, or into one `batch` of them — which is what
+// makes it replicable, arbitrable and undoable, all three for free and none of them a
+// separate feature.
 //
 // Property edits are deliberately NOT here. They go straight through
 // `target.setProperty()` from the field that made them, because the Property System is
 // already the controlled path (CONVENTIONS.md) and wrapping it would add a layer that
 // only forwards.
+//
+// THE ONE POLICY THE EDITOR OWNS ALONE is preserving the world placement when an object
+// is reparented (ADR-0022). It is composed here, as Operations, and never pushed into the
+// Core: a `REPARENT` that also rewrote the Transform would have to carry five previous
+// values to stay invertible, and every node recomposing its own floats would make two
+// machines drift apart on rounding — the kind of desynchronisation nobody ever diagnoses.
 
-import { Object, Transform, components as defaultRegistry } from '../core/mod.js';
+import {
+    Object,
+    Transform,
+    addComponentOperation,
+    addObjectOperation,
+    components as defaultRegistry,
+    createId,
+    moveComponentOperation,
+    Origin,
+    removeComponentOperation,
+    removeObjectOperation,
+    reparentOperation,
+    serializeComponent,
+    serializeObject,
+    worldMatrix
+} from '../core/mod.js';
 import { Camera, RectangleRenderer } from '../runtime/mod.js';
 
 /**
@@ -57,7 +78,11 @@ export function createMenuItems() {
 }
 
 /**
- * Create an object and add it to the scene.
+ * Create an object and add it to the scene, as one ADD_OBJECT operation.
+ *
+ * The object is built detached, serialized, and submitted — identifier included, so every
+ * node that receives the operation builds the same object with the same id rather than
+ * minting its own (ADR-0019).
  *
  * @param {object} scene - The scene to add to
  * @param {object} [options] - Options
@@ -65,52 +90,236 @@ export function createMenuItems() {
  * @param {number} [options.x] - Horizontal world position
  * @param {number} [options.y] - Vertical world position
  * @param {object} [options.parent] - Object to attach the new one to
- * @returns {object} The new object
+ * @param {number} [options.index] - Rank among its siblings, or among the roots
+ * @param {string} [options.actor] - Who authored the intent
+ * @param {string} [options.batch] - Groups this into a larger history entry
+ * @returns {object|null} The new object, or null when the operation was refused
  */
-export function createObject(scene, { kind = 'rectangle', x = 0, y = 0, parent = null } = {}) {
+export function createObject(scene, {
+    kind = 'rectangle',
+    x = 0,
+    y = 0,
+    parent = null,
+    index,
+    actor,
+    batch
+} = {}) {
     const object = new Object(uniqueName(scene, labelOf(kind)));
     object.addComponent(new Transform(x, y));
 
     if (kind === 'rectangle') object.addComponent(new RectangleRenderer(64, 64, '#4a4a52'));
     if (kind === 'camera') object.addComponent(new Camera());
 
-    scene.add(object);
-    // Parented after joining the scene, so the scene is there to announce the link.
-    if (parent) parent.addChild(object);
+    const result = scene.operations.submit(addObjectOperation({
+        object: serializeObject(object),
+        parent: parent?.id ?? null,
+        index: index ?? null,
+        origin: Origin.EDITOR,
+        actor,
+        batch
+    }));
 
-    return object;
+    // The handler rebuilds the object from the payload, so what joined the scene is not
+    // the instance built above — asking the scene is what returns the live one.
+    return result.applied ? scene.get(object.id) : null;
 }
 
 /**
- * Remove an object and everything under it.
+ * Remove an object and everything under it, as one REMOVE_OBJECT operation.
+ *
+ * The subtree, the parent and the rank all travel with the operation. Without them,
+ * undoing a deletion returns a stripped object at the end of the list — which is the
+ * difference between an undo and an apology (ADR-0024).
+ *
  * @param {object} scene - The scene
  * @param {object} object - The object to delete
+ * @param {object} [options] - Options
+ * @param {string} [options.actor] - Who authored the intent
+ * @param {string} [options.batch] - Groups this into a larger history entry
  * @returns {boolean} True when an object was removed
  */
-export function deleteObject(scene, object) {
-    if (!object) return false;
-    return scene.remove(object);
+export function deleteObject(scene, object, { actor, batch } = {}) {
+    if (!object || !scene.has(object)) return false;
+
+    const result = scene.operations.submit(removeObjectOperation({
+        object: serializeObject(object),
+        subtree: descendants(object).map(serializeObject),
+        parent: object.parent?.id ?? null,
+        index: scene.indexOf(object),
+        origin: Origin.EDITOR,
+        actor,
+        batch
+    }));
+
+    return result.applied;
 }
 
 /**
- * Attach a component of a registered type.
+ * Attach a component of a registered type, as one ADD_COMPONENT operation.
  * @param {object} object - The object to attach to
  * @param {string} type - The component type name
  * @param {object} [registry] - Component registry to resolve the type in
- * @returns {object} The attached component
+ * @param {object} [options] - Options
+ * @param {number} [options.index] - Rank in the ordered collection
+ * @param {object} [options.values] - Starting values; the type's defaults when omitted
+ * @param {string} [options.actor] - Who authored the intent
+ * @param {string} [options.batch] - Groups this into a larger history entry
+ * @returns {object|undefined} The attached component, or undefined when refused
  */
-export function addComponent(object, type, registry = defaultRegistry) {
-    return object.addComponent(registry.create(type));
+export function addComponent(object, type, registry = defaultRegistry, { index, values, actor, batch } = {}) {
+    const result = object.operations.submit(addComponentOperation({
+        object: object.id,
+        component: type,
+        index: index ?? null,
+        // The defaults travel too, so a receiving node builds the same component even if
+        // its own registry disagrees about what a fresh one looks like.
+        values: values ?? serializeComponent(registry.create(type)),
+        origin: Origin.EDITOR,
+        actor,
+        batch
+    }));
+
+    return result.applied ? object.getComponent(type) : undefined;
 }
 
 /**
- * Detach a component.
+ * Detach a component, as one REMOVE_COMPONENT operation.
+ *
+ * `values` and `index` travel with it, so undoing gives back the component that left
+ * rather than a fresh one reset to its defaults at the end of the list.
+ *
  * @param {object} object - The object to detach from
  * @param {string} type - The component type name
+ * @param {object} [options] - Options
+ * @param {string} [options.actor] - Who authored the intent
+ * @param {string} [options.batch] - Groups this into a larger history entry
  * @returns {boolean} True when a component was detached
  */
-export function removeComponent(object, type) {
-    return object.removeComponent(type);
+export function removeComponent(object, type, { actor, batch } = {}) {
+    const component = object.getComponent(type);
+    if (!component) return false;
+
+    const result = object.operations.submit(removeComponentOperation({
+        object: object.id,
+        component: type,
+        index: object.componentIndex(type),
+        values: serializeComponent(component),
+        origin: Origin.EDITOR,
+        actor,
+        batch
+    }));
+
+    return result.applied;
+}
+
+/**
+ * Move a component to another rank, as one MOVE_COMPONENT operation.
+ *
+ * Nothing is detached and no value is touched — which is exactly why this is not
+ * "remove then add again", a gesture that loses both the values and the rank.
+ *
+ * @param {object} object - The object
+ * @param {string} type - The component type name
+ * @param {number} index - The rank to move it to
+ * @param {object} [options] - Options
+ * @param {string} [options.actor] - Who authored the intent
+ * @param {string} [options.batch] - Groups this into a larger history entry
+ * @returns {boolean} True when the order changed
+ */
+export function moveComponent(object, type, index, { actor, batch } = {}) {
+    const previousIndex = object.componentIndex(type);
+    if (previousIndex === -1) return false;
+
+    const result = object.operations.submit(moveComponentOperation({
+        object: object.id,
+        component: type,
+        index,
+        previousIndex,
+        origin: Origin.EDITOR,
+        actor,
+        batch
+    }));
+
+    return result.applied;
+}
+
+/**
+ * Move an object under another parent, at a rank, keeping it where it looks (ADR-0022).
+ *
+ * ONE GESTURE, ONE HISTORY ENTRY, SIX OPERATIONS:
+ *
+ *   batch { REPARENT, SET_PROPERTY x, y, rotation, scaleX, scaleY }
+ *
+ * Dropping an object into another branch of the Hierarchy is a tidying gesture, not a
+ * move: in Unity, Godot and Blender the object does not budge on screen, and a creator
+ * arranging their tree is arranging, not repositioning. So the local values are recomputed
+ * to hold the world placement — recomputed HERE, once, and sent as plain numbers, so no
+ * two machines ever decompose the same matrix and disagree in the last bits.
+ *
+ * WHEN THE WORLD CANNOT BE HELD. Under a parent that shears — a non-uniform scale above a
+ * rotation — the required local transform is not expressible as `(x, y, rotation, scaleX,
+ * scaleY)`. Rather than deform the object silently, the reparent happens and the local
+ * values are left alone, and the caller is told through `sheared` and `onReport`. That is
+ * ADR-0012's rule applied to geometry: the system says what it could not do.
+ *
+ * @param {object} scene - The scene
+ * @param {object} object - The object to move
+ * @param {object|null} parent - The new parent, or null to make it a root
+ * @param {number} [index] - Rank among the new siblings; appended when omitted
+ * @param {object} [options] - Options
+ * @param {boolean} [options.preserveWorld] - Hold the world placement; true by default
+ * @param {string} [options.actor] - Who authored the intent
+ * @param {Function} [options.onReport] - Called when the world could not be preserved
+ * @returns {{applied: boolean, batch: string|null, sheared: boolean}} What happened
+ */
+export function reparentObject(scene, object, parent = null, index, {
+    preserveWorld = true,
+    actor,
+    onReport
+} = {}) {
+    if (!object || !scene.has(object)) return { applied: false, batch: null, sheared: false };
+
+    const batch = createId();
+    const world = preserveWorld ? worldMatrix(object) : null;
+
+    const result = scene.operations.submit(reparentOperation({
+        object: object.id,
+        parent: parent?.id ?? null,
+        index: index ?? null,
+        previousParent: object.parent?.id ?? null,
+        previousIndex: scene.indexOf(object),
+        origin: Origin.EDITOR,
+        actor,
+        batch
+    }));
+
+    if (!result.applied || !preserveWorld) {
+        return { applied: result.applied, batch, sheared: false };
+    }
+
+    const transform = object.getComponent('Transform');
+    if (!transform) return { applied: true, batch, sheared: false };
+
+    const local = localPlacement(world, parent);
+    if (!local || local.sheared) {
+        // Reported, not corrected, and not silently deformed either: the object keeps the
+        // local values it had, which is a defensible placement rather than a wrong one.
+        onReport?.({
+            kind: 'reparent:sheared',
+            object,
+            parent,
+            message: `Keeping ${object.name || object.id} at its local placement: `
+                + 'its new parent shears, and a sheared transform cannot be stored as '
+                + 'position, rotation and scale.'
+        });
+        return { applied: true, batch, sheared: true };
+    }
+
+    for (const prop of ['x', 'y', 'rotation', 'scaleX', 'scaleY']) {
+        transform.setProperty(prop, local[prop], { origin: Origin.EDITOR, actor, batch });
+    }
+
+    return { applied: true, batch, sheared: false };
 }
 
 /**
@@ -148,4 +357,38 @@ export function uniqueName(scene, base) {
 
 function labelOf(kind) {
     return OBJECT_KINDS.find(entry => entry.id === kind)?.label ?? 'Object';
+}
+
+/**
+ * Every object under one, depth first, parents before their children.
+ *
+ * The order matters when the list is replayed by an ADD_OBJECT: a child must never be
+ * restored before the parent it hangs from.
+ *
+ * @param {object} object - The root of the walk, itself excluded
+ * @returns {object[]} The descendants
+ */
+export function descendants(object) {
+    const found = [];
+    for (const child of object.children) {
+        found.push(child, ...descendants(child));
+    }
+    return found;
+}
+
+/**
+ * The local placement an object must take under a new parent to stay where it looks.
+ * @param {object} world - The world matrix to hold
+ * @param {object|null} parent - The new parent, or null for the scene root
+ * @returns {object|null} The decomposed placement, or null when the parent is degenerate
+ */
+function localPlacement(world, parent) {
+    if (!parent) return world.decompose();
+
+    const parentWorld = worldMatrix(parent);
+    // A parent scaled to zero collapses everything under it; there is no local placement
+    // that holds the world, and inverting would throw inside a pipeline.
+    if (parentWorld.a * parentWorld.d - parentWorld.b * parentWorld.c === 0) return null;
+
+    return parentWorld.invert().multiply(world).decompose();
 }

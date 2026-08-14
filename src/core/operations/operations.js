@@ -33,6 +33,12 @@ export class Operations {
     #handlers = new Map();
     #emitter = new Emitter();
 
+    // Per pipeline, not per module. A sequence number orders the operations of ONE
+    // replicated unit — a scene, a project — and a counter shared by every scene in the
+    // process would be a lie the day it becomes a network sequence number or a history
+    // ordering key (ADR-0019).
+    #sequence = 0;
+
     /**
      * Create a pipeline.
      * @param {object} [options] - Options
@@ -61,14 +67,23 @@ export class Operations {
      * Keeps the pipeline unaware of the model: Scene and Object register their own
      * structural operations instead of this module importing them.
      *
+     * A handler returns `false` to say "this operation does not apply here" — an index
+     * that changes nothing, a reparent that would close a cycle, a component already
+     * attached. That is a refusal, not a failure: it produces `applied: false` and emits
+     * nothing, where a throw would reach the transport (ADR-0019).
+     *
      * @param {string} type - One of OperationType
-     * @param {Function} handler - (operation, target) => void
+     * @param {Function} handler - (operation, target) => boolean|void
+     * @param {object} [options] - Options
+     * @param {boolean} [options.resolveTarget] - Resolve target before calling; structural
+     *   operations set this to false because they create or move what the target names,
+     *   which cannot be resolved beforehand
      */
-    register(type, handler) {
+    register(type, handler, { resolveTarget = true } = {}) {
         if (typeof handler !== 'function') {
             throw new TypeError(`Operations.register: handler for "${type}" must be a function`);
         }
-        this.#handlers.set(type, handler);
+        this.#handlers.set(type, { handler, resolveTarget });
     }
 
     /**
@@ -88,23 +103,24 @@ export class Operations {
      * @returns {object} { applied, operation, decision }
      */
     submit(operation) {
-        const decision = this.#authority.check(operation);
+        const stamped = this.#stamp(operation);
+        const decision = this.#authority.check(stamped);
 
         if (!decision?.allowed) {
-            this.#emitter.emit('rejected', { operation, decision });
-            return { applied: false, operation, decision };
+            this.#emitter.emit('rejected', { operation: stamped, decision });
+            return { applied: false, operation: stamped, decision };
         }
 
         // An operation whose target does not exist here is not announced either: a
         // server must not broadcast a mutation it could not apply itself.
-        const applied = this.#applyNow(operation);
-        if (!applied) return { applied: false, operation, decision };
+        const applied = this.#applyNow(stamped);
+        if (!applied) return { applied: false, operation: stamped, decision };
 
         // Only a submitted operation is announced. This is what a transport forwards,
         // and it is why applying a remote operation sends nothing back.
-        this.#emitter.emit('operation', operation);
+        this.#emitter.emit('operation', stamped);
 
-        return { applied: true, operation, decision };
+        return { applied: true, operation: stamped, decision };
     }
 
     /**
@@ -116,16 +132,30 @@ export class Operations {
         return this.#applyNow(operation);
     }
 
+    /**
+     * Give an operation this pipeline's next sequence number, unless it already carries
+     * one — a replicated operation keeps the author's.
+     * @param {object} operation - The operation
+     * @returns {object} The operation, stamped
+     */
+    #stamp(operation) {
+        if (operation.seq !== null && operation.seq !== undefined) return operation;
+        return globalThis.Object.freeze({ ...operation, seq: ++this.#sequence });
+    }
+
     #applyNow(operation) {
-        const handler = this.#handlers.get(operation.type);
-        if (!handler) {
+        const entry = this.#handlers.get(operation.type);
+        if (!entry) {
             throw new Error(`Operations: no handler registered for "${operation.type}"`);
         }
 
-        const target = this.#resolve?.(operation.target) ?? null;
-        if (!target) return false;
+        let target = null;
+        if (entry.resolveTarget) {
+            target = this.#resolve?.(operation.target) ?? null;
+            if (!target) return false;
+        }
 
-        handler(operation, target);
-        return true;
+        // Only an explicit `false` refuses. A handler that returns nothing applied.
+        return entry.handler(operation, target) !== false;
     }
 }

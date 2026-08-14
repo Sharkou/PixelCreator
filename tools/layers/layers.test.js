@@ -234,6 +234,14 @@ test('the v2 profile protects the boundaries the architecture declares', () => {
     assert.equal(isForbidden(v2, 'core', 'network'), true);
     assert.equal(isForbidden(v2, 'runtime', 'editor'), true);
     assert.equal(isForbidden(v2, 'network', 'editor'), true);
+
+    // The project layer: `editor/ -> project/ -> core/`, and nothing climbing back up
+    // (ADR-0020). `runtime -> project` is forbidden too, because a graph reaches the
+    // Runtime already resolved — the Runtime never reads storage.
+    assert.equal(isForbidden(v2, 'core', 'project'), true);
+    assert.equal(isForbidden(v2, 'project', 'editor'), true);
+    assert.equal(isForbidden(v2, 'project', 'runtime'), true);
+    assert.equal(isForbidden(v2, 'runtime', 'project'), true);
 });
 
 test('the v2 profile leaves the allowed directions alone', () => {
@@ -244,6 +252,8 @@ test('the v2 profile leaves the allowed directions alone', () => {
     assert.equal(isForbidden(v2, 'editor', 'runtime'), false);
     assert.equal(isForbidden(v2, 'network', 'core'), false);
     assert.equal(isForbidden(v2, 'editor', 'network'), false, 'the Editor talks to the server');
+    assert.equal(isForbidden(v2, 'project', 'core'), false);
+    assert.equal(isForbidden(v2, 'editor', 'project'), false);
 });
 
 test('the legacy profile still declares its one known violation', () => {

@@ -18,6 +18,7 @@ export const profiles = [
         root: 'src',
         layers: [
             { name: 'core', test: path => path.startsWith('core/') },
+            { name: 'project', test: path => path.startsWith('project/') },
             { name: 'runtime', test: path => path.startsWith('runtime/') },
             { name: 'editor', test: path => path.startsWith('editor/') },
             { name: 'network', test: path => path.startsWith('network/') }
@@ -27,13 +28,26 @@ export const profiles = [
         // Editor, or a game could not run without an IDE — which is precisely what
         // Legacy's `renderer.js -> editor/system/dnd.js` did.
         //
+        // project owns identity, storage and loading (ADR-0020). It sits between the
+        // Editor and the Core — `editor/ -> project/ -> core/` — and reaches neither the
+        // Editor nor the Runtime, because a headless server has to load the same project
+        // a browser does (ADR-0011). The rule the other way matters just as much:
+        // `runtime -> project` would put storage behind a runtime API, which is exactly
+        // what `behaviors.bind(type, graph)` taking a RESOLVED graph exists to prevent
+        // (ADR-0016, ADR-0020).
+        //
         // Deliberately NOT forbidden: editor -> network (the Editor talks to the
-        // server), runtime -> network, network -> runtime. None of those is an
-        // architectural inversion, and forbidding them would be inventing a rule.
+        // server), runtime -> network, network -> runtime, project -> network. None of
+        // those is an architectural inversion, and forbidding them would be inventing a
+        // rule.
         forbidden: [
+            { from: 'core', to: 'project' },
             { from: 'core', to: 'runtime' },
             { from: 'core', to: 'editor' },
             { from: 'core', to: 'network' },
+            { from: 'project', to: 'runtime' },
+            { from: 'project', to: 'editor' },
+            { from: 'runtime', to: 'project' },
             { from: 'runtime', to: 'editor' },
             { from: 'network', to: 'editor' }
         ],

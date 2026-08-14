@@ -119,6 +119,74 @@ export class Matrix {
     }
 
     /**
+     * Read a matrix back as the five placement values a Transform stores (ADR-0022).
+     *
+     * The inverse of `compose()`, and pure: no object, no scene, no side effect.
+     *
+     *   x, y      = e, f
+     *   scaleX    = hypot(a, b)
+     *   rotation  = atan2(b, a)
+     *   scaleY    = (a*d - b*c) / scaleX      signed, so a mirrored parent stays mirrored
+     *   skew      = (a*c + b*d) / scaleX²     zero exactly when the two columns are square
+     *
+     * IT IS NOT ALWAYS EXACT, AND IT SAYS SO.
+     *
+     * `(x, y, rotation, scaleX, scaleY)` describes a translation, a rotation and an axis
+     * scale — five numbers for a six-number affine transform. The missing one is shear,
+     * and shear appears as soon as an ancestor carries a NON-UNIFORM scale and a node
+     * between it and here is ROTATED. This is the same wall as Unity's `lossyScale`, and
+     * it has no clean answer inside a five-value local model.
+     *
+     * The policy, in the spirit of ADR-0012: decompose to the nearest shear-free transform
+     * and REPORT that it was not exact, through `sheared` and the measured `skew`. The
+     * system does not quietly deform a creator's object; it says what it could not do and
+     * lets the caller decide — the Editor's reparent refuses to preserve the world in that
+     * case and keeps the local values instead (editor/commands.js).
+     *
+     * Alternatives rejected: forbidding non-uniform scale on a parent (far too strict for
+     * a 2D engine, where stretching scenery is routine), and storing world matrices
+     * (contradicts ADR-0002 and reintroduces a second source of truth).
+     *
+     * @returns {{x: number, y: number, rotation: number, scaleX: number, scaleY: number,
+     *   skew: number, sheared: boolean}} The placement values, frozen
+     */
+    decompose({ epsilon = 1e-9 } = {}) {
+        const { a, b, c, d, e, f } = this;
+
+        const scaleX = Math.hypot(a, b);
+        const determinant = a * d - b * c;
+
+        // A zero first column carries no rotation of its own; the second one still does,
+        // and `compose` writes it as (-sin·sy, cos·sy) — so the angle is atan2(-c, d).
+        if (scaleX === 0) {
+            const scaleY = Math.hypot(c, d);
+            return placement({
+                x: e,
+                y: f,
+                rotation: scaleY === 0 ? 0 : Math.atan2(-c, d),
+                scaleX: 0,
+                scaleY,
+                skew: 0,
+                sheared: false
+            });
+        }
+
+        const skew = (a * c + b * d) / (scaleX * scaleX);
+
+        return placement({
+            x: e,
+            y: f,
+            rotation: Math.atan2(b, a),
+            scaleX,
+            // Signed rather than hypot(c, d): the determinant is what knows the transform
+            // has been mirrored, and hypot would silently drop the flip.
+            scaleY: determinant / scaleX,
+            skew,
+            sheared: Math.abs(skew) > epsilon
+        });
+    }
+
+    /**
      * Tell whether two matrices are equal within a tolerance.
      * @param {Matrix} other - The matrix to compare with
      * @param {number} [epsilon] - Accepted difference per component
@@ -135,3 +203,7 @@ export class Matrix {
 }
 
 const IDENTITY = new Matrix();
+
+function placement(values) {
+    return globalThis.Object.freeze(values);
+}

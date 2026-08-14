@@ -30,14 +30,14 @@
 // value and twice the panel to read. The object's id is not shown at all — a creator does
 // not need it, and a panel that opens with a random string looks like a debugger.
 
-import { observe } from '../../core/mod.js';
+import { isMissingComponent, observe } from '../../core/mod.js';
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { icon, iconForComponent, iconForObject } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import { searchField } from '../ui/search-field.js';
 import { addComponent, availableComponents, removeComponent } from '../commands.js';
-import { groupTypes } from '../registry.js';
+import { describeType, groupTypes } from '../registry.js';
 import { FieldKind, describeComponent, isNumeric, objectFields, rows } from '../inspector/schema.js';
 import '../ui/window.js';
 import '../ui/field.js';
@@ -336,8 +336,10 @@ export class Inspector extends Element {
         }
 
         const components = object.components;
-        const types = globalThis.Object.keys(components);
-        const shown = types.filter(type => this.#matches(humanise(type)));
+        // In collection order — the same order the runtime updates in and the scene
+        // renderer draws in (ADR-0018). The panel is a view of the order, not a listing.
+        const types = object.componentTypes();
+        const shown = types.filter(type => this.#matches(this.#titleOf(type)));
         const searching = this.#query.trim() !== '';
 
         fill(this.#body,
@@ -390,11 +392,35 @@ export class Inspector extends Element {
         );
     }
 
+    /**
+     * A component's displayed name.
+     *
+     * The LABEL, never the identity (ADR-0021). A component a creator made is keyed by the
+     * ResourceId of its definition, so showing the type would put `res_c3` in the panel
+     * and in the search box. A shipped component has no label of its own, and its type
+     * name is read out instead — `RectangleRenderer` shown as `Rectangle Renderer`.
+     *
+     * @param {string} type - The component type
+     * @returns {string} The title to show
+     */
+    #titleOf(type) {
+        const ComponentClass = this.#registry?.get(type);
+        return ComponentClass?.label ?? describeType(type, this.#registry).label ?? humanise(type);
+    }
+
     #renderComponent(object, component, type) {
+        const title = this.#titleOf(type);
         const section = this.#renderSection({
-            name: type,
+            name: title,
+            key: type,
             glyph: iconForComponent(component, type),
             body: (() => {
+                // A component whose definition could not be resolved says so, and shows
+                // the values it is holding on to rather than pretending to be empty.
+                // Losing them silently is what would make the placeholder pointless
+                // (ADR-0021).
+                if (isMissingComponent(component)) return this.#renderMissing(component, type);
+
                 const fields = describeComponent(component);
                 return fields.length === 0
                     ? [el('div', { class: 'none', textContent: 'No properties' })]
@@ -417,7 +443,7 @@ export class Inspector extends Element {
 
         const syncActive = () => {
             const on = component.active !== false;
-            toggle.title = on ? `Disable ${type}` : `Enable ${type}`;
+            toggle.title = on ? `Disable ${title}` : `Enable ${title}`;
             toggle.setAttribute('aria-label', toggle.title);
             toggle.classList.toggle('on', !on);
             section.classList.toggle('off', !on);
@@ -431,8 +457,8 @@ export class Inspector extends Element {
         const remove = el('button', {
             class: 'ghost remove',
             type: 'button',
-            title: `Remove ${type}`,
-            'aria-label': `Remove ${type}`,
+            title: `Remove ${title}`,
+            'aria-label': `Remove ${title}`,
             onclick: event => {
                 event.stopPropagation();
                 removeComponent(object, type);
@@ -444,16 +470,42 @@ export class Inspector extends Element {
     }
 
     /**
+     * What a component whose type nothing could resolve shows.
+     *
+     * @param {object} component - The placeholder
+     * @param {string} type - The type that was not found
+     * @returns {HTMLElement[]} The rows
+     */
+    #renderMissing(component, type) {
+        const values = globalThis.Object.entries(component)
+            .filter(([, value]) => typeof value !== 'function');
+
+        return [
+            el('div', { class: 'none' },
+                `Its definition is missing. Nothing runs, and every value below is kept `
+                + `exactly as it was saved — restoring “${type}” restores the object.`),
+            ...values.map(([name, value]) => el('div', { class: 'row' },
+                el('span', { class: 'label', textContent: humanise(name) }),
+                el('span', { class: 'value', textContent: globalThis.String(value) })
+            ))
+        ];
+    }
+
+    /**
      * Build a section: a header that folds, and a body.
      *
+     * `key` is what the folded state is remembered under, and it is the type rather than
+     * the title: renaming a component must not silently unfold its panel (ADR-0021).
+     *
      * @param {object} options - Options
-     * @param {string} options.name - The section title, and the key its folded state uses
+     * @param {string} options.name - The section title, as it is read
+     * @param {string} [options.key] - Identity for the folded state; the name by default
      * @param {string} options.glyph - Icon name
      * @param {any} options.body - Rows to show
      * @returns {HTMLElement} The section
      */
-    #renderSection({ name, glyph, body }) {
-        const open = !this.#folded.has(name);
+    #renderSection({ name, key = name, glyph, body }) {
+        const open = !this.#folded.has(key);
         const section = el('section', { class: open ? 'open' : '' });
 
         // The same control a Hierarchy branch folds with: `.ghost .twisty` from the shared
@@ -467,16 +519,16 @@ export class Inspector extends Element {
         const header = el('header', {
             title: 'Click to fold',
             onclick: () => {
-                if (this.#folded.has(name)) this.#folded.delete(name);
-                else this.#folded.add(name);
-                const shown = !this.#folded.has(name);
+                if (this.#folded.has(key)) this.#folded.delete(key);
+                else this.#folded.add(key);
+                const shown = !this.#folded.has(key);
                 section.classList.toggle('open', shown);
                 caret.classList.toggle('open', shown);
             }
         },
             caret,
             el('span', { class: 'glyph' }, icon(glyph, 16)),
-            el('span', { class: 'label', textContent: humanise(name) }),
+            el('span', { class: 'label', textContent: name }),
             el('div', { class: 'tools' })
         );
 

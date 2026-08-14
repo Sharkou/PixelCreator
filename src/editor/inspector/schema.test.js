@@ -2,8 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Transform, defineComponent } from '../../core/mod.js';
 import { Camera, RectangleRenderer } from '../../runtime/mod.js';
+import { PropertyType, propertyTypes } from '../../core/mod.js';
 import {
     FieldKind,
+    fieldKindFor,
     describeComponent,
     formatValue,
     isNumeric,
@@ -286,4 +288,59 @@ test('float noise still disappears', () => {
     assert.equal(formatValue(x, 0.1 + 0.2), '0.3');
     assert.equal(formatValue(rotation, Math.PI / 4), '45');
     assert.equal(formatValue(rotation, Math.PI), '180');
+});
+
+// --- FieldKind is derived from PropertyType (ADR-0023) ------------------------------
+
+test('every Core property type maps to a control, explicitly', () => {
+    // Not by name collision: a type that fell through to READONLY by accident is exactly
+    // the dead end this split exists to remove. Every one of the eight is written down.
+    for (const type of propertyTypes()) {
+        assert.ok(fieldKindFor(type), `${type} has no control`);
+    }
+
+    assert.equal(fieldKindFor(PropertyType.NUMBER), FieldKind.NUMBER);
+    assert.equal(fieldKindFor(PropertyType.INT), FieldKind.INT);
+    assert.equal(fieldKindFor(PropertyType.BOOLEAN), FieldKind.BOOLEAN);
+    assert.equal(fieldKindFor(PropertyType.STRING), FieldKind.STRING);
+    assert.equal(fieldKindFor(PropertyType.COLOR), FieldKind.COLOR);
+    assert.equal(fieldKindFor(PropertyType.ENUM), FieldKind.ENUM);
+    // Supported at the Core — a defined starting value, a validity rule, a serialized
+    // shape — and shown read-only until a list control and a resource browser exist.
+    assert.equal(fieldKindFor(PropertyType.RESOURCE), FieldKind.READONLY);
+    assert.equal(fieldKindFor(PropertyType.ARRAY), FieldKind.READONLY);
+});
+
+test('range and readonly are Editor vocabulary, absent from the Core', () => {
+    const core = propertyTypes();
+
+    assert.equal(core.includes(FieldKind.RANGE), false, 'a range is a bounded number');
+    assert.equal(core.includes(FieldKind.READONLY), false, 'read-only is a display fallback');
+    assert.equal(core.includes('object'), false, 'and `object` is gone entirely');
+    assert.equal(core.includes('vector2'), false);
+    assert.equal(core.includes('action'), false);
+});
+
+test('a range is still derived from the constraints a component already declares', () => {
+    class Bounded {
+        static type = 'Bounded';
+        static schema = { mix: { type: 'number', min: 0, max: 1 } };
+        constructor() { this.mix = 0.5; }
+    }
+
+    assert.equal(describeComponent(new Bounded())[0].kind, FieldKind.RANGE);
+});
+
+test('a resource property shows its identifier read-only rather than as editable text', () => {
+    // A ResourceId is opaque. Offering it as a text field invites a creator to type over
+    // it and break the reference.
+    const Sprited = defineComponent({
+        type: 'res_sprited',
+        label: 'Sprited',
+        properties: { source: { type: 'resource' } }
+    });
+    const field = describeComponent(new Sprited())[0];
+
+    assert.equal(field.kind, FieldKind.READONLY);
+    assert.equal(field.readonly, false, 'the property itself is writable; only the control is not');
 });

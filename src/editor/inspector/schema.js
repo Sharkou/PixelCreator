@@ -23,13 +23,22 @@
 // parseInt, colours guessed from whether a string happens to start with '#', a hard-coded
 // blacklist of field names, and four dead `TODO Range` style branches.
 
-import { componentSchema } from '../../core/mod.js';
+import { PropertyType, componentSchema } from '../../core/mod.js';
 
 /**
  * Field kinds the Inspector knows how to render.
  *
- * A schema type outside this list falls back to READONLY rather than to a text input:
- * showing an unsupported value as editable text invites the creator to destroy it.
+ * DERIVED FROM `PropertyType`, NOT PARALLEL TO IT (ADR-0023). The Core answers "what shape
+ * is this value"; this list answers "with which control is it edited". They are different
+ * questions, and asking both with one word is what let `range` and `readonly` — neither of
+ * which is a shape of value — sit in the Core's list of types.
+ *
+ * Two kinds here have no counterpart in the Core, on purpose:
+ *
+ *   RANGE     a `number` bounded at both ends is a proportion, and a proportion deserves
+ *             a slider. Derived from constraints a component already declares, so no
+ *             component has to be rewritten to get one.
+ *   READONLY  a display fallback. Not a shape of value, and never stored as one.
  */
 export const FieldKind = {
     NUMBER: 'number',
@@ -42,15 +51,46 @@ export const FieldKind = {
     READONLY: 'readonly'
 };
 
-const SCHEMA_KINDS = new Set([
-    FieldKind.NUMBER,
-    FieldKind.INT,
-    FieldKind.RANGE,
-    FieldKind.BOOLEAN,
-    FieldKind.STRING,
-    FieldKind.COLOR,
-    FieldKind.ENUM
-]);
+/**
+ * The control each Core property type is edited with.
+ *
+ * Written out rather than left to a name collision: `number` mapping to `number` is a
+ * decision, not a coincidence, and `resource` and `array` need to be here to be SUPPORTED
+ * rather than to fall through a default and land on READONLY by accident.
+ *
+ * `resource` and `array` are shown read-only for now, and honestly:
+ *
+ *   an `array` shows its element count, which is true and useful, and editing one needs a
+ *   list control that does not exist yet;
+ *   a `resource` holds a ResourceId, and picking one needs a resource browser — the
+ *   Project window is where that will live, and inventing a text field for an opaque
+ *   identifier would invite a creator to type over it and break the reference.
+ *
+ * Both are now REAL types at the Core — they have a defined starting value, a validity
+ * rule and a serialized shape (ADR-0023) — which is what they were missing. What is
+ * missing now is a control, and that is a separate, visible piece of work rather than a
+ * silent dead end.
+ */
+const KIND_BY_PROPERTY_TYPE = {
+    [PropertyType.NUMBER]: FieldKind.NUMBER,
+    [PropertyType.INT]: FieldKind.INT,
+    [PropertyType.BOOLEAN]: FieldKind.BOOLEAN,
+    [PropertyType.STRING]: FieldKind.STRING,
+    [PropertyType.COLOR]: FieldKind.COLOR,
+    [PropertyType.ENUM]: FieldKind.ENUM,
+    [PropertyType.RESOURCE]: FieldKind.READONLY,
+    [PropertyType.ARRAY]: FieldKind.READONLY
+};
+
+/**
+ * The control a declared property type is edited with.
+ *
+ * @param {string} type - One of PropertyType
+ * @returns {string} One of FieldKind; READONLY for anything unknown
+ */
+export function fieldKindFor(type) {
+    return KIND_BY_PROPERTY_TYPE[type] ?? FieldKind.READONLY;
+}
 
 /** Properties shown side by side, and what the pair is called. */
 const PAIRS = [
@@ -271,24 +311,29 @@ function reflect(component) {
     return fields;
 }
 
+// Reflection answers the Core's question — what shape is this value — so it produces a
+// PropertyType, and the control is derived from it like any other. `null` is the shape it
+// cannot name, and an unnamed shape shows read-only.
 function inferType(value) {
-    if (typeof value === 'boolean') return FieldKind.BOOLEAN;
-    if (typeof value === 'number') return FieldKind.NUMBER;
+    if (typeof value === 'boolean') return PropertyType.BOOLEAN;
+    if (typeof value === 'number') return PropertyType.NUMBER;
     // Without a schema a colour is indistinguishable from a string, so it stays a
     // string. Guessing from a leading '#' is what turned Legacy text fields into colour
     // pickers; declaring `type: 'color'` is how a component says it means a colour.
-    if (typeof value === 'string') return FieldKind.STRING;
-    return FieldKind.READONLY;
+    if (typeof value === 'string') return PropertyType.STRING;
+    // Not `array`: an array reached by reflection has no declared element shape, and
+    // showing "3 items" is the honest thing either way.
+    return null;
 }
 
 function field(name, property = {}) {
     const declared = property.type;
-    const values = declared === FieldKind.ENUM ? [...(property.values ?? [])] : null;
+    const values = declared === PropertyType.ENUM ? [...(property.values ?? [])] : null;
     const min = numeric(property.min);
     const max = numeric(property.max);
     const display = DISPLAY_UNITS[property.unit] ?? { scale: 1, unit: property.unit ?? null, step: null };
 
-    let kind = SCHEMA_KINDS.has(declared) ? declared : FieldKind.READONLY;
+    let kind = fieldKindFor(declared);
     if (kind === FieldKind.ENUM && values.length === 0) kind = FieldKind.READONLY;
     // A number bounded at both ends is a proportion, and a proportion deserves a slider.
     // ADR-0007 lists `range` as a type; this is the same conclusion reached from the
