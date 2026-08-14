@@ -13,12 +13,48 @@
 import { Object, Transform, components as defaultRegistry } from '../core/mod.js';
 import { Camera, RectangleRenderer } from '../runtime/mod.js';
 
-/** What the "create" menu offers, and what each entry is made of. */
+/**
+ * What the "create" menu offers, and what each entry is made of.
+ *
+ * Empty leads: it is the object every other kind is — a name, a Transform, nothing else —
+ * and the one a creator reaches for when they are about to build something rather than
+ * drop a placeholder. The order here is the order of the menu and of the creation rail.
+ * It is NOT the default: `createObject()` still falls back to a rectangle, because a tool
+ * dropped with no kind should leave something visible in the scene.
+ */
 export const OBJECT_KINDS = [
-    { id: 'rectangle', label: 'Rectangle' },
-    { id: 'empty', label: 'Empty' },
-    { id: 'camera', label: 'Camera' }
+    { id: 'empty', label: 'Empty', icon: 'object', category: 'Basic' },
+    { id: 'rectangle', label: 'Rectangle', icon: 'rectangle', category: 'Basic' },
+    { id: 'camera', label: 'Camera', icon: 'camera', category: 'Scene' }
 ];
+
+/**
+ * Group order for the create menu.
+ *
+ * The names are the prototype's own (design/prototype.js, CREATE_OBJECT). Its Basic group
+ * also lists a Circle and its Rendering group a Sprite, Particles and a Tilemap — those
+ * are not creatable kinds here, and a menu entry that creates nothing is worse than a
+ * short menu, so the groups hold exactly what exists.
+ */
+export const KIND_CATEGORIES = ['Basic', 'Rendering', 'Scene', 'Other'];
+
+/**
+ * The create menu's entries, grouped, in category order.
+ * @returns {object[]} `{ heading }` and `{ id, label, icon }` entries, ready for openMenu
+ */
+export function createMenuItems() {
+    const items = [];
+
+    for (const category of KIND_CATEGORIES) {
+        const kinds = OBJECT_KINDS.filter(kind => kind.category === category);
+        if (kinds.length === 0) continue;
+
+        items.push({ heading: category });
+        for (const kind of kinds) items.push({ id: kind.id, label: kind.label, icon: kind.icon });
+    }
+
+    return items;
+}
 
 /**
  * Create an object and add it to the scene.

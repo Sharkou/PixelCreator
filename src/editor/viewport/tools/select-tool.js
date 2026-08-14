@@ -184,13 +184,16 @@ export class SelectTool {
         const scene = this.#context.scene;
         const selected = this.#context.selection.object;
 
+        // `scale` reaches every overlay, not just the handles: an outline, a pivot cross
+        // and a handle are one instrument and have to be one size on screen, on a 1x
+        // display and on a 2x one alike (../overlay.js).
         if (this.#hovered && this.#hovered !== selected && scene.has(this.#hovered)) {
-            outline(renderer, view, this.#hovered, { alpha: 0.4, width: 1 });
+            outline(renderer, view, this.#hovered, { alpha: 0.4, width: 1, scale });
         }
 
         if (!selected || !scene.has(selected)) return;
 
-        outline(renderer, view, selected, { pivot: true });
+        outline(renderer, view, selected, { pivot: true, scale });
         // Drawn under exactly the condition that makes them grabbable, so a handle is
         // never shown where pressing it would do something else.
         if (isResizable(selected) && handlesFit(selected, view, this.#reach())) {

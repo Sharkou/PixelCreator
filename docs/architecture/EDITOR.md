@@ -48,27 +48,45 @@ là du tout.
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ titlebar                       [hier] [proj] [time] [insp]   │
-├────┬─────────────┬───────────────────────┬───────────────────┤
-│ T  │ Hierarchy   │                       │ Inspector         │
-│ o  │  (loupe)    │       Viewport        │                   │
-│ o  ├─────────────┤                       │                   │
-│ l  │ Project     │                       │                   │
-│    ├─────────────┴───────────────────────┤                   │
-│    │ Timeline — conditionnelle           │                   │
-└────┴─────────────────────────────────────┴───────────────────┘
+├─────────────┬───────────────────────────┬───────────────────┤
+│ Hierarchy   │                  [outils] │ Inspector         │
+│  (loupe)    │       Viewport            │                   │
+├─────────────┤                           │                   │
+│ Project     │                           │                   │
+├─────────────┴───────────────────────────┤                   │
+│ Timeline — conditionnelle               │                   │
+└─────────────────────────────────────────┴───────────────────┘
 ```
 
 Flex imbriqué, tailles en variables CSS écrites par `layout.js`, seams déplaçables par
-`<px-splitter>` (double-clic = valeur par défaut). Le rail de création tient toute la
-hauteur : il appartient au chrome, pas à une colonne. La Hierarchy prend ce que le Project
+`<px-splitter>` (double-clic = valeur par défaut). La Hierarchy prend ce que le Project
 laisse — une liste grandit avec la scène, une étagère est une étagère. Sous 760 px de
 large, l'Inspector passe en survol au lieu d'écraser la scène — **même Editor, pas une
 version mobile**.
 
-Le rail n'existe pas dans le prototype, qui crée par le `+` de la Hierarchy. Il est
-conservé parce qu'il porte une capacité que le menu ne remplace pas : **l'objet naît
-exactement au point de dépose**. Une maquette qui ne dessine pas une fonction n'est pas une
-décision de la supprimer.
+### Le rail de création a été supprimé — décision du 2026-08-14
+
+Ce document défendait le rail de gauche ainsi : « il est conservé parce qu'il porte une
+capacité que le menu ne remplace pas : l'objet naît exactement au point de dépose ». **Cet
+argument portait sur le glisser, pas sur la position**, et c'est là que le raisonnement
+s'arrêtait trop tôt : il concluait « donc le rail reste » alors qu'il n'établissait que
+« donc le glisser reste ».
+
+Les trois outils de création sont maintenant dans le groupe de contrôles du Viewport, en
+haut à droite, avec *Frame selection* et *Reset view* :
+
+- **le glisser est inchangé** — `<px-toolbar>` garde exactement sa logique Pointer Events,
+  son fantôme sur `document.body` et son appel à `viewport.worldAt()` ; l'objet naît
+  toujours exactement au point de dépose, et le tap crée toujours au centre de la vue ;
+- l'élément est **inséré dans un `<slot name="tools">`** du Viewport plutôt que dans le
+  shell : le Viewport héberge le groupe, il n'apprend rien de ce que les outils font, et
+  aucun import ne traverse `windows/` → `viewport/` ;
+- ce qui disparaît est **44 px de chrome sur toute la hauteur** pour trois boutons. Mesuré
+  dans le navigateur à 1440 px de large : le Viewport passe de 854 à 898 px, soit
+  exactement les 44 px du rail, et son bord gauche de 281 à 237.
+
+Un contrôle qui agit sur la scène appartient à la scène. C'est la même règle qui plaçait
+déjà le cadrage et la remise à zéro dans le Viewport plutôt que sur une barre à côté.
 
 ### Ce qui fonctionne
 
@@ -80,11 +98,11 @@ décision de la supprimer.
 | Sélectionner | clic Viewport ou Hierarchy, contour + pivot + huit poignées |
 | Déplacer | glisser l'objet, arrondi à l'unité, une `batch` par geste |
 | Redimensionner | huit poignées, l'arête opposée reste ancrée, rotation et parents compris |
-| Hierarchy | recherche conservant les ancêtres, plier/déplier, `lock` / `visible` / delete par ligne |
-| Renommer | clic sur le nom d'une ligne déjà sélectionnée · `Entrée` valide · `Échap` annule |
-| Cadrer | double-clic sur une ligne — **jamais un renommage**, comme Legacy |
+| Hierarchy | recherche derrière la loupe conservant les ancêtres, plier/déplier, `lock` / `visible` / delete par ligne |
+| Renommer | **second** clic sur le nom d'une ligne *déjà sélectionnée avant l'appui*, suivi d'une pause de `RENAME_DELAY` (400 ms) · `F2` le fait immédiatement · `Entrée` valide · `Échap` annule |
+| Cadrer | double-clic sur une ligne — **jamais un renommage**, y compris sur le nom |
 | Inspector | piloté par `componentSchema()` : nombre, entier, slider, booléen, enum, couleur |
-| Créer | glisser un outil de la toolbar → l'objet naît **exactement au point de dépose** |
+| Créer | glisser un outil du groupe du Viewport → l'objet naît **exactement au point de dépose** |
 | Components | menu groupé (`Rendering ▸ Rectangle`), toggle `active`, retrait |
 
 ### Les décisions locales à connaître
@@ -115,6 +133,43 @@ décision de la supprimer.
    entiers, donc il n'y a rien à cacher.
 8. **Pointer Events partout, jamais le Drag & Drop HTML5.** C'est la seule API qui couvre
    souris, stylet et doigt ; Legacy en dépendait et n'a donc jamais fonctionné au tactile.
+9. **Le monde dessine l'objet, l'écran dessine les outils.** Un gizmo suit la position et
+   la géométrie de l'objet, jamais son échelle. `overlay.js` porte donc toute sa géométrie
+   en pixels écran via `matrix.apply()` puis dessine à plat — comme `handles()` le faisait
+   déjà, et comme `outline()` ne le faisait pas. L'ancienne version divisait un scalaire
+   unique, `matrixScale()` = `sqrt(|det|)`, hors de l'épaisseur du trait : c'est la
+   *moyenne géométrique* des deux échelles d'axe, donc elle ne compense un transform non
+   uniforme dans aucune des deux directions. Mesuré sur un objet à l'échelle 1 × 4, pour
+   une cible de 1,5 px : arêtes horizontales à 3 px, verticales à 0,75 px, et croix de
+   pivot à 3,5 px en largeur pour 14 px en hauteur — **la croix était étirée par l'objet
+   qu'elle marque**. Vérifié dans le navigateur par différence d'images (rendu sélectionné
+   moins rendu non sélectionné) : bras de 8 × 28 px avant, 14 × 14 px après, identiques
+   aux échelles 1, 3, 0,25, 1 × 4 et 4 × 1.
+
+   Corollaire : les tailles d'`overlay.js` sont en **pixels CSS multipliés par la densité**,
+   comme `handles()` le faisait seul jusqu'ici. Sur un écran 2x le contour était sinon
+   dessiné à la moitié du poids visuel des poignées posées dessus.
+
+10. **Le zoom a un cran à 100 %.** Une molette multiplie — le même geste couvre la même
+   distance visuelle à 20 % comme à 400 % — mais l'orbite d'une application
+   multiplicative ne contient pas 1. Mesuré sur le code précédent : en balayant toute la
+   plage cran par cran, 42 crans de `MIN_ZOOM` à `MAX_ZOOM`, le zoom ne vaut **jamais**
+   exactement 1, et depuis une position atteinte par défilements mélangés la meilleure
+   approche en défilant vers 100 % est 0,990446. `Math.round(zoom * 100)` affichait alors
+   « 100 % » sur une scène décalée d'un pour cent : corriger l'affichage aurait été
+   corriger le mauvais nombre. Un cran qui *traverserait* 1 s'y arrête donc ; le cran
+   suivant repart normalement, puisqu'un pas qui part de 1 ne le traverse pas. Les bornes
+   ne bougent pas et restent le seul écrêtage. `viewport/zoom.js`, pur et testé
+   (`zoom.test.js`) : c'est la décision 5 appliquée à un nombre sur lequel on pouvait
+   rester coincé.
+
+11. **Une ligne de liste n'a qu'un surlignage, et il est partagé.** La primitive `.line`
+   de `ui/styles.js` déclare ensemble l'état survolé et l'état sélectionné, dans cet
+   ordre, de sorte que **survoler une ligne déjà sélectionnée ne pose pas un second fond
+   par-dessus le premier**. Ce n'était pas un accident de spécificité à rattraper au point
+   d'appel : c'est un fait sur ce que ces deux états signifient. Une ligne de Hierarchy et
+   une entrée de dropdown l'adoptent toutes les deux — pleine largeur, sans arrondi, le
+   rail d'accent affleurant le bord.
 
 ### Unités et présentation, sans toucher au modèle
 
@@ -128,12 +183,95 @@ Le Core garde ses unités ; l'Inspector convertit à l'affichage, en un seul end
   noms de propriétés** — donc n'importe quel composant avec `width` et `height` obtient une
   ligne Size sans que l'Inspector connaisse son type.
 
+### `Transform` est un Component ordinaire, et l'Inspector le traite comme tel
+
+Question posée le 2026-08-14, tranchée par lecture du modèle et vérification navigateur :
+**`Transform` est supprimable, et son bouton de retrait reste.**
+
+- `localMatrix()` renvoie explicitement l'identité quand l'objet n'a pas de `Transform`
+  (`core/components/transform.js`) — l'absence est un cas prévu, pas un état invalide.
+- Le picking passe par `worldMatrix()` et continue donc de fonctionner.
+- `SelectTool` teste `getComponent('Transform')` et **sort** s'il n'y en a pas : un objet
+  sans placement ne se déplace pas, il ne s'écrit pas de propriété fantôme.
+- Le registre l'offre à nouveau dans *Add Component*, catégorie `Scene`.
+- **Vérifié** : retrait depuis l'Inspector, aucune erreur console, l'objet reste
+  sélectionné et listé, glisser dans le viewport sans effet, `Transform` remis en place.
+
+C'est aussi l'intention d'ADR-0002 : le défaut de Legacy qu'il corrige est que « tout
+`Object` porte une position, même un objet purement logique ». Un gestionnaire de score n'a
+pas de place dans la scène. Retirer le bouton pour imposer une symétrie contredirait la
+décision qui a fait de `Transform` un Component.
+
+Ce que `createObject()` fait — en ajouter un à chaque création — reste juste : c'est un
+défaut d'outil, pas une contrainte de modèle.
+
 ### Ce qui reste hors de l'Inspector, délibérément
 
 `visible` et `lock` de l'Object vivent dans la ligne de Hierarchy, où ils sont accessibles
 pour tous les objets à la fois ; les répéter ferait deux contrôles pour une valeur.
 L'`id` technique n'est affiché nulle part. Un Component n'expose qu'`active` : le modèle n'a
 pas de `visible` par Component, et en inventer un afficherait un contrôle sans effet.
+
+### Réordonnancement — bloqué sur le Core, pas sur l'Editor
+
+Ni les Objects ni les Components ne peuvent être réordonnés, et **ce n'est pas une lacune
+d'interface** :
+
+- `object.components` est une `Map` ; le getter en prend un instantané dans l'ordre
+  d'insertion. `addComponent()` ajoute à la fin, `removeComponent()` retire.
+- `object.children` est un tableau ; `addChild()` fait un `push`, `removeChild()` un
+  `splice`. Aucune insertion à un index.
+- `scene.roots()` dérive de `scene.objects()`, l'ordre d'insertion de la `Map` d'objets.
+
+Il n'existe donc **aucun index à écrire**. Le seul contournement possible — retirer puis
+rattacher — replace toujours l'élément en dernier, et pour un Component il **détruit ses
+valeurs** : vérifié dans le navigateur, un `Transform` retiré puis remis revient en
+`Position 0, 0`. Un réordonnancement simulé côté Editor serait donc une représentation
+fausse, et pour les racines d'une scène il est de toute façon impossible.
+
+Ce qui manque est une **API d'ordre dans le Core**, avec les Operations structurelles
+correspondantes (ADR-0008) — l'ordre est un état du modèle : il se sérialise, se réplique
+et s'annule. Décision utilisateur requise avant toute ligne de `src/core`.
+
+### Le renommage attend, et c'est la seule chose qui attend
+
+Question tranchée le 2026-08-14. La règle précédente était juste — seule une ligne *déjà
+sélectionnée avant l'appui* peut passer en édition — et posait quand même un curseur là où
+personne ne l'avait demandé, parce que `click` se déclenche **aussi sur le premier clic
+d'un double-clic**. Cadrer un objet qu'on venait de sélectionner ouvrait donc son nom en
+passant, et il fallait que le nom avale `dblclick` pour empêcher le cadrage — ce qui coûtait
+au double-clic sa signification sur la moitié de la ligne.
+
+Les deux symptômes sont le même fait manquant : **au moment du premier clic, on ne sait pas
+encore si un second arrive**. Le seul moyen de le savoir est d'attendre. On attend donc,
+une fois, brièvement (400 ms, le seuil de double-clic des plateformes est de 500 ms et
+n'est pas lisible depuis un navigateur), et uniquement sur une ligne déjà sélectionnée.
+Tout le reste est immédiat, et `F2` renomme sans aucune attente.
+
+C'est un **timer nommé, pas un blur** : un renommage en attente est annulé explicitement
+par ce qui signifie « autre chose s'est passé » — un second clic, un autre appui, un
+changement de sélection, une reconstruction de l'arbre. Rien ne dépend de l'ordre dans
+lequel le focus s'en va. La valeur, elle, est écrite à chaque frappe comme dans
+l'Inspector, donc même un `blur` qui n'arriverait jamais laisse le modèle correct.
+
+Vérifié dans le navigateur, les huit cas : clic sur objet non sélectionné (sélectionne,
+n'édite pas) · second clic après la pause (édite) · double-clic sur le nom (cadre, n'édite
+pas) · clic sur un autre objet (termine l'édition) · `Entrée` · `Échap` (nom restauré) ·
+renommage valide · sélectionner puis cadrer sans que le nom change. Plus `F2`.
+
+### Les lignes de Hierarchy survivent au rendu
+
+`#renderTree()` réutilise les lignes existantes, indexées par id d'objet, et réconcilie les
+enfants du conteneur au lieu de faire un `replaceChildren`. Ce n'est pas une optimisation :
+**un chevron qui est un élément neuf à chaque rendu ne peut pas s'animer**, faute d'état
+précédent d'où partir. Garder la ligne fait du changement de classe une vraie transition —
+mesuré à 2 frames du clic, le chevron est à un angle intermédiaire, entre 90° et 0°. Un
+`replaceChildren` détacherait la ligne, et la transition d'un élément détaché ne survit pas
+à sa remise en place ; la réconciliation ne touche pas une ligne déjà bien placée.
+
+Effet de bord bienvenu : une reconstruction ne jette plus un renommage en cours ni les
+abonnements de chaque ligne, qui sont désormais relâchés par ligne (`row:<id>`) au moment
+où elle disparaît réellement.
 
 ### Ce qui n'est pas encore là
 

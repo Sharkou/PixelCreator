@@ -59,12 +59,10 @@ import { icon } from '../ui/icons.js';
 import { drawGrid, matrixScale } from './grid.js';
 import { editorBounds } from './picking.js';
 import { measureSurface, quantiseCamera, sameSurface } from './surface.js';
+import { ZOOM_DETENT, clampZoom, notchZoom } from './zoom.js';
 import { GUIDE_STYLES, Guides } from './guides.js';
 import { SelectTool } from './tools/select-tool.js';
 import { PanTool } from './tools/pan-tool.js';
-
-const MIN_ZOOM = 0.05;
-const MAX_ZOOM = 40;
 
 /** How much of the remaining zoom distance is covered each frame. */
 const ZOOM_EASING = 0.28;
@@ -117,16 +115,48 @@ export class Viewport extends Element {
             color: var(--px-text-muted);
         }
 
+        /* THE TOOLS THAT ACT ON THE SCENE, IN THE SCENE. Framing, resetting the view and
+           creating an object are all things you do TO the viewport, so they are all in the
+           viewport's own group — a creation rail down the far left edge put a column of
+           chrome around three buttons and separated them from the surface they act on
+           (docs/architecture/EDITOR.md).
+           Top right rather than the prototype's bottom right: the readout already sits at
+           the foot of the viewport, and the cursor guides label the top and left edges, so
+           this is the corner that is actually free. Same anatomy as the prototype's
+           .vp-tools otherwise — a small pill of ghost buttons on the panel surface.
+
+           The creation tools arrive through a slot rather than being built here: the drag
+           that places an object exactly where it is dropped belongs to <px-toolbar>, and
+           this element hosts it without knowing what it does. */
         .actions {
             position: absolute;
             right: var(--px-space-2);
-            bottom: var(--px-space-2);
+            top: var(--px-space-2);
             display: flex;
+            align-items: center;
             gap: var(--px-space-0);
             padding: var(--px-space-0);
             background: var(--px-surface);
             border: 1px solid var(--px-border);
             border-radius: var(--px-radius);
+        }
+
+        /* Two kinds of control in one pill: what moves the camera, and what puts something
+           in the scene. One hairline says so — the same rule the menu's group headings
+           trail off into, at the height of a control rather than of the whole pill, so it
+           reads as a join and not as two pills pushed together. */
+        .actions .divide {
+            width: 1px;
+            height: var(--px-control);
+            margin: 0 var(--px-space-0);
+            background: var(--px-border-subtle);
+            flex: 0 0 auto;
+        }
+
+        .actions slot[name='tools'] {
+            display: flex;
+            align-items: center;
+            gap: var(--px-space-0);
         }
 
         ${GUIDE_STYLES}
@@ -319,7 +349,7 @@ export class Viewport extends Element {
     resetView() {
         this.#camera.x = 0;
         this.#camera.y = 0;
-        this.#aimZoom(1, null);
+        this.#aimZoom(ZOOM_DETENT, null);
         this.#invalidate();
     }
 
@@ -358,7 +388,9 @@ export class Viewport extends Element {
                     title: 'Reset view',
                     'aria-label': 'Reset view',
                     onclick: () => this.resetView()
-                }, icon('grid', 16))
+                }, icon('grid', 16)),
+                el('div', { class: 'divide' }),
+                el('slot', { name: 'tools' })
             )
         );
 
@@ -652,7 +684,7 @@ export class Viewport extends Element {
 
         // The anchor is captured in world coordinates and held until the ease is over.
         // Re-reading it each frame would chase the very value the ease is changing.
-        this.#aimZoom(from * Math.exp(-event.deltaY * 0.0016), {
+        this.#aimZoom(notchZoom(from, event.deltaY), {
             device,
             world: screenToWorld(this.view, ...device)
         });
@@ -689,7 +721,7 @@ export class Viewport extends Element {
         const lens = this.#camera.getComponent('Camera');
         if (!lens) return;
 
-        lens.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pinch.zoom * (distance / pinch.distance)));
+        lens.zoom = clampZoom(pinch.zoom * (distance / pinch.distance));
 
         // Exactly the anchoring the wheel uses: whatever was between the fingers stays
         // between the fingers, which is also what makes the pinch pan for free.
@@ -701,7 +733,7 @@ export class Viewport extends Element {
     }
 
     #aimZoom(zoom, anchor) {
-        this.#zoomTarget = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+        this.#zoomTarget = clampZoom(zoom);
         this.#zoomAnchor = anchor;
     }
 

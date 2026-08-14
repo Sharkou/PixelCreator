@@ -8,14 +8,37 @@
 //
 // Everything here goes through the same renderer contract as a game component. There is
 // no editor-only drawing API and no second backend.
+//
+// WORLD SPACE DRAWS THE OBJECT. SCREEN SPACE DRAWS THE TOOLS. That line is the whole of
+// this file, and it used to be drawn in only half of it: `handles()` already placed its
+// squares through the matrices and then drew them flat, while `outline()` set the
+// transform to `view x worldMatrix(object)` and tried to divide the object's own scale
+// back out of a stroke width. One scalar cannot undo a transform that is not uniform.
+// `matrixScale()` is `sqrt(|det|)` — the geometric mean of the two axis scales — so on an
+// object scaled 1 x 4 it compensated by 2 in both directions, and measured against a
+// 1.5 px target the outline came out 3 px on the horizontal edges and 0.75 px on the
+// vertical ones, with the pivot cross at 3.5 px across and 14 px down. The cross was
+// literally being stretched by the object it marks.
+//
+// So nothing here is drawn under the object's transform any more. Geometry is carried
+// into device pixels by `matrix.apply()`, and every stroke is laid down flat, in the units
+// it is specified in. Rotation, non-uniform scale, a scaled parent and camera zoom are all
+// handled the same way: they move where a mark goes, never how big it is.
+//
+// SIZES ARE CSS PIXELS, SCALED BY DENSITY. `handles()` already worked this way and the
+// outline did not, so on a 2x display the selection contour was drawn at half the visual
+// weight of the handles sitting on it. One rule now: a number in this file is CSS pixels,
+// and `scale` — device pixels per CSS pixel — is what turns it into what the canvas takes.
 
 import { Matrix, worldMatrix } from '../../core/mod.js';
 import { editorBounds } from './picking.js';
-import { matrixScale } from './grid.js';
 import { HANDLES } from './resize.js';
 
-/** Side of a resize handle, in device pixels. */
+/** Side of a resize handle, in CSS pixels. */
 export const HANDLE_SIZE = 7;
+
+/** Half-length of the arms of the pivot cross, in CSS pixels. */
+export const PIVOT_ARM = 7;
 
 /** How far from a handle's centre a press still counts as grabbing it. */
 export const HANDLE_REACH = 9;
@@ -42,11 +65,37 @@ const ACCENT = '#ff7a45';
 const HANDLE_FILL = '#101216';
 
 /**
- * Outline an object.
+ * The four corners of an object's editorial box, in device pixels.
  *
- * Drawn in the object's own space, so a rotated or scaled object gets an outline that
- * follows it instead of a screen-aligned box around it. The stroke width is divided back
- * out of the transform, so it stays one pixel whatever the zoom.
+ * The shape still follows the object exactly — a rotated object gets a rotated outline,
+ * a non-uniformly scaled one gets the parallelogram it actually occupies — because the
+ * corners go through the same matrix the renderer would have used. What does not follow
+ * the object is anything measured in pixels, and that is the point of stopping here.
+ *
+ * @param {object} object - The object
+ * @param {object} view - The view matrix in use
+ * @returns {Array<{x: number, y: number}>|null} Corners clockwise from the box's origin,
+ *   or null when the object has no drawable extent on screen
+ */
+export function outlinePoints(object, view) {
+    const matrix = view.multiply(worldMatrix(object));
+    const box = editorBounds(object);
+
+    const corners = [
+        matrix.apply(box.x, box.y),
+        matrix.apply(box.x + box.width, box.y),
+        matrix.apply(box.x + box.width, box.y + box.height),
+        matrix.apply(box.x, box.y + box.height)
+    ];
+
+    for (const point of corners) {
+        if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+    }
+    return corners;
+}
+
+/**
+ * Outline an object, and optionally mark where its origin is.
  *
  * @param {object} renderer - The renderer backend
  * @param {object} view - The view matrix in use
@@ -54,32 +103,69 @@ const HANDLE_FILL = '#101216';
  * @param {object} [options] - Options
  * @param {string} [options.color] - Outline colour
  * @param {number} [options.alpha] - Outline opacity
- * @param {number} [options.width] - Outline width in device pixels
+ * @param {number} [options.width] - Outline width in CSS pixels
  * @param {boolean} [options.pivot] - Also mark the object's origin
+ * @param {number} [options.scale] - Device pixels per CSS pixel
  */
-export function outline(renderer, view, object, { color = ACCENT, alpha = 1, width = 1.5, pivot = false } = {}) {
-    const matrix = view.multiply(worldMatrix(object));
-    const scale = matrixScale(matrix);
-    if (!(scale > 0)) return;
+export function outline(renderer, view, object, {
+    color = ACCENT,
+    alpha = 1,
+    width = 1.5,
+    pivot = false,
+    scale = 1
+} = {}) {
+    const corners = outlinePoints(object, view);
+    if (!corners) return;
 
-    const box = editorBounds(object);
+    // At least one whole device pixel: an outline thinner than the raster is a grey haze
+    // on both of its sides rather than a line, which is the same reason a handle is
+    // rounded to whole pixels below.
+    const thickness = Math.max(1, width * scale);
 
     renderer.save();
-    renderer.setTransform(matrix);
-    renderer.strokeRect(box.x, box.y, box.width, box.height, {
-        color,
-        alpha,
-        lineWidth: width / scale
-    });
+
+    for (let i = 0; i < corners.length; i++) {
+        segment(renderer, corners[i], corners[(i + 1) % corners.length], { color, alpha, thickness });
+    }
 
     if (pivot) {
-        const arm = 7 / scale;
-        const thickness = 1 / scale;
-        renderer.fillRect(-arm, -thickness / 2, arm * 2, thickness, { color, alpha });
-        renderer.fillRect(-thickness / 2, -arm, thickness, arm * 2, { color, alpha });
+        // The origin, not the middle of the box: the pivot is what the object rotates and
+        // scales about, and on an object whose bounds are off-centre those are different
+        // points. Flat on the surface, so the cross is a cross at every scale.
+        const origin = view.multiply(worldMatrix(object)).apply(0, 0);
+        if (Number.isFinite(origin.x) && Number.isFinite(origin.y)) {
+            const arm = PIVOT_ARM * scale;
+            renderer.setTransform(Matrix.identity());
+            renderer.fillRect(origin.x - arm, origin.y - thickness / 2, arm * 2, thickness, { color, alpha });
+            renderer.fillRect(origin.x - thickness / 2, origin.y - arm, thickness, arm * 2, { color, alpha });
+        }
     }
 
     renderer.restore();
+}
+
+/**
+ * Lay one straight mark down between two points on the surface.
+ *
+ * A filled rectangle under a rotate-and-translate transform, rather than a stroked path:
+ * the transform carries no scale at all, so `thickness` is device pixels and stays device
+ * pixels whatever the object, the camera or the parent chain are doing. It also needs
+ * nothing the renderer contract does not already have (runtime/rendering/renderer.js) —
+ * an editor-only drawing API is exactly what this file exists not to introduce.
+ *
+ * @param {object} renderer - The renderer backend
+ * @param {{x: number, y: number}} from - Start, in device pixels
+ * @param {{x: number, y: number}} to - End, in device pixels
+ * @param {object} options - { color, alpha, thickness }
+ */
+function segment(renderer, from, to, { color, alpha, thickness }) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.hypot(dx, dy);
+    if (!(length > 0)) return;
+
+    renderer.setTransform(new Matrix(dx / length, dy / length, -dy / length, dx / length, from.x, from.y));
+    renderer.fillRect(0, -thickness / 2, length, thickness, { color, alpha });
 }
 
 /**

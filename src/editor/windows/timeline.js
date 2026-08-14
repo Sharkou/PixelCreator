@@ -17,9 +17,15 @@ import '../ui/window.js';
 
 export class Timeline extends Element {
 
+    /* NO BORDER OF ITS OWN. The seam above the Timeline is the `<px-splitter>` the shell
+       puts between them, which is a real 1 px line of --px-border and is shown and hidden
+       with this window (editor.js). Drawing a border-top here as well produced two
+       parallel lines under the Project the moment the Timeline was opened — the same
+       seam, claimed twice. Every other edge in this layout is owned by its splitter; this
+       one is now too. */
     static styles = sheet(`
         :host { display: block; }
-        px-window { height: 100%; border-top: 1px solid var(--px-border); }
+        px-window { height: 100%; }
     `);
 
     connectedCallback() {

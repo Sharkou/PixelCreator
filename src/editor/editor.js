@@ -143,9 +143,17 @@ export function start(mount = document.body) {
     const viewport = el('px-viewport').bind({ scene, camera, selection, onError: reportFailure });
     const hierarchy = el('px-hierarchy').bind({ scene, selection, viewport });
     const inspector = el('px-inspector').bind({ scene, selection, registry: components });
-    const toolbar = el('px-toolbar').bind({ scene, selection, viewport });
     const project = el('px-project');
     const timeline = el('px-timeline');
+
+    // The creation tools are slotted INTO the viewport, beside Frame selection and Reset
+    // view, rather than standing as a rail down the left edge of the workspace. They act
+    // on the scene, so they live with the scene; the rail spent a full column of chrome on
+    // three buttons and put them as far from the surface they drop onto as the layout
+    // allowed. The drag itself is unchanged and still belongs to <px-toolbar> — the
+    // viewport only provides the slot (docs/architecture/EDITOR.md).
+    const toolbar = el('px-toolbar', { slot: 'tools' }).bind({ scene, selection, viewport });
+    viewport.append(toolbar);
 
     // `invert` is "moving towards the origin grows this size", which is true of every
     // seam whose window sits after it: the Project and the Timeline below, the Inspector
@@ -184,7 +192,7 @@ export function start(mount = document.body) {
 
     const shell = el('div', { class: 'shell' },
         titlebar(scene, layout),
-        el('div', { class: 'workspace' }, toolbar, stack, rightSplit, columnRight)
+        el('div', { class: 'workspace' }, stack, rightSplit, columnRight)
     );
 
     mount.append(shell);

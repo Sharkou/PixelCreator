@@ -73,15 +73,17 @@ export class Guides {
             this.#last.y = top;
         }
 
-        // The unit is written out. Legacy's ruler did it (`Npx`) and it is the difference
-        // between a number and a measurement.
+        // The unit is written out, and it is set tight against the number: `83px`, not
+        // `83 px`. That is how Legacy's ruler wrote it and how CSS, the prototype and
+        // every other measurement in this Editor write it — a unit spaced away from its
+        // value reads as a second word rather than as part of the measurement.
         if (worldX !== this.#last.worldX) {
-            this.#xLabel.textContent = `${worldX} px`;
+            this.#xLabel.textContent = `${worldX}px`;
             this.#last.worldX = worldX;
         }
 
         if (worldY !== this.#last.worldY) {
-            this.#yLabel.textContent = `${worldY} px`;
+            this.#yLabel.textContent = `${worldY}px`;
             this.#last.worldY = worldY;
         }
     }

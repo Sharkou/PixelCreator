@@ -15,27 +15,63 @@
 //
 // THE GESTURES, and why they are these ones (docs/architecture/EDITOR.md):
 //
-//   click a row        select
-//   double-click a row frame it in the viewport — never rename, which is what Legacy
-//                      already got right by stopping the event on the name
+//   click a row        select — and only select, whatever part of the row was hit
+//   double-click a row frame it in the viewport, INCLUDING on the name — a double-click
+//                      means the same thing everywhere on the line
 //   click the name of
-//   an already selected
-//   row                rename in place, Enter to keep, Escape to put it back
+//   a row that was
+//   ALREADY selected
+//   when the press
+//   started            rename in place, after RENAME_DELAY — long enough that the second
+//                      click of a double-click cancels it
+//   F2                 rename the selected row, immediately and with no delay at all
 //   click the magnifier open the search; click it again, Escape, or the cross closes it
 //                      AND clears the query — a filter still applied behind a folded
 //                      control is a tree that lies about what the scene holds
 //
+// WHY THE DELAY, AND WHY IT IS NOT A HACK. The previous version had the right rule — only
+// a row already selected before the press can rename — and still put a caret in the way,
+// because `click` fires on the FIRST click of a double-click too. So framing an object you
+// had just selected opened its name for editing on the way past, and the name had to
+// swallow `dblclick` to stop the frame, which cost the double-click its meaning on half
+// the row. Both symptoms are the same missing fact: at the moment of the first click you
+// do not yet know whether a second one is coming. The only way to know is to wait, so this
+// waits — once, briefly, and only on a row that was already selected. Every other gesture
+// is immediate. F2 is there so nobody who knows what they want has to wait at all.
+//
+// It is a timer and NOT a blur: a pending rename is cancelled by name, from the events
+// that mean "something else happened" (a second click, another press, a new selection, the
+// tree being rebuilt). Nothing here depends on focus leaving in the right order.
+//
 // NOTHING IS REVEALED BY HOVER. Lock, visibility and delete are always drawn; hover only
 // strengthens them. A finger has no hover, and these are not decorations. The search is
 // behind a control you press, which is not the same thing as behind a hover.
+//
+// AND HOVER NEVER RESTATES SELECTION. A selected row keeps exactly its selected
+// background when you point at it — the shared `.line` primitive declares both states
+// together so a second surface cannot be laid over the first (ui/styles.js). The name
+// used to take an input well of its own on hover, advertising the click that renamed it;
+// that click is a deliberate gesture now, so the well arrives with the edit instead of
+// promising it under every pointer that crosses a selected row.
 
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { icon, iconForObject } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
-import { OBJECT_KINDS, createObject, deleteObject } from '../commands.js';
+import { searchField } from '../ui/search-field.js';
+import { createMenuItems, createObject, deleteObject } from '../commands.js';
 import { visibleObjects } from './search.js';
 import '../ui/window.js';
+
+/**
+ * How long a click on a selected name waits to see whether it was half of a double-click.
+ *
+ * The platform double-click threshold is 500 ms on Windows and macOS both, and there is no
+ * way to read it from a browser. Waiting the full 500 would make renaming feel broken;
+ * waiting less than the threshold would let a slow double-click rename instead of frame.
+ * 400 is the compromise every file explorer lands on, and the reason F2 exists next to it.
+ */
+const RENAME_DELAY = 400;
 
 export class Hierarchy extends Element {
 
@@ -49,30 +85,6 @@ export class Hierarchy extends Element {
         }
 
         px-window { height: 100%; }
-
-        /* The search is behind the magnifier, and collapses to nothing rather than
-           sliding: a grid row animating from 0fr to 1fr changes the panel's height
-           without ever moving what is already on screen. */
-        .searchbar {
-            display: grid;
-            grid-template-rows: 0fr;
-            /* Width, not colour: a transparent 1px border would still cost a pixel of
-               layout while the field is closed. */
-            border-bottom: 0 solid var(--px-border);
-            transition: grid-template-rows var(--px-duration) var(--px-ease),
-                        border-bottom-width var(--px-duration) var(--px-ease);
-        }
-
-        .searchbar > .inner { overflow: hidden; min-height: 0; }
-        .searchbar.open { grid-template-rows: 1fr; border-bottom-width: 1px; }
-
-        .searchbar .field {
-            display: flex;
-            align-items: center;
-            gap: var(--px-space-2);
-            padding: var(--px-space-1) var(--px-space-1) var(--px-space-1) var(--px-space-2);
-            color: var(--px-text-dim);
-        }
 
         .tree { padding: var(--px-space-1) 0 var(--px-space-3); }
 
@@ -103,25 +115,19 @@ export class Hierarchy extends Element {
 
         .row[data-depth='0']::before { display: none; }
 
-        .row:hover { background: var(--px-surface-hover); }
-        .row.selected { background: var(--px-accent-muted); box-shadow: inset 2px 0 0 var(--px-accent); }
+        /* The hover tint, the selected tint and the rule that the second never doubles the
+           first all come from the shared line primitive, which the dropdowns adopt too:
+           a row in a list is a row in a list (ui/styles.js). */
         .row.selected .name { color: var(--px-text-strong); }
         .row.hidden .name, .row.hidden .glyph { opacity: 0.4; }
         .row.locked .name { font-style: italic; }
 
-        /* A ghost, so the twisty is 22 wide and 28 to the finger like every other icon
-           control. It used to be --px-hit tall inside a --px-row line, which is 28 in 26
-           and overflowed the row by a pixel at each end. */
-        .twisty {
-            color: var(--px-text-dim);
-            cursor: pointer;
-        }
+        /* .twisty and .ghost both come from the shared base sheet: 22 wide, --px-hit to a
+           finger, and the same quarter turn the Inspector's sections use. It used to be
+           --px-hit tall inside a --px-row line, which is 28 in 26 and overflowed the row
+           by a pixel at each end. */
 
-        .twisty .icon { transition: transform var(--px-duration) var(--px-ease); }
-        .twisty.open .icon { transform: rotate(90deg); }
-        .twisty.leaf { visibility: hidden; }
-
-        .glyph { color: var(--px-text-dim); display: flex; flex: 0 0 auto; }
+        .glyph { color: var(--px-text-dim); }
         .row.selected .glyph { color: var(--px-accent); }
 
         .name {
@@ -135,10 +141,11 @@ export class Hierarchy extends Element {
             border-radius: var(--px-radius-sm);
         }
 
-        /* The well a value is typed into — the same surface the name takes once it is
-           actually being edited, so the hover is a promise the click keeps. */
-        .row.selected .name:hover { background: var(--px-surface-input); cursor: text; }
-
+        /* NO WELL ON HOVER. Renaming is a deliberate gesture now — a pause on the name of
+           a selected row, or F2 — so drawing the input surface under every pointer that
+           crosses a selected name would advertise something a click no longer does, and
+           it laid a second, darker background over the selection tint while doing it. The
+           well arrives with the edit, below. */
         .name.editing {
             background: var(--px-surface-input);
             box-shadow: 0 0 0 1px var(--px-accent);
@@ -173,12 +180,16 @@ export class Hierarchy extends Element {
     #viewport = null;
 
     #collapsed = new globalThis.Set();
+    // Rows survive a re-render, keyed by object id. That is not a cache for speed: a
+    // twisty that is a NEW element every time can never animate, because there is no
+    // previous state for the rotation to come from. Keeping the row means the class flip
+    // is a transition, and it also means a rebuild no longer throws away an in-progress
+    // rename or the row's subscriptions.
     #rows = new globalThis.Map();
     #query = '';
     #tree = null;
-    #searchInput = null;
-    #searchbar = null;
-    #magnifier = null;
+    #search = null;
+    #rename = null;
 
     /**
      * Point the window at the scene it lists.
@@ -201,7 +212,27 @@ export class Hierarchy extends Element {
         for (const event of ['added', 'removed', 'child:added', 'child:removed', 'component:added', 'component:removed']) {
             this.track(this.#scene.on(event, () => this.#renderTree()));
         }
-        this.track(this.#selection.observe(() => this.#applySelection()));
+        this.track(this.#selection.observe(() => {
+            // Selecting something else is one of the things that means "not a rename".
+            this.#cancelRename();
+            this.#applySelection();
+        }));
+
+        // F2 IS THE ESCAPE HATCH FROM THE DELAY. Everything the pause buys you, this gives
+        // you at once — which is the deal every file explorer makes, and the reason the
+        // pause is acceptable at all. It lives here rather than in editor.js because
+        // renaming is the Hierarchy's gesture, not the shell's.
+        const onKey = event => {
+            if (event.key !== 'F2' || event.ctrlKey || event.metaKey || event.altKey) return;
+            const object = this.#selection.object;
+            const entry = object ? this.#rows.get(object.id) : null;
+            if (!entry) return;
+            event.preventDefault();
+            this.#cancelRename();
+            this.#beginRename(object, entry.name);
+        };
+        globalThis.addEventListener('keydown', onKey);
+        this.track(() => globalThis.removeEventListener('keydown', onKey));
 
         this.#renderTree();
     }
@@ -209,46 +240,14 @@ export class Hierarchy extends Element {
     #build() {
         this.#tree = el('div', { class: 'tree' });
 
-        this.#searchInput = el('input', {
-            type: 'search',
+        this.#search = searchField({
             placeholder: 'Search objects',
-            spellcheck: false,
-            autocomplete: 'off',
-            // Reactive to the keystroke, like every other field in the Editor.
-            oninput: event => {
-                this.#query = event.target.value;
+            label: 'objects',
+            onQuery: query => {
+                this.#query = query;
                 this.#renderTree();
-            },
-            onkeydown: event => {
-                if (event.key === 'Escape') this.#showSearch(false);
-                event.stopPropagation();
             }
         });
-
-        this.#searchbar = el('div', { class: 'searchbar', slot: 'header' },
-            el('div', { class: 'inner' },
-                el('div', { class: 'field' },
-                    icon('search'),
-                    this.#searchInput,
-                    el('button', {
-                        class: 'ghost',
-                        type: 'button',
-                        title: 'Clear and close',
-                        'aria-label': 'Clear and close search',
-                        onclick: () => this.#showSearch(false)
-                    }, icon('close'))
-                )
-            )
-        );
-
-        this.#magnifier = el('button', {
-            class: 'ghost',
-            type: 'button',
-            title: 'Search objects',
-            'aria-label': 'Search objects',
-            'aria-expanded': 'false',
-            onclick: () => this.#showSearch(!this.#searchbar.classList.contains('open'))
-        }, icon('search'));
 
         const create = el('button', {
             class: 'ghost',
@@ -259,45 +258,20 @@ export class Hierarchy extends Element {
         }, icon('plus'));
 
         this.shadowRoot.replaceChildren(el('px-window', { label: 'Hierarchy', icon: 'hierarchy' },
-            el('div', { class: 'actions', slot: 'actions' }, this.#magnifier, create),
-            this.#searchbar,
+            el('div', { class: 'actions', slot: 'actions' }, this.#search.toggle, create),
+            this.#search.bar,
             this.#tree
         ));
     }
 
-    /**
-     * Open or close the search.
-     *
-     * Closing clears the query as well as hiding the field: a filter still applied behind
-     * a folded control is a tree that lies about what the scene holds.
-     *
-     * @param {boolean} open - Whether the field is shown
-     */
-    #showSearch(open) {
-        this.#searchbar.classList.toggle('open', open);
-        this.#magnifier.classList.toggle('on', open);
-        this.#magnifier.setAttribute('aria-expanded', globalThis.String(open));
-
-        if (open) {
-            this.#searchInput.focus();
-            this.#searchInput.select();
-            return;
-        }
-
-        if (this.#query === '' && this.#searchInput.value === '') return;
-        this.#searchInput.value = '';
-        this.#query = '';
-        this.#renderTree();
-    }
-
     #renderTree() {
-        this.release('rows');
-        this.#rows.clear();
+        this.#cancelRename();
 
         const roots = this.#scene.roots();
         const visible = visibleObjects(roots, this.#query);
 
         if (visible && visible.size === 0) {
+            this.#discardRows(new globalThis.Set());
             fill(this.#tree, el('div', {
                 class: 'empty',
                 textContent: `No object matches “${this.#query.trim()}”.`
@@ -305,17 +279,25 @@ export class Hierarchy extends Element {
             return;
         }
 
-        fill(this.#tree,
-            roots.length === 0
-                ? el('div', { class: 'empty', textContent: 'No objects yet. Drag one in from the toolbar, or use +.' })
-                : roots.map(object => this.#renderBranch(object, 0, visible))
-        );
+        if (roots.length === 0) {
+            this.#discardRows(new globalThis.Set());
+            fill(this.#tree, el('div', {
+                class: 'empty',
+                textContent: 'No objects yet. Use +, or drag a tool in from the viewport.'
+            }));
+            return;
+        }
 
+        const nodes = [];
+        for (const object of roots) this.#collect(nodes, object, 0, visible);
+
+        this.#discardRows(new globalThis.Set(nodes.map(row => row.dataset.id)));
+        reconcile(this.#tree, nodes);
         this.#applySelection();
     }
 
-    #renderBranch(object, depth, visible) {
-        if (visible && !visible.has(object)) return [];
+    #collect(nodes, object, depth, visible) {
+        if (visible && !visible.has(object)) return;
 
         const children = visible
             ? object.children.filter(child => visible.has(child))
@@ -325,19 +307,36 @@ export class Hierarchy extends Element {
         // because its parent happened to be folded is a result they will not believe in.
         const open = Boolean(visible) || !this.#collapsed.has(object.id);
 
-        const nodes = [this.#renderRow(object, depth, children.length > 0, open, Boolean(visible))];
+        nodes.push(this.#row(object, depth, children.length > 0, open, Boolean(visible)));
         if (open) {
-            for (const child of children) nodes.push(...this.#renderBranch(child, depth + 1, visible));
+            for (const child of children) this.#collect(nodes, child, depth + 1, visible);
         }
-        return nodes;
     }
 
-    #renderRow(object, depth, hasChildren, open, searching) {
+    /** The row for an object: the one that already exists, or a new one. */
+    #row(object, depth, hasChildren, open, searching) {
+        const existing = this.#rows.get(object.id);
+        const entry = existing?.object === object ? existing : this.#buildRow(object);
+
+        // Depth is a custom property rather than a computed padding, so the row's own
+        // rules derive both the indent and the guide line from it and no arithmetic
+        // leaks into JavaScript.
+        entry.row.style.setProperty('--depth', globalThis.String(depth));
+        entry.row.dataset.depth = globalThis.String(depth);
+
+        entry.twisty.classList.toggle('leaf', !hasChildren || searching);
+        entry.twisty.classList.toggle('open', open);
+
+        this.#rows.set(object.id, entry);
+        return entry.row;
+    }
+
+    #buildRow(object) {
         // The row selects on pointerdown, so a control inside it has to stop that event
         // and not merely the click: folding a branch or hiding an object is not a way of
         // saying "select this".
         const twisty = el('span', {
-            class: `ghost twisty${hasChildren && !searching ? '' : ' leaf'}${open ? ' open' : ''}`,
+            class: 'ghost twisty',
             onpointerdown: event => event.stopPropagation(),
             onclick: () => this.#toggle(object)
         }, icon('chevron'));
@@ -366,37 +365,62 @@ export class Hierarchy extends Element {
             onclick: () => this.#delete(object)
         }, icon('trash'));
 
-        // Depth is a custom property rather than a computed padding, so the row's own
-        // rules derive both the indent and the guide line from it and no arithmetic
-        // leaks into JavaScript.
+        // WAS THIS ROW ALREADY SELECTED WHEN THE PRESS STARTED? That single bit is half of
+        // the rename gesture, and it has to be read here: `pointerdown` selects, and
+        // `click` fires afterwards, so asking the selection at click time always answers
+        // "yes" and the first click on a name dropped a caret nobody asked for. The other
+        // half is the delay — see the header.
+        let wasSelected = false;
+
         const row = el('div', {
-            class: 'row',
-            style: `--depth: ${depth}`,
-            dataset: { depth: globalThis.String(depth) },
-            onpointerdown: () => this.#selection.set(object),
-            ondblclick: () => this.#viewport?.focusOn(object)
+            class: 'row line',
+            dataset: { id: object.id },
+            onpointerdown: () => {
+                this.#cancelRename();
+                wasSelected = this.#selection.has(object);
+                this.#selection.set(object);
+            },
+            ondblclick: () => {
+                // Cancels the pending rename the first click of this very double-click
+                // armed, then does what a double-click means everywhere on the row.
+                this.#cancelRename();
+                this.#viewport?.focusOn(object);
+            }
         }, twisty, glyph, name, el('div', { class: 'actions' }, lock, visibility, remove));
 
         name.addEventListener('click', () => {
-            // Only once the row is the selected one, so the first click on a row still
-            // just selects it instead of dropping a caret the creator did not ask for.
-            if (this.#selection.has(object)) this.#beginRename(object, name);
+            if (wasSelected) this.#scheduleRename(object, name);
         });
-        name.addEventListener('dblclick', event => event.stopPropagation());
 
-        this.#applyState(row, object);
+        // Only while editing: a double-click in a name being typed into selects a word,
+        // and must not also frame the object. Outside an edit the event belongs to the row.
+        name.addEventListener('dblclick', event => {
+            if (name.classList.contains('editing')) event.stopPropagation();
+        });
 
+        const group = `row:${object.id}`;
         this.track(object.observe('name', change => {
             if (name.classList.contains('editing')) return;
             name.textContent = change.value || '(unnamed)';
-        }), 'rows');
+        }), group);
+
+        const entry = { object, row, twisty, name };
+        this.#applyState(entry);
 
         for (const prop of ['active', 'visible', 'lock']) {
-            this.track(object.observe(prop, () => this.#applyState(row, object)), 'rows');
+            this.track(object.observe(prop, () => this.#applyState(entry)), group);
         }
 
-        this.#rows.set(object, row);
-        return row;
+        return entry;
+    }
+
+    /** Let go of every row whose object is no longer on screen. */
+    #discardRows(keep) {
+        for (const id of [...this.#rows.keys()]) {
+            if (keep.has(id)) continue;
+            this.release(`row:${id}`);
+            this.#rows.delete(id);
+        }
     }
 
     #stateButton(object, prop, { on, title, glyph }) {
@@ -414,13 +438,40 @@ export class Hierarchy extends Element {
             fill(button, icon(glyph()));
         };
         sync();
-        this.track(object.observe(prop, sync), 'rows');
+        this.track(object.observe(prop, sync), `row:${object.id}`);
         return button;
     }
 
-    #applyState(row, object) {
+    #applyState({ object, row }) {
         row.classList.toggle('hidden', !object.visible || !object.active);
         row.classList.toggle('locked', object.lock);
+    }
+
+    /**
+     * Arm a rename, unless a second click arrives first.
+     *
+     * The whole of the delay is here, and it is a timer with a name rather than a state
+     * machine: something either cancels it before it fires, or it renames.
+     *
+     * @param {object} object - The object whose name was clicked
+     * @param {HTMLElement} name - The row's name element
+     */
+    #scheduleRename(object, name) {
+        if (name.classList.contains('editing')) return;
+        this.#cancelRename();
+        this.#rename = globalThis.setTimeout(() => {
+            this.#rename = null;
+            // Still the selected object by the time the pause is over, or the click that
+            // armed this has been overtaken by something else.
+            if (this.#selection.has(object)) this.#beginRename(object, name);
+        }, RENAME_DELAY);
+    }
+
+    /** Drop a rename that has not started yet. Never touches an edit already open. */
+    #cancelRename() {
+        if (this.#rename === null) return;
+        globalThis.clearTimeout(this.#rename);
+        this.#rename = null;
     }
 
     #beginRename(object, name) {
@@ -436,7 +487,12 @@ export class Hierarchy extends Element {
         name.focus();
         globalThis.getSelection()?.selectAllChildren(name);
 
+        // Leaving edit mode is its own step, called directly by whatever ended the edit —
+        // not a side effect of blur. blur() only fires when the element actually held
+        // focus, and a row that keeps `editing` because focus went somewhere unexpected is
+        // a row that has stopped answering to the model.
         const finish = () => {
+            if (!name.classList.contains('editing')) return;
             name.classList.remove('editing');
             name.contentEditable = 'false';
             name.textContent = object.name || '(unnamed)';
@@ -451,11 +507,13 @@ export class Hierarchy extends Element {
             if (event.key === 'Enter') {
                 event.preventDefault();
                 name.blur();
+                finish();
             }
             if (event.key === 'Escape') {
                 event.preventDefault();
                 object.setProperty('name', original);
                 name.blur();
+                finish();
             }
         };
     }
@@ -463,36 +521,55 @@ export class Hierarchy extends Element {
     #toggle(object) {
         if (this.#collapsed.has(object.id)) this.#collapsed.delete(object.id);
         else this.#collapsed.add(object.id);
+        // The row — and with it the twisty — is reused by the render below, so flipping
+        // `open` is a class change on a live element and the chevron turns. Nothing else
+        // animates: the rows that appear and disappear do so at once, because a list that
+        // slides is a list you wait for (ui/styles.js).
         this.#renderTree();
     }
 
     #applySelection() {
-        for (const [object, row] of this.#rows) {
+        for (const { object, row } of this.#rows.values()) {
             row.classList.toggle('selected', this.#selection.has(object));
         }
     }
 
     #openCreateMenu(anchor) {
-        const items = OBJECT_KINDS.map(kind => ({
-            id: kind.id,
-            label: kind.label,
-            icon: kind.id === 'camera' ? 'camera' : kind.id === 'empty' ? 'object' : 'rectangle'
-        }));
-
-        openMenu(anchor, items, kind => {
+        // No filter field on three entries: the search is what makes a long, categorised
+        // list usable, and on a short one it is a control to skip past.
+        openMenu(anchor, createMenuItems(), kind => {
             const centre = this.#viewport?.worldCentre() ?? { x: 0, y: 0 };
             this.#selection.set(createObject(this.#scene, {
                 kind,
                 x: Math.round(centre.x),
                 y: Math.round(centre.y)
             }));
-        });
+        }, { label: 'objects' });
     }
 
     #delete(object) {
         if (this.#selection.has(object)) this.#selection.clear();
         deleteObject(this.#scene, object);
     }
+}
+
+/**
+ * Bring a parent's children into line with a list, moving what is already there.
+ *
+ * `replaceChildren` would be shorter and would defeat the point: it detaches every row,
+ * and a detached element's transition does not survive being put back. Here a row that is
+ * already in the right place is not touched at all, which is what lets the twisty of the
+ * branch you just folded keep its transition while its children come and go around it.
+ *
+ * @param {HTMLElement} parent - The container
+ * @param {HTMLElement[]} nodes - The children it should end up with, in order
+ */
+function reconcile(parent, nodes) {
+    for (let index = 0; index < nodes.length; index++) {
+        const current = parent.childNodes[index];
+        if (current !== nodes[index]) parent.insertBefore(nodes[index], current ?? null);
+    }
+    while (parent.childNodes.length > nodes.length) parent.lastChild.remove();
 }
 
 customElements.define('px-hierarchy', Hierarchy);

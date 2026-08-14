@@ -35,8 +35,9 @@ const SIZES = {
  * Windows a creator can hide, and whether they start shown.
  *
  * The Timeline starts hidden because L4 makes it conditional: it takes a band across the
- * scene, and a project with nothing animated should not pay for it. The viewport and the
- * creation rail are not negotiable and are absent from this table.
+ * scene, and a project with nothing animated should not pay for it. The viewport is not
+ * negotiable and is absent from this table; so are the creation tools, which are now part
+ * of the viewport's own control group rather than a window of their own.
  */
 const PANELS = {
     hierarchy: true,

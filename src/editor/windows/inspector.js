@@ -35,6 +35,7 @@ import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { icon, iconForComponent, iconForObject } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
+import { searchField } from '../ui/search-field.js';
 import { addComponent, availableComponents, removeComponent } from '../commands.js';
 import { groupTypes } from '../registry.js';
 import { FieldKind, describeComponent, isNumeric, objectFields, rows } from '../inspector/schema.js';
@@ -90,13 +91,19 @@ export class Inspector extends Element {
 
         section { border-bottom: 1px solid var(--px-border); }
 
+        /* The same anatomy as a Hierarchy row, and for the same reason: twisty, glyph,
+           label, tools. --px-hit tall because it is a click target rather than a line of
+           a list, and padded by one space unit so the chevron starts at the panel edge
+           exactly where a root row's chevron does — measured, not eyeballed.
+           The 12 px grip that used to sit before the caret is gone: it reserved room
+           for a drag handle that does not exist (component order is a Core capability the
+           model does not expose yet, see the report), and it was what pushed every caret
+           in this panel away from the edge. */
         section > header {
             display: flex;
             align-items: center;
             gap: var(--px-space-1);
-            height: 28px;
-            /* The grip hangs exactly one space unit outside the content edge the rows
-               start on, which is the relationship the maquette draws. */
+            height: var(--px-hit);
             padding: 0 var(--px-space-1);
             color: var(--px-text-muted);
             cursor: default;
@@ -106,25 +113,7 @@ export class Inspector extends Element {
 
         section > header:hover { background: var(--px-surface-raised); }
 
-        /* Always present, never conditional: a slot that appears only on some sections
-           is what puts every caret below it at a different x. */
-        header .grip {
-            display: flex;
-            width: 12px;
-            flex: 0 0 auto;
-            justify-content: center;
-            color: var(--px-border-subtle);
-        }
-
-        header .caret {
-            display: flex;
-            flex: 0 0 auto;
-            color: var(--px-text-dim);
-            transition: transform var(--px-duration-fast) var(--px-ease);
-        }
-
-        section.open > header .caret { transform: rotate(90deg); }
-        header .glyph { display: flex; flex: 0 0 auto; color: var(--px-text-dim); }
+        header .glyph { color: var(--px-text-dim); }
 
         /* Set in the type of a menu group heading, on purpose (ui/menu.js). */
         header .label {
@@ -259,6 +248,9 @@ export class Inspector extends Element {
     #selection = null;
     #registry = null;
     #body = null;
+    #search = null;
+    #create = null;
+    #query = '';
     // View state, and only view state: which sections the creator folded away. Keyed by
     // section name so it survives selecting another object of the same shape.
     #folded = new globalThis.Set();
@@ -281,8 +273,38 @@ export class Inspector extends Element {
     connectedCallback() {
         if (this.shadowRoot.childElementCount === 0) {
             this.#body = el('div');
+
+            // The same two actions the Hierarchy carries, in the same order and built from
+            // the same primitives: find what is already there, then add. A creator who has
+            // learned one header has learned both.
+            this.#search = searchField({
+                placeholder: 'Search components',
+                label: 'components',
+                onQuery: query => {
+                    this.#query = query;
+                    this.#render();
+                }
+            });
+
+            const create = el('button', {
+                class: 'ghost',
+                type: 'button',
+                title: 'Add component',
+                'aria-label': 'Add component',
+                onclick: () => {
+                    const object = this.#selection.object;
+                    if (object) this.#openAddMenu(create, object);
+                }
+            }, icon('plus'));
+
+            this.#create = create;
+
             this.shadowRoot.append(
-                el('px-window', { label: 'Inspector', icon: 'inspector' }, this.#body)
+                el('px-window', { label: 'Inspector', icon: 'inspector' },
+                    el('div', { class: 'actions', slot: 'actions' }, this.#search.toggle, create),
+                    this.#search.bar,
+                    this.#body
+                )
             );
         }
 
@@ -303,6 +325,8 @@ export class Inspector extends Element {
         this.release('panel');
 
         const object = this.#selection.object;
+        this.#create.disabled = !object;
+
         if (!object) {
             fill(this.#body, el('div', { class: 'empty' },
                 el('span', { class: 'glyph' }, icon('inspector', 20)),
@@ -313,17 +337,36 @@ export class Inspector extends Element {
 
         const components = object.components;
         const types = globalThis.Object.keys(components);
+        const shown = types.filter(type => this.#matches(humanise(type)));
+        const searching = this.#query.trim() !== '';
 
         fill(this.#body,
             this.#renderIdentity(object, types.length),
-            this.#renderSection({
-                name: 'Object',
-                glyph: 'object',
-                body: this.#renderRows(object, objectFields())
-            }),
-            types.map(type => this.#renderComponent(object, components[type], type)),
-            this.#renderAddButton(object)
+            this.#matches('Object')
+                ? this.#renderSection({
+                    name: 'Object',
+                    glyph: 'object',
+                    body: this.#renderRows(object, objectFields())
+                })
+                : null,
+            shown.map(type => this.#renderComponent(object, components[type], type)),
+            // A filter that hides everything has to say so; silently showing an empty
+            // panel reads as an object that carries nothing.
+            searching && shown.length === 0 && !this.#matches('Object')
+                ? el('div', { class: 'none', textContent: `No component matches “${this.#query.trim()}”.` })
+                : null,
+            searching ? null : this.#renderAddButton(object)
         );
+    }
+
+    /**
+     * Whether a section survives the component filter.
+     * @param {string} title - The section's displayed title
+     * @returns {boolean} True when it is shown
+     */
+    #matches(title) {
+        const query = this.#query.trim().toLowerCase();
+        return query === '' || title.toLowerCase().includes(query);
     }
 
     #renderIdentity(object, count) {
@@ -413,16 +456,25 @@ export class Inspector extends Element {
         const open = !this.#folded.has(name);
         const section = el('section', { class: open ? 'open' : '' });
 
+        // The same control a Hierarchy branch folds with: `.ghost .twisty` from the shared
+        // base sheet, carrying its own `open` class so the rotation rule is the one rule
+        // (ui/styles.js).
+        const caret = el('span', {
+            class: `ghost twisty${open ? ' open' : ''}`,
+            'aria-hidden': 'true'
+        }, icon('chevron', 16));
+
         const header = el('header', {
             title: 'Click to fold',
             onclick: () => {
                 if (this.#folded.has(name)) this.#folded.delete(name);
                 else this.#folded.add(name);
-                section.classList.toggle('open', !this.#folded.has(name));
+                const shown = !this.#folded.has(name);
+                section.classList.toggle('open', shown);
+                caret.classList.toggle('open', shown);
             }
         },
-            el('span', { class: 'grip' }),
-            el('span', { class: 'caret' }, icon('chevron', 16)),
+            caret,
             el('span', { class: 'glyph' }, icon(glyph, 16)),
             el('span', { class: 'label', textContent: humanise(name) }),
             el('div', { class: 'tools' })
@@ -494,7 +546,8 @@ export class Inspector extends Element {
 
         // Nothing re-renders by hand afterwards: attaching announces itself on the scene,
         // and this window is already listening for that.
-        openMenu(anchor, items, type => addComponent(object, type, this.#registry));
+        openMenu(anchor, items, type => addComponent(object, type, this.#registry),
+            { search: true, label: 'components' });
     }
 }
 

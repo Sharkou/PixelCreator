@@ -28,10 +28,11 @@ export class Splitter extends Element {
         :host([axis='x']) { width: 1px; cursor: col-resize; }
         :host([axis='y']) { height: 1px; cursor: row-resize; }
 
-        /* The grab area, invisible, centred on the seam. */
+        /* The grab area, invisible, centred on the seam. It stays --px-grip across — 8,
+           and 14 under a coarse pointer — because that is what makes a one-pixel line
+           catchable, with a finger as well as with a mouse. */
         .grip {
             position: absolute;
-            transition: background var(--px-duration) var(--px-ease);
         }
 
         :host([axis='x']) .grip {
@@ -50,7 +51,36 @@ export class Splitter extends Element {
             cursor: row-resize;
         }
 
-        .grip:hover, :host([dragging]) .grip { background: var(--px-accent-border); }
+        /* THE TARGET IS NOT THE MARK. Lighting the grab area painted an 8 px band across
+           the window — 14 on a touch screen — for a seam that is one pixel wide. The
+           indicator is drawn separately now and sized like the scrollbar thumb it sits
+           beside: 4 px of visible track (a 10 px scrollbar less its 3 px of transparent
+           border, ui/styles.js), rounded the same way, centred on the seam. The hitbox
+           above is untouched, so nothing became harder to grab. */
+        .grip::after {
+            content: '';
+            position: absolute;
+            background: transparent;
+            border-radius: 2px;
+            transition: background var(--px-duration) var(--px-ease);
+        }
+
+        :host([axis='x']) .grip::after {
+            top: 0;
+            bottom: 0;
+            left: calc(var(--px-grip) / 2 - 2px);
+            width: 4px;
+        }
+
+        :host([axis='y']) .grip::after {
+            left: 0;
+            right: 0;
+            top: calc(var(--px-grip) / 2 - 2px);
+            height: 4px;
+        }
+
+        .grip:hover::after,
+        :host([dragging]) .grip::after { background: var(--px-accent-border); }
     `);
 
     #config = null;

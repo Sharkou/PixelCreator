@@ -3,6 +3,20 @@
 // It renders the strip and announces the choice. It does not own the panels, does not
 // hide anything, and does not slot content: the window that uses it already knows how to
 // show its own children, and a tab strip that also managed content would be two things.
+//
+// NO CONSUMER TODAY, AND IT STAYS. It was the Project/Timeline strip of the old bottom
+// dock; L4 gave each of those its own zone, so nothing renders it at the moment. It is
+// kept deliberately, as a primitive rather than as dead code, because the surfaces that
+// will want it are already named in the roadmap: Project alongside a Composer, several
+// scenes open at once, a graph per .px resource (ADR-0009), and eventually more than one
+// document. Every one of those is a strip of choices over a single body — this element,
+// unchanged.
+//
+// What is NOT built here, and must not be until something asks: document lifecycle,
+// closable tabs, overflow scrolling, drag to reorder, detachment. Speculating on those is
+// how a primitive becomes a framework before it has a user. It is registered by
+// editor.js so it stays loadable and testable; the day a window slots one in, this file
+// is the whole of the work.
 
 import { Element, el, fill } from './element.js';
 import { sheet } from './styles.js';

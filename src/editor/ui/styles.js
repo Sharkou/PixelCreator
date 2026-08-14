@@ -222,9 +222,10 @@ const tokens = sheet(`
         --px-z-drag: 200;
 
         /* ─── Layout ──────────────────────────────────────────────────────
-           The rail is fixed; the four that follow are defaults, overwritten
-           on the shell by layout.js and persisted per browser. */
-        --px-toolbar: 44px;
+           Defaults, overwritten on the shell by layout.js and persisted per
+           browser. There is no rail token any more: the creation tools moved
+           into the viewport's own control group, so the left edge of the
+           workspace is the Hierarchy (docs/architecture/EDITOR.md). */
         --px-left: 236px;
         --px-right: 304px;
         --px-project: 192px;
@@ -274,12 +275,14 @@ const tokens = sheet(`
     }
 
     /* ─── L4 ──────────────────────────────────────────────────────────────
-       Three bands across, and the order is the decision: the creation rail,
-       then everything that belongs to the scene, then the Inspector — which
-       runs from the titlebar to the floor and is never cut by the band at the
-       bottom. That uninterrupted column is the whole point of L4; the layout
-       it replaced ran the Project the full width and sliced the Inspector in
-       half (design/README.md, D8). */
+       Two bands across, and the order is the decision: everything that
+       belongs to the scene, then the Inspector — which runs from the titlebar
+       to the floor and is never cut by the band at the bottom. That
+       uninterrupted column is the whole point of L4; the layout it replaced
+       ran the Project the full width and sliced the Inspector in half
+       (design/README.md, D8). There used to be a third band before these two,
+       a 44 px creation rail; its tools moved into the viewport's control
+       group and the workspace now starts at the Hierarchy. */
     .workspace {
         display: flex;
         flex: 1;
@@ -499,6 +502,19 @@ ${controls}
         background: var(--px-accent); border: 2px solid var(--px-surface);
     }
 
+    /* A WRAPPER AROUND AN ICON IS STILL A BOX, and an inline one is a text box: measured
+       at 20.39 px tall around a 16 px glyph, because it inherits the line box. In a
+       centred flex row that puts the glyph a couple of pixels below the label it belongs
+       to — the misalignment every panel header had. Declared here rather than in each
+       window, because every window wraps its glyph the same way. */
+    .glyph {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        line-height: 0;
+    }
+
     /* The span carries the exact box (ui/icons.js writes it), so a glyph never depends on
        an intrinsic size, and the SVG is a block so it cannot sit on a text baseline —
        between them, that is why icons used to look a pixel high beside a label. */
@@ -516,6 +532,68 @@ ${controls}
     .muted { color: var(--px-text-muted); }
     .dim { color: var(--px-text-dim); }
     .strong { color: var(--px-text-strong); }
+
+    /* THE HIGHLIGHTED LINE, AND THERE IS ONLY ONE. A Hierarchy row and a dropdown entry
+       are the same object: a full-width line you point at and choose. Both therefore take
+       the tint across the WHOLE line and never as a rounded pill inset from its
+       container — a highlight that stops short of the edges reads as a button sitting in
+       a list rather than as the list's own line, which is what Create Object and Add
+       Component looked like.
+
+       SELECTED PLUS HOVER IS SELECTED. The two states are declared here together, in this
+       order, so pointing at an already-selected line cannot lay a second background over
+       the first. That was not a specificity accident to patch at the call site: it is a
+       fact about what these two states mean, and it belongs wherever they are defined.
+
+       Layout is deliberately absent — a window opts into the highlight without inheriting
+       a row geometry it does not want. */
+    .line { border-radius: 0; }
+    .line:hover { background: var(--px-surface-hover); }
+
+    .line.selected,
+    .line.selected:hover {
+        background: var(--px-accent-muted);
+        box-shadow: inset 2px 0 0 var(--px-accent);
+    }
+
+    /* THE FOLD CONTROL, AND THERE IS ONLY ONE. A branch in the Hierarchy and a section in
+       the Inspector fold for the same reason and must do it the same way: the same 22 px
+       box with a --px-hit target under it (.ghost), the same chevron, the same quarter
+       turn over the same duration. Two implementations a few milliseconds apart is what
+       makes an interface feel assembled rather than designed. The open class goes on the
+       control itself, so neither window reaches for it through an ancestor selector. */
+    .twisty {
+        color: var(--px-text-dim);
+        cursor: pointer;
+    }
+
+    .twisty .icon { transition: transform var(--px-duration) var(--px-ease); }
+    .twisty.open .icon { transform: rotate(90deg); }
+    .twisty.leaf { visibility: hidden; }
+
+    /* The search that lives behind a magnifier, built by ui/search-field.js. Two windows
+       carry one — the Hierarchy filters objects, the Inspector filters components — and
+       they must fold the same way, so the rules are here rather than in either of them.
+       A grid row animating from 0fr to 1fr changes the panel's height without ever moving
+       what is already on screen; the border is a width so a closed field costs no pixel. */
+    .searchbar {
+        display: grid;
+        grid-template-rows: 0fr;
+        border-bottom: 0 solid var(--px-border);
+        transition: grid-template-rows var(--px-duration) var(--px-ease),
+                    border-bottom-width var(--px-duration) var(--px-ease);
+    }
+
+    .searchbar > .inner { overflow: hidden; min-height: 0; }
+    .searchbar.open { grid-template-rows: 1fr; border-bottom-width: 1px; }
+
+    .searchbar .field {
+        display: flex;
+        align-items: center;
+        gap: var(--px-space-2);
+        padding: var(--px-space-1) var(--px-space-1) var(--px-space-1) var(--px-space-2);
+        color: var(--px-text-dim);
+    }
 
     /* The centred "nothing here yet", built by ui/empty-state.js. Two windows already
        show one; the rules live here so they cannot drift apart. */

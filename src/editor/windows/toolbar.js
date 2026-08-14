@@ -1,10 +1,19 @@
-// <px-toolbar> — the creation palette, down the left edge.
+// <px-toolbar> — the creation palette, in the viewport's control group.
 //
 // Legacy had exactly this and it was right: a strip of object templates you drag into the
 // scene, so a creator never has to find "Create" in a menu and then move what appeared.
 // What is not kept is how: `dragstart` / `drop` is the HTML5 Drag & Drop API, which does
 // not exist on a touch screen. Pointer Events cover mouse, pen and finger with one code
 // path (docs/architecture/EDITOR.md).
+//
+// IT IS NO LONGER A RAIL. It used to be a full-height strip down the left edge of the
+// workspace, and that strip was 44 px of chrome carrying three buttons — a column of
+// window for a row of tools. The tools now sit in the viewport's own control group, next
+// to Frame selection and Reset view, where every control that acts on the scene already
+// lives; the left edge of the workspace is the Hierarchy. What made the rail worth keeping
+// was never its position, it was the drag: an object is born exactly where it is dropped,
+// which no menu entry reproduces. That gesture is untouched below — this element is
+// slotted into `<px-viewport>` instead of into the shell, and nothing else changed.
 //
 // Two gestures, because a drag is not always convenient:
 //
@@ -22,49 +31,27 @@ import { OBJECT_KINDS, createObject } from '../commands.js';
 /** Pixels the pointer must travel before a press becomes a drag. */
 const DRAG_THRESHOLD = 4;
 
-const TOOL_ICONS = {
-    rectangle: 'rectangle',
-    empty: 'object',
-    camera: 'camera'
-};
-
 export class Toolbar extends Element {
 
+    /* No surface, no border and no padding of its own: the group it sits in is already a
+       pill on the panel surface, and a box inside that box is what the Inspector's search
+       field taught us not to draw (ui/menu.js). The buttons are `.ghost` from the shared
+       sheet, so they are the same control as Frame selection beside them — the only thing
+       this element adds is the grab cursor and the drag state, which are what these three
+       buttons do and the other two do not. */
     static styles = sheet(`
         :host {
             display: flex;
-            flex-direction: column;
             align-items: center;
             gap: var(--px-space-0);
-            width: var(--px-toolbar);
-            flex: 0 0 auto;
-            padding: var(--px-space-2) 0;
-            background: var(--px-surface-raised);
-            border-right: 1px solid var(--px-border);
             -webkit-user-select: none;
             user-select: none;
             touch-action: none;
         }
 
-        /* Wider than a --px-hit control on purpose: this is a presence glyph you aim at
-           and then drag, not a button in a row. --px-text-dim measures 4.25:1 on a raised
-           surface, so the resting colour is --px-text-muted like every other label there. */
-        button {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: calc(var(--px-toolbar) - var(--px-space-3));
-            height: calc(var(--px-toolbar) - var(--px-space-3));
-            border-radius: var(--px-radius);
-            color: var(--px-text-muted);
-            cursor: grab;
-            transition: background var(--px-duration-fast) var(--px-ease),
-                        color var(--px-duration-fast) var(--px-ease);
-        }
-
-        button:hover { background: var(--px-surface-hover); color: var(--px-text-strong); }
-        button:active { background: var(--px-surface-active); cursor: grabbing; }
-        button.dragging { background: var(--px-accent-muted); color: var(--px-accent); }
+        .ghost { cursor: grab; }
+        .ghost:active { cursor: grabbing; }
+        .ghost.dragging { background: var(--px-accent-muted); color: var(--px-accent); }
     `);
 
     #context = null;
@@ -88,6 +75,7 @@ export class Toolbar extends Element {
         if (this.shadowRoot.childElementCount > 0) return;
 
         this.shadowRoot.append(...OBJECT_KINDS.map(kind => el('button', {
+            class: 'ghost',
             type: 'button',
             title: `${kind.label} — drag into the scene, or tap to place at the centre`,
             'aria-label': kind.label,
@@ -95,7 +83,7 @@ export class Toolbar extends Element {
             onpointermove: event => this.#move(event),
             onpointerup: event => this.#drop(event),
             onpointercancel: () => this.#cancel()
-        }, icon(TOOL_ICONS[kind.id] ?? 'object', IconSize.MD))));
+        }, icon(kind.icon ?? 'object', IconSize.SM))));
     }
 
     disconnectedCallback() {
@@ -171,11 +159,14 @@ export class Toolbar extends Element {
 //
 // It was the last literal Legacy blue in src/: rgba(51, 154, 240, .85), a colour from a
 // palette this Editor no longer has. It is the accent now, with a dark glyph on it (7.0:1
-// against #fff's 2.6:1), at the same size as the rail button it was lifted from. No
+// against #fff's 2.6:1). It stays 32 px and keeps the larger glyph even though the button
+// it leaves is now a 22 px control: the ghost is what the creator is aiming with, out on
+// the scene and away from the pointer's own hotspot, and shrinking it to match the button
+// would make the thing being placed harder to see than the thing that launched it. No
 // shadow: depth is a surface step here, and the two shadows the Editor allows itself are
 // the menu and the narrow-mode drawer (ui/styles.js).
 function createGhost(kind) {
-    const ghost = el('div', { class: 'px-drag-ghost' }, icon(TOOL_ICONS[kind.id] ?? 'object', IconSize.MD));
+    const ghost = el('div', { class: 'px-drag-ghost' }, icon(kind.icon ?? 'object', IconSize.MD));
     ghost.style.cssText = `
         position: fixed; left: 0; top: 0; pointer-events: none;
         z-index: var(--px-z-drag);
