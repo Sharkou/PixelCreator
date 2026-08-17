@@ -138,7 +138,7 @@ produit des pixels viendra avec le modèle de graphe, pas avant.
 | ~~Comment un type de Component purement graphe est déclaré~~ | **tranché** : ADR-0016 (définition = type + propriétés + graphe) |
 | Ce que deviennent les `variables` d'un graphe vis-à-vis du schéma et de l'Inspector | ADR-0007 + modèle de graphe |
 | Le modèle de graphe et l'interprète eux-mêmes | ADR-0009 |
-| Qui appelle `bind()` (chargement du projet, éditeur, serveur) | avec les ressources |
+| ~~Qui appelle `bind()` (chargement du projet, éditeur, serveur)~~ | **tranché : ADR-0020** — la couche `src/project/`. Elle lit la `GraphResource` désignée par `definition.graph` et passe le graphe **résolu** à `behaviors.bind(type, graph)`. `bind()` refuse un `ResourceId` : le Runtime ne lit jamais le stockage, et `runtime → project` est un import interdit |
 
 ---
 

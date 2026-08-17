@@ -79,6 +79,30 @@ l'historique, l'undo/redo, la collaboration et tout autre système abonné.
 Et, à plus long terme : replay d'une session, journal d'audit, et une IA capable de
 modifier un projet en émettant des Operations plutôt qu'en manipulant le DOM.
 
+## Amendements
+
+> **ADR-0019 (2026-08-14) — les Operations structurelles.** Le tableau ci-dessus est un
+> **inventaire du protocole Legacy**, pas une liste de conception. ADR-0019 le remplace par
+> l'ensemble effectivement implémenté, et fusionne notamment `ADD_CHILD` et `REMOVE_CHILD`
+> dans une seule Operation :
+>
+> `REPARENT { object, parent, index, previousParent, previousIndex }`
+>
+> Elle couvre quatre gestes — reparenter, détacher (`parent: null`), réordonner parmi ses
+> frères, réordonner parmi les racines — parce que ce sont la même mutation : un dépôt entre
+> deux lignes change le parent **et** la position, atomiquement. La capacité couverte est
+> rigoureusement identique à celle des deux messages Legacy. S'y ajoutent `ADD_OBJECT`,
+> `REMOVE_OBJECT`, `ADD_COMPONENT`, `REMOVE_COMPONENT`, `MOVE_COMPONENT`, et
+> `ADD_RESOURCE` / `REMOVE_RESOURCE` à la portée du Project (ADR-0020).
+>
+> ADR-0019 précise également que **`seq` est par pipeline** et non par module : un numéro de
+> séquence ordonne les opérations d'**une** unité répliquée.
+
+> **ADR-0024 (2026-08-14) — undo/redo.** « Undo/redo devient une conséquence de
+> l'architecture » est rendu concret : le Core fournit `invert(operation)`, l'Editor tient
+> la pile, et annuler passe par `submit(invert(op))` — jamais par un `apply()` silencieux,
+> qui désynchroniserait le projet sans un bruit.
+
 ## Non-décisions explicites
 
 - **Ce n'est ni un CRDT ni de l'OT.** La collaboration multi-utilisateurs reste hors

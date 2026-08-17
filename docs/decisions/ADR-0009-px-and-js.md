@@ -137,6 +137,23 @@ c'est une décision d'exécution, pas de format.
 > `.px`, lui, est interprété et n'exécute jamais de code arbitraire : c'est ce qui en
 > fait le format sûr pour du contenu partagé.
 
+## Complément — où vit un graphe (ADR-0020, 2026-08-14)
+
+Un graphe `.px` est une **`Resource` de `kind: 'graph'`** : identité opaque, payload JSON,
+stockée par le `ResourceStore`, ouvrable seule dans la fenêtre **`Graph`**. Une définition
+de Component la référence par `ResourceId`, jamais en ligne (ADR-0016 amendé).
+
+La couche `src/project/` résout cette référence et passe le graphe résolu à
+`behaviors.bind()` — c'est la réponse au point « qui charge et qui lie », laissé ouvert ici
+comme dans ADR-0015 et ADR-0016.
+
+**Terminologie :** la fenêtre qui édite un graphe s'appelle **`Graph`**. `Composer` est
+réservé à une éventuelle future fenêtre de composition musicale et ne désigne jamais ceci
+(`PROJECT.md` §2).
+
+Rien de ceci ne touche au mode d'exécution : pas d'`eval`, pas de `new Function`, le graphe
+reste interprété.
+
 ## Conséquences
 
 ### Positives

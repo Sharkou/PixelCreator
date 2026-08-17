@@ -98,8 +98,21 @@ architecture de Systems.
 > de rendu explicitement hors du modèle de composition.
 
 **VALIDÉ :** un `Object` ne porte **qu'un seul Component d'un type donné**. La clé de
-`object.components` reste le nom du type, comme dans Legacy — cela confirme le
-comportement historique plutôt que de le changer.
+`object.components` reste **le type**, comme dans Legacy — cela confirme le comportement
+historique plutôt que de le changer.
+
+> **Amendé par ADR-0021 (2026-08-14).** La clé reste `componentType(component)`. Ce qui est
+> précisé, c'est que ce type est une **identité**, pas nécessairement un nom lisible : pour
+> un Component livré c'est son nom de classe, qui est du code et donc stable ; pour un
+> Component qu'un créateur fabrique, c'est le `ResourceId` opaque de sa définition, et son
+> nom affiché vit dans `static label`. La formule d'origine, « le nom du type, comme dans
+> Legacy », supposait un nom lisible et ne tient plus pour ce second cas — renommer aurait
+> cassé toutes les instances.
+
+> **Complété par ADR-0018 (2026-08-14).** L'**ordre** de `object.components` est désormais
+> signifiant et persistant : c'est l'ordre d'`update`, l'ordre de `draw` à l'intérieur d'un
+> objet, et l'ordre d'affichage de l'Inspector. La forme du getter est inchangée ; c'est
+> l'ordre de ses clés qui cesse d'être un accident.
 
 Trois précisions sont ajoutées :
 

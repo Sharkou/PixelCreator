@@ -58,6 +58,39 @@ Types envisagés : `number`, `int`, `boolean`, `string`, `color`, `enum`, `range
 Attributs : `default`, `min`, `max`, `step`, `label`, `tooltip`, `unit`, `hidden`,
 `readonly`, `group`.
 
+> **Tranché par ADR-0023 (2026-08-14).** Cette liste posait deux questions avec un seul mot.
+> Elle est scindée : le Core possède **`PropertyType`** — huit membres, la forme de la
+> valeur : `number`, `int`, `boolean`, `string`, `color`, `enum`, `resource`, `array` — et
+> l'Editor en **dérive** `FieldKind`, la question du contrôle.
+>
+> `range` est **dérivé** d'un `number` borné aux deux bouts, donc aucun composant n'a besoin
+> de le déclarer. `readonly` est un repli d'affichage, pas une forme de valeur. `object` est
+> **retiré** (aucun consommateur, aucune validation, aucun sens pour la réplication),
+> `vector2` est inutile — l'Inspector apparie déjà `x`/`y` — et `action` n'est pas une
+> propriété : un bouton est une commande.
+
+## La section `Object` de l'Inspector
+
+**Consigné le 2026-08-14** — le comportement existait dans le code sans qu'aucun ADR ne le
+documente.
+
+L'Inspector rend, **au-dessus des Components**, une section `Object` intrinsèque, alimentée
+par une liste écrite à la main (`editor/inspector/schema.js`, `objectFields()`) : `name`,
+`tag`, `layer`, `active`.
+
+> **`Object` n'est pas un Component**, et `name` / `tag` ne deviennent jamais des Components
+> stockés dans `object.components` (ADR-0001, ADR-0002). Faire des Components une collection
+> ordonnée (ADR-0018) **ne touche pas** cette section : elle n'est pas dans cette collection.
+
+- `visible` et `lock` en sont absents à dessein : la ligne de Hierarchy les porte, où ils
+  sont à un clic pour tous les objets à la fois plutôt qu'un par un ;
+- `id` est absent parce qu'un créateur n'en a pas l'usage, et qu'un panneau qui s'ouvre sur
+  une chaîne aléatoire ressemble à un débogueur ;
+- l'édition passe par `Object.setProperty()`, qui produit une Operation dont la cible est
+  `{ object: id, component: null }`. **Ce `component: null` est la façon dont le format
+  exprime « propriété intrinsèque de l'Object »**, et c'est ce qui rend l'édition de `name`
+  répliquable et annulable comme le reste.
+
 ### Le repli réflexif est conservé, pas déprécié
 
 Un composant écrit par un utilisateur débutant, sans `schema`, doit continuer à

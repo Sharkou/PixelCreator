@@ -39,11 +39,27 @@ Une **définition** est ce couple, écrit comme donnée :
 
 ```json
 {
-  "type": "Controller",
+  "type": "res_c3",
+  "label": "Controller",
+  "revision": 1,
   "properties": { "speed": { "type": "number", "default": 120 } },
-  "graph": { "version": 1, "nodes": [], "connections": [] }
+  "graph": "res_d4"
 }
 ```
+
+> **Amendé le 2026-08-14.** L'exemple d'origine montrait `"type": "Controller"` et le graphe
+> **en ligne**. Deux points ouverts de cet ADR sont désormais fermés :
+>
+> - **l'identité (ADR-0021)** — `type` est le `ResourceId` de la définition, `label` est le
+>   nom affiché. L'exemple d'origine faisait de tout renommage une réécriture de toutes les
+>   scènes du projet ;
+> - **le stockage (ADR-0020)** — `graph` est le `ResourceId` d'une `GraphResource`. Un
+>   graphe est une ressource comme une autre : ouvrable seule dans la fenêtre `Graph`,
+>   stockée une seule fois, diffée séparément. Un graphe en ligne empêcherait d'ouvrir
+>   `Controller.px` sans ouvrir aussi le fichier de définition, et ferait diverger deux
+>   copies du même graphe.
+>
+> `defineComponent()` **refuse** un graphe en ligne.
 
 C'est du JSON : sauvegardable, versionnable, diffable, réplicable — comme le graphe
 lui-même (ADR-0009).
@@ -54,7 +70,7 @@ lui-même (ADR-0009).
 
 ```js
 const Controller = components.register(defineComponent(definition));
-behaviors.bind(Controller);        // le graphe vient de la définition
+behaviors.bind(Controller, graph); // le graphe, résolu par la couche Project (ADR-0020)
 ```
 
 Elle entre dans le `ComponentRegistry`, s'attache par `addComponent()`, s'affiche dans
@@ -110,13 +126,14 @@ imprévisible.
 
 ## Ce que cet ADR ne décide pas
 
-| Point ouvert | Où il sera tranché |
+| Point ouvert | Où il a été / sera tranché |
 |---|---|
-| Le format de fichier et le stockage d'une définition (une ressource) | avec `Resource` et le chargement de projet |
-| Qui charge les définitions et appelle `register` / `bind` | idem |
-| Ce que deviennent les instances existantes quand une définition change (migration, valeurs par défaut ajoutées) | avec l'Editor |
+| ~~Le format de fichier et le stockage d'une définition (une ressource)~~ | **fermé : ADR-0020** — une définition est une `Resource` de `kind: 'component'`, son graphe une `Resource` de `kind: 'graph'` référencée par `ResourceId` |
+| ~~Qui charge les définitions et appelle `register` / `bind`~~ | **fermé : ADR-0020** — la couche `src/project/` (`loadComponentDefinitions`). Elle résout le graphe et passe la **valeur** à `behaviors.bind()` ; le Runtime ne lit jamais le stockage |
+| ~~Ce que deviennent les instances existantes quand une définition change~~ | **fermé : ADR-0021** — réconciliation structurelle au chargement (S1) : clé inconnue jetée, clé manquante remplie par son défaut. Aucun script de migration |
 | Le modèle de graphe, ses `variables` et son interprète | ADR-0009, ADR-0015 |
-| L'interface d'édition du graphe | Editor |
+| L'interface d'édition du graphe | Editor — la fenêtre **`Graph`**, jamais « Composer » (`PROJECT.md` §2) |
+| Le sort d'une définition **supprimée** alors que des instances l'utilisent | **fermé : ADR-0021** — `MissingComponent`, qui préserve type, valeurs et rang |
 
 ---
 
