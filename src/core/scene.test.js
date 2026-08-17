@@ -141,6 +141,51 @@ test('reparenting announces the departure before the arrival', () => {
     assert.deepEqual(seen, ['-First', '+Second']);
 });
 
+test('a structural event never announces a tree that is half moved', () => {
+    // A reparent unlinks and then links. A listener that rebuilt on the first half used to
+    // read a scene where the object belonged to nothing — not under a parent, not among
+    // the roots — and nothing came afterwards to correct it. The Hierarchy drew a tree
+    // with the object missing, which is how undoing a drop appeared to delete it.
+    const scene = new Scene('Main');
+    const parent = scene.add(new Object('Parent'));
+    const child = scene.add(new Object('Child'));
+    parent.addChild(child);
+
+    const shapes = [];
+    const record = () => shapes.push({
+        roots: scene.roots().map(object => object.name),
+        parent: child.parent?.name ?? null
+    });
+    for (const event of ['child:added', 'child:removed', 'roots:reordered']) scene.on(event, record);
+
+    scene.reparent(child, null, 0);
+
+    assert.ok(shapes.length > 0, 'the move was announced');
+    for (const shape of shapes) {
+        assert.deepEqual(shape.roots, ['Child', 'Parent']);
+        assert.equal(shape.parent, null);
+    }
+});
+
+test('a reparent into another branch is announced once the object is in it', () => {
+    const scene = new Scene('Main');
+    const first = scene.add(new Object('First'));
+    const second = scene.add(new Object('Second'));
+    const child = scene.add(new Object('Child'));
+    first.addChild(child);
+
+    const seen = [];
+    scene.on('child:removed', () => seen.push({ event: 'removed', parent: child.parent?.name ?? null }));
+    scene.on('child:added', () => seen.push({ event: 'added', parent: child.parent?.name ?? null }));
+
+    scene.reparent(child, second, 0);
+
+    assert.deepEqual(seen, [
+        { event: 'removed', parent: 'Second' },
+        { event: 'added', parent: 'Second' }
+    ]);
+});
+
 test('removing an object announces the subtree it takes with it', () => {
     const scene = new Scene('Main');
     const parent = scene.add(new Object('Parent'));

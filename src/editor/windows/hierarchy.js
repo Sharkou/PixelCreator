@@ -59,7 +59,8 @@ import { sheet } from '../ui/styles.js';
 import { icon, iconForObject } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import { searchField } from '../ui/search-field.js';
-import { createMenuItems, createObject, deleteObject } from '../commands.js';
+import { createMenuItems, createObject, deleteObject, reparentObject } from '../commands.js';
+import { DropPosition, canDrop, dropPositionAt, dropTarget } from './drop.js';
 import { visibleObjects } from './search.js';
 import '../ui/window.js';
 
@@ -72,6 +73,9 @@ import '../ui/window.js';
  * 400 is the compromise every file explorer lands on, and the reason F2 exists next to it.
  */
 const RENAME_DELAY = 400;
+
+/** How far a pointer travels before a press on a row becomes a drag, in CSS pixels. */
+const DRAG_THRESHOLD = 4;
 
 export class Hierarchy extends Element {
 
@@ -168,6 +172,34 @@ export class Hierarchy extends Element {
         .row .actions .ghost.on:hover { background: var(--px-surface-hover); }
         .row .actions .remove:hover { color: var(--px-danger); }
 
+        /* ── dragging ───────────────────────────────────────────────────── */
+
+        /* The row being carried stays in place and goes quiet: a list that reflows under
+           the pointer is a list you cannot aim at. */
+        .row.dragging { opacity: 0.4; }
+
+        /* Nesting tints the whole row, reordering draws a line at the edge it will land
+           on. Two different answers, two different marks — an indicator that looked the
+           same for both would make "into" and "after" a guess. */
+        .row.into { box-shadow: inset 0 0 0 1px var(--px-accent); border-radius: var(--px-radius-sm); }
+
+        .row.before::after,
+        .row.after::after {
+            content: '';
+            position: absolute;
+            left: calc(var(--px-space-1) + var(--depth) * var(--indent));
+            right: var(--px-space-1);
+            height: 2px;
+            background: var(--px-accent);
+            pointer-events: none;
+        }
+
+        .row.before::after { top: -1px; }
+        .row.after::after { bottom: -1px; }
+
+        /* Dropping past the last row appends to the top level, and says so. */
+        .tree.append { box-shadow: inset 0 -2px 0 var(--px-accent); }
+
         .empty {
             padding: var(--px-space-4) var(--px-space-3);
             color: var(--px-text-dim);
@@ -190,6 +222,9 @@ export class Hierarchy extends Element {
     #tree = null;
     #search = null;
     #rename = null;
+    // The press that may become a drag, then the drag itself. One field, because a row is
+    // either being pressed or being carried, never both.
+    #drag = null;
 
     /**
      * Point the window at the scene it lists.
@@ -209,7 +244,14 @@ export class Hierarchy extends Element {
     connectedCallback() {
         if (this.shadowRoot.childElementCount === 0) this.#build();
 
-        for (const event of ['added', 'removed', 'child:added', 'child:removed', 'component:added', 'component:removed']) {
+        const structural = [
+            'added', 'removed',
+            'child:added', 'child:removed',
+            'component:added', 'component:removed',
+            // A root that changed rank changes this tree and nothing else's (ADR-0018).
+            'roots:reordered'
+        ];
+        for (const event of structural) {
             this.track(this.#scene.on(event, () => this.#renderTree()));
         }
         this.track(this.#selection.observe(() => {
@@ -266,6 +308,9 @@ export class Hierarchy extends Element {
 
     #renderTree() {
         this.#cancelRename();
+        // A tree that changed shape underneath a drag — a collaborator's operation, an
+        // undo — invalidates every rank the drag was aiming at.
+        this.#cancelDrag();
 
         const roots = this.#scene.roots();
         const visible = visibleObjects(roots, this.#query);
@@ -375,11 +420,15 @@ export class Hierarchy extends Element {
         const row = el('div', {
             class: 'row line',
             dataset: { id: object.id },
-            onpointerdown: () => {
+            onpointerdown: event => {
                 this.#cancelRename();
                 wasSelected = this.#selection.has(object);
                 this.#selection.set(object);
+                this.#armDrag(event, object, row);
             },
+            onpointermove: event => this.#dragMove(event),
+            onpointerup: event => this.#dragDrop(event),
+            onpointercancel: () => this.#cancelDrag(),
             ondblclick: () => {
                 // Cancels the pending rename the first click of this very double-click
                 // armed, then does what a double-click means everywhere on the row.
@@ -551,6 +600,124 @@ export class Hierarchy extends Element {
         if (this.#selection.has(object)) this.#selection.clear();
         deleteObject(this.#scene, object);
     }
+
+    // --- dragging a row -----------------------------------------------------------
+    //
+    // A drop is `REPARENT { parent, index }` and nothing else: reordering, nesting and
+    // unnesting are the same mutation, so they are the same operation (ADR-0019). The
+    // geometry — which row, which third of it, what rank that is — lives in drop.js and is
+    // tested there; what is left here is the pointer, the indicator, and the submit.
+    //
+    // Pointer events with capture, like the toolbar's drag and the splitter's: the row
+    // keeps receiving moves even when the pointer leaves it, which is the whole point,
+    // and the rows under it are found by their boxes rather than by hit testing through a
+    // shadow root.
+
+    #armDrag(event, object, row) {
+        if (event.button > 0) return;
+        if (this.#query.trim() !== '') return;      // the tree is filtered, so ranks are not what they look like
+        if (row.querySelector('.name.editing')) return;
+
+        this.#drag = {
+            object,
+            row,
+            pointerId: event.pointerId,
+            from: { x: event.clientX, y: event.clientY },
+            started: false,
+            drop: null
+        };
+    }
+
+    #dragMove(event) {
+        const drag = this.#drag;
+        if (!drag || event.pointerId !== drag.pointerId) return;
+
+        if (!drag.started) {
+            const travelled = Math.hypot(event.clientX - drag.from.x, event.clientY - drag.from.y);
+            if (travelled < DRAG_THRESHOLD) return;
+
+            drag.started = true;
+            capture(drag.row, drag.pointerId);
+            drag.row.classList.add('dragging');
+        }
+
+        // Selecting text while carrying a row is never what was meant.
+        event.preventDefault();
+        this.#markDrop(this.#resolveDrop(event.clientY));
+    }
+
+    #dragDrop(event) {
+        const drag = this.#drag;
+        if (!drag || event.pointerId !== drag.pointerId) return;
+
+        const drop = drag.started ? this.#resolveDrop(event.clientY) : null;
+        const object = drag.object;
+        this.#cancelDrag();
+
+        if (!drop) return;
+
+        reparentObject(this.#scene, object, drop.parent, drop.index, {
+            // A parent that shears cannot hold the object's world placement in a
+            // position/rotation/scale triple. The system says so instead of deforming it
+            // quietly (ADR-0012, ADR-0022).
+            onReport: report => console.warn(`[editor] ${report.message}`)
+        });
+    }
+
+    #cancelDrag() {
+        const drag = this.#drag;
+        this.#drag = null;
+        if (!drag) return;
+
+        if (drag.started) {
+            release(drag.row, drag.pointerId);
+            drag.row.classList.remove('dragging');
+        }
+        this.#markDrop(null);
+    }
+
+    /**
+     * What the pointer is currently over, as a drop.
+     * @param {number} clientY - The pointer's vertical position
+     * @returns {object|null} `{ parent, index, target, position }`, or null when refused
+     */
+    #resolveDrop(clientY) {
+        const drag = this.#drag;
+        if (!drag) return null;
+
+        const entry = this.#rowAt(clientY);
+        // Past the last row: the empty space below the tree is the top level, which is the
+        // only way to unnest an object with a single gesture.
+        const target = entry?.object ?? null;
+        const position = entry
+            ? dropPositionAt(clientY, entry.row.getBoundingClientRect())
+            : DropPosition.INTO;
+
+        if (!canDrop(drag.object, target)) return null;
+
+        const drop = dropTarget(this.#scene, drag.object, target, position);
+        return drop ? { ...drop, target, position } : null;
+    }
+
+    /** The row whose box holds a vertical position, or null. */
+    #rowAt(clientY) {
+        for (const entry of this.#rows.values()) {
+            const box = entry.row.getBoundingClientRect();
+            if (clientY >= box.top && clientY < box.bottom) return entry;
+        }
+        return null;
+    }
+
+    /** Draw where the drop would land, and nowhere else. */
+    #markDrop(drop) {
+        for (const { row } of this.#rows.values()) {
+            row.classList.remove('before', 'after', 'into');
+        }
+        this.#tree?.classList.toggle('append', Boolean(drop) && drop.target === null);
+
+        if (!drop || !drop.target) return;
+        this.#rows.get(drop.target.id)?.row.classList.add(drop.position);
+    }
 }
 
 /**
@@ -573,3 +740,30 @@ function reconcile(parent, nodes) {
 }
 
 customElements.define('px-hierarchy', Hierarchy);
+
+/**
+ * Take pointer capture, tolerating a pointer that is already gone.
+ *
+ * Capture is a convenience: it keeps the moves coming when the pointer leaves the element
+ * it started on. It is not what makes the gesture work, so a pointer the platform no
+ * longer knows about must not throw its way out of the handler and abandon the drop.
+ *
+ * @param {HTMLElement} element - The element to capture on
+ * @param {number} pointerId - The pointer
+ */
+function capture(element, pointerId) {
+    try {
+        element.setPointerCapture(pointerId);
+    } catch {
+        // Nothing to capture. The drag still resolves from the events it does receive.
+    }
+}
+
+/**
+ * Give pointer capture back, if it was ever taken.
+ * @param {HTMLElement} element - The element that captured
+ * @param {number} pointerId - The pointer
+ */
+function release(element, pointerId) {
+    if (element.hasPointerCapture?.(pointerId)) element.releasePointerCapture(pointerId);
+}

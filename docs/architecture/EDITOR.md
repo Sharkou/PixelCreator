@@ -212,26 +212,58 @@ pour tous les objets à la fois ; les répéter ferait deux contrôles pour une 
 L'`id` technique n'est affiché nulle part. Un Component n'expose qu'`active` : le modèle n'a
 pas de `visible` par Component, et en inventer un afficherait un contrôle sans effet.
 
-### Réordonnancement — bloqué sur le Core, pas sur l'Editor
+### Réordonnancement et reparentage — IMPLÉMENTÉ (2026-08-17)
 
-Ni les Objects ni les Components ne peuvent être réordonnés, et **ce n'est pas une lacune
-d'interface** :
+L'ordre est un état du modèle : il se sérialise, se réplique et s'annule (ADR-0018). Le
+Core l'expose depuis la passe précédente ; l'Editor le manipule depuis celle-ci.
 
-- `object.components` est une `Map` ; le getter en prend un instantané dans l'ordre
-  d'insertion. `addComponent()` ajoute à la fin, `removeComponent()` retire.
-- `object.children` est un tableau ; `addChild()` fait un `push`, `removeChild()` un
-  `splice`. Aucune insertion à un index.
-- `scene.roots()` dérive de `scene.objects()`, l'ordre d'insertion de la `Map` d'objets.
+| Geste | Ce qui part | Où |
+|---|---|---|
+| Glisser une ligne **entre** deux lignes | `REPARENT { parent, index }` | Hierarchy |
+| Glisser une ligne **sur** une ligne | `REPARENT` vers ce parent, en fin de liste | Hierarchy |
+| Glisser sous la dernière ligne | `REPARENT { parent: null }` — la seule façon de désimbriquer en un geste | Hierarchy |
+| Glisser l'en-tête d'un Component | `MOVE_COMPONENT { index, previousIndex }` | Inspector |
 
-Il n'existe donc **aucun index à écrire**. Le seul contournement possible — retirer puis
-rattacher — replace toujours l'élément en dernier, et pour un Component il **détruit ses
-valeurs** : vérifié dans le navigateur, un `Transform` retiré puis remis revient en
-`Position 0, 0`. Un réordonnancement simulé côté Editor serait donc une représentation
-fausse, et pour les racines d'une scène il est de toute façon impossible.
+Un dépôt de Hierarchy est **un lot** : le `REPARENT` plus les cinq `SET_PROPERTY` qui
+conservent le placement monde (ADR-0022). Un `Ctrl Z` le reprend en entier.
 
-Ce qui manque est une **API d'ordre dans le Core**, avec les Operations structurelles
-correspondantes (ADR-0008) — l'ordre est un état du modèle : il se sérialise, se réplique
-et s'annule. Décision utilisateur requise avant toute ligne de `src/core`.
+**La géométrie du dépôt est un module à part, `editor/windows/drop.js`, et il est pur.**
+Rectangles et scène en entrée, `{ parent, index }` en sortie : la règle qui décide entre
+« dans » et « après » se teste sous Node au lieu de se découvrir en traînant des lignes.
+C'est là aussi que vit la seule subtilité : le rang affiché compte l'objet lui-même, alors
+que les primitives du Core retirent avant d'insérer — un déplacement vers le bas dans une
+même collection tombe donc une place trop loin sans `insertionIndex()`.
+
+Deux marques différentes, parce que ce sont deux réponses différentes : une ligne d'accent
+au bord pour « entre », un contour pour « dans ». Le tiers central d'une ligne imbrique, le
+tiers haut et le tiers bas insèrent — l'imbrication a la plus grosse zone parce que c'est
+elle qui coûte le plus cher à rater.
+
+L'ancien contournement « retirer puis rattacher » est définitivement écarté : pour un
+Component il **détruit ses valeurs** (mesuré : un `Transform` revenait à `0, 0`). Un
+`MOVE_COMPONENT` est un splice sur la collection ordonnée — rien n'est détaché, aucune
+valeur n'est touchée.
+
+### Le projet, les ressources et ce qui est ouvert — IMPLÉMENTÉ (2026-08-17)
+
+`Workspace` (`editor/project/workspace.js`) tient le `Project` de la couche `project/`, la
+ressource ouverte et les piles d'annulation. C'est **l'`OpenEditor` d'ADR-0020**, jamais
+sérialisé dans le projet.
+
+- La scène de démarrage est déclarée comme `Resource` de `kind: 'scene'`, donc listée,
+  renommable et enregistrable comme n'importe quelle autre.
+- « Il y a du travail non enregistré » est **dérivé** de l'événement `'operation'` du
+  pipeline, jamais un drapeau posé à la main. Une écriture simple ne le déclenche pas — ce
+  n'est pas une intention (ADR-0003) — et une opération répliquée non plus.
+- `Ctrl S` écrit la scène dans le `ResourceStore` (en mémoire pour l'instant : passer à
+  IndexedDB est un échange d'implémentation, pas une réécriture d'appelants).
+- Deux piles distinctes : celle de la scène et celle du manifeste. `Ctrl Z` dans le panneau
+  Project reprend un renommage de ressource, pas une édition de scène (ADR-0024).
+
+`<px-project>` liste le manifeste — groupé par `kind`, renommage sur double-clic,
+suppression par ligne — et **rien d'autre** : pas de grille de vignettes, pas de payload
+préchargé. La ressource ouverte ne peut pas être supprimée depuis la liste tant que fermer
+un éditeur n'existe pas.
 
 ### Le renommage attend, et c'est la seule chose qui attend
 
@@ -275,10 +307,12 @@ où elle disparaît réellement.
 
 ### Ce qui n'est pas encore là
 
-Play / Pause · barre de commandes `Ctrl K` · Resources et Assets réels · Timeline
-fonctionnelle · Console · Graph · Players · undo/redo · sélection multiple · reparentage
-par glisser-déposer · rotation à la poignée · détachement de fenêtre · Operations
-structurelles.
+Play / Pause · barre de commandes `Ctrl K` · Assets réels (import, vignettes) · Timeline
+fonctionnelle · Console · Graph · Players · sélection multiple · rotation à la poignée ·
+détachement de fenêtre · ouverture d'une seconde scène depuis le panneau Project.
+
+Faits depuis : undo/redo (ADR-0024), Operations structurelles (ADR-0019), reparentage et
+réordonnancement par glisser-déposer, liste de ressources réelle et enregistrement.
 
 Le titlebar ne porte **ni transport ni barre de commandes**, bien que la maquette dessine
 les deux : Play demande l'instantané de scène restauré à l'arrêt, `Ctrl K` demande un

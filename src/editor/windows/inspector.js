@@ -36,11 +36,15 @@ import { sheet } from '../ui/styles.js';
 import { icon, iconForComponent, iconForObject } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import { searchField } from '../ui/search-field.js';
-import { addComponent, availableComponents, removeComponent } from '../commands.js';
+import { addComponent, availableComponents, moveComponent, removeComponent } from '../commands.js';
+import { DropPosition, dropPositionAt, insertionIndex } from './drop.js';
 import { describeType, groupTypes } from '../registry.js';
 import { FieldKind, describeComponent, isNumeric, objectFields, rows } from '../inspector/schema.js';
 import '../ui/window.js';
 import '../ui/field.js';
+
+/** How far a pointer travels before a press on a section header becomes a reorder. */
+const DRAG_THRESHOLD = 4;
 
 /** Prefix letters for a paired row, by the property the pair starts on. */
 const PAIR_PREFIXES = {
@@ -95,10 +99,11 @@ export class Inspector extends Element {
            label, tools. --px-hit tall because it is a click target rather than a line of
            a list, and padded by one space unit so the chevron starts at the panel edge
            exactly where a root row's chevron does — measured, not eyeballed.
-           The 12 px grip that used to sit before the caret is gone: it reserved room
-           for a drag handle that does not exist (component order is a Core capability the
-           model does not expose yet, see the report), and it was what pushed every caret
-           in this panel away from the edge. */
+           There is still no 12 px grip before the caret: the order IS editable now
+           (MOVE_COMPONENT, ADR-0018/0019), and the whole header is what carries it, so a
+           separate handle would reserve a column to duplicate a target the creator
+           already has — and it was what pushed every caret in this panel away from the
+           edge. The cursor and the drop line say the header is draggable. */
         section > header {
             display: flex;
             align-items: center;
@@ -135,6 +140,31 @@ export class Inspector extends Element {
 
         .body { padding: var(--px-space-0) var(--px-space-2) var(--px-space-2); }
         section:not(.open) .body { display: none; }
+
+        /* ── reordering ─────────────────────────────────────────────────── */
+
+        /* The order of these sections is the order the runtime updates in and the
+           renderer draws in (ADR-0018), so it is edited here, by dragging a header. */
+        section[data-type] > header { cursor: grab; }
+        section.dragging { opacity: 0.4; }
+        section.dragging > header { cursor: grabbing; }
+
+        section[data-type] { position: relative; }
+
+        section.before::after,
+        section.after::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--px-accent);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        section.before::after { top: -1px; }
+        section.after::after { bottom: -1px; }
 
         section.off .body { opacity: 0.45; }
         section.off > header .label { color: var(--px-text-dim); }
@@ -255,6 +285,11 @@ export class Inspector extends Element {
     // section name so it survives selecting another object of the same shape.
     #folded = new globalThis.Set();
 
+    /** The press on a section header that may become a reorder. */
+    #drag = null;
+    /** Set for exactly one click: the one that ends a drag and must not also fold. */
+    #dragged = false;
+
     /**
      * Point the window at the selection it follows.
      * @param {object} context - Editor context
@@ -312,7 +347,7 @@ export class Inspector extends Element {
 
         // A component appearing or disappearing changes what there is to show — and it
         // can come from anywhere, not only from the button below.
-        for (const event of ['component:added', 'component:removed']) {
+        for (const event of ['component:added', 'component:removed', 'component:moved']) {
             this.track(this.#scene.on(event, payload => {
                 if (this.#selection.has(payload.object)) this.#render();
             }));
@@ -466,7 +501,137 @@ export class Inspector extends Element {
         }, icon('close', 16));
 
         section.querySelector('.tools').append(toggle, remove);
+        this.#makeReorderable(section, object, type);
         return section;
+    }
+
+    // --- reordering components ----------------------------------------------------
+    //
+    // THE ORDER IS THE MODEL'S, AND IT IS EDITABLE HERE BECAUSE IT MEANS SOMETHING: it is
+    // the order the Runtime calls `update()` in, the order the renderer calls `draw()` in
+    // — so which of two renderers lands on top — and the order this panel reads in. One
+    // order, persisted, undoable (ADR-0018).
+    //
+    // A drag submits ONE `MOVE_COMPONENT`: nothing is detached and no value is touched,
+    // which is the difference between reordering and "remove, then add again" — a gesture
+    // that loses both the values and the rank (ADR-0019).
+    //
+    // The whole header is the handle. There is no separate grip: it would reserve a column
+    // in every row of the panel to duplicate a target the creator already has under the
+    // pointer.
+
+    #makeReorderable(section, object, type) {
+        section.dataset.type = type;
+        const header = section.querySelector('header');
+
+        header.addEventListener('pointerdown', event => this.#armDrag(event, object, type, section));
+        header.addEventListener('pointermove', event => this.#dragMove(event));
+        header.addEventListener('pointerup', event => this.#dragDrop(event));
+        header.addEventListener('pointercancel', () => this.#cancelDrag());
+    }
+
+    #armDrag(event, object, type, section) {
+        if (event.button > 0) return;
+        // A filtered panel shows a subset, so the ranks on screen are not the model's.
+        if (this.#query.trim() !== '') return;
+        // The tools are buttons; a press on one is not the start of a move.
+        if (event.target.closest('.tools')) return;
+
+        this.#drag = {
+            object,
+            type,
+            section,
+            header: event.currentTarget,
+            pointerId: event.pointerId,
+            from: event.clientY,
+            started: false
+        };
+    }
+
+    #dragMove(event) {
+        const drag = this.#drag;
+        if (!drag || event.pointerId !== drag.pointerId) return;
+
+        if (!drag.started) {
+            if (Math.abs(event.clientY - drag.from) < DRAG_THRESHOLD) return;
+            drag.started = true;
+            capture(drag.header, drag.pointerId);
+            drag.section.classList.add('dragging');
+        }
+
+        event.preventDefault();
+        this.#markDrop(this.#resolveDrop(event.clientY));
+    }
+
+    #dragDrop(event) {
+        const drag = this.#drag;
+        if (!drag || event.pointerId !== drag.pointerId) return;
+
+        const drop = drag.started ? this.#resolveDrop(event.clientY) : null;
+        const { object, type } = drag;
+        this.#dragged = drag.started;
+        this.#cancelDrag();
+
+        if (drop) moveComponent(object, type, drop.index);
+    }
+
+    #cancelDrag() {
+        const drag = this.#drag;
+        this.#drag = null;
+        if (!drag) return;
+
+        if (drag.started) {
+            release(drag.header, drag.pointerId);
+            drag.section.classList.remove('dragging');
+        }
+        this.#markDrop(null);
+    }
+
+    /**
+     * The rank the pointer is currently over.
+     * @param {number} clientY - The pointer's vertical position
+     * @returns {{index: number, section: HTMLElement, position: string}|null} The drop
+     */
+    #resolveDrop(clientY) {
+        const drag = this.#drag;
+        if (!drag) return null;
+
+        const types = drag.object.componentTypes();
+        const current = types.indexOf(drag.type);
+
+        const sections = [...this.#body.querySelectorAll('section[data-type]')];
+        const over = sections.find(section => {
+            const box = section.getBoundingClientRect();
+            return clientY >= box.top && clientY < box.bottom;
+        });
+
+        // Past the last section: the end of the collection, which is how a component is
+        // sent behind everything that draws.
+        if (!over) {
+            const last = sections.at(-1);
+            if (!last || clientY < last.getBoundingClientRect().bottom) return null;
+            const index = insertionIndex(current, types.length);
+            return index === current ? null : { index, section: last, position: DropPosition.AFTER };
+        }
+
+        if (over === drag.section) return null;
+
+        // A section is a header and a body, so its middle is not a nesting zone: there is
+        // nothing to nest a component into. Before or after, and nothing else.
+        const position = dropPositionAt(clientY, over.getBoundingClientRect(), { canNest: false });
+        const rank = types.indexOf(over.dataset.type);
+        if (rank === -1) return null;
+
+        const index = insertionIndex(current, position === DropPosition.AFTER ? rank + 1 : rank);
+        return index === current ? null : { index, section: over, position };
+    }
+
+    /** Draw the line where the component would land, and nowhere else. */
+    #markDrop(drop) {
+        for (const section of this.#body?.querySelectorAll('section[data-type]') ?? []) {
+            section.classList.remove('before', 'after');
+        }
+        if (drop) drop.section.classList.add(drop.position);
     }
 
     /**
@@ -519,6 +684,12 @@ export class Inspector extends Element {
         const header = el('header', {
             title: 'Click to fold',
             onclick: () => {
+                // The click that ends a drag is still a click. Folding the section a
+                // creator has just moved would be the one thing they did not ask for.
+                if (this.#dragged) {
+                    this.#dragged = false;
+                    return;
+                }
                 if (this.#folded.has(key)) this.#folded.delete(key);
                 else this.#folded.add(key);
                 const shown = !this.#folded.has(key);
@@ -618,3 +789,30 @@ function humanise(name) {
 }
 
 customElements.define('px-inspector', Inspector);
+
+/**
+ * Take pointer capture, tolerating a pointer that is already gone.
+ *
+ * Capture is a convenience: it keeps the moves coming when the pointer leaves the element
+ * it started on. It is not what makes the gesture work, so a pointer the platform no
+ * longer knows about must not throw its way out of the handler and abandon the drop.
+ *
+ * @param {HTMLElement} element - The element to capture on
+ * @param {number} pointerId - The pointer
+ */
+function capture(element, pointerId) {
+    try {
+        element.setPointerCapture(pointerId);
+    } catch {
+        // Nothing to capture. The drag still resolves from the events it does receive.
+    }
+}
+
+/**
+ * Give pointer capture back, if it was ever taken.
+ * @param {HTMLElement} element - The element that captured
+ * @param {number} pointerId - The pointer
+ */
+function release(element, pointerId) {
+    if (element.hasPointerCapture?.(pointerId)) element.releasePointerCapture(pointerId);
+}

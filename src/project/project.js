@@ -269,7 +269,13 @@ export class Project {
         }
 
         const project = new Project(data.name ?? '', { id: data.id, store, authority });
-        for (const resource of data.resources ?? []) project.add(resource);
+        // Declared, not added: rebuilding a manifest is construction, not an intent. Going
+        // through `add()` would submit an ADD_RESOURCE per entry — numbering operations
+        // nobody authored — and, because that operation carries a payload, it would write
+        // `null` over the payload the store already holds. Opening a project reads the
+        // manifest and NOTHING else (ADR-0020); the Scene rebuilds the same way, through
+        // `scene.add()` rather than through its pipeline.
+        for (const resource of data.resources ?? []) project.#declare(resource);
         return project;
     }
 
@@ -277,8 +283,7 @@ export class Project {
         this.#operations.register(OperationType.ADD_RESOURCE, operation => {
             if (this.#resources.has(operation.resource.id)) return false;
 
-            const entry = makeReactive({ ...operation.resource });
-            this.#insert(entry, operation.index);
+            const entry = this.#declare(operation.resource, operation.index);
             this.#store.write(snapshot(entry), operation.payload);
             return true;
         }, { resolveTarget: false });
@@ -291,6 +296,18 @@ export class Project {
             this.#store.delete(id);
             return true;
         }, { resolveTarget: false });
+    }
+
+    /**
+     * Put an entry in the manifest, storage untouched.
+     * @param {object} resource - The manifest entry, as plain data
+     * @param {number} [index] - Rank in the manifest
+     * @returns {object} The reactive entry the project now holds
+     */
+    #declare(resource, index) {
+        const entry = makeReactive({ ...resource });
+        this.#insert(entry, index);
+        return entry;
     }
 
     #insert(entry, index) {

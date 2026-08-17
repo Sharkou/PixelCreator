@@ -67,6 +67,23 @@ export const profiles = [
             { from: 'engine', to: 'editor' },
             { from: 'engine', to: 'plugins' }
         ],
+        // Two modules Legacy imports and the repository has never held. They are the
+        // reason `Network` cannot be loaded from a clean checkout at all, and they are
+        // declared here rather than fixed: legacy/ is read-only (docs/PROJECT.md §7).
+        knownMissing: [
+            {
+                file: 'src/network/room.js',
+                specifier: '/src/db/firebase.js',
+                reason: 'Vendored Firebase wrapper, never committed. Loading room.js throws.',
+                ref: 'docs/migration/LEGACY_ANALYSIS.md'
+            },
+            {
+                file: 'src/network/socket.js',
+                specifier: '/src/lib/simplepeer.js',
+                reason: 'Vendored SimplePeer build, never committed. Loading socket.js throws.',
+                ref: 'docs/migration/LEGACY_ANALYSIS.md'
+            }
+        ],
         knownViolations: [
             {
                 file: 'src/core/renderer.js',

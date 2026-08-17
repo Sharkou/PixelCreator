@@ -204,6 +204,28 @@ test('a manifest round-trips', () => {
     assert.throws(() => Project.deserialize({ format: 99 }), /unsupported manifest format/);
 });
 
+test('reopening a manifest declares its entries without touching the payloads', () => {
+    // Rebuilding is construction, not an intent: it must submit nothing, and above all it
+    // must not write over what the store already holds. Going through add() did both, and
+    // wiped every payload of a project reopened from a shared store (ADR-0020).
+    const store = new MemoryResourceStore();
+    const project = new Project('Game', { store });
+    const graph = project.add({ kind: ResourceKind.GRAPH, name: 'Controller' }, { nodes: ['a'] });
+
+    const reopened = Project.deserialize(project.serialize(), { store });
+    const emitted = [];
+    reopened.operations.on('operation', operation => emitted.push(operation));
+
+    assert.deepEqual(reopened.read(graph.id), { nodes: ['a'] });
+    assert.deepEqual(emitted, []);
+
+    // And the pipeline still numbers the first real intent 1, because none was consumed.
+    const added = reopened.add({ kind: ResourceKind.SCENE, name: 'Level 1' });
+    assert.equal(emitted.length, 1);
+    assert.equal(emitted[0].seq, 1);
+    assert.equal(reopened.get(added.id).name, 'Level 1');
+});
+
 test('the project holds no editor state', () => {
     // `Document` does not exist, and neither does an open-tab list. What a tab designates
     // is an OpenEditor, and it is never serialized here (ADR-0020).

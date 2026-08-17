@@ -150,7 +150,7 @@ prévisible. Deux corrections :
 - Une erreur dans un écouteur interrompt aujourd'hui la boucle `for` et prive les
   écouteurs suivants de l'événement. En v2, les erreurs sont isolées par écouteur.
 
-### Les cinq événements de structure de la Scene — IMPLÉMENTÉ
+### Les événements de structure de la Scene — IMPLÉMENTÉ
 
 Une écriture de propriété s'observe sur l'objet qui la porte (`object.observe`). Un
 changement de **forme** n'est pas une propriété : il n'a pas de nom de champ auquel
@@ -159,12 +159,17 @@ s'abonner. La `Scene` l'annonce donc, et c'est la liste complète :
 | Événement | Charge utile |
 |---|---|
 | `added` / `removed` | l'objet |
-| `component:added` / `component:removed` | `{ object, component, type }` |
-| `child:added` / `child:removed` | `{ parent, child }` |
+| `component:added` / `component:removed` | `{ object, component, type, index }` |
+| `component:moved` | `{ object, type, index, previousIndex }` |
+| `child:added` / `child:removed` | `{ parent, child, index }` |
+| `roots:reordered` | `{ object, index, previousIndex }` |
 
 ```js
 scene.on('component:added', ({ object, type }) => …);   // renvoie un désabonnement
 ```
+
+Les deux derniers sont arrivés avec l'ordre structurel (ADR-0018) : un rang qui change
+n'ajoute ni ne retire rien, donc aucun des événements existants ne le disait.
 
 Mécanique : en rejoignant une scène, un objet reçoit d'elle la fonction par laquelle
 émettre (`attachToScene(object, scene, notify)`). L'objet n'importe donc pas `Scene`, et
@@ -174,6 +179,21 @@ rien — il n'y a personne pour l'écouter.
 **Ce n'est pas un bus de mutations.** La liste est fermée et ne couvre que ce qu'une
 propriété ne peut pas exprimer. Elle existe pour que l'Editor n'ait pas à pousser ses
 vues depuis le code qui écrit — l'inversion exigée par `EDITOR.md`.
+
+#### Un événement n'annonce jamais un arbre à moitié déplacé — CORRIGÉ 2026-08-17
+
+`Scene.reparent()` délie puis relie. Les notifications de la première moitié étaient
+émises **pendant** le remaniement : un écouteur qui reconstruit sur `child:removed` —
+c'est exactement ce que fait la Hierarchy — lisait une scène où l'objet n'appartenait
+plus à rien, ni à un parent ni aux racines, et dessinait un arbre sans lui. Aucun
+événement ne venait ensuite corriger l'affichage.
+
+Les notifications d'un remaniement sont donc **retenues et émises une fois**, quand la
+forme qu'elles décrivent est celle que la scène a vraiment. C'est ce qui faisait
+disparaître un objet de la Hierarchy quand on annulait un dépôt (`Ctrl Z`), sans que le
+modèle soit faux pour autant. Deux tests le fixent : `scene.test.js`, « a structural
+event never announces a tree that is half moved » et son pendant côté Editor dans
+`reparent.test.js`.
 
 ---
 

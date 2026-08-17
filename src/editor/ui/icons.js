@@ -52,6 +52,10 @@ const PATHS = {
         + `<path d="M6.2 2.5v11M9.8 2.5v11M2.5 6.2h11M2.5 9.8h11" ${S}/>`,
     component: `<path d="M8 1.8 13.7 5v6L8 14.2 2.3 11V5z" ${S}/><path d="M2.3 5 8 8.2 13.7 5" ${S}/>`
         + `<path d="M8 8.2v6" ${S}/>`,
+    // Two nodes and the wire between them: a `.px` graph is a behaviour, not a script.
+    graph: `<rect x="1.8" y="3" width="4.6" height="3.4" rx="0.8" ${S}/>`
+        + `<rect x="9.6" y="9.6" width="4.6" height="3.4" rx="0.8" ${S}/>`
+        + `<path d="M6.4 4.7h2.2a2 2 0 0 1 2 2v2.9" ${S}/>`,
 
     // Windows
     hierarchy: `<path d="M3 3.5h4M3 3.5v9h3M6 8h4" ${S}/><path d="M6 3.5v4.5" ${S}/>`

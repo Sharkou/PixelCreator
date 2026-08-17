@@ -59,30 +59,37 @@ Les problèmes réels sont ailleurs :
 ```
                           Pixel Creator
                                 │
-          ┌─────────────┬───────┴───────┬─────────────┐
-          │             │               │             │
-        core/        runtime/        editor/       network/
-          │             │               │             │
-      Object        clock/           windows/      protocol
-      Scene         physics/         inspector/    transport
-      Component     animation/       viewport/     replication
-      properties    rendering/       graph/        authority
-      operations    input/           ui/
-      resources     scripting/
-      events        loop
-      logger
+      ┌───────────┬─────────────┼─────────────┬─────────────┐
+      │           │             │             │             │
+    core/     project/      runtime/       editor/      network/
+      │           │             │             │             │
+  Object      Resource      clock/        windows/     protocol
+  Scene       Project       physics/      inspector/   transport
+  Component   Store         animation/    viewport/    replication
+  properties  loading       rendering/    graph/       authority
+  operations                input/        ui/
+  events                    scripting/
+  logger                    loop
 ```
 
 **Règle de dépendance, unique et vérifiable :**
 
 ```
+editor/  ──►  project/  ──►  core/
 editor/  ──►  runtime/  ──►  core/
 network/ ──►  core/
 core/    ──►  (rien)
 ```
 
-`core/` n'importe ni `runtime/`, ni `editor/`, ni `network/`, ni le DOM.
-Un test automatisé vérifie cette règle (voir `development/TESTING.md`).
+`core/` n'importe ni `project/`, ni `runtime/`, ni `editor/`, ni `network/`, ni le DOM.
+`project/` — identité, stockage, chargement (ADR-0020) — n'importe ni le DOM, ni
+`runtime/`, ni `editor/` : un serveur sans écran doit charger le même projet qu'un
+navigateur. `runtime/ → project/` est interdit dans l'autre sens, parce que
+`behaviors.bind(type, graph)` prend un graphe **résolu**.
+
+Un test automatisé vérifie cette règle (voir `development/TESTING.md`), et depuis
+2026-08-17 la même exécution échoue aussi sur un import statique qui ne résout vers aucun
+fichier.
 
 ### Pourquoi pas de dossier `systems/`
 
@@ -632,6 +639,11 @@ avec les composants de jeu.
 - Les Blob URL sont révoquées (fuite actuelle à chaque réimport).
 - IndexedDB (`Store`, déjà écrit et inutilisé) sert de cache local et de mode hors ligne.
 - Le hot reload par `import()` + événement `import` est conservé tel quel : il marche.
+
+**État 2026-08-17 :** `project/` existe — `Resource`, `ResourceId`, `ResourceStore`
+(implémentation mémoire), `Project` et son pipeline d'Operations, chargement des
+définitions de Components et des scènes. IndexedDB reste à brancher : c'est un échange
+d'implémentation derrière l'interface, sans effet sur les appelants.
 
 ---
 

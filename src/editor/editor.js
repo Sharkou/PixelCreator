@@ -19,7 +19,7 @@ import { Selection } from './selection.js';
 import { Layout } from './layout.js';
 import { registerBuiltIns } from './registry.js';
 import { deleteObject } from './commands.js';
-import { Histories } from './history.js';
+import { Workspace } from './project/workspace.js';
 import { fillStarterScene } from './project/starter.js';
 import { installDocumentStyles, sheet } from './ui/styles.js';
 import { el } from './ui/element.js';
@@ -93,6 +93,14 @@ const shellStyles = sheet(`
         text-overflow: ellipsis;
     }
 
+    .titlebar .unsaved {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--px-accent);
+        flex: 0 0 auto;
+    }
+
     .titlebar .sep { color: var(--px-border-subtle); }
     .titlebar .spacer { flex: 1; }
     .titlebar .toggles { display: flex; gap: var(--px-space-0); }
@@ -141,15 +149,22 @@ export function start(mount = document.body) {
     const camera = createEditorCamera();
     const layout = new Layout();
 
-    // One stack per resource (ADR-0024). Only the scene is editable today; a Graph window
-    // and the Project panel get their own by asking for theirs, not by sharing this one.
-    const histories = new Histories();
-    const history = histories.for(scene.id, scene.operations);
+    // THE SCENE IS A RESOURCE, not a loose model the shell happens to hold. Declaring it
+    // is what gives it an identity that survives storage, a payload the Project panel can
+    // list, and — because a manifest mutation is an Operation like any other — an undo
+    // stack of its own beside the scene's (ADR-0020, ADR-0024).
+    //
+    // It starts in memory. An IndexedDB store is a swap of one implementation, which is
+    // the whole reason `ResourceStore` is an interface.
+    const workspace = new Workspace();
+    workspace.create(scene, { path: 'scenes/' });
+    const histories = workspace.histories;
+    const history = workspace.history;
 
     const viewport = el('px-viewport').bind({ scene, camera, selection, onError: reportFailure });
     const hierarchy = el('px-hierarchy').bind({ scene, selection, viewport });
     const inspector = el('px-inspector').bind({ scene, selection, registry: components });
-    const project = el('px-project');
+    const project = el('px-project').bind({ workspace });
     const timeline = el('px-timeline');
 
     // The creation tools are slotted INTO the viewport, beside Frame selection and Reset
@@ -197,7 +212,7 @@ export function start(mount = document.body) {
     );
 
     const shell = el('div', { class: 'shell' },
-        titlebar(scene, layout),
+        titlebar(scene, layout, workspace),
         el('div', { class: 'workspace' }, stack, rightSplit, columnRight)
     );
 
@@ -232,9 +247,9 @@ export function start(mount = document.body) {
         if (selection.has(object)) selection.clear();
     });
 
-    bindShortcuts({ scene, selection, viewport, history });
+    bindShortcuts({ scene, selection, viewport, history, workspace });
 
-    return { scene, camera, selection, layout, viewport, history, histories };
+    return { scene, camera, selection, layout, viewport, history, histories, workspace };
 }
 
 /**
@@ -260,7 +275,7 @@ export function createEditorCamera() {
 //
 // Nor is there a Ctrl K bar: there is no command registry to search. Both are named in the
 // report rather than mocked up here.
-function titlebar(scene, layout) {
+function titlebar(scene, layout, workspace) {
     const buttons = TOGGLES.map(toggle => {
         const button = el('button', {
             class: 'ghost',
@@ -281,23 +296,45 @@ function titlebar(scene, layout) {
         return button;
     });
 
+    // The one place the shell says "there is work the store does not have". A dot, not a
+    // word: it is derived from the pipeline, so it appears the moment an intent is
+    // authored and clears on Ctrl S, with nothing to keep in step by hand.
+    const name = el('span', { class: 'scene-name', textContent: scene.name });
+    const unsaved = el('span', { class: 'unsaved', title: 'Unsaved changes', hidden: true });
+
+    if (workspace) {
+        const sync = () => {
+            unsaved.hidden = !workspace.dirty;
+        };
+        for (const event of ['dirty', 'saved', 'opened', 'closed']) workspace.on(event, sync);
+        sync();
+    }
+
     return el('div', { class: 'titlebar' },
         el('div', { class: 'mark' }),
         el('span', { class: 'product', textContent: 'Pixel Creator' }),
         el('span', { class: 'sep', textContent: '/' }),
-        el('span', { class: 'scene-name', textContent: scene.name }),
+        name,
+        unsaved,
         el('div', { class: 'spacer' }),
         el('div', { class: 'toggles' }, buttons)
     );
 }
 
-function bindShortcuts({ scene, selection, viewport, history }) {
+function bindShortcuts({ scene, selection, viewport, history, workspace }) {
     globalThis.addEventListener('keydown', event => {
         // Undo is the one shortcut that must work while a field has focus — a creator
         // mid-edit expects Ctrl Z to take back the last thing they did, and letting the
         // browser undo the input's text instead is the wrong answer.
         if (event.metaKey || event.ctrlKey) {
             const key = event.key.toLowerCase();
+            // Save is bound here and not in a window because it saves what is OPEN, which
+            // is a fact about the workspace rather than about any one panel.
+            if (key === 's') {
+                event.preventDefault();
+                workspace?.save();
+                return;
+            }
             if (key === 'z' && !event.shiftKey) {
                 if (history?.canUndo) event.preventDefault();
                 history?.undo();

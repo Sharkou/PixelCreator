@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evaluateProfile, layerOf, isForbidden } from './check.js';
-import { resolveSpecifier } from './scan.js';
+import { existsSync } from 'node:fs';
+import { dirname, resolve as resolvePath } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { classifyDangling, danglingImports, evaluateProfile, layerOf, isForbidden } from './check.js';
+import { profileRoot, resolveSpecifier, scanImports } from './scan.js';
 import { profiles } from './rules.js';
 
 /** A profile shaped like v2, used to exercise the rules without touching the tree. */
@@ -261,4 +264,60 @@ test('the legacy profile still declares its one known violation', () => {
 
     assert.equal(legacy.knownViolations.length, 1);
     assert.equal(legacy.knownViolations[0].file, 'src/core/renderer.js');
+});
+
+// --- dangling imports ------------------------------------------------------------
+
+test('an import of a file that is not there is reported', () => {
+    const present = new Set(['editor/mod.js', 'editor/windows/hierarchy.js']);
+    const edges = [
+        edge('editor/mod.js', './windows/hierarchy.js'),
+        edge('editor/mod.js', './windows/dock.js')
+    ];
+
+    const dangling = danglingImports(edges, target => present.has(target));
+
+    assert.equal(dangling.length, 1);
+    assert.equal(dangling[0].specifier, './windows/dock.js');
+});
+
+test('a bare specifier is not reported as dangling', () => {
+    const edges = [edge('core/id.js', 'node:crypto')];
+
+    assert.deepEqual(danglingImports(edges, () => false), []);
+});
+
+test('a missing import that is declared is tracked, not failed', () => {
+    const profile = {
+        ...testProfile(),
+        knownMissing: [{ file: 'core/a.js', specifier: './gone.js', reason: 'x', ref: 'y' }]
+    };
+    const edges = [edge('core/a.js', './gone.js'), edge('core/a.js', './also-gone.js')];
+
+    const { tracked, unexpected } = classifyDangling(profile, edges, () => false);
+
+    assert.equal(tracked.length, 1);
+    assert.equal(unexpected.length, 1);
+    assert.equal(unexpected[0].specifier, './also-gone.js');
+});
+
+test('every static import in the tree resolves to a file', () => {
+    const repoRoot = resolvePath(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+    for (const profile of profiles) {
+        const root = profileRoot(repoRoot, profile.root);
+        if (!existsSync(root)) continue;
+
+        const dangling = classifyDangling(
+            profile,
+            scanImports(root),
+            target => existsSync(resolvePath(root, target))
+        );
+
+        assert.deepEqual(
+            dangling.unexpected.map(({ file, specifier }) => `${file} -> ${specifier}`),
+            [],
+            `profile "${profile.name}" imports a file that does not exist`
+        );
+    }
 });

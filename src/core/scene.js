@@ -48,10 +48,24 @@ export class Scene {
     // script keeps the roots correct.
     #rearranging = false;
 
+    // The events raised in the middle of a rearrangement, held until it is finished.
+    #pending = [];
+
     // Handed to every object that joins, so a structural change can be announced by the
     // object it happened on. Bound once: it is the scene's only writable entry point
     // into its own emitter, and nothing outside holds it.
+    //
+    // AN EVENT IS NEVER ANNOUNCED WHILE THE TREE IS HALF MOVED. A reparent unlinks and
+    // then links; a listener that rebuilt on the 'child:removed' of the first half saw a
+    // scene where the object belonged to nothing — no parent yet, not in the roots yet —
+    // and drew a tree with the object missing, with no later event to correct it. So the
+    // notifications of one rearrangement are held and flushed once, when the shape they
+    // describe is the shape the scene actually has.
     #notify = (event, payload) => {
+        if (this.#rearranging) {
+            this.#pending.push([event, payload]);
+            return;
+        }
         this.#trackRoots(event, payload);
         this.#emitter.emit(event, payload);
     };
@@ -275,6 +289,10 @@ export class Scene {
             this.#rearranging = false;
         }
 
+        // Now, and not before: the object has left one collection and joined the other,
+        // so every listener reads a tree that is whole.
+        this.#flush();
+
         if (!previousParent && !target) {
             this.#emitter.emit('roots:reordered', { object: moved, index: to, previousIndex });
         }
@@ -342,6 +360,15 @@ export class Scene {
     #removeRoot(id) {
         const index = this.#roots.indexOf(id);
         if (index !== -1) this.#roots.splice(index, 1);
+    }
+
+    /** Announce what a rearrangement raised, in the order it was raised. */
+    #flush() {
+        const pending = this.#pending;
+        this.#pending = [];
+        // The root list is maintained by reparent() itself in this window, so these are
+        // announced without going through #trackRoots — which would undo its work.
+        for (const [event, payload] of pending) this.#emitter.emit(event, payload);
     }
 
     // Keeps the root list true when the tree is rearranged by anything other than

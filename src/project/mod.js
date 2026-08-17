@@ -15,3 +15,4 @@ export { ResourceKind, createResource, createResourceId, isResourceId } from './
 export { ResourceStore, MemoryResourceStore } from './store.js';
 export { Project, MANIFEST_VERSION } from './project.js';
 export { loadComponentDefinitions, bindGraph, readGraph } from './graphs.js';
+export { addScene, saveScene, loadScene, sceneResources } from './scenes.js';

@@ -37,6 +37,7 @@ export {
     uniqueName
 } from './commands.js';
 export { History, Histories } from './history.js';
+export { Workspace } from './project/workspace.js';
 export { fillStarterScene } from './project/starter.js';
 
 export {
@@ -60,6 +61,7 @@ export { SelectTool } from './viewport/tools/select-tool.js';
 export { PanTool } from './viewport/tools/pan-tool.js';
 
 export { matches, visibleObjects } from './windows/search.js';
+export { DropPosition, EDGE, canDrop, dropPositionAt, dropTarget, insertionIndex } from './windows/drop.js';
 
 export { Element, el, fill } from './ui/element.js';
 export { Window } from './ui/window.js';
@@ -72,4 +74,8 @@ export { Viewport } from './viewport/viewport.js';
 export { Hierarchy } from './windows/hierarchy.js';
 export { Inspector } from './windows/inspector.js';
 export { Toolbar } from './windows/toolbar.js';
-export { Dock } from './windows/dock.js';
+// `px-dock` was split into these two windows; the class name that says "project" is
+// taken by the project layer's own, so the window is exported under the name the tag
+// carries (CONVENTIONS.md — a module that imports ours aliases at the import).
+export { Project as ProjectWindow } from './windows/project.js';
+export { Timeline } from './windows/timeline.js';

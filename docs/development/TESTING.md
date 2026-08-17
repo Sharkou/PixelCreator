@@ -1,6 +1,28 @@
 # Tests
 
-## OBSERVÉ
+## IMPLÉMENTÉ — état au 2026-08-17
+
+```bash
+tools/test.sh              # 642 tests (node --test, zéro dépendance)
+node tools/layers/run.js   # règles de couches + imports morts
+node tools/parity/run.js   # 39 scénarios capturés depuis Legacy
+node tools/check-css-literals.js
+```
+
+Un test unitaire vit à côté du module qu'il couvre (`x.js` / `x.test.js`), et n'a besoin
+ni de DOM ni de navigateur : ce qui demande un DOM est vérifié dans le navigateur et noté
+dans `../migration/MIGRATION_STATUS.md`, ce qui peut être rendu pur l'est — la géométrie
+d'un dépôt de Hierarchy vit dans `editor/windows/drop.js` pour cette raison exacte.
+
+**`tools/layers/run.js` vérifie deux choses depuis 2026-08-17** : la direction des
+dépendances entre couches, et le fait qu'un import statique désigne un fichier qui existe.
+La seconde a été ajoutée après qu'un `export … from './windows/dock.js'` a survécu deux
+commits à la suppression du fichier, rendant `editor/mod.js` inchargeable sans qu'aucun
+test unitaire puisse le voir. Les imports morts connus et non corrigeables — `legacy/` en
+a deux, vers des fichiers jamais commités — sont déclarés dans `rules.js` et rapportés
+sans faire échouer la vérification.
+
+## OBSERVÉ (Phase 0 — Legacy)
 
 **Il n'existe aucun test.** Aucun framework, aucun fichier de test, aucune CI.
 `legacy/plugins/test.js` est un exemple de composant, pas un test.

@@ -16,7 +16,7 @@ import { dirname, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { profiles } from './rules.js';
 import { scanImports, profileRoot } from './scan.js';
-import { evaluateProfile } from './check.js';
+import { classifyDangling, evaluateProfile } from './check.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolvePath(here, '..', '..');
@@ -44,10 +44,32 @@ for (const profile of profiles) {
         continue;
     }
 
-    const { tracked, unexpected, stale, scanned } = evaluateProfile(profile, scanImports(root));
+    const edges = scanImports(root);
+    const { tracked, unexpected, stale, scanned } = evaluateProfile(profile, edges);
+    const dangling = classifyDangling(profile, edges, target => existsSync(resolvePath(root, target)));
 
     console.log(dim(`  profile "${profile.name}" (${profile.root}/) — ${scanned} static import(s) scanned`));
     console.log('');
+
+    if (dangling.tracked.length) {
+        console.log(yellow('  ~ Tracked missing import (documented, does not fail the check)'));
+        for (const { file, specifier, known } of dangling.tracked) {
+            console.log(`    ${file} -> ${specifier}`);
+            console.log(dim(`      ${known.reason}`));
+            console.log(dim(`      ref: ${known.ref}`));
+        }
+        console.log('');
+    }
+
+    if (dangling.unexpected.length) {
+        hadFailure = true;
+        console.log(red('  ✗ Import of a file that does not exist'));
+        for (const { file, specifier } of dangling.unexpected) {
+            console.log(`    ${file} -> ${specifier}`);
+        }
+        console.log(dim('    The module cannot be loaded. Fix the specifier, or remove the import.'));
+        console.log('');
+    }
 
     if (tracked.length) {
         console.log(yellow('  ~ Tracked violation (documented, does not fail the check)'));
@@ -79,7 +101,8 @@ for (const profile of profiles) {
         console.log('');
     }
 
-    if (!tracked.length && !unexpected.length && !stale.length) {
+    if (!tracked.length && !unexpected.length && !stale.length
+        && !dangling.tracked.length && !dangling.unexpected.length) {
         console.log(green('  ✓ No forbidden cross-layer import'));
         console.log('');
     }

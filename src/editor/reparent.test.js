@@ -12,6 +12,7 @@ import {
     Transform,
     worldPosition
 } from '../core/mod.js';
+import { History } from './history.js';
 import { registerBuiltIns } from './registry.js';
 import { createObject, reparentObject } from './commands.js';
 
@@ -198,4 +199,51 @@ test('the Transform of a reparented object still holds LOCAL values only', () =>
         ['x', 'y', 'rotation', 'scaleX', 'scaleY']);
     assert.equal(child.x, -70);
     assert.equal(worldPosition(child).x, 30);
+});
+
+test('undoing a drop puts the object back where it was, at its rank', () => {
+    // The gesture the Hierarchy performs, undone the way Ctrl Z performs it: one entry,
+    // inverted in reverse order, submitted rather than applied (ADR-0024).
+    const target = scene();
+    const first = place(target, createObject(target, { kind: 'empty' }), 0, 0);
+    const parent = place(target, createObject(target, { kind: 'empty' }), 100, 50);
+    const child = place(target, createObject(target, { kind: 'empty' }), 10, 10);
+
+    const history = new History(target.operations);
+    const before = worldPosition(child);
+
+    reparentObject(target, child, parent);
+    assert.equal(child.parent, parent);
+    assert.equal(history.depth, 1, 'a batch is one entry');
+
+    assert.equal(history.undo(), true);
+
+    assert.equal(child.parent, null);
+    assert.deepEqual(target.roots(), [first, parent, child]);
+    const after = worldPosition(child);
+    assert.ok(Math.abs(after.x - before.x) < 1e-9);
+    assert.ok(Math.abs(after.y - before.y) < 1e-9);
+});
+
+test('a listener rebuilding on a structural event sees the object after an undo', () => {
+    // What the Hierarchy does: rebuild from `scene.roots()` on every structural event. The
+    // tree it draws must hold the object, whichever half of the move woke it.
+    const target = scene();
+    const parent = place(target, createObject(target, { kind: 'empty' }), 100, 50);
+    const child = place(target, createObject(target, { kind: 'empty' }), 10, 10);
+
+    const history = new History(target.operations);
+    reparentObject(target, child, parent);
+
+    const trees = [];
+    const rebuild = () => {
+        const walk = object => [object, ...object.children.flatMap(walk)];
+        trees.push(target.roots().flatMap(walk).length);
+    };
+    for (const event of ['child:added', 'child:removed', 'roots:reordered']) target.on(event, rebuild);
+
+    history.undo();
+
+    assert.ok(trees.length > 0);
+    for (const count of trees) assert.equal(count, 2, 'no rebuild ever lost the object');
 });

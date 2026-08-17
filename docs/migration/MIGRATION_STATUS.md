@@ -1,6 +1,6 @@
 # État de la migration
 
-**Dernière mise à jour :** 2026-08-13
+**Dernière mise à jour :** 2026-08-17
 
 ## Phase actuelle
 
@@ -32,22 +32,38 @@ Aucun fichier de `legacy/` n'a été modifié.
 | **3.4** | **Modern Pixel — Inspector** (`a38d90e`, `2cc7411`) : `.row > .label + .fields`, la grille appartient à l'Inspector, `px-field` réduit à une cellule, scrub, steppers empilés, valeurs en monospace ; `box-sizing` rétabli dans la feuille adoptée par les Shadow Roots |
 | **3.5** | **Modern Pixel — chrome, fenêtres et layout L4** : `window` / `hierarchy` / `menu` / `splitter` / `tabs` / `toolbar` / `editor` convergés, bloc d'alias temporaires **supprimé**, `px-dock` scindé en `px-project` et `px-timeline`, disposition L4 (Hierarchy et Project à gauche, Inspector en colonne ininterrompue, Timeline conditionnelle) |
 
-### État vérifié (2026-08-13, après étape 3.5)
+| **4** | **Ordre structurel et Operations structurelles** (ADR-0018 à ADR-0024) : `PropertyType`, collections ordonnées, stockage ordonné des Components, primitives structurelles, `seq` par pipeline, `invert()`, gestionnaires qui refusent, sérialisation v2 avec ordre explicite (`FORMAT_VERSION = 2`), `Matrix.decompose()`, couche `project/`, historique Undo/Redo, politique de reparentage |
+| **4.1** | **Intégration Editor ↔ Project** : `Workspace`, scène déclarée comme `Resource`, `Ctrl S`, état « non enregistré » dérivé du pipeline, `<px-project>` listant le manifeste réel, reparentage et réordonnancement par glisser-déposer (Hierarchy et Inspector), vérification des imports morts dans `tools/layers/` |
+
+### État vérifié (2026-08-17, après étape 4.1)
 
 ```bash
-tools/test.sh              # 480 tests, 480 passés
-node tools/layers/run.js   # v2 : 0 violation sur 318 imports — legacy : 1 trackée
+tools/test.sh              # 642 tests, 642 passés
+node tools/layers/run.js   # v2 : 0 violation, 0 import mort — legacy : 1 violation + 2 imports morts, trackés
 node tools/parity/run.js   # 39 identical, 0 problems
 ```
 
-Vérifié aussi dans le navigateur, sans erreur console : sélection au clic et depuis la
+Vérifié aussi dans le navigateur, sans erreur console : dépôt d'une ligne de Hierarchy sur
+une autre (imbrication) et entre deux lignes (réordonnancement), `Ctrl Z` / `Ctrl Y` sur un
+dépôt, réordonnancement d'un Component par son en-tête, liste des ressources, renommage
+d'une ressource, `Ctrl S` et point « non enregistré » du titlebar.
+
+### Trois défauts trouvés en implémentant, et corrigés
+
+| Défaut | Effet | Correction |
+|---|---|---|
+| `Scene.reparent()` émettait ses événements **pendant** le remaniement | La Hierarchy reconstruisait sur un arbre à moitié déplacé ; annuler un dépôt faisait **disparaître** l'objet de l'arbre alors que le modèle était juste | Les notifications d'un remaniement sont retenues et émises une fois la forme entière (ADR-0019 §3 bis) |
+| `Project.deserialize()` rejouait un `ADD_RESOURCE` par entrée | Rouvrir un projet sur un store partagé **écrasait chaque payload** par `null`, et numérotait des opérations que personne n'avait autorisées | Le manifeste est reconstruit par une primitive, jamais par le pipeline |
+| `editor/mod.js` réexportait `./windows/dock.js`, supprimé deux commits plus tôt | Le point d'entrée de l'Editor était **inchargeable**, et aucun test ne pouvait le voir | Export corrigé, et `tools/layers/run.js` échoue désormais sur tout import statique qui ne résout pas |
+
+Acquis des passes précédentes, toujours vérifiés : sélection au clic et depuis la
 Hierarchy, recherche filtrante conservant les ancêtres, renommage lettre par lettre
 Inspector ↔ Hierarchy, `lock` / `visible` / delete par ligne, déplacement et
-redimensionnement aux poignées, pan, zoom lissé ancré sur le pointeur, cadrage, création
-par glisser depuis la toolbar au point exact de dépose, seams déplaçables et persistées,
-repli de la colonne droite en survol sous 760 px de large.
+redimensionnement aux poignées, pan, zoom, cadrage, création par glisser depuis la
+toolbar, seams persistées, repli de la colonne droite sous 760 px.
 
-`src/` contient `core/`, `runtime/` et `editor/`. **`network/` n'existe pas encore.**
+`src/` contient `core/`, `runtime/`, `editor/` et `project/`. **`network/` n'existe pas
+encore.**
 
 ### Ce que les étapes 3 et 3.1 ont ajouté au Core
 
@@ -72,17 +88,18 @@ sauvegarde suivante. Voir `../architecture/CORE.md` §Serialization.
 |---|---|
 | Adaptateur navigateur pour l'input | Appartient à la couche qui possède le DOM, pas au runtime (ADR-0014) |
 | Interprète de graphe `.px` | Demande le modèle de graphe ; l'hôte `Behaviors` le reçoit en paramètre (ADR-0009, ADR-0015) |
-| Chargement des ressources — qui appelle `behaviors.bind()` | Demande `Resource` et le chargement de projet (ADR-0009) |
+| Adaptateur IndexedDB de `ResourceStore` | L'interface et l'implémentation mémoire existent ; l'échange est local à `project/store.js` (ADR-0020) |
+| Ouvrir une **seconde** scène depuis le panneau Project | Demande de rebrancher toutes les fenêtres sur une autre `Scene` ; `Workspace.open()` existe déjà côté modèle |
 | Migration des instances quand une définition change | Décision d'Editor, pas de runtime (ADR-0016) |
-| Operations structurelles (`ADD_OBJECT`, `ADD_COMPONENT`, …) | Seule `SET_PROPERTY` existe ; `editor/commands.js` est le point d'insertion prévu |
 | Play / Pause dans l'Editor | Demande un instantané de scène restauré à l'arrêt ; `serializeScene()` existe, l'échange de scène reste à concevoir |
-| Timeline et Project fonctionnels | Les coquilles et leur emplacement existent ; le contenu demande `Resource` et le système d'animation |
+| Timeline fonctionnelle | Demande le système d'animation |
+| Import d'assets (images, sons) | Demande une entrée de fichier et des vignettes ; le modèle (`kind: 'asset'`, payload hors JSON) est prêt |
 | Renderer présenté comme un type unique dans l'Inspector | Question UX ouverte : un `Type ▼` affirmerait un seul renderer par Object, ce que le modèle n'impose pas |
 | `runtime/physics/`, `animation/`, `audio/` | Domaines non entamés |
 
 ### Prochaine action
 
-**Étape 4 — Components utilisateur et graphe `.px`.** L'enchaînement visé : *Add
+**Étape 5 — Components utilisateur et graphe `.px`.** L'enchaînement visé : *Add
 Component → Create Component → nom → propriétés → définition → disponible dans le projet*,
 puis l'ouverture de son graphe. Les briques Core existent (`defineComponent()`,
 `ComponentRegistry.register({ replace })`, `Behaviors`) ; ce qui manque est le **modèle de
@@ -117,6 +134,13 @@ Elles bloquent des éléments que la maquette dessine et que le code refuse d'in
 | Input | Abstrait, indexé par owner, passé à `step()` — jamais un global | ADR-0014 |
 | Scripting | Un Component peut avoir un graphe `.px` qui définit son comportement. Pas de Component `Script`, pas de `ScriptSystem` | ADR-0015 |
 | Components utilisateur | Une définition (`type` + propriétés + graphe) produit un Component ordinaire ; elle appartient au type | ADR-0016 |
+| Ordre structurel | L'ordre des Components et des racines est de la donnée : persisté, répliqué, annulable | ADR-0018 |
+| Operations structurelles | Sept types pour la Scene, deux pour le Project ; `REPARENT` couvre quatre gestes ; un gestionnaire refuse, il ne jette pas | ADR-0019 |
+| Ressources | Une seule unité `Resource` ; identité opaque, jamais un chemin ; `ResourceStore` asynchrone ; couche `project/` | ADR-0020 |
+| Identité d'un Component | Le `type` d'un Component utilisateur est le `ResourceId` de sa définition | ADR-0021 |
+| Reparentage | Le placement monde est conservé, recomposé une fois par l'Editor et envoyé en nombres | ADR-0022 |
+| Types de propriété | `PropertyType` au Core, `FieldKind` dérivé côté Editor | ADR-0023 |
+| Undo / Redo | `invert()` au Core, `History` à l'Editor, une pile par ressource, `submit(invert(op))` jamais `apply()` | ADR-0024 |
 | Projets Legacy | Aucune migration de données à concevoir | — |
 | Renommages | `childs` → `children`, `uid` → `owner`, `static` supprimé | ADR-0001 |
 

@@ -65,6 +65,18 @@ qui s'annulent l'une l'autre sont la même opération.
 Fusionner les deux rendrait chaque appel de script répliquable, et chaque changement
 répliqué inobservable.
 
+### 3 bis. Un événement de structure est annoncé quand la forme est entière — ajouté 2026-08-17
+
+Précision issue de l'implémentation, pas un renversement. `reparent()` délie puis relie ;
+les notifications émises **entre les deux** décrivaient un arbre où l'objet n'appartenait
+à rien. Un écouteur qui reconstruit à cet instant — la Hierarchy — dessinait un arbre sans
+lui, et rien ne suivait pour le corriger.
+
+Les notifications d'un remaniement sont donc retenues et émises **une fois**, quand la
+forme est celle que la scène a. La liste des événements ne change pas ; ce qui est garanti
+en plus est que **l'état lu pendant un événement est un état cohérent**. Sans cette
+garantie, « la Scene annonce que la forme a changé » n'a pas de sens utilisable.
+
 ### 4. `apply()` n'écrit jamais par une API qui resoumettrait
 
 **La propriété anti-écho est étendue aux Operations structurelles.** Chaque gestionnaire
