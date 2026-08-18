@@ -49,7 +49,28 @@ export const OperationType = {
      * for objects — a drop between two rows changes the folder and the position at once,
      * and the inverse of a move is a move.
      */
-    MOVE_RESOURCE: 'MOVE_RESOURCE'
+    MOVE_RESOURCE: 'MOVE_RESOURCE',
+
+    // `.px` scope: a third pipeline, same machine (ADR-0027). A Component definition and
+    // the graph it carries are ONE resource, so they share one pipeline and therefore one
+    // undo stack — which is the whole reason there is no operation here for "save the
+    // payload": what is undoable is each edit, not the write.
+    //
+    // ONLY WHAT THE FORMAT COULD NOT ALREADY SAY. Moving a node, changing one of its
+    // params, renaming a declared property, changing its type or its default: every one of
+    // those is a field of a reactive record, so every one of them is `SET_PROPERTY`, which
+    // replicates and inverts already. What is left is what genuinely appears and
+    // disappears.
+    ADD_NODE: 'ADD_NODE',
+    REMOVE_NODE: 'REMOVE_NODE',
+    CONNECT: 'CONNECT',
+    DISCONNECT: 'DISCONNECT',
+
+    // The user-declared properties of a Component definition. A property is not a value
+    // held by an instance — it is a line of the SCHEMA — so it appears and disappears
+    // through its own pair, and is edited through SET_PROPERTY like everything else.
+    ADD_PROPERTY: 'ADD_PROPERTY',
+    REMOVE_PROPERTY: 'REMOVE_PROPERTY'
 };
 
 /**

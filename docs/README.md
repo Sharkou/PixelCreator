@@ -54,11 +54,22 @@ proposition non encore tranchée n'est jamais un ADR (voir la section suivante).
 | [0015](decisions/ADR-0015-component-graph-behavior.md) | Un Component peut avoir un graphe `.px` qui définit son comportement |
 | [0016](decisions/ADR-0016-component-definition.md) | Une définition décrit un type de Component : propriétés + graphe |
 | [0017](decisions/ADR-0017-editor-selection.md) | La sélection et le picking appartiennent à l'Editor, jamais aux Colliders |
+| [0018](decisions/ADR-0018-structural-order.md) | L'ordre des Components et des racines est de la donnée |
+| [0019](decisions/ADR-0019-structural-operations.md) | Les Operations structurelles ; `REPARENT` couvre quatre gestes |
+| [0020](decisions/ADR-0020-resources.md) | `Resource`, `ResourceStore`, et la couche `project/` |
+| [0021](decisions/ADR-0021-component-identity.md) | Le `type` d'un Component utilisateur est le `ResourceId` de sa définition |
+| [0022](decisions/ADR-0022-reparent-transform.md) | Un reparentage conserve le placement monde |
+| [0023](decisions/ADR-0023-property-types.md) | `PropertyType` au Core, `FieldKind` dérivé dans l'Editor |
+| [0024](decisions/ADR-0024-undo-redo.md) | `invert()` au Core, `History` à l'Editor, une pile par ressource |
+| [0025](decisions/ADR-0025-folders-and-resource-inspection.md) | Un dossier est une `Resource` ; l'Inspector inspecte les ressources |
+| [0026](decisions/ADR-0026-drag-and-drop-and-px.md) | Le drag & drop est une capacité transverse ; `.px` est **une** ressource ; `active` est le seul état de vie |
+| [0027](decisions/ADR-0027-graph-model-and-interpreter.md) | Le modèle de graphe `.px`, ses propriétés utilisateur, et son interprète |
 
 ADR-0001 à 0015 acceptées le 2026-08-12, y compris le mode d'exécution de `.px`
-(ADR-0009, Q7 : interprété) ; ADR-0016 et ADR-0017 le 2026-08-13. ADR-0015 a été révisé
-le 2026-08-12 : la couture « Component `Script` avec `kind` + `source` » est remplacée par
-« un graphe est le comportement d'un type de Component ».
+(ADR-0009, Q7 : interprété) ; ADR-0016 et ADR-0017 le 2026-08-13 ; ADR-0018 à ADR-0024 le
+2026-08-14 ; ADR-0025 le 2026-08-17 ; ADR-0026 et ADR-0027 le 2026-08-18. ADR-0015 a été
+révisé le 2026-08-12 : la couture « Component `Script` avec `kind` + `source` » est
+remplacée par « un graphe est le comportement d'un type de Component ».
 
 ## Propositions en cours d'arbitrage
 

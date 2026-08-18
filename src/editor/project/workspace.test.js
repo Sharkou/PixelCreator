@@ -295,3 +295,146 @@ test('the active stack follows the last authored intent, not the selection', () 
     assert.equal(workspace.context, 'scene');
     assert.equal(workspace.activeHistory, workspace.history);
 });
+
+// --- opening a `.px`, and closing it (ADR-0027) -----------------------------------------
+
+function componentResource(workspace, name = 'Controller.px') {
+    const resource = workspace.project.add({ kind: ResourceKind.COMPONENT, name }, null);
+    workspace.project.save(resource.id, {
+        type: resource.id,
+        label: 'Controller',
+        properties: {},
+        graph: { version: 1, nodes: [], connections: [] }
+    });
+    return resource;
+}
+
+test('a `.px` opens as a live definition, properties and graph in one model', async () => {
+    const workspace = new Workspace();
+    const resource = componentResource(workspace);
+
+    const model = await workspace.open(resource.id);
+
+    assert.equal(model.type, resource.id);
+    assert.equal(model.label, 'Controller');
+    assert.equal(model.graph.operations, model.operations, 'one resource, one pipeline');
+    assert.equal(workspace.isOpen(resource.id), true);
+    assert.equal(workspace.opened().length, 1);
+});
+
+test('a scene and a `.px` are open at once, each with its own stack', async () => {
+    const workspace = new Workspace();
+    const sceneModel = sceneWithOne();
+    const scene = workspace.create(sceneModel);
+    const component = componentResource(workspace);
+
+    const model = await workspace.open(component.id);
+    model.addProperty({ name: 'speed' });
+
+    assert.equal(workspace.scene, sceneModel, 'opening a `.px` does not close the scene');
+    assert.notEqual(workspace.histories.get(scene.id), null);
+    assert.notEqual(workspace.histories.get(component.id), null);
+    assert.notEqual(workspace.histories.get(scene.id), workspace.histories.get(component.id));
+
+    // Ctrl Z follows the last authored intent, which was the Component's.
+    assert.equal(workspace.activeHistory, workspace.histories.get(component.id));
+    workspace.activeHistory.undo();
+    assert.equal(model.properties().length, 0);
+});
+
+test('editing a `.px` makes it dirty, and saving writes the payload back', async () => {
+    const workspace = new Workspace();
+    const resource = componentResource(workspace);
+    const model = await workspace.open(resource.id);
+
+    model.addProperty({ name: 'speed', type: 'number', default: 12 });
+    assert.equal(workspace.dirty, true);
+
+    workspace.save();
+    assert.equal(workspace.dirty, false);
+    assert.equal(workspace.project.read(resource.id).properties.speed.default, 12);
+});
+
+test('an attached `.px` is editable but not open, so it can still be deleted', async () => {
+    const workspace = new Workspace();
+    const resource = componentResource(workspace);
+
+    const model = await workspace.attach(resource.id);
+
+    assert.notEqual(model, null);
+    assert.equal(workspace.isOpen(resource.id), false);
+    assert.equal(workspace.canRemove(resource.id).allowed, true);
+
+    await workspace.open(resource.id);
+    assert.equal(workspace.canRemove(resource.id).allowed, false);
+    assert.match(workspace.canRemove(resource.id).reason, /Component is open/);
+});
+
+test('attaching twice hands back the same model, so two panels edit one thing', async () => {
+    const workspace = new Workspace();
+    const resource = componentResource(workspace);
+
+    const first = await workspace.attach(resource.id);
+    const second = await workspace.attach(resource.id);
+
+    assert.equal(first, second);
+});
+
+test('closing a `.px` releases it, and the resource becomes deletable', async () => {
+    const workspace = new Workspace();
+    const resource = componentResource(workspace);
+    await workspace.open(resource.id);
+
+    const closed = [];
+    workspace.on('closed', payload => closed.push(payload.resource.id));
+
+    assert.equal(workspace.close(resource.id), true);
+    assert.deepEqual(closed, [resource.id]);
+    assert.equal(workspace.attached(resource.id), null);
+    assert.equal(workspace.histories.get(resource.id), null);
+    assert.equal(workspace.canRemove(resource.id).allowed, true);
+    assert.equal(workspace.project.removeTree(resource.id), 1);
+});
+
+test('closing the scene lets it be deleted, which is what closing is for', () => {
+    const workspace = new Workspace();
+    const resource = workspace.create(sceneWithOne());
+
+    assert.equal(workspace.canRemove(resource.id).allowed, false);
+    workspace.close();
+    assert.equal(workspace.canRemove(resource.id).allowed, true);
+    assert.equal(workspace.project.removeTree(resource.id), 1);
+});
+
+test('deleting a resource closes whatever was editing it', async () => {
+    const workspace = new Workspace();
+    const resource = componentResource(workspace);
+    await workspace.attach(resource.id);
+
+    workspace.project.removeTree(resource.id);
+
+    assert.equal(workspace.attached(resource.id), null);
+    assert.equal(workspace.histories.get(resource.id), null);
+});
+
+test('a kind with no editor opens as nothing rather than as a broken window', async () => {
+    const workspace = new Workspace();
+    const folder = workspace.project.addFolder({ name: 'Assets' });
+
+    assert.equal(await workspace.open(folder.id), null);
+    assert.equal(workspace.isOpen(folder.id), false);
+});
+
+test('the active editor is the one the shortcuts act on, and it can be switched', async () => {
+    const workspace = new Workspace();
+    const scene = workspace.create(sceneWithOne());
+    const component = componentResource(workspace);
+    await workspace.open(component.id);
+
+    assert.equal(workspace.activeId, component.id);
+    assert.equal(workspace.resource.id, component.id);
+
+    assert.equal(workspace.activate(scene.id), true);
+    assert.equal(workspace.history, workspace.histories.get(scene.id));
+    assert.equal(workspace.activate(scene.id), false, 'activating the active one changes nothing');
+});

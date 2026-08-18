@@ -106,5 +106,35 @@ const RULES = {
 
     [OperationType.REMOVE_RESOURCE]: operation => ({
         type: OperationType.ADD_RESOURCE
+    }),
+
+    // `.px` scope (ADR-0027). Adding and removing a node are each other's inverse and both
+    // carry the wiring, so undoing a deletion restores the graph's shape and not merely
+    // its node — the argument REMOVE_OBJECT.subtree already makes.
+    [OperationType.ADD_NODE]: operation => ({
+        type: OperationType.REMOVE_NODE
+    }),
+
+    [OperationType.REMOVE_NODE]: operation => ({
+        type: OperationType.ADD_NODE
+    }),
+
+    [OperationType.CONNECT]: operation => ({
+        type: OperationType.DISCONNECT
+    }),
+
+    [OperationType.DISCONNECT]: operation => ({
+        type: OperationType.CONNECT
+    }),
+
+    [OperationType.ADD_PROPERTY]: operation => ({
+        type: OperationType.REMOVE_PROPERTY
+    }),
+
+    // Renaming a property, changing its type or its default are not here, and that is the
+    // point: each is a field of a reactive record, so each is a SET_PROPERTY whose
+    // inversion rule was written the day the format was (ADR-0027).
+    [OperationType.REMOVE_PROPERTY]: operation => ({
+        type: OperationType.ADD_PROPERTY
     })
 };

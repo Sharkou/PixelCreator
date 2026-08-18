@@ -291,6 +291,21 @@ export function isNumeric(descriptor) {
         || descriptor.kind === FieldKind.RANGE;
 }
 
+/**
+ * One field descriptor, from a property in the ADR-0007 shape.
+ *
+ * Exported because a Resource, a Component property being DECLARED and a graph node's
+ * params all need the same answer — what control, what bounds, what unit — and each
+ * re-deriving it would be three copies of the mapping ADR-0023 exists to write down once.
+ *
+ * @param {string} name - The property's name
+ * @param {object} [property] - The declared descriptor
+ * @returns {object} A field descriptor
+ */
+export function fieldFor(name, property = {}) {
+    return field(name, property);
+}
+
 function fromSchema(schema) {
     const fields = [];
     for (const [name, property] of globalThis.Object.entries(schema)) {
@@ -355,6 +370,12 @@ function field(name, property = {}) {
         /** Model value x scale = what the creator sees. */
         scale: display.scale,
         values,
+        // WHAT AN ENUM VALUE IS CALLED, when the stored value is not readable. A graph node
+        // stores a property's IDENTITY so a rename cannot break it (ADR-0027), and an
+        // opaque identifier in a dropdown would be unusable — so the option list may carry
+        // display names alongside the values it stores. Absent everywhere else, and then
+        // the value is its own label.
+        labels: declared === PropertyType.ENUM && property.labels ? [...property.labels] : null,
         readonly: Boolean(property.readonly),
         tooltip: property.tooltip ?? null
     };

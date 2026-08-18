@@ -49,6 +49,14 @@ export {
 export { fillStarterScene } from './project/starter.js';
 
 export {
+    PROPERTY_TYPE_LABELS,
+    defaultField,
+    describeDefinition,
+    describeProperty
+} from './inspector/definition.js';
+export { describeNode, paramFields } from './inspector/node.js';
+
+export {
     KIND_NAMES,
     describeResource,
     formatBytes,
@@ -58,6 +66,7 @@ export {
 
 export {
     FieldKind,
+    fieldFor,
     fieldKindFor,
     describeComponent,
     objectFields,
@@ -69,6 +78,30 @@ export {
 } from './inspector/schema.js';
 
 export { HANDLE_SIZE, editorBounds, hitTest, pick, screenCorners } from './viewport/picking.js';
+
+// The graph canvas's arithmetic — where a node's box is, where a port sits, what curve
+// joins two of them, and what is under the pointer (ADR-0027). Exported like the
+// viewport's own geometry, and for the same reason: it is the part worth testing.
+export {
+    GRID,
+    HEADER_HEIGHT,
+    MAX_ZOOM,
+    MIN_ZOOM,
+    NODE_WIDTH,
+    PORT_SPACING,
+    clampZoom,
+    connectionPath,
+    fitView,
+    graphBounds,
+    hitTest as hitTestGraph,
+    nodeSize,
+    placePorts,
+    portPosition,
+    snap,
+    toGraph,
+    toScreen,
+    zoomAt
+} from './graph/view.js';
 export { HANDLES, MIN_SIZE, beginResize, isResizable, resizeTo, sizingComponent } from './viewport/resize.js';
 export { drawGrid, matrixScale, visibleWorldArea } from './viewport/grid.js';
 export { outline, handles, handleAt, handleCursor, handlePoints } from './viewport/overlay.js';
@@ -77,7 +110,18 @@ export { SelectTool } from './viewport/tools/select-tool.js';
 export { PanTool } from './viewport/tools/pan-tool.js';
 
 export { matches, visibleObjects } from './windows/search.js';
-export { DropPosition, EDGE, canDrop, dropPositionAt, dropTarget, insertionIndex } from './windows/drop.js';
+// `canDrop` is taken by the drag-and-drop rules below, which answer what a drop MEANS
+// (ADR-0026); this one answers whether one row may be dropped on another without closing a
+// cycle. Two questions, so two names — the barrel is where a collision of names becomes a
+// collision of exports, and it was silently breaking this module.
+export {
+    DropPosition,
+    EDGE,
+    canDrop as canDropOnRow,
+    dropPositionAt,
+    dropTarget,
+    insertionIndex
+} from './windows/drop.js';
 
 export { Element, el, fill } from './ui/element.js';
 export { pickFile, readAsDataUrl } from './ui/file.js';
@@ -107,3 +151,6 @@ export { Toolbar } from './windows/toolbar.js';
 // carries (CONVENTIONS.md — a module that imports ours aliases at the import).
 export { Project as ProjectWindow } from './windows/project.js';
 export { Timeline } from './windows/timeline.js';
+// `Graph` is the Core's model of one; the window that draws it is exported under a name
+// that says which of the two it is (CONVENTIONS.md — the rule `ProjectWindow` follows).
+export { GraphWindow } from './windows/graph.js';

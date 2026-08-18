@@ -233,10 +233,17 @@ export class Field extends Element {
         }
 
         if (descriptor.kind === FieldKind.ENUM) {
+            // An option may be LABELLED apart from the value it stores. A graph node keeps
+            // a property's identity so a rename cannot break it (ADR-0027), and a dropdown
+            // of opaque identifiers would be unusable; everywhere else the value is its own
+            // label, and this collapses to what it always was.
             const select = el('select', {
                 disabled: descriptor.readonly,
                 onchange: event => this.#push(event.target.value)
-            }, descriptor.values.map(option => el('option', { value: option, textContent: option })));
+            }, descriptor.values.map((option, index) => el('option', {
+                value: option,
+                textContent: descriptor.labels?.[index] ?? option
+            })));
             select.value = globalThis.String(value ?? '');
             return select;
         }

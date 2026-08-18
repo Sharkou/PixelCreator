@@ -39,7 +39,9 @@ import { searchField } from '../ui/search-field.js';
 import { addComponent, availableComponents, moveComponent, removeComponent } from '../commands.js';
 import { DropPosition, dropPositionAt, insertionIndex } from './drop.js';
 import { describeResource } from '../inspector/resource.js';
-import { baseNameOf, extensionOf, hasPayload, withExtension } from '../../project/mod.js';
+import { describeDefinition } from '../inspector/definition.js';
+import { describeNode } from '../inspector/node.js';
+import { ResourceKind, baseNameOf, extensionOf, hasPayload, withExtension } from '../../project/mod.js';
 import { pickFile, readAsDataUrl } from '../ui/file.js';
 import { DropZone } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
@@ -270,6 +272,22 @@ export class Inspector extends Element {
             font-style: italic;
         }
 
+        .none.problem { color: var(--px-danger); font-style: normal; }
+
+        /* A DECLARED PROPERTY IS THREE ROWS, so it needs a boundary a creator can see —
+           without one, the Default of the first property and the Name of the second read
+           as one block. A hairline and one step of space, not a box: the panel is already
+           a column of rows and a card per property would fight it. */
+        .property + .property {
+            margin-top: var(--px-space-2);
+            padding-top: var(--px-space-2);
+            border-top: 1px solid var(--px-border-subtle);
+        }
+
+        .property .remove { flex: 0 0 auto; opacity: 0.55; }
+        .property:hover .remove { opacity: 1; }
+        .property .remove:hover { color: var(--px-danger); }
+
         /* ── resource facts and content ─────────────────────────────────── */
 
         /* A fact is read, not edited, so it is set as text in the value column rather than
@@ -372,6 +390,13 @@ export class Inspector extends Element {
     #search = null;
     #create = null;
     #query = '';
+    // THE THIRD SUBJECT (ADR-0027). A graph node is neither an Object nor a Resource, and
+    // it is selected on a canvas rather than in a tree — so it is held here and cleared by
+    // the shell when either of the other two selections speaks, exactly as those two clear
+    // each other.
+    #node = null;
+    /** `.px` resources whose live model is being fetched, so one render does not ask twice. */
+    #attaching = new globalThis.Set();
     // View state, and only view state: which sections the creator folded away. Keyed by
     // section name so it survives selecting another object of the same shape.
     #folded = new globalThis.Set();
@@ -401,6 +426,23 @@ export class Inspector extends Element {
         this.#selection = selection;
         this.#registry = registry;
         this.#workspace = workspace;
+        return this;
+    }
+
+    /**
+     * Show a graph node, or clear it.
+     *
+     * The Graph window announces its selection as an event and the shell routes it here
+     * (ADR-0006): neither element holds a reference to the other, which is what stops the
+     * canvas from having to know an Inspector exists.
+     *
+     * @param {object|null} node - The node record
+     * @param {object|null} definition - The `.px` it belongs to
+     * @returns {Inspector} This element
+     */
+    inspectNode(node, definition = null) {
+        this.#node = node ? { node, definition } : null;
+        this.#render();
         return this;
     }
 
@@ -510,10 +552,23 @@ export class Inspector extends Element {
     }
 
     #render() {
+        // NOTHING TO DRAW INTO YET. The shell wires this panel's subjects while it is still
+        // assembling the layout, so a selection can arrive before `connectedCallback()` has
+        // built the body. Rendering then would reach for controls that do not exist; the
+        // panel draws itself once it is connected, from whatever the state is by then.
+        if (!this.#body) return;
+
         this.release('panel');
 
-        // A resource, when one is selected, and an object otherwise. The two selections are
-        // mutually exclusive (see bind()), so this is a route rather than a priority.
+        // A graph node, a resource, or an object. All three selections are mutually
+        // exclusive — the shell clears the others when one speaks — so this is a route
+        // rather than a priority.
+        if (this.#node) {
+            this.#create.disabled = true;
+            this.#renderNode(this.#node);
+            return;
+        }
+
         const resource = this.#workspace?.selected ?? null;
         if (resource) {
             this.#create.disabled = true;
@@ -570,7 +625,11 @@ export class Inspector extends Element {
 
     #renderResource(resource) {
         const project = this.#workspace.project;
-        const payload = readable(project, resource);
+        // A `.px` WITH A LIVE MODEL REPORTS THE MODEL, not the payload the store still
+        // holds. A creator who has just declared a property expects to read three, not the
+        // two that were last saved — the facts would otherwise contradict the rows above.
+        const definition = this.#definitionFor(resource);
+        const payload = definition ? definition.serialize() : readable(project, resource);
         const description = describeResource(resource, {
             project,
             payload,
@@ -585,6 +644,7 @@ export class Inspector extends Element {
                 glyph: iconForResource(resource),
                 body: description.fields.map(descriptor => this.#renderResourceRow(resource, descriptor))
             }),
+            definition ? this.#renderProperties(definition) : null,
             this.#renderSection({
                 name: 'Details',
                 key: 'resource:details',
@@ -603,6 +663,232 @@ export class Inspector extends Element {
                 })
                 : null
         );
+    }
+
+    // --- a `.px`'s user-declared properties (ADR-0027) --------------------------------
+    //
+    // THE SUBJECT IS THE SCHEMA, NOT A VALUE. Inspecting a Transform edits `x`; inspecting a
+    // Component edits what a Component IS — which properties it has, what shape each one
+    // holds, what a fresh instance starts them at. So a property is three fields rather than
+    // one, and each writes to the reactive descriptor the definition holds, which puts the
+    // edit on that resource's pipeline and in that resource's undo stack.
+    //
+    // NOT A SECOND PROPERTY SYSTEM. The type list is the Core's own eight (ADR-0023) and the
+    // control for the default is derived from the chosen type by the same mapping every
+    // other field goes through. `inspector/definition.js` answers what to show; this draws it.
+
+    /**
+     * The live model of a `.px`, fetching it once when there is not one yet.
+     *
+     * Attaching is asynchronous because the store's contract is (ADR-0020), so the first
+     * render of a freshly selected Component shows its facts and the next one shows its
+     * properties. ATTACHING IS NOT OPENING: the resource stays deletable, which it would
+     * not if merely selecting it counted as having it open (ADR-0027).
+     */
+    #definitionFor(resource) {
+        if (resource.kind !== ResourceKind.COMPONENT || !this.#workspace) return null;
+
+        const attached = this.#workspace.attached(resource.id);
+        if (attached) return attached;
+
+        if (this.#attaching.has(resource.id)) return null;
+        this.#attaching.add(resource.id);
+        globalThis.Promise.resolve(this.#workspace.attach(resource.id)).then(model => {
+            this.#attaching.delete(resource.id);
+            if (model && this.#workspace.selectedId === resource.id) this.#render();
+        });
+
+        return null;
+    }
+
+    #renderProperties(definition) {
+        const description = describeDefinition(definition);
+
+        // WHAT THE FIELDS CANNOT FOLLOW BY THEMSELVES. Each field observes the descriptor it
+        // edits, so a rename or a new default arrives without a redraw. Three things change
+        // the SHAPE of this section instead of a value — a property appearing, one
+        // disappearing, and a type changing the control its default is edited with — and
+        // those must be redrawn. They may also arrive from an undo or from a collaborator,
+        // which is why this listens to the pipeline rather than to the buttons.
+        this.track(definition.operations.on('operation', operation => {
+            const structural = operation.type === 'ADD_PROPERTY' || operation.type === 'REMOVE_PROPERTY';
+            const retyped = operation.type === 'SET_PROPERTY' && operation.prop === 'type';
+            if (structural || retyped) globalThis.queueMicrotask(() => this.#render());
+        }), 'panel');
+
+        const add = el('button', {
+            class: 'add',
+            type: 'button',
+            title: 'Add property',
+            onclick: () => {
+                const property = definition.addProperty({});
+                // The pipeline listener above redraws the section, so the focus waits behind
+                // it in the microtask queue — one redraw, not two, and the caret lands in a
+                // field that exists. Straight into the name, because a creator who adds a
+                // property is about to name it: the move the Hierarchy makes for an object.
+                if (property) globalThis.queueMicrotask(() => this.#focusProperty(property.id));
+            }
+        }, icon('plus', 16), el('span', { textContent: 'Add property' }));
+
+        return this.#renderSection({
+            name: 'Properties',
+            key: 'resource:properties',
+            glyph: 'inspector',
+            body: [
+                description.properties.length === 0
+                    ? el('div', { class: 'none', textContent: 'This Component declares no properties yet.' })
+                    : description.properties.map(entry => this.#renderProperty(definition, entry)),
+                add
+            ]
+        });
+    }
+
+    #renderProperty(definition, entry) {
+        const property = definition.property(entry.id);
+        if (!property) return null;
+
+        const [name, type, fallback] = entry.fields;
+
+        const remove = el('button', {
+            class: 'ghost remove',
+            type: 'button',
+            title: 'Remove property',
+            'aria-label': `Remove ${entry.name}`,
+            onclick: () => definition.removeProperty(entry.id)
+        }, icon('trash', 14));
+
+        return el('div', { class: 'property', dataset: { property: entry.id } },
+            // Letter by letter, like every other field in this panel: a rename is one
+            // history entry because the field mints a batch for the typing session, not
+            // because it waits for Enter (ADR-0026 §3).
+            this.#renderPropertyRow(property, name, {
+                write: (value, options) => definition.renameProperty(entry.id, value, options),
+                extra: remove
+            }),
+            // Changing the type changes the control the default is edited with, so the
+            // section is redrawn — by the pipeline listener, which also catches the redraw
+            // an undo or a collaborator would otherwise not trigger.
+            this.#renderPropertyRow(property, type, {
+                write: value => definition.setPropertyType(entry.id, value)
+            }),
+            this.#renderPropertyRow(property, fallback, {
+                write: (value, options) => definition.setPropertyDefault(entry.id, value, options)
+            })
+        );
+    }
+
+    #renderPropertyRow(property, descriptor, { write, extra = null }) {
+        const field = el('px-field').bind(property, descriptor, { write });
+        const label = el('span', { class: 'label', textContent: descriptor.label });
+        field.bindLabel(label);
+
+        return el('div', { class: 'row' },
+            label,
+            el('div', { class: 'fields' }, field, extra)
+        );
+    }
+
+    #focusProperty(id) {
+        const field = this.#body.querySelector(`.property[data-property="${id}"] px-field`);
+        field?.shadowRoot?.querySelector('input')?.focus();
+    }
+
+    // --- a graph node (ADR-0027) ------------------------------------------------------
+    //
+    // NO CHAIN OF BRANCHES HERE EITHER. What a node exposes is its `params`, declared in the
+    // node catalogue in the same shape a Component declares a property, so this renders an
+    // answer `describeNode()` produced and never asks what type the node is. A node type
+    // added tomorrow inspects correctly without this file changing — the rule ADR-0007 sets
+    // for components, applied to nodes.
+
+    #renderNode({ node, definition }) {
+        // A PARAM CHANGE CAN CHANGE THE PORTS. `Set Property` takes the shape of the
+        // property it names, so picking one rewrites what this panel reports — the same
+        // reason a property's type redraws its section. The value itself needs no redraw:
+        // the field observes it.
+        this.track(observe(node, 'params', () => globalThis.queueMicrotask(() => this.#render())), 'panel');
+
+        const position = el('span', { class: 'value', textContent: `${Math.round(node.x)}, ${Math.round(node.y)}` });
+        for (const axis of ['x', 'y']) {
+            this.track(observe(node, axis, () => {
+                position.textContent = `${Math.round(node.x)}, ${Math.round(node.y)}`;
+            }), 'panel');
+        }
+
+        const description = describeNode(node, {
+            registry: definition?.registry,
+            properties: definition?.properties() ?? [],
+            issues: definition?.validate() ?? []
+        });
+
+        fill(this.#body,
+            el('div', { class: 'identity' },
+                el('span', { class: 'glyph' }, icon('graph', 20)),
+                el('div', { class: 'who' },
+                    el('span', { class: 'title', textContent: description.title }),
+                    el('span', { class: 'kind', textContent: description.category })
+                )
+            ),
+            // What is wrong with this node, in the panel that is showing it — the canvas
+            // outlines it in red, and here it says why (ADR-0027).
+            description.issues.length > 0
+                ? el('div', { class: 'none problem', textContent: description.issues[0].message })
+                : null,
+            description.fields.length > 0
+                ? this.#renderSection({
+                    name: 'Node',
+                    key: 'node:fields',
+                    glyph: 'graph',
+                    body: description.fields.map(descriptor => this.#renderNodeRow(node, definition, descriptor))
+                })
+                : null,
+            this.#renderSection({
+                name: 'Ports',
+                key: 'node:ports',
+                glyph: 'inspector',
+                body: [
+                    ...description.ports.inputs.map(port => portRow('In', port)),
+                    ...description.ports.outputs.map(port => portRow('Out', port))
+                ]
+            }),
+            this.#renderSection({
+                name: 'Details',
+                key: 'node:details',
+                glyph: 'inspector',
+                body: [
+                    detailRow('Type', description.type),
+                    // Live, so a node dragged across the canvas reads its own coordinates
+                    // rather than the ones it had when the panel was drawn.
+                    el('div', { class: 'row' },
+                        el('span', { class: 'label', textContent: 'Position' }),
+                        el('div', { class: 'fields' }, position)
+                    ),
+                    detailRow('Identifier', node.id)
+                ]
+            })
+        );
+    }
+
+    #renderNodeRow(node, definition, descriptor) {
+        // A node's params live inside one reactive `params` record, so the field is bound to
+        // a view of the one value it edits and every write goes through `setParam` — a
+        // SET_PROPERTY on the node, undoable like everything else (ADR-0027). The view is
+        // not a second source of truth: nothing writes to it but the record it follows.
+        const view = makeReactive({ [descriptor.name]: node.params?.[descriptor.name] ?? null });
+
+        this.track(observe(node, 'params', change => {
+            const value = change.value?.[descriptor.name] ?? null;
+            if (view[descriptor.name] !== value) view[descriptor.name] = value;
+        }), 'panel');
+
+        const field = el('px-field').bind(view, descriptor, {
+            write: (value, options) => definition.graph.setParam(node.id, descriptor.name, value, options)
+        });
+
+        const label = el('span', { class: 'label', textContent: descriptor.label });
+        field.bindLabel(label);
+
+        return el('div', { class: 'row' }, label, el('div', { class: 'fields' }, field));
     }
 
     #renderResourceIdentity(resource, description) {
@@ -1230,6 +1516,42 @@ export class Inspector extends Element {
  */
 function humanise(name) {
     return name.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+}
+
+/**
+ * One port of a graph node, reported rather than edited.
+ *
+ * Ports are wired on the canvas, so the panel's job is to say what a node takes and gives —
+ * which matters most for the ports that CHANGE: a Set Property's value takes the shape of
+ * the property it names (ADR-0027).
+ *
+ * @param {string} side - `In` or `Out`
+ * @param {object} port - The port descriptor
+ * @returns {HTMLElement} The row
+ */
+function portRow(side, port) {
+    return el('div', { class: 'row' },
+        el('span', { class: 'label', textContent: port.label || port.id }),
+        el('div', { class: 'fields' },
+            el('span', {
+                class: 'value',
+                textContent: port.kind === 'flow' ? `${side} · flow` : `${side} · ${port.type}`
+            })
+        )
+    );
+}
+
+/**
+ * A fact about a node, set as text in the value column.
+ * @param {string} label - What it is
+ * @param {string} value - What it says
+ * @returns {HTMLElement} The row
+ */
+function detailRow(label, value) {
+    return el('div', { class: 'row' },
+        el('span', { class: 'label', textContent: label }),
+        el('div', { class: 'fields' }, el('span', { class: 'value', textContent: value }))
+    );
 }
 
 customElements.define('px-inspector', Inspector);

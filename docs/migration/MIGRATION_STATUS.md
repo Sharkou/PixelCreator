@@ -33,14 +33,15 @@ Aucun fichier de `legacy/` n'a été modifié.
 | **3.5** | **Modern Pixel — chrome, fenêtres et layout L4** : `window` / `hierarchy` / `menu` / `splitter` / `tabs` / `toolbar` / `editor` convergés, bloc d'alias temporaires **supprimé**, `px-dock` scindé en `px-project` et `px-timeline`, disposition L4 (Hierarchy et Project à gauche, Inspector en colonne ininterrompue, Timeline conditionnelle) |
 
 | **4** | **Ordre structurel et Operations structurelles** (ADR-0018 à ADR-0024) : `PropertyType`, collections ordonnées, stockage ordonné des Components, primitives structurelles, `seq` par pipeline, `invert()`, gestionnaires qui refusent, sérialisation v2 avec ordre explicite (`FORMAT_VERSION = 2`), `Matrix.decompose()`, couche `project/`, historique Undo/Redo, politique de reparentage |
+| **4.4** | **Le graphe `.px`** (ADR-0027) : modèle de graphe au Core (`core/graph/` — nœuds, ports, connexions, tous par **identité**), catalogue de nœuds (événements, propriétés, flux, valeurs, arithmétique, comparaison, logique), propriétés utilisateur d'un Component avec un `id` stable qu'un renommage ne touche pas, `ComponentDefinition` — le modèle vivant d'un `.px`, une pipeline et une pile pour la ressource entière —, Operations `ADD_NODE` / `REMOVE_NODE` / `CONNECT` / `DISCONNECT` / `ADD_PROPERTY` / `REMOVE_PROPERTY` toutes inversibles, `validateGraph()` indépendant de l'UI, **interprète** headless (`runtime/scripting/interpreter.js`, flux poussé / données tirées, budget, `GraphError`), fenêtre **Graph** en SVG, `Workspace` multi-éditeurs avec ouverture et **fermeture**, Inspector des propriétés d'un `.px` et des nœuds |
 | **4.3** | **Cohérence Project / Inspector / Drag & drop** (ADR-0026) : `.px` = **une** ressource (Component + graphe), `active` seul état de vie (`visible` supprimé), renommage identique dans Project et Hierarchy (second clic) et réactif dans l'Inspector avec **une** entrée d'undo par session de frappe, extension déterminée par le type, `MOVE_RESOURCE` (dossier **et** rang), système de drag & drop transverse (`editor/dnd/`), Project en navigateur d'assets avec aperçus, menus `+` catégorisés et `…`, `Share` et profil dans le titlebar |
 | **4.2** | **Project / Resource UX** (ADR-0025) : dossiers comme `Resource` et hiérarchie par lien `parent` (`MANIFEST_VERSION = 2`), menu `+` extensible par table de kinds, navigation à fil d'Ariane, déplacement par glisser-déposer, suppression d'arbre en un `batch`, renommage validé (une opération, pas une par frappe), sélection et désélection de ressource dans le `Workspace`, panneau `Resource` de l'Inspector piloté par `describeResource()`, import et remplacement d'image, icônes de ressources distinctes des icônes de fenêtres |
 | **4.1** | **Intégration Editor ↔ Project** : `Workspace`, scène déclarée comme `Resource`, `Ctrl S`, état « non enregistré » dérivé du pipeline, `<px-project>` listant le manifeste réel, reparentage et réordonnancement par glisser-déposer (Hierarchy et Inspector), vérification des imports morts dans `tools/layers/` |
 
-### État vérifié (2026-08-18, après étape 4.3)
+### État vérifié (2026-08-18, après étape 4.4)
 
 ```bash
-tools/test.sh              # 737 tests, 737 passés
+tools/test.sh              # 882 tests, 882 passés
 node tools/layers/run.js   # v2 : 0 violation, 0 import mort — legacy : 1 violation + 2 imports morts, trackés
 node tools/parity/run.js   # 39 identical, 0 problems
 ```
@@ -96,25 +97,31 @@ sauvegarde suivante. Voir `../architecture/CORE.md` §Serialization.
 | Sujet | Pourquoi |
 |---|---|
 | Adaptateur navigateur pour l'input | Appartient à la couche qui possède le DOM, pas au runtime (ADR-0014) |
-| Interprète de graphe `.px` | Demande le modèle de graphe ; l'hôte `Behaviors` le reçoit en paramètre (ADR-0009, ADR-0015) |
 | Adaptateur IndexedDB de `ResourceStore` | L'interface et l'implémentation mémoire existent ; l'échange est local à `project/store.js` (ADR-0020) |
-| Ouvrir une **seconde** scène depuis le panneau Project | Demande de rebrancher toutes les fenêtres sur une autre `Scene` ; `Workspace.open()` existe déjà côté modèle |
+| Ouvrir une **seconde** scène depuis le panneau Project | Demande de rebrancher toutes les fenêtres sur une autre `Scene`. `Workspace` ouvre et ferme réellement, et tient plusieurs éditeurs ; ouvrir une scène ferme donc l'autre (ADR-0027 §10) |
+| Valeur en ligne sur une entrée de nœud non connectée | Une entrée libre rend le défaut déclaré par son port. Un champ à même le nœud est un confort réel et une question de rendu ; il ne change pas le format (ADR-0027) |
+| Sélection multiple, copier/coller et commentaires dans le graphe | Chacun est un geste avec ses propres questions ; en livrer la moitié rend une toile imprévisible |
+| Glisser une propriété vers la toile | `Get` ou `Set` : deviner à la place du créateur est le comportement magique qu'ADR-0026 refuse. Le menu de création propose les deux, explicitement (ADR-0027 §11) |
 | Migration des instances quand une définition change | Décision d'Editor, pas de runtime (ADR-0016) |
 | Play / Pause dans l'Editor | Demande un instantané de scène restauré à l'arrêt ; `serializeScene()` existe, l'échange de scène reste à concevoir |
 | Timeline fonctionnelle | Demande le système d'animation |
 | Prefab (Object → Project) | Ce qu'un prefab contient, comment une instance y reste liée, ce qu'un override signifie : rien n'est décidé. Le dépôt est refusé **en le disant** (ADR-0026 §7) |
-| Ouvrir une ressource au double-clic | Le geste est réservé et l'intention émise ; il n'existe aucun éditeur à ouvrir avant la fenêtre Graph |
 | Vignettes et import de sons | L'import d'images existe ; le reste demande des décodeurs et une grille, pas un modèle |
 | Renderer présenté comme un type unique dans l'Inspector | Question UX ouverte : un `Type ▼` affirmerait un seul renderer par Object, ce que le modèle n'impose pas |
 | `runtime/physics/`, `animation/`, `audio/` | Domaines non entamés |
 
 ### Prochaine action
 
-**Étape 5 — Components utilisateur et graphe `.px`.** L'enchaînement visé : *Add
-Component → Create Component → nom → propriétés → définition → disponible dans le projet*,
-puis l'ouverture de son graphe. Les briques Core existent (`defineComponent()`,
-`ComponentRegistry.register({ replace })`, `Behaviors`) ; ce qui manque est le **modèle de
-graphe et son interprète**, sans lesquels un comportement ne peut pas encore tourner.
+**Étape 5 — un Component utilisateur qui tourne dans la scène.** L'enchaînement du modèle
+est complet : créer un `.px`, déclarer ses propriétés, câbler son graphe, le valider,
+l'interpréter. Ce qui manque est le dernier maillon d'UX — **attacher** un Component
+utilisateur à un Object depuis le menu Add Component, ce qui demande que
+`loadComponentDefinitions()` soit appelé au chargement du projet et que le registre soit
+rafraîchi quand une définition est enregistrée — puis **Play**, qui demande l'instantané de
+scène restauré à l'arrêt.
+
+Les briques existent toutes : `defineComponent()`, `ComponentRegistry.register({ replace })`,
+`Behaviors`, `createGraphInterpreter()`, `loadComponentDefinitions()`.
 
 ### Décisions d'interface encore ouvertes
 
@@ -153,6 +160,7 @@ Elles bloquent des éléments que la maquette dessine et que le code refuse d'in
 | Identité d'un Component | Le `type` d'un Component utilisateur est le `ResourceId` de sa définition | ADR-0021 |
 | Reparentage | Le placement monde est conservé, recomposé une fois par l'Editor et envoyé en nombres | ADR-0022 |
 | Types de propriété | `PropertyType` au Core, `FieldKind` dérivé côté Editor | ADR-0023 |
+| Graphe `.px` | Modèle au Core, interprète au Runtime, rendu SVG à l'Editor ; nœuds, ports et connexions par identité ; une propriété utilisateur porte un `id` stable ; un flux qui boucle est une boucle, un cycle de données est une erreur | ADR-0027 |
 | Undo / Redo | `invert()` au Core, `History` à l'Editor, une pile par ressource, `submit(invert(op))` jamais `apply()` | ADR-0024 |
 | Projets Legacy | Aucune migration de données à concevoir | — |
 | Renommages | `childs` → `children`, `uid` → `owner`, `static` supprimé | ADR-0001 |

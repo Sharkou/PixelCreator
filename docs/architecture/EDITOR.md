@@ -427,17 +427,100 @@ Effet de bord bienvenu : une reconstruction ne jette plus un renommage en cours 
 abonnements de chaque ligne, qui sont désormais relâchés par ligne (`row:<id>`) au moment
 où elle disparaît réellement.
 
+### La fenêtre Graph — IMPLÉMENTÉ (2026-08-18, ADR-0027)
+
+Un double-clic sur un `.px` dans Project **ouvre** son graphe. Le geste était réservé depuis
+ADR-0026 (`px-open-resource`) ; il est maintenant branché, et c'est `editor.js` — pas le
+panneau — qui décide qu'un `.px` ouvre une toile. Un `kind` sans éditeur est refusé **en le
+disant**, jamais ignoré.
+
+```
+core/graph/              le modèle : nœuds, ports, connexions, Operations
+     ↓
+editor/graph/view.js     l'arithmétique : boîtes, ports, courbes, pointage — testée sous Node
+     ↓
+editor/windows/graph.js  le rendu : un seul SVG, des événements pointeur
+```
+
+**Un seul SVG, et c'est la leçon de Legacy.** Legacy dessinait les nœuds en `<div>` et les
+fils en SVG : deux arbres DOM à tenir d'accord, et la position d'un port lue par
+`getBoundingClientRect()` à chaque `mousemove` — donc connaissable seulement tant que le
+nœud était affiché. Une seule couche donne un seul espace de coordonnées : la position d'un
+port est de l'arithmétique, la même qui le pointe, et le zoom est un attribut. Ce qui est
+repris de Legacy l'est explicitement : la Bézier horizontale au décalage
+`max(50, distance × 0.4)`, et le pan/zoom par transformation de vue qui ne touche jamais aux
+coordonnées des nœuds.
+
+| Geste | Effet |
+|---|---|
+| Double-clic sur la toile, ou le `+` | menu de création catégorisé — **le même dropdown** qu'Add Object, Add Component et le `+` du Project |
+| Glisser un nœud | `SET_PROPERTY x` + `SET_PROPERTY y` sous **un** `batch` : un drag est **un** `Ctrl Z` |
+| Tirer d'un port à un autre | connexion, si les règles l'acceptent ; sinon un **refus qui dit pourquoi** |
+| Déposer un fil sur un port occupé | remplace, en un seul geste et une seule entrée d'historique |
+| Clic sur un fil | déconnecte |
+| `Suppr` sur un nœud sélectionné | le supprime **avec ses fils** ; l'undo rend les deux |
+| Molette, bouton du milieu ou droit | zoom autour du curseur, pan |
+
+Un port de **flux** est un triangle, un port de **donnée** un disque : c'est la seule règle
+que la toile fait respecter, donc la montrer n'est pas de la décoration. Un nœud en erreur
+est cerné, et la phrase du validateur s'affiche en bas de la toile.
+
+### Ouvrir et fermer une ressource — IMPLÉMENTÉ (2026-08-18, ADR-0027)
+
+`Workspace` tient une **carte** d'éditeurs ouverts, chacun avec son modèle, sa pipeline et
+sa pile d'undo (ADR-0024). Une bande d'onglets au-dessus de la scène dit ce qui est ouvert
+et n'apparaît que lorsqu'il y a un choix à faire.
+
+- **« Attaché » n'est pas « ouvert ».** Sélectionner un `.px` donne à l'Inspector un modèle
+  vivant pour éditer ses propriétés ; seul un double-clic l'ouvre, et **seule une ressource
+  ouverte refuse d'être supprimée**. Sans cette distinction, cliquer une fois sur un
+  Component le rendrait indestructible.
+- **Fermer libère la pile** et rend la ressource supprimable — ce qu'ADR-0025 refusait faute
+  de fermeture.
+- **Une seule scène à la fois**, toujours : chaque fenêtre est liée à un `Scene`. Plusieurs
+  `.px` peuvent être ouverts ensemble.
+- Le bouton de fermeture d'un onglet est **toujours** présent, y compris quand la pastille
+  « non enregistré » s'affiche : c'est exactement l'état où le créateur a le plus besoin du
+  choix.
+
+### L'Inspector déclare les propriétés d'un Component — IMPLÉMENTÉ (2026-08-18, ADR-0027)
+
+Quand un `.px` est sélectionné, une section **Properties** permet de créer, renommer,
+retyper, redéfinir et supprimer ses propriétés.
+
+- **le sujet est le schéma, pas une valeur** : une propriété est donc trois champs — nom,
+  type, valeur par défaut — et non un ;
+- la liste des types est celle du Core, ses huit membres (ADR-0023) ; le contrôle qui édite
+  la valeur par défaut est **dérivé** du type choisi par la correspondance qui existe déjà ;
+- changer le type réinitialise le défaut, **en un seul `batch`** : un défaut `number` n'est
+  pas un `boolean` légal ;
+- le renommage est réactif, lettre par lettre, et coûte **une** entrée d'historique
+  (ADR-0026 §3) ;
+- une propriété porte un `id` frappé une fois, et c'est lui qu'un nœud stocke : **renommer ne
+  casse pas le graphe**. La supprimer ne laisse jamais de référence pendante — le validateur
+  la signale, la toile cerne le nœud, l'interprète lève une erreur structurée.
+
+Quand un **nœud** est sélectionné, le même panneau montre ses params, ses ports et ses
+faits. Il n'y a pas de chaîne de `if` : `inspector/node.js` répond « quels champs, de quel
+type », exactement comme `describeResource()` et `describeComponent()` le font pour les deux
+autres sujets. Un type de nœud ajouté demain s'inspecte sans que `windows/inspector.js` change.
+
+**Glisser une propriété vers la toile est refusé, avec sa raison** (ADR-0027 §11) : un dépôt
+pourrait vouloir dire `Get Property` **ou** `Set Property`, et choisir à la place du créateur
+est le comportement magique qu'ADR-0026 demande d'éviter. Le menu de création propose les
+deux, et le nœud choisi liste les propriétés par leur nom.
+
 ### Ce qui n'est pas encore là
 
-Play / Pause · barre de commandes `Ctrl K` · vignettes d'assets · Timeline fonctionnelle ·
-Console · Graph · Players · sélection multiple · rotation à la poignée · détachement de
-fenêtre · ouverture d'une seconde scène depuis le panneau Project · ordre à l'intérieur
-d'un dossier.
+Play / Pause · barre de commandes `Ctrl K` · Timeline fonctionnelle · Console · Players ·
+sélection multiple (scène et graphe) · rotation à la poignée · détachement de fenêtre ·
+valeur en ligne sur une entrée de nœud non connectée · copier/coller dans le graphe.
 
 Faits depuis : undo/redo (ADR-0024), Operations structurelles (ADR-0019), reparentage et
-réordonnancement par glisser-déposer, enregistrement, et le Project comme véritable
-gestionnaire de ressources — dossiers, création, déplacement, suppression, inspection
-(ADR-0025).
+réordonnancement par glisser-déposer, enregistrement, le Project comme véritable
+gestionnaire de ressources (ADR-0025), le drag & drop transverse et l'ordre dans un dossier
+(ADR-0026), et **le graphe `.px` : modèle, propriétés utilisateur, validation, interprète,
+fenêtre, ouverture et fermeture** (ADR-0027).
 
 Le titlebar ne porte **ni transport ni barre de commandes**, bien que la maquette dessine
 les deux : Play demande l'instantané de scène restauré à l'arrêt, `Ctrl K` demande un

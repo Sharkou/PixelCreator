@@ -27,6 +27,7 @@
 | Input | Abstrait, indexé par owner, **passé à `step()`** — jamais un global |
 | Caméra | Un `Object` ordinaire ; le `Viewport` est l'écran ; la matrice de vue est dérivée |
 | Scripting | Un Component peut avoir un graphe `.px` qui définit son comportement. **Pas de Component `Script`**, pas de `ScriptSystem` |
+| Graphe `.px` | Modèle au **Core** (`core/graph/`), interprète au Runtime, rendu SVG à l'Editor. Nœuds, ports et connexions par **identité** ; une propriété utilisateur porte un `id` qu'un renommage ne touche pas (ADR-0027) |
 | Components créés par l'utilisateur | Une **définition** (`type` + propriétés + graphe) produit un Component ordinaire ; la définition appartient au type, jamais à l'instance |
 | Projets Legacy | **Aucune migration de données à concevoir** — il n'existe pas de projets v1 |
 
@@ -568,20 +569,48 @@ Deux langages, un seul modèle objet (ADR-0009) :
 vision refuse explicitement. Le serveur, lui, connaît `application/pixelscript`.
 **Les deux types MIME doivent être unifiés.**
 
-Le graphe reçoit enfin un modèle de données sérialisable, indépendant du DOM :
+Le graphe reçoit enfin un modèle de données sérialisable, indépendant du DOM.
+
+> **Amendé le 2026-08-18 (ADR-0027).** L'exemple d'origine désignait un port par son
+> **index** (`"from": ["nodeA", "out", 0]`) et portait des `variables`. Les deux sont
+> abandonnés : un index est exactement le défaut mesuré dans Legacy — un type de nœud
+> gagnant un port recâble silencieusement tous les graphes — et une variable de graphe *est*
+> une propriété du Component (§ « Un Component créé par un utilisateur »).
 
 ```json
 {
   "version": 1,
-  "nodes":       [{ "id": "...", "type": "update", "x": 0, "y": 0, "params": {} }],
-  "connections": [{ "from": ["nodeA", "out", 0], "to": ["nodeB", "in", 1] }],
-  "variables":   [{ "name": "speed", "type": "number", "value": 2 }],
-  "metadata":    { "name": "player" }
+  "nodes": [
+    { "id": "n1", "type": "event.update", "x": 40, "y": 96, "params": {} },
+    { "id": "n2", "type": "property.set", "x": 320, "y": 96, "params": { "property": "p7" } }
+  ],
+  "connections": [
+    { "id": "c1", "from": { "node": "n1", "port": "out" }, "to": { "node": "n2", "port": "in" } }
+  ]
 }
 ```
 
-L'éditeur de nœuds actuel (pan/zoom/Bézier, récemment amélioré) est conservé ; il
-pilote ce modèle au lieu d'être le modèle.
+Un nœud, un port et une connexion ont chacun une **identité stable** ; `from` est toujours
+la sortie et `to` toujours l'entrée, quel que soit le sens dans lequel le fil a été tiré.
+
+L'éditeur de nœuds est reconstruit sur ce modèle plutôt que d'en être un : `core/graph/`
+tient le modèle, `editor/graph/view.js` l'arithmétique de la toile, et
+`editor/windows/graph.js` le rendu SVG. Les idées de rendu retenues de Legacy — Bézier
+horizontale au décalage `max(50, distance × 0.4)`, pan/zoom par transformation de vue — le
+sont explicitement ; le reste (un nœud est un `<div>`, un port se localise par
+`getBoundingClientRect()`) est ce qu'ADR-0027 refuse de reproduire.
+
+### Ce qu'un nœud est, et qui l'exécute (ADR-0027)
+
+Un type de nœud déclare **sa forme et ce qu'il fait dans une seule table**, au Core : ses
+ports (flux ou donnée, typés par `PropertyType`) et son évaluation, qui est pure — elle lit
+ses entrées et écrit à travers le Component, sans horloge, sans aléatoire, sans DOM.
+
+`runtime/scripting/interpreter.js` détient ce qui n'appartient à aucun nœud : l'ordre
+d'exécution (flux poussé en profondeur d'abord, données tirées), l'état par instance, un
+budget par événement, et des `GraphError` structurées que le runtime isole et rapporte
+(ADR-0012). Un flux qui boucle est une **boucle**, pas une erreur ; un cycle de **données**
+en est une, parce qu'une valeur définie par elle-même n'a aucun ordre d'évaluation.
 
 `.px` et `.js` manipulent les mêmes `Object`, `Component`, `Property`, `Scene`,
 `Resource`, `Event` : ce sont deux façades sur une seule API, pas deux moteurs.
@@ -620,8 +649,21 @@ donnée — `{ type, properties, graph }` — et `defineComponent()` en fait une
 composant ordinaire, enregistrée comme les autres. La définition appartient au **type** :
 une instance ne porte que ses valeurs, jamais une copie du graphe.
 
-C'est ce qui permettra à l'Editor de créer un Custom Component, de définir ses propriétés,
+C'est ce qui permet à l'Editor de créer un Custom Component, de définir ses propriétés,
 d'éditer son graphe, d'enregistrer sa définition et de le réutiliser partout.
+
+**Une propriété utilisateur a une identité (ADR-0027).** Le schéma reste indexé par nom —
+c'est ce que lit `defineComponent()` et ce qu'affiche l'Inspector — mais chaque descripteur
+porte un `id` frappé une fois, et c'est **lui** qu'un nœud stocke :
+
+```json
+"properties": { "speed": { "id": "p7", "type": "number", "default": 120 } }
+```
+
+Renommer `speed` en `walkSpeed` laisse donc le graphe câblé. C'est ADR-0021 une échelle plus
+bas : l'identité n'est pas un nom. Une propriété supprimée ne laisse jamais de référence
+pendante — le validateur la signale, la toile cerne le nœud, l'interprète lève une erreur
+structurée.
 
 `editor/graph/compiler.js` (lexer d'un langage type Rust, jamais exécutable) est
 abandonné. `editor/graph/component.js` est renommé pour ne plus entrer en collision

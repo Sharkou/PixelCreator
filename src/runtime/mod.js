@@ -10,6 +10,7 @@ export { componentFailure, rethrowLater } from './errors.js';
 
 export { Input, InputState, LOCAL } from './input/input.js';
 export { Behaviors } from './scripting/behaviors.js';
+export { DEFAULT_BUDGET, createGraphInterpreter, interpretGraph } from './scripting/interpreter.js';
 
 export { BlendMode, RENDERER_OPERATIONS, missingOperations, assertRenderer } from './rendering/renderer.js';
 export { Canvas2DRenderer } from './rendering/canvas2d.js';

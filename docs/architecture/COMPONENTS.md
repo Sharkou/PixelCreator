@@ -200,16 +200,31 @@ une **définition**, en JSON :
 
 ```json
 {
-  "type": "Controller",
-  "properties": { "speed": { "type": "number", "default": 120 } },
+  "type": "res_c3",
+  "label": "Controller",
+  "properties": { "speed": { "id": "p7", "type": "number", "default": 120 } },
   "graph": { "version": 1, "nodes": [], "connections": [] }
 }
 ```
 
 ```js
 const Controller = components.register(defineComponent(definition));
-behaviors.bind(Controller);        // le graphe vient de la définition
+behaviors.bind(Controller, definition.graph);   // le graphe RÉSOLU, jamais un identifiant
 ```
+
+**`type` est le `ResourceId` de la définition, `label` le nom affiché** (ADR-0021) : un
+renommage réécrit un champ d'une ressource et ne touche ni instance, ni scène, ni projet
+enregistré.
+
+**Chaque propriété porte un `id`, et c'est lui qu'un nœud du graphe stocke** (ADR-0027). Le
+schéma reste indexé par nom — c'est ce que lit `defineComponent()` et ce qu'affiche
+l'Inspector — mais renommer `speed` en `walkSpeed` laisse le graphe câblé, parce que ce qui
+est référencé est l'identité. Le Core ignore ce champ : il ne valide que `type`.
+
+Une propriété supprimée ne laisse **jamais** de référence pendante : `validateGraph()` rend
+`MISSING_PROPERTY`, la fenêtre Graph cerne le nœud, et l'interprète lève un `GraphError` que
+le runtime rapporte (ADR-0012). Le graphe n'est pas réécrit — un geste ne doit pas modifier
+deux choses que le créateur voit, et l'undo devrait alors deviner laquelle rendre.
 
 `defineComponent()` en fait une **classe de composant ordinaire** : registre,
 `addComponent()`, Inspector, sérialisation — rien en aval ne distingue un composant né

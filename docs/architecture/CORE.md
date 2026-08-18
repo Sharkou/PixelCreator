@@ -33,6 +33,13 @@ core/
 ├── scene.js          Scene : collection d'Object
 ├── component.js      contrat + registre de composants
 ├── definition.js     définition d'un type de Component : propriétés + graphe (ADR-0016)
+├── graph/            le modèle de graphe `.px` : nœuds, ports, connexions (ADR-0027)
+│   ├── graph.js      Graph : le modèle, et les Operations qui le mutent
+│   ├── nodes.js      NodeRegistry, ports, compatibilité des types
+│   ├── standard.js   la bibliothèque de nœuds livrée
+│   ├── definition.js ComponentDefinition : le modèle vivant d'un `.px`
+│   ├── validate.js   « ce graphe est-il exécutable, et sinon où »
+│   └── errors.js     GraphIssue / GraphError, structurés
 ├── properties/       Property System (Proxy, Change, observe)
 ├── operations/       Operation, application, historique
 ├── resources/        Resource, registre, chargement
@@ -44,6 +51,13 @@ core/
 
 `operations/` est dans le Core, pas dans `network/` : une Operation existe même hors
 ligne (historique, undo/redo). Le réseau en est un **transport**, pas le propriétaire.
+
+`graph/` est dans le Core pour la même raison que `definition.js` : l'Editor le dessine, le
+Runtime l'interprète, un serveur headless le charge et le valide — trois consommateurs, donc
+la fondation partagée (ADR-0027). Un type de nœud y déclare **sa forme et son évaluation**,
+qui est pure : elle lit ses entrées et écrit à travers le Component, sans DOM, sans horloge
+et sans source aléatoire. Ce qui appartient au Runtime est l'ordre d'exécution, l'état par
+instance, le budget et le rapport d'erreur — pas ce qu'un nœud *est*.
 
 ---
 

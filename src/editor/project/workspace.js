@@ -5,36 +5,80 @@
 // `start()` and had nowhere to put it. This holds the two together and adds exactly what
 // ADR-0020 says is Editor state and never project data:
 //
-//   which resource is open        an OpenEditor, not a `Document`
-//   whether it has unsaved work   derived from the pipeline's 'operation' event
+//   which resources are open      OpenEditors, not `Document`s
+//   whether one has unsaved work  derived from its pipeline's 'operation' event
 //   the undo stack                one per resource, keyed by ResourceId (ADR-0024)
 //
 // NONE OF THAT IS SERIALIZED INTO THE PROJECT. A workspace is a throwaway artefact whose
 // loss costs nothing — the exact opposite of `scene.current` in Legacy, which put IDE
 // state in the model and had five modules reading it (ADR-0017).
 //
-// WHY `dirty` IS DERIVED AND NOT A FLAG. Every mutation of the model that was authored
-// travels through the pipeline as an Operation, so "there is unsaved work" is "an
-// operation was announced since the last save". A flag set by hand would be a second
-// source of truth, and the first thing to go stale.
+// SEVERAL RESOURCES MAY BE OPEN, AND THAT IS THE POINT OF THE MAP (ADR-0027). A scene and
+// the `.px` whose graph a creator is wiring are open at once, each with its own model, its
+// own pipeline and its own undo stack. What is deliberately NOT here is a docking manager
+// or a tab model: which of the open editors a window shows is a question for the window,
+// and `Layout` already answers questions of that kind.
 //
-// The Project's own pipeline gets a stack too, so creating or renaming a resource is
-// undoable — with `Ctrl Z` in the Project panel taking back a resource edit rather than a
-// scene edit, which is the whole reason the stacks are per resource.
+// ONE SCENE AT A TIME, still. Every window is bound to a Scene, so swapping one means
+// rebinding the shell; until that is worth building, opening a second scene closes the
+// first — and says so through the same 'closed' event a deliberate close raises.
+//
+// ATTACHED IS NOT OPEN. Selecting a `.px` in the Project panel gives the Inspector a live
+// model to edit its properties with; that ATTACHES the resource — it gets a model and an
+// undo stack — without any window presenting it. Only `open()` marks a resource as
+// presented, and only a presented resource refuses to be deleted. Without the distinction,
+// clicking a Component once would make it undeletable.
+//
+// WHY `dirty` IS DERIVED AND NOT A FLAG. Every mutation of the model that was authored
+// travels through a pipeline as an Operation, so "there is unsaved work" is "an operation
+// was announced since the last save". A flag set by hand would be a second source of truth,
+// and the first thing to go stale.
 
-import { Emitter } from '../../core/mod.js';
-import { Project, addScene, isDescendantOf, loadScene, saveScene } from '../../project/mod.js';
+import { ComponentDefinition, Emitter, nodes as defaultNodes } from '../../core/mod.js';
+import {
+    Project,
+    ResourceKind,
+    addScene,
+    isDescendantOf,
+    loadScene,
+    saveScene
+} from '../../project/mod.js';
 import { Histories } from '../history.js';
+
+/** What a kind of resource opens as, and how it is read, written and named. */
+const EDITORS = {
+    [ResourceKind.SCENE]: {
+        noun: 'scene',
+        load: (project, id, { registry }) => loadScene(project, id, { registry }),
+        save: (project, id, model, options) => saveScene(project, id, model, options),
+        /** One scene at a time: every window is bound to it (see the header). */
+        exclusive: true
+    },
+    [ResourceKind.COMPONENT]: {
+        noun: 'Component',
+        // A `.px` IS the Component and its graph (ADR-0026), so one payload becomes one
+        // live model — properties and nodes sharing a pipeline, and therefore a stack.
+        load: async (project, id, { nodes }) => ComponentDefinition.deserialize(
+            await project.read(id) ?? { type: id },
+            { registry: nodes }
+        ),
+        save: (project, id, model, options) => project.save(id, model.serialize(), options),
+        exclusive: false
+    }
+};
 
 export class Workspace {
 
     #project;
     #histories;
+    #nodes;
     #emitter = new Emitter();
 
-    /** The open scene: `{ resource, scene, history, unsubscribe }`, or null. */
-    #open = null;
-    #dirty = false;
+    /** ResourceId -> `{ resource, kind, model, history, unsubscribe, open, dirty }`. */
+    #editors = new Map();
+
+    /** The editor a window is presenting and the shortcuts act on, or null. */
+    #active = null;
 
     // WHICH RESOURCE IS SELECTED, kept here and not in the Project panel, because two
     // windows need the same answer: the panel highlights a row, the Inspector shows the
@@ -52,27 +96,33 @@ export class Workspace {
     // scene. So this follows the LAST AUTHORED INTENT — the pipeline an operation was
     // announced on — which is exactly "what the creator was just doing", and it survives
     // the selection going away.
-    #context = 'scene';
+    #context = null;
 
     /**
      * @param {object} [options] - Options
      * @param {object} [options.project] - The project to work in; a new one by default
      * @param {string|null} [options.actor] - Whose operations the stacks record
+     * @param {object} [options.nodes] - The NodeRegistry a `.px` graph is read against
      */
-    constructor({ project = new Project('Untitled Project'), actor = null } = {}) {
+    constructor({ project = new Project('Untitled Project'), actor = null, nodes = defaultNodes } = {}) {
         this.#project = project;
+        this.#nodes = nodes;
         this.#histories = new Histories({ actor });
         // The manifest is a resource like the ones it lists, so it gets its own stack.
         this.#histories.for(project.id, project.operations);
+        this.#context = project.id;
 
         // A selected resource that is removed — by this creator, by a collaborator, or by
-        // an undo — stops being selected. Without this the Inspector would go on editing
-        // something the project no longer declares, which is the incoherent state a
-        // panel-owned selection always ends up in.
+        // an undo — stops being selected, and whatever was editing it is released. Without
+        // this the Inspector would go on editing something the project no longer declares,
+        // which is the incoherent state a panel-owned selection always ends up in.
         project.operations.on('operation', operation => {
-            this.#context = 'project';
+            this.#context = project.id;
             if (operation.type !== 'REMOVE_RESOURCE') return;
-            if (operation.target.object === this.#selected) this.select(null);
+
+            const id = operation.target.object;
+            if (id === this.#selected) this.select(null);
+            if (this.#editors.has(id)) this.close(id);
         });
     }
 
@@ -91,41 +141,81 @@ export class Workspace {
         return this.#histories.get(this.#project.id);
     }
 
+    /** The NodeRegistry a `.px` graph's ports are read against. */
+    get nodes() {
+        return this.#nodes;
+    }
+
     /**
-     * Which of the two stacks the creator is working in: 'scene' or 'project'.
+     * What the creator is working in: 'project' for the manifest, otherwise the kind of the
+     * resource the last intent was authored on.
+     *
      * @returns {string} The context
      */
     get context() {
-        return this.#context;
+        if (this.#context === this.#project.id) return 'project';
+        return this.#editors.get(this.#context)?.kind ?? 'project';
     }
 
     /**
      * The stack an undo should act on right now.
-     *
      * @returns {object|null} The History, or null when there is none
      */
     get activeHistory() {
-        return this.#context === 'project' ? this.projectHistory : this.history;
+        return this.#histories.get(this.#context) ?? this.projectHistory;
     }
 
     /** The open scene's model, or null. */
     get scene() {
-        return this.#open?.scene ?? null;
+        return this.#editorOfKind(ResourceKind.SCENE)?.model ?? null;
     }
 
-    /** The manifest entry the open scene came from, or null. */
+    /** The manifest entry the active editor came from, or null. */
     get resource() {
-        return this.#open?.resource ?? null;
+        return this.#editors.get(this.#active)?.resource ?? null;
     }
 
-    /** The open scene's undo stack, or null. */
+    /** The model the active editor holds — a Scene, a ComponentDefinition — or null. */
+    get model() {
+        return this.#editors.get(this.#active)?.model ?? null;
+    }
+
+    /** The active editor's undo stack, or null. */
     get history() {
-        return this.#open?.history ?? null;
+        return this.#editors.get(this.#active)?.history ?? null;
     }
 
-    /** Whether the open scene carries work that is not in the store. */
+    /** Whether the active editor carries work that is not in the store. */
     get dirty() {
-        return this.#dirty;
+        return this.#editors.get(this.#active)?.dirty ?? false;
+    }
+
+    /** The resources a window is presenting, in the order they were opened. */
+    opened() {
+        return [...this.#editors.values()].filter(editor => editor.open).map(editor => editor.resource);
+    }
+
+    /** The active editor's ResourceId, or null. */
+    get activeId() {
+        return this.#active;
+    }
+
+    /**
+     * The live model attached to a resource, without attaching one.
+     * @param {string} id - The ResourceId
+     * @returns {object|null} The model, or null when nothing is attached
+     */
+    attached(id) {
+        return this.#editors.get(id)?.model ?? null;
+    }
+
+    /**
+     * Whether a window is presenting a resource.
+     * @param {string} id - The ResourceId
+     * @returns {boolean} True when it is open
+     */
+    isOpen(id) {
+        return this.#editors.get(id)?.open === true;
     }
 
     /**
@@ -164,7 +254,7 @@ export class Workspace {
         // Selecting a resource IS a statement about what is being edited; selecting
         // nothing leaves the context where it was, so an undo right after a deletion still
         // lands on the manifest.
-        if (next) this.#context = 'project';
+        if (next) this.#context = this.#project.id;
         this.#emitter.emit('selection', { id: next, resource: this.selected, previous });
         return next;
     }
@@ -172,11 +262,10 @@ export class Workspace {
     /**
      * Whether a resource can be deleted right now.
      *
-     * THE OPEN SCENE CANNOT BE, and the reason is not squeamishness: every window is bound
-     * to that Scene, so removing the resource it came from would leave the Editor editing
-     * something the project no longer declares. Closing an editor is the gesture that
-     * would make it safe, and it does not exist yet — so this refuses, and says why,
-     * rather than leaving a control that half works.
+     * WHAT IS OPEN CANNOT BE, and the reason is not squeamishness: a window is bound to
+     * that model, so removing the resource it came from would leave the Editor editing
+     * something the project no longer declares. Closing the editor is the gesture that
+     * makes it safe, and it exists — so this refuses and says which gesture to make.
      *
      * @param {string|object} resource - The resource, or its id
      * @returns {{allowed: boolean, reason: string|null}} The verdict
@@ -185,29 +274,33 @@ export class Workspace {
         const id = typeof resource === 'string' ? resource : resource?.id ?? null;
         if (!id || !this.#project.has(id)) return { allowed: false, reason: 'It is not in this project.' };
 
-        const open = this.#open?.resource?.id ?? null;
-        if (!open) return { allowed: true, reason: null };
+        for (const editor of this.#editors.values()) {
+            if (!editor.open) continue;
 
-        if (id === open) {
-            return { allowed: false, reason: 'This scene is open. Close it before deleting it.' };
+            const noun = EDITORS[editor.kind]?.noun ?? 'resource';
+            if (id === editor.resource.id) {
+                return { allowed: false, reason: `This ${noun} is open. Close it before deleting it.` };
+            }
+            // A FOLDER TAKES ITS CONTENTS, so a folder holding an open resource is the same
+            // refusal one level up. Without this the guard is decorative: dragging the open
+            // scene into a folder and deleting the folder would delete it anyway.
+            if (isDescendantOf(this.#project, id, editor.resource.id)) {
+                return { allowed: false, reason: `It holds the open ${noun}. Close the ${noun} first.` };
+            }
         }
-        // A FOLDER TAKES ITS CONTENTS, so a folder holding the open scene is the same
-        // refusal one level up. Without this the guard is decorative: dragging the open
-        // scene into a folder and deleting the folder would delete it anyway.
-        if (isDescendantOf(this.#project, id, open)) {
-            return { allowed: false, reason: 'It holds the open scene. Close the scene first.' };
-        }
+
         return { allowed: true, reason: null };
     }
 
     /**
      * Subscribe to workspace changes.
      *
-     *   'opened'    { resource, scene }        a scene became the open one
-     *   'closed'    { resource, scene }        it stopped being open
-     *   'dirty'     { resource, dirty }        there is, or is no longer, unsaved work
-     *   'saved'     { resource, scene }        the store now holds what the model holds
-     *   'selection' { id, resource, previous } another resource is selected, or none
+     *   'opened'    { resource, kind, model, scene }  a resource became open
+     *   'closed'    { resource, kind, model, scene }  it stopped being open
+     *   'dirty'     { resource, dirty }               there is, or is no longer, unsaved work
+     *   'saved'     { resource, model }               the store now holds what the model holds
+     *   'selection' { id, resource, previous }        another resource is selected, or none
+     *   'active'    { resource, id }                  a different editor is the active one
      *
      * @param {string} event - Event name
      * @param {Function} listener - Called with the payload
@@ -226,88 +319,175 @@ export class Workspace {
      */
     create(scene, options = {}) {
         const resource = addScene(this.#project, scene, options);
-        this.#adopt(resource, scene, { dirty: false });
+        this.#adopt(resource, scene, { open: true });
         return resource;
     }
 
     /**
-     * Read a scene back from the project and open it.
+     * Open a resource in an editor, reading it back from the project.
      *
-     * @param {string} id - The scene's ResourceId
+     * @param {string} id - The ResourceId
      * @param {object} [options] - Options
      * @param {object} [options.registry] - Component registry used to resolve type names
-     * @returns {Promise<object|null>} The scene, or null when there is no such payload
+     * @returns {Promise<object|null>} The model, or null when there is nothing to open
      */
-    async open(id, { registry } = {}) {
-        const resource = this.#project.get(id);
-        if (!resource) return null;
+    async open(id, options = {}) {
+        const editor = await this.#attach(id, options);
+        if (!editor) return null;
 
-        const scene = await loadScene(this.#project, id, { registry });
-        if (!scene) return null;
-
-        this.#adopt(resource, scene, { dirty: false });
-        return scene;
+        if (!editor.open) {
+            editor.open = true;
+            this.#emitter.emit('opened', this.#payload(editor));
+        }
+        this.activate(id);
+        return editor.model;
     }
 
     /**
-     * Write the open scene to the store.
+     * Give a resource a live model and an undo stack, without presenting it.
      *
-     * @param {object} [options] - Options
-     * @param {string} [options.actor] - Who authored the intent
-     * @returns {boolean} True when something was written
+     * This is what the Inspector uses to edit a `.px`'s properties from a selection: the
+     * model exists, its edits are undoable, and nothing claims the resource is open.
+     *
+     * @param {string} id - The ResourceId
+     * @param {object} [options] - Options, as open() takes them
+     * @returns {Promise<object|null>} The model, or null when the kind has no editor
      */
-    save({ actor } = {}) {
-        if (!this.#open) return false;
+    async attach(id, options = {}) {
+        return (await this.#attach(id, options))?.model ?? null;
+    }
 
-        saveScene(this.#project, this.#open.resource.id, this.#open.scene, { actor });
-        this.#setDirty(false);
-        this.#emitter.emit('saved', { resource: this.#open.resource, scene: this.#open.scene });
+    /**
+     * Make an already-open editor the one the shortcuts act on.
+     * @param {string} id - The ResourceId
+     * @returns {boolean} True when the active editor changed
+     */
+    activate(id) {
+        if (!this.#editors.has(id) || this.#active === id) return false;
+
+        this.#active = id;
+        this.#context = id;
+        this.#emitter.emit('active', { id, resource: this.resource });
         return true;
     }
 
     /**
-     * Close the open scene, releasing its undo stack.
+     * Write an editor's model to the store.
+     *
+     * @param {object} [options] - Options
+     * @param {string} [options.id] - Which editor; the active one by default
+     * @param {string} [options.actor] - Who authored the intent
+     * @returns {boolean} True when something was written
+     */
+    save({ id = this.#active, actor } = {}) {
+        const editor = this.#editors.get(id);
+        if (!editor) return false;
+
+        EDITORS[editor.kind].save(this.#project, editor.resource.id, editor.model, { actor });
+        this.#setDirty(editor, false);
+        this.#emitter.emit('saved', { resource: editor.resource, model: editor.model, scene: this.#sceneOf(editor) });
+        return true;
+    }
+
+    /**
+     * Close an editor, releasing its model and its undo stack.
      *
      * Unsaved work is NOT saved on the way out and NOT silently dropped either: the caller
      * asks `dirty` first and decides. A workspace that saved by itself would make an undo
      * stack the only record of what a creator meant to keep.
      *
-     * @returns {boolean} True when a scene was open
+     * @param {string} [id] - Which editor; the active one by default
+     * @returns {boolean} True when an editor was closed
      */
-    close() {
-        if (!this.#open) return false;
+    close(id = this.#active) {
+        const editor = this.#editors.get(id);
+        if (!editor) return false;
 
-        const { resource, scene, unsubscribe } = this.#open;
-        unsubscribe();
-        this.#histories.close(resource.id);
-        this.#open = null;
-        this.#setDirty(false);
+        editor.unsubscribe();
+        this.#histories.close(editor.resource.id);
+        this.#editors.delete(editor.resource.id);
 
-        this.#emitter.emit('closed', { resource, scene });
+        if (this.#active === editor.resource.id) {
+            // Whatever is left, so a close does not leave the shortcuts pointing at nothing.
+            this.#active = [...this.#editors.keys()].at(-1) ?? null;
+            if (this.#context === editor.resource.id) this.#context = this.#active ?? this.#project.id;
+        }
+
+        if (editor.dirty) this.#emitter.emit('dirty', { resource: editor.resource, dirty: false });
+        this.#emitter.emit('closed', this.#payload(editor));
         return true;
     }
 
-    #adopt(resource, scene, { dirty }) {
-        this.close();
-
-        const history = this.#histories.for(resource.id, scene.operations);
-        // "Unsaved work" is exactly "an authored operation since the last write". Applied
-        // operations — replicated ones — emit nothing, so a scene kept in step by the
-        // network is not reported as locally modified, which is correct: there is nothing
-        // of this creator's to lose.
-        const unsubscribe = scene.operations.on('operation', () => {
-            this.#context = 'scene';
-            this.#setDirty(true);
-        });
-
-        this.#open = { resource, scene, history, unsubscribe };
-        this.#setDirty(dirty);
-        this.#emitter.emit('opened', { resource, scene });
+    /** Close every open editor, in the order they were opened. */
+    closeAll() {
+        for (const id of [...this.#editors.keys()]) this.close(id);
     }
 
-    #setDirty(dirty) {
-        if (this.#dirty === dirty) return;
-        this.#dirty = dirty;
-        this.#emitter.emit('dirty', { resource: this.resource, dirty });
+    async #attach(id, { registry } = {}) {
+        const existing = this.#editors.get(id);
+        if (existing) return existing;
+
+        const resource = this.#project.get(id);
+        if (!resource) return null;
+
+        const entry = EDITORS[resource.kind];
+        if (!entry) return null;
+
+        const model = await entry.load(this.#project, id, { registry, nodes: this.#nodes });
+        if (!model) return null;
+
+        return this.#adopt(resource, model, { open: false });
+    }
+
+    #adopt(resource, model, { open }) {
+        const entry = EDITORS[resource.kind];
+        // One scene at a time: every window is bound to it, so a second one replaces it.
+        if (entry.exclusive) {
+            const current = this.#editorOfKind(resource.kind);
+            if (current) this.close(current.resource.id);
+        }
+
+        const history = this.#histories.for(resource.id, model.operations);
+        // "Unsaved work" is exactly "an authored operation since the last write". Applied
+        // operations — replicated ones — emit nothing, so a model kept in step by the
+        // network is not reported as locally modified, which is correct: there is nothing
+        // of this creator's to lose.
+        const editor = { resource, kind: resource.kind, model, history, dirty: false, open: false, unsubscribe: null };
+        editor.unsubscribe = model.operations.on('operation', () => {
+            this.#context = resource.id;
+            this.#setDirty(editor, true);
+        });
+
+        this.#editors.set(resource.id, editor);
+        this.#active = resource.id;
+
+        if (open) {
+            editor.open = true;
+            this.#emitter.emit('opened', this.#payload(editor));
+        }
+        return editor;
+    }
+
+    #editorOfKind(kind) {
+        return [...this.#editors.values()].find(editor => editor.kind === kind) ?? null;
+    }
+
+    #sceneOf(editor) {
+        return editor.kind === ResourceKind.SCENE ? editor.model : null;
+    }
+
+    #payload(editor) {
+        return {
+            resource: editor.resource,
+            kind: editor.kind,
+            model: editor.model,
+            scene: this.#sceneOf(editor)
+        };
+    }
+
+    #setDirty(editor, dirty) {
+        if (editor.dirty === dirty) return;
+        editor.dirty = dirty;
+        this.#emitter.emit('dirty', { resource: editor.resource, dirty });
     }
 }

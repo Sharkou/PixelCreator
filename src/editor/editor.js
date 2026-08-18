@@ -13,7 +13,7 @@
 // finger: delete sits in the Hierarchy row, framing is a double-click, deselecting is a
 // tap on empty space. A tablet must never hit a wall (docs/architecture/EDITOR.md).
 
-import { Object, Scene, Transform, components } from '../core/mod.js';
+import { Object, Scene, Transform, components, registerStandardNodes } from '../core/mod.js';
 import { Camera } from '../runtime/mod.js';
 import { Selection } from './selection.js';
 import { Layout } from './layout.js';
@@ -22,9 +22,10 @@ import { deleteObject } from './commands.js';
 import { Workspace } from './project/workspace.js';
 import { fillStarterScene } from './project/starter.js';
 import { installDocumentStyles, sheet } from './ui/styles.js';
-import { el } from './ui/element.js';
-import { icon } from './ui/icons.js';
+import { el, fill } from './ui/element.js';
+import { icon, iconForResource } from './ui/icons.js';
 import { openMenu } from './ui/menu.js';
+import { ResourceKind } from '../project/mod.js';
 import { DropZone } from './dnd/payload.js';
 import { canDrop, performDrop } from './dnd/rules.js';
 import { carriesFiles, readDroppedFiles } from './dnd/files.js';
@@ -39,6 +40,7 @@ import './windows/hierarchy.js';
 import './windows/inspector.js';
 import './windows/toolbar.js';
 import './windows/project.js';
+import './windows/graph.js';
 import './windows/timeline.js';
 
 /**
@@ -150,6 +152,76 @@ const shellStyles = sheet(`
         .workspace > px-splitter { display: none; }
     }
 
+    /* ── the stage ─────────────────────────────────────────────────────
+       WHAT A CREATOR IS LOOKING AT, and the strip that says what else is open. The scene
+       and every open .px share this space rather than each taking a column: they are
+       the same kind of thing — a resource being edited — and a canvas needs the room
+       (ADR-0027). The strip appears only when there is a choice to make. */
+    .stage {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
+    }
+
+    .stage > px-viewport, .stage > px-graph { flex: 1; min-width: 0; min-height: 0; }
+
+    .stage-tabs {
+        display: flex;
+        align-items: stretch;
+        flex: 0 0 auto;
+        gap: 1px;
+        background: var(--px-surface-raised);
+        border-bottom: 1px solid var(--px-border);
+        overflow-x: auto;
+        -webkit-user-select: none;
+        user-select: none;
+    }
+
+    .stage-tabs[hidden] { display: none; }
+
+    .stage-tab {
+        display: flex;
+        align-items: center;
+        gap: var(--px-space-1);
+        height: var(--px-hit);
+        padding: 0 var(--px-space-1) 0 var(--px-space-2);
+        border: none;
+        border-right: 1px solid var(--px-border);
+        background: transparent;
+        color: var(--px-text-muted);
+        font: inherit;
+        font-size: var(--px-text-xs);
+        white-space: nowrap;
+        cursor: pointer;
+    }
+
+    .stage-tab:hover { background: var(--px-surface-hover); color: var(--px-text); }
+    .stage-tab.on { background: var(--px-surface); color: var(--px-text-strong); }
+    .stage-tab .glyph { color: var(--px-text-dim); }
+    .stage-tab.on .glyph { color: var(--px-accent); }
+
+    /* The close button is always there — a tab with unsaved work is exactly the one a
+       creator may want to close, and hiding the control behind the dot that says so was
+       the worst possible trade. */
+    .stage-tab .close {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        border: none;
+        border-radius: var(--px-radius-sm);
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        opacity: 0.5;
+    }
+
+    .stage-tab .close:hover { background: var(--px-surface-active); opacity: 1; }
+    .stage-tab .dot { width: 6px; height: 6px; margin: 0 6px; border-radius: 50%; background: var(--px-accent); }
+
     /* A size restored from storage must never be able to swallow the window. */
     .col-left { width: min(var(--px-left), 40vw); }
     .col-right { width: min(var(--px-right), 46vw); }
@@ -166,6 +238,10 @@ export function start(mount = document.body) {
     installDocumentStyles();
     document.adoptedStyleSheets = [...document.adoptedStyleSheets, shellStyles];
     registerBuiltIns(components);
+    // The node catalogue, filled the same way and for the same reason: registration is an
+    // application concern, and a module with a side effect on import cannot be imported
+    // without accepting it (editor/registry.js, ADR-0027).
+    registerStandardNodes();
 
     const scene = fillStarterScene(new Scene('Untitled Scene', { registry: components }));
     const selection = new Selection();
@@ -188,6 +264,7 @@ export function start(mount = document.body) {
     const hierarchy = el('px-hierarchy').bind({ scene, selection, viewport, workspace });
     const inspector = el('px-inspector').bind({ scene, selection, registry: components, workspace });
     const project = el('px-project').bind({ workspace, scene, selection });
+    const graph = el('px-graph', { hidden: true });
     const timeline = el('px-timeline');
 
     // The creation tools are slotted INTO the viewport, beside Frame selection and Reset
@@ -228,8 +305,16 @@ export function start(mount = document.body) {
 
     const columnLeft = el('div', { class: 'col-left' }, hierarchy, projectSplit, project);
     const columnRight = el('div', { class: 'col-right' }, inspector);
+    // THE SCENE AND EVERY OPEN `.px` SHARE ONE SURFACE (ADR-0027). They are the same kind
+    // of thing — a resource being edited — and both want the room; a strip above says what
+    // else is open, and appears only when there is more than one.
+    const tabs = stageTabs({ workspace, viewport, graph, inspector });
     const stack = el('div', { class: 'stack' },
-        el('div', { class: 'work' }, columnLeft, leftSplit, viewport),
+        el('div', { class: 'work' },
+            columnLeft,
+            leftSplit,
+            el('div', { class: 'stage' }, tabs.element, viewport, graph)
+        ),
         timelineSplit,
         timeline
     );
@@ -274,11 +359,40 @@ export function start(mount = document.body) {
     // selects, and the panel shows one at a time: selecting in either place clears the
     // other, here rather than inside a window, because neither window should have to know
     // the other exists (ADR-0025).
+    // THREE SUBJECTS, ONE PANEL. An Object, a Resource and a graph node are all things a
+    // creator selects, and the Inspector shows one at a time: selecting in any of the three
+    // places clears the other two, here rather than inside a window, because no window
+    // should have to know the others exist (ADR-0025, ADR-0027).
     selection.observe(({ object }) => {
-        if (object) workspace.select(null);
+        if (!object) return;
+        workspace.select(null);
+        inspector.inspectNode(null);
     });
     workspace.on('selection', ({ id }) => {
-        if (id) selection.clear();
+        if (!id) return;
+        selection.clear();
+        inspector.inspectNode(null);
+    });
+
+    // The canvas announces what it selected; the shell routes it. Neither element holds a
+    // reference to the other (ADR-0006).
+    shell.addEventListener('px-node-selected', event => {
+        const { node, definition } = event.detail;
+        if (node) {
+            selection.clear();
+            workspace.select(null);
+        }
+        inspector.inspectNode(node, definition);
+    });
+
+    // DOUBLE-CLICK OPENS A RESOURCE. The Project panel announces the intent and knows
+    // nothing about what an editor is; this is the one place that decides a `.px` opens a
+    // canvas — and a kind with no editor is refused out loud rather than ignored
+    // (ADR-0026, ADR-0027).
+    shell.addEventListener('px-open-resource', async event => {
+        const { resource } = event.detail;
+        const model = await workspace.open(resource.id, { registry: components });
+        if (!model) reportUnopenable(resource);
     });
 
     bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarchy, inspector });
@@ -549,6 +663,95 @@ function isEditing() {
     if (!element) return false;
     if (element.isContentEditable) return true;
     return element.tagName === 'INPUT' || element.tagName === 'SELECT' || element.tagName === 'TEXTAREA';
+}
+
+/**
+ * The strip of open editors, and which one the stage is showing.
+ *
+ * WHAT A TAB IS HERE, AND WHAT IT IS NOT. It is a view of `Workspace.opened()` — the
+ * resources a window is presenting — and clicking one calls `activate()`. It is NOT a
+ * document model, not a drag-to-reorder strip, and not detachable: which resource is open
+ * is Workspace state (ADR-0020), and everything a tab strip usually accumulates beyond
+ * that is view state nobody has asked for yet.
+ *
+ * The strip hides itself when there is nothing to choose between, so a creator who never
+ * opens a `.px` never sees a row of chrome (ADR-0026 §14: only what exists).
+ *
+ * @param {object} context - The workspace, the two surfaces, and the Inspector
+ * @returns {{element: HTMLElement, sync: Function}} The strip, and how to refresh it
+ */
+function stageTabs({ workspace, viewport, graph, inspector }) {
+    const element = el('div', { class: 'stage-tabs', role: 'tablist' });
+
+    const sync = () => {
+        const open = workspace.opened();
+        const active = workspace.activeId;
+
+        // ONE TAB IS NO CHOICE. The strip earns its row the moment there are two.
+        element.hidden = open.length < 2;
+
+        fill(element, open.map(resource => {
+            const on = resource.id === active;
+            const dirty = workspace.dirty && on;
+
+            const close = el('button', {
+                class: 'close',
+                type: 'button',
+                title: `Close ${resource.name}`,
+                'aria-label': `Close ${resource.name}`,
+                onclick: event => {
+                    event.stopPropagation();
+                    workspace.close(resource.id);
+                }
+            }, icon('close', 12));
+
+            return el('button', {
+                class: `stage-tab${on ? ' on' : ''}`,
+                type: 'button',
+                role: 'tab',
+                'aria-selected': globalThis.String(on),
+                onclick: () => workspace.activate(resource.id)
+            },
+                el('span', { class: 'glyph' }, icon(iconForResource(resource), 14)),
+                el('span', { textContent: resource.name || 'Untitled' }),
+                // THE DOT DOES NOT REPLACE THE CLOSE BUTTON. Sharing one slot looked tidy
+                // and meant a tab with unsaved work could not be closed at all — the one
+                // state in which a creator most needs the choice. Both, always.
+                dirty ? el('span', { class: 'dot', title: 'Unsaved changes' }) : null,
+                close
+            );
+        }));
+
+        // WHICH SURFACE IS SHOWN follows the active editor's KIND, not a flag somebody has
+        // to remember to set. A scene shows the viewport; a `.px` shows the canvas.
+        const showing = workspace.activeId ? workspace.project.get(workspace.activeId) : null;
+        const isGraph = showing?.kind === ResourceKind.COMPONENT && workspace.isOpen(showing.id);
+
+        viewport.hidden = isGraph;
+        graph.hidden = !isGraph;
+        graph.bind(isGraph ? workspace.attached(showing.id) : null);
+
+        // A node selected on a canvas that is no longer on screen is not selected.
+        if (!isGraph) inspector.inspectNode(null);
+    };
+
+    for (const event of ['opened', 'closed', 'active', 'dirty', 'saved']) workspace.on(event, sync);
+    sync();
+
+    return { element, sync };
+}
+
+/**
+ * Say why a resource did not open.
+ *
+ * A refusal with a reason, like every other refusal in this Editor: "nothing happened" is
+ * the worst possible answer to a gesture a creator spent a double-click on (ADR-0026 §6).
+ * The Console window is a later step, so for now this goes where a developer sees it.
+ *
+ * @param {object} resource - The manifest entry that has no editor
+ */
+function reportUnopenable(resource) {
+    console.warn(`[editor] "${resource.name}" has no editor yet — nothing opens a ${resource.kind}.`);
 }
 
 function reportFailure(report) {

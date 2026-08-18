@@ -32,6 +32,14 @@ export {
     moveResourceOperation,
     removeResourceOperation
 } from './operations/operation.js';
+export {
+    addNodeOperation,
+    removeNodeOperation,
+    connectOperation,
+    disconnectOperation,
+    addPropertyOperation,
+    removePropertyOperation
+} from './operations/graph-operations.js';
 export { invert, invertible } from './operations/invert.js';
 export { Operations } from './operations/operations.js';
 export { AllowAllAuthority, PredicateAuthority, allow, deny } from './operations/authority.js';
@@ -50,6 +58,33 @@ export {
 } from './component.js';
 export { missingComponent, isMissingComponent } from './missing.js';
 export { defineComponent, componentDefinition, componentGraph } from './definition.js';
+
+// The `.px` graph: its model, its catalogue of node types, and the rules that say whether
+// a graph is runnable (ADR-0027). All of it is Core because all of it is shared — the
+// Editor draws it, the Runtime interprets it, and a headless build checks it.
+export {
+    ANY_TYPE,
+    NODE_CATEGORIES,
+    NodeRegistry,
+    PortDirection,
+    PortKind,
+    createPort,
+    groupNodes,
+    nodes,
+    portOf,
+    portsOf,
+    typesCompatible
+} from './graph/nodes.js';
+export {
+    PROPERTY_REFERENCE,
+    STANDARD_NODES,
+    referencedProperty,
+    registerStandardNodes
+} from './graph/standard.js';
+export { GRAPH_VERSION, Graph, createConnection, createNode } from './graph/graph.js';
+export { DEFAULT_PROPERTY_TYPE, ComponentDefinition } from './graph/definition.js';
+export { GraphError, GraphIssueCode, GraphSeverity, firstError, graphIssue } from './graph/errors.js';
+export { runnable, validateGraph } from './graph/validate.js';
 
 export { Matrix } from './math/matrix.js';
 export { Transform, localMatrix, worldMatrix, worldPosition } from './components/transform.js';
