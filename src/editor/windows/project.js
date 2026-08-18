@@ -327,13 +327,28 @@ export class Project extends Element {
      * @param {object} context.workspace - The workspace
      * @param {object} [context.scene] - The open scene, for drops that instantiate
      * @param {object} [context.selection] - The Editor selection
+     * @param {object} [context.subject] - Where a selection INTENT is announced (ADR-0032)
      * @returns {Project} This element
      */
-    bind({ workspace, scene = null, selection = null }) {
+    bind({ workspace, scene = null, selection = null, subject = null }) {
         this.#workspace = workspace;
         this.scene = scene;
         this.selection = selection;
+        this.subject = subject;
         return this;
+    }
+
+    /**
+     * Announce that the creator is working on a resource, or on nothing.
+     *
+     * ONE CALL, AND THE OBJECT SELECTION FOLLOWS (ADR-0032). This panel used to clear the
+     * object holder itself, next to every `workspace.select()`.
+     *
+     * @param {string|null} id - The ResourceId, or null for nothing
+     */
+    #announce(id) {
+        if (this.subject) this.subject.resource(id);
+        else this.#workspace?.select(id);
     }
 
     connectedCallback() {
@@ -391,11 +406,10 @@ export class Project extends Element {
             onpointerdown: event => {
                 if (event.target !== this.#grid) return;
                 this.#cancelRename();
-                // BOTH HOLDERS, for the reason windows/hierarchy.js gives: clearing one of
-                // them announces nothing when it was already empty, so the OTHER panel
-                // would keep a selection this click was meant to drop.
-                this.#workspace?.select(null);
-                this.selection?.clear();
+                // ONE INTENTION. Clearing one holder announces nothing when it was already
+                // empty, so the other panel used to keep a selection this click was meant
+                // to drop — the reason now lives in `subject.js`, once (ADR-0032).
+                this.#announce(null);
             },
         });
         this.#crumbs = el('div', { class: 'crumbs' });
@@ -488,7 +502,7 @@ export class Project extends Element {
         });
         if (!created) return;
 
-        this.#workspace.select(created.id);
+        this.#announce(created.id);
         this.#render();
 
         const tile = this.#tiles.get(created.id);
@@ -677,7 +691,7 @@ export class Project extends Element {
                     return;
                 }
 
-                this.#workspace.select(resource.id);
+                this.#announce(resource.id);
                 // SECOND CLICK ON A SELECTED TILE RENAMES, after the pause that tells a
                 // second click from the first half of a double-click — the same rule, and
                 // the same 400 ms, the Hierarchy lives by (ADR-0026).

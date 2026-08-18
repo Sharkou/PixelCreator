@@ -175,6 +175,7 @@ export class Viewport extends Element {
     #scene = null;
     #camera = null;
     #selection = null;
+    #subject = null;
     #onError = null;
 
     #surface = null;
@@ -217,19 +218,27 @@ export class Viewport extends Element {
      * @param {object} context - Editor context
      * @param {object} context.scene - The scene to draw
      * @param {object} context.camera - The Object acting as the editor camera
-     * @param {object} context.selection - The Editor selection
+     * @param {object} context.selection - The Editor selection, read to draw the outline
+     * @param {object} [context.subject] - Where a selection INTENT is announced (ADR-0032)
      * @param {Function} [context.onError] - Receives runtime ComponentFailure reports
      * @returns {Viewport} This element
      */
-    bind({ scene, camera, selection, onError }) {
+    bind({ scene, camera, selection, subject = null, onError }) {
         this.#scene = scene;
         this.#camera = camera;
         this.#selection = selection;
+        this.#subject = subject;
         this.#onError = onError ?? null;
 
+        // TWO ROLES, AND THEY ARE NOT THE SAME OBJECT. `selection` is READ — the outline,
+        // the handles and the cursor all ask it what is selected. `subject` is WRITTEN, and
+        // it is the only way this surface says what the creator is now working on: a click
+        // on bare canvas has to reach the Project panel's tile too, and only an announced
+        // intention does that (ADR-0032).
         this.#tool = new SelectTool({
             scene,
             selection,
+            subject,
             coarse: () => globalThis.matchMedia?.('(pointer: coarse)').matches ?? false
         });
         this.#pan = new PanTool(camera);
@@ -698,7 +707,7 @@ export class Viewport extends Element {
             this.#snapCamera();
             // A finger that pressed empty space and did not travel meant "deselect".
             if (this.#tap && Math.hypot(event.clientX - this.#tap.x, event.clientY - this.#tap.y) <= TAP_SLOP) {
-                this.#selection.clear();
+                this.#clearSubject();
             }
         }
 
@@ -707,6 +716,12 @@ export class Viewport extends Element {
         this.#tool.release();
         this.#refreshCursor();
         this.#invalidate();
+    }
+
+    /** Announce "working on nothing", so every panel drops its subject (ADR-0032). */
+    #clearSubject() {
+        if (this.#subject) this.#subject.clear();
+        else this.#selection.clear();
     }
 
     #onPointerLeave() {

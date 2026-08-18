@@ -16,6 +16,7 @@
 import { Object, Scene, Transform, components, observe, registerStandardNodes } from '../core/mod.js';
 import { Camera } from '../runtime/mod.js';
 import { Selection } from './selection.js';
+import { Subject } from './subject.js';
 import { Layout } from './layout.js';
 import { registerBuiltIns } from './registry.js';
 import { addComponent, deleteObject } from './commands.js';
@@ -348,10 +349,16 @@ export function start(mount = document.body) {
     // arrangement `project/graphs.js` describes for binding a graph.
     const definitions = createDefinitions({ project: workspace.project, registry: components, workspace, scene });
 
-    const viewport = el('px-viewport').bind({ scene, camera, selection, onError: reportFailure });
-    const hierarchy = el('px-hierarchy').bind({ scene, selection, viewport, workspace });
-    const inspector = el('px-inspector').bind({ scene, selection, registry: components, workspace, definitions });
-    const project = el('px-project').bind({ workspace, scene, selection });
+    // ONE INTENTION CHANNEL FOR THREE SUBJECTS (ADR-0032). A window says what the creator
+    // is working on; it does not have to know that a second holder exists, and it cannot
+    // forget to empty it. This replaces the pair of echoing observers that used to live
+    // further down, and the re-entrancy flag they needed.
+    const subject = new Subject({ selection, workspace });
+
+    const viewport = el('px-viewport').bind({ scene, camera, selection, subject, onError: reportFailure });
+    const hierarchy = el('px-hierarchy').bind({ scene, selection, subject, viewport, workspace });
+    const inspector = el('px-inspector').bind({ scene, selection, subject, registry: components, workspace, definitions });
+    const project = el('px-project').bind({ workspace, scene, selection, subject });
     const graph = el('px-graph', { hidden: true });
     const timeline = el('px-timeline');
 
@@ -361,7 +368,7 @@ export function start(mount = document.body) {
     // three buttons and put them as far from the surface they drop onto as the layout
     // allowed. The drag itself is unchanged and still belongs to <px-toolbar> — the
     // viewport only provides the slot (docs/architecture/EDITOR.md).
-    const toolbar = el('px-toolbar', { slot: 'tools' }).bind({ scene, selection, viewport });
+    const toolbar = el('px-toolbar', { slot: 'tools' }).bind({ scene, selection, subject, viewport });
     viewport.append(toolbar);
 
     // `invert` is "moving towards the origin grows this size", which is true of every
@@ -461,38 +468,16 @@ export function start(mount = document.body) {
         if (selection.has(object)) selection.clear();
     });
 
-    // THREE SUBJECTS, ONE PANEL, AND ONE PLACE THAT ROUTES BETWEEN THEM. An Object, a
-    // Resource and a graph node are all things a creator selects, and the Inspector shows
-    // one at a time. The routing lives here rather than inside a window, because no window
-    // should have to know the others exist (ADR-0025, ADR-0027).
+    // THREE SUBJECTS, ONE PANEL, AND ONE PLACE THAT ROUTES BETWEEN THEM — `subject`, above
+    // (ADR-0032). An Object, a Resource and a graph node are all things a creator selects,
+    // and the Inspector shows one at a time.
     //
-    // CLEARING IS A SELECTION TOO, and that is what changed. Each handler used to return
-    // early when the new selection was empty, so clicking bare canvas cleared the object
-    // and left the Project tile selected — two panels claiming the subject at once, and an
-    // Inspector still showing a resource nobody had in mind. An empty selection now
-    // propagates like any other.
-    //
-    // THE FLAG IS WHAT MAKES THAT SAFE. Without it, propagating an empty selection is a
-    // loop: selecting a resource clears the object, which clears the resource. `routing`
-    // says "this change is already an echo of one being handled", which is the same
-    // anti-echo idea `Operations` uses for a replicated write (ADR-0011).
-    let routing = false;
-    const route = act => {
-        if (routing) return;
-        routing = true;
-        try {
-            act();
-        } finally {
-            routing = false;
-        }
-    };
-
-    selection.observe(() => route(() => {
-        workspace.select(null);
-    }));
-    workspace.on('selection', () => route(() => {
-        selection.clear();
-    }));
+    // WHAT USED TO BE HERE, AND WHY IT IS GONE. Each holder's change was propagated to the
+    // other behind a re-entrancy flag. That deduced the intention from its consequences,
+    // and it missed the one case that matters: `Selection.set(null)` emits nothing when the
+    // selection was already empty, so clicking bare canvas never announced anything and the
+    // Project tile stayed selected. An intention is now announced by whoever caused it, so
+    // there is no echo to cut and no flag to get right.
 
     // The canvas announces what it selected; the shell routes it. Neither element holds a
     // reference to the other (ADR-0006).
@@ -509,7 +494,7 @@ export function start(mount = document.body) {
     // (ADR-0025). The Graph keeps its own selection for moving and deleting.
     shell.addEventListener('px-node-selected', event => {
         const { definition } = event.detail;
-        if (definition) workspace.select(definition.type);
+        if (definition) subject.resource(definition.type);
     });
 
     // DOUBLE-CLICK OPENS A RESOURCE. The Project panel announces the intent and knows
@@ -522,10 +507,10 @@ export function start(mount = document.body) {
         if (!model) reportUnopenable(resource);
     });
 
-    bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarchy, inspector, project });
-    bindShortcuts({ scene, selection, viewport, history, workspace });
+    bindDragAndDrop({ shell, scene, subject, viewport, workspace, hierarchy, inspector, project });
+    bindShortcuts({ scene, selection, subject, viewport, history, workspace });
 
-    return { scene, camera, selection, layout, viewport, history, histories, workspace, transport, definitions };
+    return { scene, camera, selection, subject, layout, viewport, history, histories, workspace, transport, definitions };
 }
 
 /**
@@ -715,13 +700,13 @@ function transportControls(transport) {
  *
  * @param {object} context - The windows, and the model they act on
  */
-function bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarchy, inspector, project }) {
+function bindDragAndDrop({ shell, scene, subject, viewport, workspace, hierarchy, inspector, project }) {
     const context = () => ({
         scene,
         project: workspace.project,
         workspace,
         folder: null,
-        select: object => selection.set(object),
+        select: object => subject.object(object),
         install: id => definitions.install(id),
         addComponent: (object, type) => addComponent(object, type, components)
     });
@@ -877,7 +862,7 @@ function within(element, clientX, clientY) {
     return clientX >= box.left && clientX < box.right && clientY >= box.top && clientY < box.bottom;
 }
 
-function bindShortcuts({ scene, selection, viewport, history, workspace }) {
+function bindShortcuts({ scene, selection, subject, viewport, history, workspace }) {
     /**
      * The stack `Ctrl Z` acts on.
      *
@@ -933,7 +918,7 @@ function bindShortcuts({ scene, selection, viewport, history, workspace }) {
             const object = selection.object;
             if (!object) return;
             event.preventDefault();
-            selection.clear();
+            subject.clear();
             deleteObject(scene, object);
             return;
         }
@@ -943,10 +928,7 @@ function bindShortcuts({ scene, selection, viewport, history, workspace }) {
             return;
         }
 
-        if (event.key === 'Escape') {
-            selection.clear();
-            workspace.select(null);
-        }
+        if (event.key === 'Escape') subject.clear();
     });
 }
 

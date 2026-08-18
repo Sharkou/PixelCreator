@@ -9,22 +9,15 @@
 // Because it is drawn in world space, the grid pans, zooms and rotates with the camera
 // for free, instead of being a screen-space pattern that only holds together while the
 // camera is upright.
+//
+// HOW DENSE IT IS AT A GIVEN ZOOM IS NOT THIS FILE'S DECISION. It is `editor/grid.js`, and
+// it is shared with the Graph canvas: two infinite planes a creator pans across must not
+// disagree about what a plane looks like.
+
+import { MAJOR_EVERY, adaptiveSpacing } from '../grid.js';
 
 /** World units between the finest grid lines, before adaptive scaling. */
 const BASE_SPACING = 32;
-
-/**
- * CSS pixels a spacing must stay within, so the grid never turns into a fog.
- *
- * CSS pixels, not device pixels. Expressed in device pixels the grid was twice as dense
- * on a 2x display as on a 1x one, for the same camera — the same scene looked different
- * depending on the monitor, and drew twice as many lines for the privilege.
- */
-const MIN_SCREEN_SPACING = 14;
-const MAX_SCREEN_SPACING = 160;
-
-/** How many fine lines make one emphasised line. */
-const MAJOR_EVERY = 4;
 
 /**
  * Draw the grid and the world axes.
@@ -50,7 +43,7 @@ export function drawGrid(renderer, view, {
     const scale = matrixScale(view);
     if (!(scale > 0)) return;
 
-    const spacing = adaptiveSpacing(scale, density);
+    const spacing = adaptiveSpacing(BASE_SPACING, scale, density);
     const area = visibleWorldArea(view, renderer.width, renderer.height);
 
     // One device pixel, expressed in the world units the transform is about to be set to.
@@ -128,15 +121,6 @@ export function visibleWorldArea(view, width, height) {
         top: Math.min(...corners.map(point => point.y)),
         bottom: Math.max(...corners.map(point => point.y))
     };
-}
-
-function adaptiveSpacing(scale, density) {
-    // The bounds are CSS pixels; the scale is device pixels per world unit.
-    const perCss = scale / (density > 0 ? density : 1);
-    let spacing = BASE_SPACING;
-    while (spacing * perCss < MIN_SCREEN_SPACING) spacing *= 2;
-    while (spacing * perCss > MAX_SCREEN_SPACING) spacing /= 2;
-    return spacing;
 }
 
 /**

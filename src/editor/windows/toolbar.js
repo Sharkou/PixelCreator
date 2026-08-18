@@ -125,7 +125,7 @@ export class Toolbar extends Element {
         const dragged = Boolean(drag.ghost);
         this.#cancel();
 
-        const { scene, selection, viewport } = this.#context;
+        const { scene, selection, subject, viewport } = this.#context;
 
         // Dropped on the scene: exactly where the pointer let go. Tapped, or dropped
         // anywhere else: the centre of what the creator is currently looking at, which is
@@ -136,11 +136,16 @@ export class Toolbar extends Element {
 
         if (dragged && !viewport.containsClient(event.clientX, event.clientY)) return;
 
-        selection.set(createObject(scene, {
+        const created = createObject(scene, {
             kind: drag.kind.id,
             x: Math.round(point.x),
             y: Math.round(point.y)
-        }));
+        });
+
+        // Announced, so a resource selected in Project steps aside for the object that was
+        // just made (ADR-0032).
+        if (subject) subject.object(created);
+        else selection.set(created);
     }
 
     #cancel() {

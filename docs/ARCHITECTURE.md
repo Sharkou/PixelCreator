@@ -35,7 +35,10 @@
 | Références | Une propriété `resource` est **choisie, déposée ou vidée — jamais tapée** : un contrôle qui montre ce que la référence désigne, et une déclaration (`kind`, `mime`) que le sélecteur et la règle de dépôt lisent tous les deux (ADR-0030 §1) |
 | Rangs | Réordonner une propriété de `.px` est `REMOVE_PROPERTY` + `ADD_PROPERTY` **sous un `batch`** : deux opérations existantes portent déjà le descripteur et l'index, donc il n'y a pas de `MOVE_PROPERTY` (ADR-0030 §2) |
 | Recherche | Un menu long **s'ouvre sur ses catégories**, et une requête est **notée** contre le nom, le type, la catégorie et les alias — module pur et testé, jamais un `includes()` (ADR-0030 §3) |
-| Couleur | **Six teintes, deux questions** : ce qu'est un nœud et ce que transporte un fil puisent dans la même palette, donc un nœud Math et un port `number` sont le même bleu (ADR-0030 §4) |
+| Couleur | **Six teintes, deux questions** : ce qu'est un nœud et ce que transporte un fil puisent dans la même palette, donc un nœud Math et un port `number` sont le même bleu (ADR-0030 §4). Un nœud littéral **est** une valeur, donc il porte la teinte de son type et non celle de sa catégorie (ADR-0033 §4) |
+| Sélection | **Une intention s'annonce, elle ne se déduit pas** : une fenêtre dit `object` / `resource` / `clear`, un aiguilleur écrit dans les deux détenteurs, et au plus un est plein (ADR-0032) |
+| Nœuds | **Un nœud est une suite de rangées** : un contrôle appartient à la rangée du port qu'il édite, donc un `Number` tient sur une ligne et le slot de `Set Property` fait face à sa valeur (ADR-0033 §1) |
+| Fils | Le trait visible est **inerte** ; c'est la cible sous lui qu'on pointe. Reprendre un fil n'écrit rien avant le lâcher, et le remplacement est **un** `batch` (ADR-0033 §2, §3) |
 | Projets Legacy | **Aucune migration de données à concevoir** — il n'existe pas de projets v1 |
 
 ---

@@ -489,6 +489,7 @@ export class Inspector extends Element {
     #selection = null;
     #registry = null;
     #workspace = null;
+    #subject = null;
     /** The installer that turns a `.px` into a registered type (project/definitions.js). */
     #definitions = null;
     #body = null;
@@ -529,10 +530,13 @@ export class Inspector extends Element {
      * @param {object} [context.workspace] - The workspace, for the selected resource
      * @returns {Inspector} This element
      */
-    bind({ scene, selection, registry, workspace = null, definitions = null }) {
+    bind({ scene, selection, subject = null, registry, workspace = null, definitions = null }) {
         this.#definitions = definitions;
         this.#scene = scene;
         this.#selection = selection;
+        // Read to know WHAT to show; `subject` is what a drop announces when it lands an
+        // object in the scene (ADR-0032).
+        this.#subject = subject;
         this.#registry = registry;
         this.#workspace = workspace;
         return this;
@@ -1292,7 +1296,7 @@ export class Inspector extends Element {
             workspace: this.#workspace,
             scene: this.#scene,
             folder: null,
-            select: object => this.#selection.set(object),
+            select: object => (this.#subject ? this.#subject.object(object) : this.#selection.set(object)),
             // A `.px` is data until something registers it as a type; the Project layer
             // does that (project/definitions.js) and the rule is handed the result rather
             // than reaching for a registry of its own.

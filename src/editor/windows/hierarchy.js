@@ -236,6 +236,7 @@ export class Hierarchy extends Element {
     #selection = null;
     #viewport = null;
     #workspace = null;
+    #subject = null;
 
     #collapsed = new globalThis.Set();
     // Rows survive a re-render, keyed by object id. That is not a cache for speed: a
@@ -256,16 +257,33 @@ export class Hierarchy extends Element {
      * Point the window at the scene it lists.
      * @param {object} context - Editor context
      * @param {object} context.scene - The scene
-     * @param {object} context.selection - The Editor selection
+     * @param {object} context.selection - The Editor selection, read to mark the rows
+     * @param {object} [context.subject] - Where a selection INTENT is announced (ADR-0032)
      * @param {object} context.viewport - The viewport, for framing on double-click
      * @returns {Hierarchy} This element
      */
-    bind({ scene, selection, viewport, workspace = null }) {
+    bind({ scene, selection, subject = null, viewport, workspace = null }) {
         this.#scene = scene;
         this.#selection = selection;
+        this.#subject = subject;
         this.#viewport = viewport;
         this.#workspace = workspace;
         return this;
+    }
+
+    /**
+     * Announce what the creator is now working on.
+     *
+     * ONE CALL, WHATEVER THE OTHER PANELS HOLD (ADR-0032). This window used to empty both
+     * holders by hand, which worked and which every new window had to rediscover.
+     *
+     * @param {object|null} object - The object, or null for nothing
+     * @returns {object|null} The object
+     */
+    #announce(object) {
+        if (this.#subject) return this.#subject.object(object);
+        this.#selection.set(object);
+        return object;
     }
 
     /**
@@ -296,7 +314,7 @@ export class Hierarchy extends Element {
             project: this.#workspace?.project ?? null,
             workspace: this.#workspace,
             folder: null,
-            select: object => this.#selection.set(object)
+            select: object => this.#announce(object)
         };
     }
 
@@ -513,7 +531,7 @@ export class Hierarchy extends Element {
             onpointerdown: event => {
                 this.#cancelRename();
                 wasSelected = this.#selection.has(object);
-                this.#selection.set(object);
+                this.#announce(object);
                 this.#armDrag(event, object, row);
             },
             onpointermove: event => this.#dragMove(event),
@@ -678,7 +696,7 @@ export class Hierarchy extends Element {
         // list usable, and on a short one it is a control to skip past.
         openMenu(anchor, createMenuItems(), kind => {
             const centre = this.#viewport?.worldCentre() ?? { x: 0, y: 0 };
-            this.#selection.set(createObject(this.#scene, {
+            this.#announce(createObject(this.#scene, {
                 kind,
                 x: Math.round(centre.x),
                 y: Math.round(centre.y)
@@ -696,16 +714,14 @@ export class Hierarchy extends Element {
     /**
      * Clear whatever the Editor is currently inspecting.
      *
-     * BOTH HOLDERS, NOT JUST THE OBJECT ONE. The shell routes a selection change so the two
-     * subjects stay mutually exclusive — but `Selection.set(null)` announces nothing when
-     * nothing was selected, so clicking bare tree with a RESOURCE selected cleared nothing
-     * at all and the Project tile stayed lit next to an Inspector showing it. Asking both
-     * is not owning the selection: the panel states an intent, the holders keep the state
-     * (ADR-0017, ADR-0025).
+     * ONE INTENTION, AND THE HOLDERS FOLLOW (ADR-0032). This used to empty both holders
+     * itself, with the reason spelled out here — because `Selection.set(null)` announces
+     * nothing when nothing was selected, so a click on bare tree left a Project tile lit
+     * next to an Inspector showing it. That reason now lives in `subject.js`, once.
      */
     #deselect() {
-        this.#selection.clear();
-        this.#workspace?.select(null);
+        if (this.#subject) this.#subject.clear();
+        else this.#selection.clear();
     }
 
     #openMoreMenu(anchor) {

@@ -37,7 +37,7 @@ export class SelectTool {
 
     /**
      * Create the tool.
-     * @param {object} context - { scene, selection, coarse }
+     * @param {object} context - { scene, selection, subject, coarse }
      */
     constructor(context) {
         this.#context = context;
@@ -120,8 +120,12 @@ export class SelectTool {
             }
         }
 
+        // ANNOUNCED, NOT SET. A press on bare canvas means "I am working on nothing",
+        // and that has to reach the Project panel too — writing straight into `Selection`
+        // says nothing at all when it was already empty (ADR-0032).
         const hit = this.#hovered;
-        selection.set(hit);
+        if (this.#context.subject) this.#context.subject.object(hit);
+        else selection.set(hit);
         if (!hit) return;
 
         const transform = hit.getComponent('Transform');
