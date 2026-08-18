@@ -48,6 +48,7 @@ export const FieldKind = {
     STRING: 'string',
     COLOR: 'color',
     ENUM: 'enum',
+    RESOURCE: 'resource',
     READONLY: 'readonly'
 };
 
@@ -58,18 +59,18 @@ export const FieldKind = {
  * decision, not a coincidence, and `resource` and `array` need to be here to be SUPPORTED
  * rather than to fall through a default and land on READONLY by accident.
  *
- * `resource` and `array` are shown read-only for now, and honestly:
+ * `resource` NOW HAS A CONTROL, and the reasoning that kept it read-only has been paid
+ * off rather than overruled. It used to say: "picking one needs a resource browser — the
+ * Project window is where that will live, and inventing a text field for an opaque
+ * identifier would invite a creator to type over it and break the reference." The Project
+ * window exists, resources carry icons and previews, and the drag rules already know what
+ * `resource-to-property` means — so `ui/resource-field.js` shows what the reference points
+ * at and offers pick, drop and clear. It is still not a text field, and never will be.
  *
- *   an `array` shows its element count, which is true and useful, and editing one needs a
- *   list control that does not exist yet;
- *   a `resource` holds a ResourceId, and picking one needs a resource browser — the
- *   Project window is where that will live, and inventing a text field for an opaque
- *   identifier would invite a creator to type over it and break the reference.
- *
- * Both are now REAL types at the Core — they have a defined starting value, a validity
- * rule and a serialized shape (ADR-0023) — which is what they were missing. What is
- * missing now is a control, and that is a separate, visible piece of work rather than a
- * silent dead end.
+ * `array` remains read-only, and honestly: it shows its element count, which is true and
+ * useful, and editing one needs a list control that does not exist yet. It is a real type
+ * at the Core (ADR-0023); what it lacks is a control, and that is a visible piece of work
+ * rather than a silent dead end.
  */
 const KIND_BY_PROPERTY_TYPE = {
     [PropertyType.NUMBER]: FieldKind.NUMBER,
@@ -78,7 +79,7 @@ const KIND_BY_PROPERTY_TYPE = {
     [PropertyType.STRING]: FieldKind.STRING,
     [PropertyType.COLOR]: FieldKind.COLOR,
     [PropertyType.ENUM]: FieldKind.ENUM,
-    [PropertyType.RESOURCE]: FieldKind.READONLY,
+    [PropertyType.RESOURCE]: FieldKind.RESOURCE,
     [PropertyType.ARRAY]: FieldKind.READONLY
 };
 
@@ -363,6 +364,14 @@ function field(name, property = {}) {
         name,
         label: property.label ?? humanize(name),
         kind,
+        // WHAT A REFERENCE WILL TAKE, declared and never guessed (ADR-0007). A `resource`
+        // property may narrow itself to a kind and to a mime prefix, and the picker's list
+        // and `rules.acceptsResource()` read the same two words — so a resource the menu
+        // offers can never be the one the drop refuses. Nested rather than spread, because
+        // `kind` above already means "which control", and one word cannot mean both.
+        accepts: declared === PropertyType.RESOURCE
+            ? { kind: property.kind ?? null, mime: property.mime ?? null }
+            : null,
         min,
         max,
         step: numeric(property.step) ?? display.step ?? (kind === FieldKind.INT ? 1 : null),
@@ -376,6 +385,10 @@ function field(name, property = {}) {
         // display names alongside the values it stores. Absent everywhere else, and then
         // the value is its own label.
         labels: declared === PropertyType.ENUM && property.labels ? [...property.labels] : null,
+        // AND WHAT IT LOOKS LIKE. The Editor's dropdown draws a glyph beside each entry
+        // like every other menu in the Editor does; a choice whose options have no natural
+        // icon simply declares none, and the rows are text as before.
+        icons: declared === PropertyType.ENUM && property.icons ? [...property.icons] : null,
         readonly: Boolean(property.readonly),
         tooltip: property.tooltip ?? null
     };

@@ -94,3 +94,60 @@ export function rankAt(position, boxes) {
 function valid(list, index) {
     return Number.isInteger(index) && index >= 0 && index < list.length;
 }
+
+/**
+ * Where each item would sit while a move is previewed, in two dimensions.
+ *
+ * THE GRID'S ANSWER TO THE SAME QUESTION. `previewOffsets()` works down one axis and
+ * accounts for items of different lengths; a grid of equal tiles has neither property —
+ * what moves is not a distance along a line but a SLOT, and a slot is a whole box. So the
+ * arithmetic is different and the idea is identical: derive, never store.
+ *
+ * The new order says which original rank occupies each slot; an item's offset is simply
+ * the gap between the slot it holds and the slot it would hold.
+ *
+ * @param {Array<{x: number, y: number}>} boxes - Each slot's top-left, in order
+ * @param {number} from - The rank being carried
+ * @param {number} to - The rank it would land at
+ * @returns {Array<{dx: number, dy: number}>} One offset per item, in the original order
+ */
+export function previewSlots(boxes, from, to) {
+    const offsets = boxes.map(() => ({ dx: 0, dy: 0 }));
+    if (!valid(boxes, from) || !valid(boxes, to) || from === to) return offsets;
+
+    const order = previewOrder(boxes.length, from, to);
+    order.forEach((rank, slot) => {
+        offsets[rank] = { dx: boxes[slot].x - boxes[rank].x, dy: boxes[slot].y - boxes[rank].y };
+    });
+
+    return offsets;
+}
+
+/**
+ * The rank the pointer is over, in a grid that flows across and then down.
+ *
+ * ROWS FIRST, THEN COLUMNS, because that is the order the tiles are in: a pointer below
+ * every tile of a row belongs after that row's last tile, not beside it. Within the row
+ * the rule is `rankAt()`'s — a tile hands over at its own midpoint.
+ *
+ * @param {{x: number, y: number}} point - Where the pointer is
+ * @param {Array<{x: number, y: number, width: number, height: number}>} boxes - Tiles, in order
+ * @returns {number} A rank between 0 and boxes.length - 1
+ */
+export function rankAtPoint(point, boxes) {
+    if (boxes.length === 0) return 0;
+
+    // The row a tile belongs to is its top edge: tiles laid out by a grid share one.
+    const rows = [];
+    for (let i = 0; i < boxes.length; i++) {
+        const row = rows.at(-1);
+        if (row && boxes[i].y < row.bottom) row.items.push(i);
+        else rows.push({ bottom: boxes[i].y + boxes[i].height, items: [i] });
+    }
+
+    const row = rows.find(candidate => point.y < candidate.bottom) ?? rows.at(-1);
+    for (const index of row.items) {
+        if (point.x < boxes[index].x + boxes[index].width / 2) return index;
+    }
+    return row.items.at(-1);
+}

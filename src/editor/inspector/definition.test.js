@@ -63,10 +63,16 @@ test('the control for the default follows the declared type', () => {
     assert.equal(defaultField(model.addProperty({ type: PropertyType.INT })).kind, FieldKind.INT);
 });
 
-test('a resource or a list default is read-only, honestly, until a control exists', () => {
+test('a resource default is picked, and a list default is still read-only', () => {
     const model = definition();
 
-    assert.equal(defaultField(model.addProperty({ type: PropertyType.RESOURCE })).kind, FieldKind.READONLY);
+    // A reference has a control now (ui/resource-field.js), so declaring a `resource`
+    // property lets a creator choose what a fresh instance starts pointing at.
+    const reference = defaultField(model.addProperty({ type: PropertyType.RESOURCE }));
+    assert.equal(reference.kind, FieldKind.RESOURCE);
+    assert.equal(reference.readonly, false);
+
+    // A list has no control yet, and says so rather than pretending.
     assert.equal(defaultField(model.addProperty({ type: PropertyType.ARRAY })).kind, FieldKind.READONLY);
 });
 

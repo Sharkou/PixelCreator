@@ -23,10 +23,10 @@
 // questions; shipping half of one is how a canvas becomes unpredictable. What is here is
 // the loop a creator needs to write a behaviour: place, wire, move, inspect, delete.
 
-import { GraphSeverity, groupNodes } from '../../core/mod.js';
+import { ANY_TYPE, GraphSeverity, PropertyType, groupNodes } from '../../core/mod.js';
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
-import { icon } from '../ui/icons.js';
+import { ICON_GRID, icon, iconForNode, iconPaths } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import {
     GRID,
@@ -76,15 +76,32 @@ export class GraphWindow extends Element {
 
         /* ── nodes ─────────────────────────────────────────────────────── */
 
+        /* A NODE IS A CARD, AND IT HAS A HIERARCHY. The body is the panel surface so a
+           node reads as an object on the canvas rather than as a hole in it; the header
+           carries the category tint, the glyph and the name, in that order of loudness.
+           The tint is set per node in windows/graph.js, because the palette is a table
+           and not eight rules. */
+        .node { cursor: grab; }
+        .node.dragging { cursor: grabbing; }
+
         .node .box {
             fill: var(--px-surface-raised);
             stroke: var(--px-border);
             stroke-width: 1;
         }
 
-        .node .header { fill: var(--px-surface-active); }
+        .node:hover .box { stroke: var(--px-border-subtle); }
+
+        /* The header takes the category's colour at a tenth of its strength: enough to
+           group at a glance, never enough to compete with the wires. */
+        .node .header { fill-opacity: 0.16; }
+        .node .header-rule { stroke-width: 1; stroke-opacity: 0.5; }
+
         .node.selected .box { stroke: var(--px-accent); stroke-width: 2; }
+        .node.selected .header { fill-opacity: 0.26; }
         .node.invalid .box { stroke: var(--px-danger); }
+
+        .node .glyph { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 
         .node .title {
             fill: var(--px-text-strong);
@@ -105,28 +122,47 @@ export class GraphWindow extends Element {
 
         /* A FLOW PORT IS A TRIANGLE, A DATA PORT IS A DISC, and the difference is visible
            before a creator has read a word: execution has a direction, a value does not.
-           It is also the one rule the canvas enforces, so showing it is not decoration. */
-        .port { stroke: var(--px-border); stroke-width: 1; }
-        .port.flow { fill: var(--px-text-muted); }
-        .port.data { fill: var(--px-surface); }
-        .port.connected { fill: var(--px-accent); stroke: var(--px-accent); }
-        .port:hover { stroke: var(--px-accent); stroke-width: 2; }
+           It is also the one rule the canvas enforces, so showing it is not decoration.
+           The COLOUR is the second half of the same statement — what shape of value
+           travels through it — and it is set per port, from the same six hues a property
+           type wears in the Inspector. */
+        .port { stroke-width: 1.5; pointer-events: none; }
+
+        /* A PORT WITH NOTHING IN IT IS HOLLOW; a connected one is filled. That is the
+           whole affordance, and it reads at any zoom. */
+        .port.connected { stroke-width: 1.5; }
+
+        /* The ring that appears when a port is worth aiming at. Drawn on the hit target
+           rather than on the disc, so it shows while the pointer is still approaching. */
+        .port-halo {
+            fill: none;
+            stroke-width: 2;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity var(--px-duration-fast) var(--px-ease);
+        }
 
         /* The generous invisible target every port carries, so a 5 px disc is still a
            comfortable thing to aim at with a finger. */
         .port-hit { fill: transparent; cursor: crosshair; }
+        .port-hit:hover ~ .port-halo { opacity: 0.45; }
 
         /* ── wires ─────────────────────────────────────────────────────── */
 
         .wire {
             fill: none;
-            stroke: var(--px-text-dim);
             stroke-width: 2;
+            stroke-opacity: 0.8;
             cursor: pointer;
         }
 
-        .wire.flow { stroke: var(--px-text-muted); }
-        .wire:hover { stroke: var(--px-danger); }
+        /* Execution is the spine of a graph, so it is drawn a shade heavier than the
+           values hanging off it. */
+        .wire.flow { stroke-width: 2.5; stroke-opacity: 1; }
+
+        /* Hovering a wire offers to cut it, so it says so in the colour that means
+           destructive everywhere else in the Editor. */
+        .wire-hit:hover ~ .wire, .wire:hover { stroke: var(--px-danger) !important; }
         .wire.pending { stroke: var(--px-accent); stroke-dasharray: 4 3; pointer-events: none; }
 
         /* A wide invisible copy under each wire: two pixels of stroke is not a target. */
@@ -369,7 +405,11 @@ export class GraphWindow extends Element {
         const to = portPosition(target.node, target.ports, 'in', connection.to.port);
         if (!from || !to) return null;
 
-        const kind = source.ports.outputs.find(port => port.id === connection.from.port)?.kind ?? 'data';
+        const port = source.ports.outputs.find(entry => entry.id === connection.from.port) ?? null;
+        const kind = port?.kind ?? 'data';
+        // A WIRE WEARS WHAT IT CARRIES. Same six hues as the ports it joins, so following a
+        // value across a busy canvas is a matter of following a colour.
+        const hue = kind === 'flow' ? FLOW_HUE : typeHue(port?.type);
         const d = connectionPath(from, to);
 
         // The visible wire and its target are two paths, because two pixels of stroke is not
@@ -382,7 +422,10 @@ export class GraphWindow extends Element {
         });
         hit.append(svg('title', {}, document.createTextNode('Click to disconnect')));
 
-        return svg('g', {}, svg('path', { class: `wire ${kind}`, d }), hit);
+        // The target goes UNDER the visible wire so the hover rule can reach it: a sibling
+        // combinator only looks forward, and the wide transparent path is what the pointer
+        // actually meets.
+        return svg('g', {}, hit, svg('path', { class: `wire ${kind}`, stroke: hue, d }));
     }
 
     #drawNode({ node, ports }) {
@@ -390,7 +433,10 @@ export class GraphWindow extends Element {
         const broken = this.#issues.some(
             issue => issue.node === node.id && issue.severity === GraphSeverity.ERROR
         );
-        const label = this.#definition.registry.get(node.type)?.label ?? node.type;
+        const definition = this.#definition.registry.get(node.type);
+        const label = definition?.label ?? node.type;
+        const category = definition?.category ?? 'Other';
+        const hue = categoryHue(category);
 
         const classes = ['node'];
         if (node.id === this.#selected) classes.push('selected');
@@ -402,12 +448,25 @@ export class GraphWindow extends Element {
             'data-node': node.id
         },
             svg('rect', { class: 'box', width: size.width, height: size.height, rx: 6 }),
+            // THE HEADER IS TINTED BY WHAT THE NODE IS. Six hues, reused between the
+            // categories and the value types (ui/styles.js) — an Add node and a `number`
+            // port are the same blue because they are the same idea seen twice. A colour
+            // per category would be twenty colours and no meaning.
             svg('path', {
                 class: 'header',
+                fill: hue,
                 d: `M 0 6 A 6 6 0 0 1 6 0 L ${size.width - 6} 0 A 6 6 0 0 1 ${size.width} 6 `
                     + `L ${size.width} ${HEADER_HEIGHT} L 0 ${HEADER_HEIGHT} Z`
             }),
-            svg('text', { class: 'title', x: 10, y: 17 }, document.createTextNode(label))
+            // A rule under the header rather than a full-strength band: the tint says which
+            // family, the rule says where the header ends, and neither shouts.
+            svg('path', {
+                class: 'header-rule',
+                stroke: hue,
+                d: `M 0 ${HEADER_HEIGHT} L ${size.width} ${HEADER_HEIGHT}`
+            }),
+            glyphIn(iconForNode(definition ?? category), { x: 7, y: 5, size: 16, color: hue }),
+            svg('text', { class: 'title', x: 27, y: 18 }, document.createTextNode(label))
         );
 
         for (const placed of placePorts(node, ports)) {
@@ -423,14 +482,28 @@ export class GraphWindow extends Element {
             ? Boolean(this.#definition.graph.incoming(node.id, placed.port.id))
             : this.#definition.graph.outgoing(node.id, placed.port.id).length > 0;
 
+        // THE COLOUR OF A PORT IS THE SHAPE OF WHAT TRAVELS THROUGH IT, and it is the same
+        // colour that property's type wears in the Inspector. A creator learns the palette
+        // once. Flow is its own steel, because execution order is not a value.
+        const hue = placed.port.kind === 'flow' ? FLOW_HUE : typeHue(placed.port.type);
+
         const classes = `port ${placed.port.kind}${connected ? ' connected' : ''}`;
         const shape = placed.port.kind === 'flow'
             ? svg('path', {
                 class: classes,
+                stroke: hue,
+                fill: connected ? hue : 'var(--px-surface)',
                 d: `M ${local.x - 4} ${local.y - 5} L ${local.x + 5} ${local.y} `
                     + `L ${local.x - 4} ${local.y + 5} Z`
             })
-            : svg('circle', { class: classes, cx: local.x, cy: local.y, r: PORT_RADIUS });
+            : svg('circle', {
+                class: classes,
+                stroke: hue,
+                fill: connected ? hue : 'var(--px-surface)',
+                cx: local.x,
+                cy: local.y,
+                r: PORT_RADIUS
+            });
 
         shape.append(svg('title', {}, document.createTextNode(
             `${placed.port.label}${placed.port.kind === 'flow' ? '' : ` (${placed.port.type})`}`
@@ -443,6 +516,9 @@ export class GraphWindow extends Element {
             'text-anchor': placed.direction === 'in' ? 'start' : 'end'
         }, document.createTextNode(placed.port.label ?? ''));
 
+        // The generous invisible target every port carries, so a 5 px disc is still a
+        // comfortable thing to aim at. It also carries the hover ring, because a ring drawn
+        // on the disc itself would only appear once the pointer was already on target.
         const hit = svg('circle', {
             class: 'port-hit',
             cx: local.x,
@@ -452,7 +528,11 @@ export class GraphWindow extends Element {
             'data-direction': placed.direction
         });
 
-        return [shape, text, hit];
+        const halo = svg('circle', { class: 'port-halo', cx: local.x, cy: local.y, r: 9, stroke: hue });
+
+        // The halo is LAST so the hover rule can reach it: a sibling combinator only
+        // looks forward.
+        return [shape, text, hit, halo];
     }
 
     #showStatus() {
@@ -681,10 +761,27 @@ export class GraphWindow extends Element {
             ? this.#pointerAt(event)
             : toGraph({ x: box.width / 2, y: box.height / 2 }, this.#view));
 
+        // CATEGORIES FIRST, ENTRIES SECOND, SEARCH ACROSS EVERYTHING. Twenty nodes behind
+        // one scroll meant reading nineteen to find the twentieth; the menu now opens on
+        // the eight groups, and typing leaves the groups behind entirely (ui/menu.js).
+        //
+        // EACH ENTRY CARRIES WHAT THE SCORER READS: its label, its type, its category and
+        // the aliases the catalogue declares — so `float` finds Number, `times` finds
+        // Multiply and `event` finds both event nodes (ui/relevance.js).
         const items = [];
         for (const group of groupNodes(this.#definition.registry)) {
-            items.push({ heading: group.category });
-            for (const entry of group.entries) items.push({ id: entry.type, label: entry.label, icon: 'graph' });
+            items.push({ heading: group.category, icon: iconForNode(group.category) });
+            for (const entry of group.entries) {
+                items.push({
+                    id: entry.type,
+                    label: entry.label,
+                    icon: iconForNode(entry),
+                    category: group.category,
+                    type: entry.type,
+                    keywords: entry.keywords ?? null,
+                    tooltip: entry.tooltip ?? ''
+                });
+            }
         }
 
         // A double-click opens the menu WHERE THE POINTER IS, so the node lands where the
@@ -695,7 +792,7 @@ export class GraphWindow extends Element {
         openMenu(from, items, type => {
             const node = this.#definition.graph.addNode({ type, x: at.x, y: at.y });
             if (node) this.#select(node.id);
-        }, { label: 'nodes', search: true });
+        }, { label: 'nodes', search: true, browse: true });
     }
 
     /**
@@ -736,6 +833,84 @@ export class GraphWindow extends Element {
         this.#status.classList.add('problem');
         fill(this.#status, el('span', { textContent: reason }));
     }
+}
+
+/**
+ * A category's colour, and a value type's — from ONE palette of six (ui/styles.js).
+ *
+ * THE CODE MUST BE READABLE, WHICH MEANS IT MUST BE SMALL. A hue per category is twenty
+ * colours and no meaning: nothing is learned, and the canvas becomes a carnival. Six hues,
+ * reused between "what kind of node is this" and "what travels along this wire", give a
+ * creator one palette to learn and one to recognise — a Math node and a `number` port are
+ * deliberately the same blue.
+ *
+ * They are read as custom properties rather than as literals because a shadow root sees
+ * custom properties and sees nothing else of the document's sheets.
+ */
+const CATEGORY_HUES = {
+    Events: 'var(--px-accent)',
+    Flow: 'var(--px-hue-flow)',
+    Properties: 'var(--px-hue-reference)',
+    Values: 'var(--px-hue-text)',
+    Math: 'var(--px-hue-number)',
+    Compare: 'var(--px-hue-number)',
+    Logic: 'var(--px-hue-boolean)',
+    Debug: 'var(--px-hue-any)'
+};
+
+const TYPE_HUES = {
+    [PropertyType.NUMBER]: 'var(--px-hue-number)',
+    [PropertyType.INT]: 'var(--px-hue-number)',
+    [PropertyType.BOOLEAN]: 'var(--px-hue-boolean)',
+    [PropertyType.STRING]: 'var(--px-hue-text)',
+    [PropertyType.COLOR]: 'var(--px-hue-reference)',
+    [PropertyType.ENUM]: 'var(--px-hue-reference)',
+    [PropertyType.RESOURCE]: 'var(--px-hue-reference)',
+    [PropertyType.ARRAY]: 'var(--px-hue-any)',
+    [ANY_TYPE]: 'var(--px-hue-any)'
+};
+
+/** Execution order is not a value, so it has a hue of its own. */
+const FLOW_HUE = 'var(--px-hue-flow)';
+
+/**
+ * The colour a node category wears.
+ * @param {string} category - The declared category
+ * @returns {string} A CSS colour
+ */
+function categoryHue(category) {
+    return CATEGORY_HUES[category] ?? 'var(--px-hue-any)';
+}
+
+/**
+ * The colour a data type wears.
+ * @param {string} type - One of PropertyType, or ANY_TYPE
+ * @returns {string} A CSS colour
+ */
+function typeHue(type) {
+    return TYPE_HUES[type] ?? 'var(--px-hue-any)';
+}
+
+/**
+ * One of the Editor's icons, placed on the canvas.
+ *
+ * `icon()` builds an HTML span, which renders as nothing inside an SVG — so the drawing is
+ * fetched and placed here, scaled from the 16-unit grid every glyph is drawn on, with the
+ * stroke divided back out so it lands at the same weight as everywhere else.
+ *
+ * @param {string} name - An icon name
+ * @param {object} at - `{ x, y, size, color }`
+ * @returns {SVGElement} A group holding the glyph
+ */
+function glyphIn(name, { x, y, size, color }) {
+    const group = svg('g', {
+        class: 'glyph',
+        transform: `translate(${x} ${y}) scale(${size / ICON_GRID})`,
+        color,
+        'stroke-width': (1.4 * ICON_GRID) / size
+    });
+    group.innerHTML = iconPaths(name);
+    return group;
 }
 
 /**

@@ -21,7 +21,8 @@
 // THE PATH IS DERIVED, and shown as text: moving a resource is a drag in the Project
 // panel, not a field to type a path into — the model has no path to type (ADR-0025).
 
-import { ResourceKind, folderPath, hasPayload } from '../../project/mod.js';
+import { ResourceKind, baseNameOf, extensionOf, folderPath, hasPayload } from '../../project/mod.js';
+import { formatSize, imageSize } from '../../project/image.js';
 import { FieldKind } from './schema.js';
 
 /**
@@ -57,7 +58,15 @@ const BY_KIND = {
         ]
     },
     [ResourceKind.ASSET]: {
-        fields: resource => [readonly('mime', 'Format', resource.mime ?? null)],
+        // THE SIZE IS READ FROM THE PICTURE, NEVER GUESSED. "How big is this?" is the
+        // first question a creator asks of an image, and the header of every format the
+        // Editor imports states it (project/image.js). An asset that is not an image, or
+        // one whose bytes say nothing, reports a dash rather than a number nobody can
+        // trust.
+        fields: (resource, { payload }) => [
+            readonly('mime', 'Format', resource.mime ?? null),
+            readonly('dimensions', 'Dimensions', formatSize(imageSize(payload)))
+        ],
         // The only kind with something to LOOK at. `content` says what the panel should
         // draw and what replacing it would mean; the panel decides how to draw it, and
         // says plainly when it cannot yet.
@@ -100,7 +109,13 @@ export function describeResource(resource, { project = null, payload = null, siz
     const extra = entry.fields ? entry.fields(resource, { project, payload }) : [];
 
     return {
-        title: resource.name || 'Untitled',
+        // THE HEADER SHOWS THE NAME, NOT THE FILE NAME. `.png` is derived from the mime and
+        // `.px` from the kind (ADR-0026 §4) — neither is something a creator typed, and
+        // neither is something they can change here. Repeating a derived suffix in the one
+        // line of the panel that is meant to say WHAT THIS IS makes the title read like a
+        // path. The extension is carried alongside, for the panel to show quietly.
+        title: baseNameOf(resource) || resource.name || 'Untitled',
+        extension: extensionOf(resource),
         kind: resource.kind,
         kindName: KIND_NAMES[resource.kind] ?? resource.kind,
 

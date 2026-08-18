@@ -9,7 +9,11 @@ export class Sprite {
     static type = 'Sprite';
 
     static schema = {
-        source: { type: 'resource', default: null },
+        // NARROWED, BECAUSE IT CAN BE. `kind` and `mime` are the two words ADR-0007 gives
+        // a reference for saying what it takes; the Editor's picker offers exactly that
+        // set and the drop rule refuses exactly the rest, from this one declaration. A
+        // Sprite pointed at a scene is not a state worth being able to reach.
+        source: { type: 'resource', kind: 'asset', mime: 'image/', default: null },
         width: { type: 'number', default: 0, min: 0 },
         height: { type: 'number', default: 0, min: 0 },
         alpha: { type: 'number', default: 1, min: 0, max: 1 }

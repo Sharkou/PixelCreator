@@ -108,6 +108,13 @@ const tokens = sheet(`
         --px-surface-raised: #21242a;
         --px-surface-overlay: #262a32;
         --px-surface-input: #101216;
+        /* Below the floor rather than above it: the well a thumbnail, a preview
+           or a canvas sits IN. --px-surface-input is the same idea for a value
+           being typed; this one is for a picture, and the two are apart because
+           an input well gains a focus ring and a thumbnail never does. It was
+           read by the Project's checkerboard and the Inspector's preview before
+           it was ever declared, so both fell back to transparent. */
+        --px-surface-sunken: #131519;
 
         /* Interaction states of a surface. Not ramp positions: a control that
            lightens on hover uses these two and nothing else. */
@@ -150,6 +157,25 @@ const tokens = sheet(`
         --px-success: #3dd68c;
         --px-danger: #f0555c;
         --px-warning: #f5b544;
+
+        /* ─── Semantic hues ───────────────────────────────────────────────
+           SIX HUES, REUSED, AND NEVER MORE. The graph needs to say what a node
+           is and what a wire carries, and a canvas that answers with a new
+           colour per category becomes a carnival nobody can read. So there is
+           one small palette, and BOTH questions are answered from it: a Math
+           node and a number port are the same blue because they are the same
+           idea seen twice. Four of the six are the status and accent colours
+           this Editor already owns; only violet and steel are new, and each
+           earns its place by naming a thing the others cannot.
+
+           They are tokens rather than literals in windows/graph.js because a
+           shadow root sees custom properties and sees nothing else. */
+        --px-hue-flow: #93a3c2;    /* execution order — a wire, not a value */
+        --px-hue-number: #4fa8f5;  /* number, int — arithmetic and comparison */
+        --px-hue-boolean: #f5b544; /* boolean — a decision */
+        --px-hue-text: #3dd68c;    /* string — a literal a creator typed */
+        --px-hue-reference: #b07ce8; /* a property, a resource — a pointer */
+        --px-hue-any: #949aa8;     /* unconstrained — the absence of a type */
 
         /* ─── Type ────────────────────────────────────────────────────────
            A system sans for the interface. A mono for values only: numbers,
@@ -203,6 +229,9 @@ const tokens = sheet(`
            as a web app. */
         --px-radius-sm: 3px;
         --px-radius: 4px;
+        /* A card, not a control: a Project tile is the one thing in the Editor
+           big enough that a 4 px corner disappears on it. */
+        --px-radius-md: 5px;
         --px-radius-lg: 6px;
 
         /* ─── Motion ──────────────────────────────────────────────────────
@@ -273,6 +302,22 @@ const tokens = sheet(`
         flex-direction: column;
         height: 100%;
     }
+
+    /* ─── Carrying something ──────────────────────────────────────────────
+       THE CURSOR IS PART OF THE ANSWER (ADR-0028 §3). A drag in this Editor is
+       a pointer gesture, not an HTML5 one, so the browser draws no copy or
+       no-drop badge of its own — which is why a refused drop used to look
+       exactly like a legal one right up to the moment nothing happened.
+
+       The class goes on the SHELL and the rule reaches every descendant with
+       !important, because the element under the pointer is inside a shadow
+       root this sheet cannot see, and it is already asserting a cursor of its
+       own (default on a row, pointer on a button, crosshair on a port).
+       During a drag those are all wrong: what the pointer is over matters, not
+       what it would do if clicked. */
+    .shell.dragging, .shell.dragging * { cursor: grabbing !important; }
+    .shell.dragging-copy, .shell.dragging-copy * { cursor: copy !important; }
+    .shell.dragging-refused, .shell.dragging-refused * { cursor: no-drop !important; }
 
     /* ─── L4 ──────────────────────────────────────────────────────────────
        Two bands across, and the order is the decision: everything that
@@ -604,8 +649,13 @@ ${controls}
         justify-content: center;
         gap: var(--px-space-2);
         height: 100%;
-        min-height: 120px;
-        padding: var(--px-space-6);
+        /* NO MINIMUM HEIGHT, AND NO GENEROUS PADDING. A 120 px floor plus 24 px of padding
+           made this taller than the Project panel is by default, so an EMPTY project
+           opened with a scrollbar — a scrollbar for nothing, which is the least defensible
+           thing a panel can show. The state fills what it is given and no more; the
+           padding is a comfortable inset rather than a frame. */
+        box-sizing: border-box;
+        padding: var(--px-space-3) var(--px-space-4);
         text-align: center;
         color: var(--px-text-dim);
     }

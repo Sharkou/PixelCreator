@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { previewOffsets, previewOrder, rankAt } from './reflow.js';
+import { previewOffsets, previewOrder, previewSlots, rankAt, rankAtPoint } from './reflow.js';
 
 /** Where each item ends up on screen, once its offset is applied. */
 function positions(sizes, offsets) {
@@ -95,4 +95,72 @@ test('rows of unequal height flip at their own midpoints', () => {
     assert.equal(rankAt(49, boxes), 0);
     assert.equal(rankAt(51, boxes), 1, 'the tall row hands over halfway down itself');
     assert.equal(rankAt(109, boxes), 1);
+});
+
+// --- a grid, where a rank is a slot rather than a distance ------------------------
+
+/** Three tiles across, 60 wide and 70 tall, at the density the Project panel uses. */
+function tiles(count, columns = 3) {
+    return Array.from({ length: count }, (_, i) => ({
+        x: (i % columns) * 60,
+        y: Math.floor(i / columns) * 70,
+        width: 60,
+        height: 70
+    }));
+}
+
+test('a tile carried across a row takes its neighbours back one slot', () => {
+    const boxes = tiles(3);
+    assert.deepEqual(previewSlots(boxes, 0, 2), [
+        { dx: 120, dy: 0 },
+        { dx: -60, dy: 0 },
+        { dx: -60, dy: 0 }
+    ]);
+});
+
+test('a tile carried onto the next row wraps, and the wrap is visible', () => {
+    const boxes = tiles(4);
+    // Carrying the last tile to the front pushes every other tile one slot along, which
+    // for the third of a three-wide row means down to the start of the next one.
+    assert.deepEqual(previewSlots(boxes, 3, 0), [
+        { dx: 60, dy: 0 },
+        { dx: 60, dy: 0 },
+        { dx: -120, dy: 70 },
+        { dx: 0, dy: -70 }
+    ]);
+});
+
+test('every previewed tile lands on exactly one slot', () => {
+    const boxes = tiles(7);
+    for (let from = 0; from < boxes.length; from++) {
+        for (let to = 0; to < boxes.length; to++) {
+            const offsets = previewSlots(boxes, from, to);
+            const order = previewOrder(boxes.length, from, to);
+
+            order.forEach((rank, slot) => {
+                assert.equal(boxes[rank].x + offsets[rank].dx, boxes[slot].x, `${from}->${to} x`);
+                assert.equal(boxes[rank].y + offsets[rank].dy, boxes[slot].y, `${from}->${to} y`);
+            });
+        }
+    }
+});
+
+test('a grid move out of range leaves every tile alone', () => {
+    assert.deepEqual(previewSlots(tiles(2), -1, 0), [{ dx: 0, dy: 0 }, { dx: 0, dy: 0 }]);
+    assert.deepEqual(previewSlots(tiles(2), 0, 5), [{ dx: 0, dy: 0 }, { dx: 0, dy: 0 }]);
+    assert.deepEqual(previewSlots([], 0, 0), []);
+});
+
+test('a rank in a grid is read across the row, then down', () => {
+    const boxes = tiles(5);
+
+    assert.equal(rankAtPoint({ x: 5, y: 5 }, boxes), 0);
+    assert.equal(rankAtPoint({ x: 35, y: 5 }, boxes), 1, 'half of a tile hands over to the next');
+    assert.equal(rankAtPoint({ x: 200, y: 5 }, boxes), 2, 'past the row is its last tile');
+    assert.equal(rankAtPoint({ x: 5, y: 80 }, boxes), 3, 'the second row starts at rank 3');
+    assert.equal(rankAtPoint({ x: 200, y: 400 }, boxes), 4, 'below everything is the last tile');
+});
+
+test('an empty grid has one place to be', () => {
+    assert.equal(rankAtPoint({ x: 0, y: 0 }, []), 0);
 });

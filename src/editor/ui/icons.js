@@ -28,8 +28,9 @@ export const IconSize = { SM: 16, MD: 20 };
 /** Rendered stroke weight, in CSS pixels — the same as a border. */
 const STROKE = 1.5;
 
-/** The grid every glyph is drawn on. */
-const GRID = 16;
+/** The grid every glyph is drawn on. Exported for the one caller that draws in SVG. */
+export const ICON_GRID = 16;
+const GRID = ICON_GRID;
 
 const S = 'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"';
 const F = 'fill="currentColor"';
@@ -104,6 +105,51 @@ const PATHS = {
     focus: `<path d="M2.5 5.5v-3h3M13.5 5.5v-3h-3M2.5 10.5v3h3M13.5 10.5v3h-3" ${S}/>`
         + `<circle cx="8" cy="8" r="2" ${S}/>`,
     grid: `<path d="M2 6h12M2 10h12M6 2v12M10 2v12" ${S}/>`,
+
+    // --- shapes of a value (ADR-0023) ------------------------------------------------
+    //
+    // A PROPERTY'S TYPE IS A THING A CREATOR PICKS, so it gets a glyph like everything else
+    // they pick. The same seven appear on a `.px` property's badge, in the Type dropdown and
+    // beside a graph node's ports — one drawing per idea, wherever the idea shows up.
+    'type-number': `<path d="M5.6 3 4.2 13M11.8 3l-1.4 10" ${S}/><path d="M2.8 6.2h10.4M2.2 9.8h10.4" ${S}/>`,
+    'type-int': `<path d="M4 5.6 6 4.4v7.2M4 11.6h4.2" ${S}/>`
+        + `<path d="M9.6 6.4a1.9 1.9 0 1 1 3.4 1.2l-3.4 4h3.8" ${S}/>`,
+    'type-text': `<path d="M3.4 4.2h9.2M8 4.2v7.6M6 11.8h4" ${S}/>`,
+    'type-boolean': `<rect x="1.8" y="4.6" width="12.4" height="6.8" rx="3.4" ${S}/>`
+        + `<circle cx="10.8" cy="8" r="1.9" ${F}/>`,
+    'type-color': `<path d="M8 2.4 12 7a4.6 4.6 0 1 1-8 0z" ${S}/>`,
+    'type-enum': `<path d="M6.4 4.6h7M6.4 8h7M6.4 11.4h7" ${S}/>`
+        + `<circle cx="3.4" cy="4.6" r="1.1" ${F}/><circle cx="3.4" cy="8" r="1.1" ${F}/>`
+        + `<circle cx="3.4" cy="11.4" r="1.1" ${F}/>`,
+    'type-list': `<rect x="2.4" y="3" width="11.2" height="10" rx="1" ${S}/>`
+        + `<path d="M5 6.2h6M5 9.8h6" ${S}/>`,
+    // A reference: two links, because what it holds is a pointer and not a value.
+    'type-resource': `<path d="M6.6 9.4 9.4 6.6" ${S}/>`
+        + `<path d="M8.6 4.6 10 3.2a2.6 2.6 0 0 1 3.7 3.7l-1.4 1.4" ${S}/>`
+        + `<path d="M7.4 11.4 6 12.8a2.6 2.6 0 0 1-3.7-3.7l1.4-1.4" ${S}/>`,
+
+    // --- node categories (ADR-0027) --------------------------------------------------
+    //
+    // ONE GLYPH PER CATEGORY, not one per node type. Twenty drawings would be twenty things
+    // to recognise; eight say what KIND of thing a node is, which is the question a creator
+    // asks while the picker is open. A node type that wants its own may still declare one.
+    'node-event': `<path d="M9.2 1.8 4 8.6h3.4L6.8 14.2 12 7.4H8.6z" ${S}/>`,
+    'node-flow': `<path d="M2.6 8h6.6" ${S}/><path d="M8.4 4.8 12.4 8l-4 3.2z" ${S}/>`,
+    'node-property': `<path d="M8.6 2.4H13v4.4l-6.2 6.2a1.2 1.2 0 0 1-1.7 0L2.4 10.3a1.2 1.2 0 0 1 0-1.7z" ${S}/>`
+        + `<circle cx="10.7" cy="5.3" r="1" ${F}/>`,
+    'node-value': `<path d="M5.6 3.2H4.4a1.2 1.2 0 0 0-1.2 1.2v2.4L2 8l1.2 1.2v2.4a1.2 1.2 0 0 0 1.2 1.2h1.2" ${S}/>`
+        + `<path d="M10.4 3.2h1.2a1.2 1.2 0 0 1 1.2 1.2v2.4L14 8l-1.2 1.2v2.4a1.2 1.2 0 0 1-1.2 1.2h-1.2" ${S}/>`,
+    'node-math': `<path d="M3 5.2h4M5 3.2v4" ${S}/><path d="M9 5.2h4" ${S}/>`
+        + `<path d="M3.4 11.4h3.2M9.4 9.6l3.2 3.2M12.6 9.6l-3.2 3.2" ${S}/>`,
+    'node-compare': `<path d="M6.4 4.4 2.6 8l3.8 3.6" ${S}/><path d="M9.6 4.4 13.4 8l-3.8 3.6" ${S}/>`,
+    'node-logic': `<circle cx="6.2" cy="8" r="3.8" ${S}/><circle cx="9.8" cy="8" r="3.8" ${S}/>`,
+    'node-debug': `<rect x="5" y="5.4" width="6" height="7.2" rx="3" ${S}/>`
+        + `<path d="M5 8H2.4M11 8h2.6M5.6 5.6 4 4M10.4 5.6 12 4M5.6 11.6 4 13.2M10.4 11.6 12 13.2" ${S}/>`,
+
+    // Transport (ADR-0029). Three shapes a creator has known since the first tape deck.
+    play: `<path d="M5 3.2 12.4 8 5 12.8z" ${S}/>`,
+    pause: `<path d="M6 3.6v8.8M10 3.6v8.8" ${S}/>`,
+    stop: `<rect x="4" y="4" width="8" height="8" rx="1" ${S}/>`,
 
     // States
     eye: `<path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8z" ${S}/>`
@@ -227,4 +273,83 @@ export function iconForObject(object) {
     if (object.hasComponent('Tilemap')) return 'tilemap';
     if (object.hasComponent('RectangleRenderer')) return 'rectangle';
     return 'object';
+}
+
+/**
+ * Property type -> icon.
+ *
+ * The Core's own eight (ADR-0023), each with one drawing. Used on a `.px` property's
+ * badge, in the Type dropdown, and beside a graph node's data ports — so the shape of a
+ * value looks the same wherever a creator meets it.
+ */
+const PROPERTY_TYPE_ICONS = {
+    number: 'type-number',
+    int: 'type-int',
+    boolean: 'type-boolean',
+    string: 'type-text',
+    color: 'type-color',
+    enum: 'type-enum',
+    resource: 'type-resource',
+    array: 'type-list'
+};
+
+/**
+ * The icon for a shape of value.
+ * @param {string} type - One of PropertyType, or ANY_TYPE
+ * @returns {string} An icon name
+ */
+export function iconForPropertyType(type) {
+    return PROPERTY_TYPE_ICONS[type] ?? 'node-value';
+}
+
+/**
+ * Node category -> icon.
+ *
+ * Keyed by the category a definition declares (core/graph/nodes.js). A category nobody
+ * anticipated falls back to the generic node glyph rather than to nothing, which is what
+ * keeps the picker readable when a new group appears.
+ */
+const NODE_CATEGORY_ICONS = {
+    Events: 'node-event',
+    Flow: 'node-flow',
+    Properties: 'node-property',
+    Values: 'node-value',
+    Math: 'node-math',
+    Compare: 'node-compare',
+    Logic: 'node-logic',
+    Debug: 'node-debug'
+};
+
+/**
+ * The icon for a node, from the category it declares.
+ *
+ * A NODE IS NOT ITS GRAPH, AND NEITHER IS ITS RESOURCE. `graph` means "the canvas a `.px`
+ * is wired on", `component` means "a `.px` you can open", and these mean "what kind of
+ * node this is". The three were one drawing, which made the create menu read as twenty
+ * copies of the window it was opened from (ADR-0026 §11).
+ *
+ * @param {object|string} node - A node definition, or a category name
+ * @returns {string} An icon name
+ */
+export function iconForNode(node) {
+    if (typeof node === 'string') return NODE_CATEGORY_ICONS[node] ?? 'node-value';
+
+    const declared = node?.icon;
+    if (typeof declared === 'string' && declared in PATHS) return declared;
+    return NODE_CATEGORY_ICONS[node?.category] ?? 'node-value';
+}
+
+/**
+ * The raw drawing of an icon, for a caller that is already inside an SVG.
+ *
+ * `icon()` returns an HTML `<span>` wrapping an `<svg>`, which is right everywhere except
+ * on the graph canvas — that one IS an SVG, and an HTML element inside it renders as
+ * nothing. So the paths are handed over and the canvas places them itself, on the same
+ * 16-unit grid (`ICON_GRID`) with a stroke width it scales for the size it draws at.
+ *
+ * @param {string} name - One of the known icon names
+ * @returns {string} SVG markup, drawn on a 16x16 grid
+ */
+export function iconPaths(name) {
+    return PATHS[name] ?? PATHS.object;
 }

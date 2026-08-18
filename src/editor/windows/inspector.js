@@ -37,10 +37,9 @@ import { icon, iconForComponent, iconForObject, iconForResource } from '../ui/ic
 import { openMenu } from '../ui/menu.js';
 import { searchField } from '../ui/search-field.js';
 import { addComponent, availableComponents, moveComponent, removeComponent } from '../commands.js';
-import { DropPosition, dropPositionAt, insertionIndex } from './drop.js';
 import { previewOffsets, rankAt } from '../dnd/reflow.js';
 import { describeResource } from '../inspector/resource.js';
-import { describeDefinition } from '../inspector/definition.js';
+import { PROPERTY_TYPE_LABELS, describeDefinition } from '../inspector/definition.js';
 import { describeNode } from '../inspector/node.js';
 import { ResourceKind, baseNameOf, extensionOf, hasPayload, withExtension } from '../../project/mod.js';
 import { pickFile, readAsDataUrl } from '../ui/file.js';
@@ -51,6 +50,7 @@ import { describeType, groupTypes } from '../registry.js';
 import { FieldKind, describeComponent, isNumeric, objectFields, rows } from '../inspector/schema.js';
 import '../ui/window.js';
 import '../ui/field.js';
+import '../ui/resource-field.js';
 
 /**
  * A resource's payload, when reading one makes sense and costs nothing.
@@ -85,6 +85,11 @@ export class Inspector extends Element {
 
     static styles = sheet(`
         :host { display: block; }
+
+        /* The window the shell has decided a drop would land in (ADR-0028 §3). One class,
+           styled by every window, so the answer cannot differ between them. */
+        :host(.dnd-over) { outline: 2px solid var(--px-accent); outline-offset: -3px; }
+        :host(.dnd-refused) { outline: 2px solid var(--px-danger); outline-offset: -3px; }
         px-window { height: 100%; }
 
         /* ── identity ───────────────────────────────────────────────────── */
@@ -139,7 +144,10 @@ export class Inspector extends Element {
             height: var(--px-hit);
             padding: 0 var(--px-space-1);
             color: var(--px-text-muted);
-            cursor: default;
+            /* EVERY HEADER HERE FOLDS, so every one of them is a button. Only the
+               component sections used to say so, which made the Object, Resource and
+               Details headers look like labels that happened to react. */
+            cursor: pointer;
             -webkit-user-select: none;
             user-select: none;
         }
@@ -175,8 +183,6 @@ export class Inspector extends Element {
            header folds the section, so it takes the pointer cursor; the drag that reorders
            lives on a grip that shows grab, because a surface that can be clicked AND
            dragged with no mark is one a creator has to discover by accident. */
-        section[data-type] > header { cursor: pointer; }
-
         header .grip {
             display: flex;
             align-items: center;
@@ -298,15 +304,73 @@ export class Inspector extends Element {
            without one, the Default of the first property and the Name of the second read
            as one block. A hairline and one step of space, not a box: the panel is already
            a column of rows and a card per property would fight it. */
-        .property + .property {
-            margin-top: var(--px-space-2);
-            padding-top: var(--px-space-2);
-            border-top: 1px solid var(--px-border-subtle);
+        /* ── a declared property of a .px ──────────────────────────────────
+           A CARD IN A LIST, NOT THREE LOOSE ROWS. Six properties used to be eighteen
+           unlabelled rows separated by hairlines, which a creator had to count in threes
+           to read. The header carries the two facts that identify one — its name and its
+           type — and the fields fold away behind it once it is set up. */
+        .property {
+            border: 1px solid var(--px-border-subtle);
+            border-radius: var(--px-radius-sm);
+            background: var(--px-surface);
         }
 
-        .property .remove { flex: 0 0 auto; opacity: 0.55; }
-        .property:hover .remove { opacity: 1; }
+        .property + .property { margin-top: var(--px-space-1); }
+        .property.open { background: var(--px-surface-raised); }
+
+        .property > header {
+            display: flex;
+            align-items: center;
+            gap: var(--px-space-1);
+            height: var(--px-hit);
+            padding: 0 var(--px-space-0) 0 0;
+            cursor: pointer;
+        }
+
+        .property > header:hover { background: var(--px-surface-hover); border-radius: var(--px-radius-sm); }
+
+        .property .pname {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--px-text-strong);
+            font-size: var(--px-text-xs);
+        }
+
+        /* The type, as a quiet badge rather than as a word in a row: it is what tells two
+           properties apart at a glance, and it must not read as a value. */
+        .property .ptype {
+            flex: 0 0 auto;
+            padding: 0 var(--px-space-1);
+            border-radius: 2px;
+            background: var(--px-surface-input);
+            color: var(--px-text-dim);
+            font-size: var(--px-text-2xs);
+            letter-spacing: var(--px-tracking-caps);
+            text-transform: uppercase;
+        }
+
+        .property .pbody { padding: var(--px-space-0) var(--px-space-1) var(--px-space-1); }
+        .property:not(.open) .pbody { display: none; }
+
+        .property .remove { flex: 0 0 auto; opacity: 0; }
+        .property > header:hover .remove { opacity: 1; }
         .property .remove:hover { color: var(--px-danger); }
+
+        /* The same two marks a component section wears while it is being carried
+           (ADR-0028 §1): a flat list, so it reorganises under the pointer. */
+        .property.dragging {
+            position: relative;
+            z-index: 2;
+            opacity: 0.85;
+            border-color: var(--px-accent);
+            pointer-events: none;
+        }
+
+        .property.sliding { transition: transform var(--px-duration) var(--px-ease); }
+        .property.dragging .grip { cursor: grabbing; }
 
         /* ── resource facts and content ─────────────────────────────────── */
 
@@ -333,8 +397,19 @@ export class Inspector extends Element {
             color: var(--px-text-dim);
         }
 
-        px-field.drop, .preview.drop, .none.drop, .add.drop {
+        /* THE ROW A DROP WOULD LAND IN, and the one it would be turned down by. Twelve
+           properties stacked a row apart need the answer at the row, not at the panel —
+           and a refusal is drawn rather than left silent, which is the whole of ADR-0028
+           §3. "drop" is what a file from the desktop sets; "drop-refused" is what the
+           shell sets while a resource is carried over something that will not take it. */
+        px-field.drop, px-resource.drop, .preview.drop, .none.drop, .add.drop {
             outline: 2px dashed var(--px-accent);
+            outline-offset: 2px;
+            border-radius: var(--px-radius-sm);
+        }
+
+        px-field.drop-refused, px-resource.drop-refused {
+            outline: 2px dashed var(--px-danger);
             outline-offset: 2px;
             border-radius: var(--px-radius-sm);
         }
@@ -425,7 +500,8 @@ export class Inspector extends Element {
     #drag = null;
     /** Set for exactly one click: the one that ends a drag and must not also fold. */
     #dragged = false;
-    #shifts = null;
+    /** The field currently marked as the one a drop would land in. */
+    #dropMark = null;
 
     /**
      * Point the window at the selections it follows.
@@ -764,27 +840,87 @@ export class Inspector extends Element {
         });
     }
 
+    /**
+     * One declared property of a `.px`, as a card that folds.
+     *
+     * IT IS A LIST ITEM, SO IT LOOKS LIKE ONE. A property used to be three unlabelled rows
+     * with a horizontal rule between groups, which meant a Component with six properties
+     * was eighteen rows a creator had to count in threes to read. It now carries its own
+     * header — grip, name, type — so the list can be SCANNED, and the three fields fold
+     * away behind it once it has been set up.
+     *
+     * THE HEADER SAYS THE TWO THINGS THAT IDENTIFY IT: the name, live from the model, and
+     * the type. Everything else is behind the fold, because a creator returning to a `.px`
+     * is looking for which properties exist, not for what each one defaults to.
+     */
     #renderProperty(definition, entry) {
         const property = definition.property(entry.id);
         if (!property) return null;
 
         const [name, type, fallback] = entry.fields;
+        const key = `property:${entry.id}`;
+        const open = !this.#folded.has(key);
 
         const remove = el('button', {
             class: 'ghost remove',
             type: 'button',
             title: 'Remove property',
             'aria-label': `Remove ${entry.name}`,
-            onclick: () => definition.removeProperty(entry.id)
-        }, icon('trash', 14));
+            onclick: event => {
+                event.stopPropagation();
+                definition.removeProperty(entry.id);
+            }
+        }, icon('trash', 16));
 
-        return el('div', { class: 'property', dataset: { property: entry.id } },
+        const grip = el('span', {
+            class: 'grip',
+            title: `Drag to reorder ${entry.name}`,
+            'aria-hidden': 'true'
+        }, icon('grip', 16));
+
+        const caret = el('span', { class: `ghost twisty${open ? ' open' : ''}`, 'aria-hidden': 'true' },
+            icon('chevron', 16));
+
+        const title = el('span', { class: 'pname', textContent: property.name || 'property' });
+        const badge = el('span', { class: 'ptype', textContent: typeLabel(property.type) });
+
+        // The header follows the model, so renaming a property in the field below —
+        // or from an undo, or from a collaborator — retitles it on the keystroke.
+        this.track(observe(property, 'name', change => {
+            title.textContent = change.value || 'property';
+        }), 'panel');
+        this.track(observe(property, 'type', change => {
+            badge.textContent = typeLabel(change.value);
+        }), 'panel');
+
+        const block = el('div', {
+            class: `property${open ? ' open' : ''}`,
+            dataset: { property: entry.id }
+        });
+
+        const header = el('header', {
+            title: 'Click to fold',
+            onclick: () => {
+                // The click that ends a drag is still a click. Folding the property a
+                // creator has just moved would be the one thing they did not ask for.
+                if (this.#dragged) {
+                    this.#dragged = false;
+                    return;
+                }
+                if (this.#folded.has(key)) this.#folded.delete(key);
+                else this.#folded.add(key);
+                const shown = !this.#folded.has(key);
+                block.classList.toggle('open', shown);
+                caret.classList.toggle('open', shown);
+            }
+        }, grip, caret, title, badge, remove);
+
+        const body = el('div', { class: 'pbody' },
             // Letter by letter, like every other field in this panel: a rename is one
             // history entry because the field mints a batch for the typing session, not
             // because it waits for Enter (ADR-0026 §3).
             this.#renderPropertyRow(property, name, {
-                write: (value, options) => definition.renameProperty(entry.id, value, options),
-                extra: remove
+                write: (value, options) => definition.renameProperty(entry.id, value, options)
             }),
             // Changing the type changes the control the default is edited with, so the
             // section is redrawn — by the pipeline listener, which also catches the redraw
@@ -796,12 +932,24 @@ export class Inspector extends Element {
                 write: (value, options) => definition.setPropertyDefault(entry.id, value, options)
             })
         );
+
+        block.append(header, body);
+
+        // The same reorder gesture the components use, told a different list (ADR-0028 §1).
+        this.#makeDraggable(grip, header, {
+            element: block,
+            siblings: () => this.#orderedProperties(),
+            rank: () => definition.indexOf(entry.id),
+            commit: rank => definition.moveProperty(entry.id, rank)
+        });
+
+        return block;
     }
 
     #renderPropertyRow(property, descriptor, { write, extra = null }) {
-        const field = el('px-field').bind(property, descriptor, { write });
+        const field = this.#control(property, descriptor, { write });
         const label = el('span', { class: 'label', textContent: descriptor.label });
-        field.bindLabel(label);
+        field.bindLabel?.(label);
 
         return el('div', { class: 'row' },
             label,
@@ -902,28 +1050,35 @@ export class Inspector extends Element {
             if (view[descriptor.name] !== value) view[descriptor.name] = value;
         }), 'panel');
 
-        const field = el('px-field').bind(view, descriptor, {
+        const field = this.#control(view, descriptor, {
             write: (value, options) => definition.graph.setParam(node.id, descriptor.name, value, options)
         });
 
         const label = el('span', { class: 'label', textContent: descriptor.label });
-        field.bindLabel(label);
+        field.bindLabel?.(label);
 
         return el('div', { class: 'row' }, label, el('div', { class: 'fields' }, field));
     }
 
     #renderResourceIdentity(resource, description) {
+        const entry = this.#workspace.project.get(resource.id);
         const title = el('span', { class: 'title', textContent: description.title });
 
-        this.track(observe(this.#workspace.project.get(resource.id), 'name', change => {
-            title.textContent = change.value || 'Untitled';
+        // Letter by letter, from the model, like every other name in the Editor — and the
+        // extension is dropped on the way, because it belongs to the kind rather than to
+        // the creator (ADR-0026 §4).
+        this.track(observe(entry, 'name', change => {
+            title.textContent = baseNameOf({ ...entry, name: change.value }) || 'Untitled';
         }), 'panel');
+
+        // The kind, then what the file would be called. Two facts, one quiet line.
+        const kind = [description.kindName, description.extension].filter(Boolean).join(' · ');
 
         return el('div', { class: 'identity' },
             el('span', { class: 'glyph' }, icon(iconForResource(resource), 20)),
             el('div', { class: 'who' },
                 title,
-                el('span', { class: 'kind', textContent: description.kindName })
+                el('span', { class: 'kind', textContent: kind })
             )
         );
     }
@@ -1098,17 +1253,49 @@ export class Inspector extends Element {
      * @returns {object|null} `{ node, zone, verdict }`, or null
      */
     zoneAt(payload, clientX, clientY) {
-        for (const node of this.shadowRoot.querySelectorAll('px-field, .preview, .none, .add')) {
+        for (const node of this.shadowRoot.querySelectorAll('px-field, px-resource, .preview, .none, .add')) {
             if (!node.pxDropZone) continue;
 
             const box = node.getBoundingClientRect();
             if (clientX < box.left || clientX >= box.right) continue;
             if (clientY < box.top || clientY >= box.bottom) continue;
 
+            // A REFUSED ZONE IS STILL A ZONE. This used to answer null when the rule said
+            // no, which made the shell look behind the Inspector and find the viewport —
+            // so an image released on a `number` field landed in the scene instead of
+            // being turned down. Being over something that refuses is not being over
+            // nothing (ADR-0028 §3).
             const verdict = canDrop(payload, node.pxDropZone);
-            return verdict.allowed ? { node, zone: node.pxDropZone, verdict } : null;
+            this.#markDropZone(node, verdict.allowed);
+            return { node, zone: node.pxDropZone, verdict };
         }
+
+        this.#markDropZone(null, false);
         return null;
+    }
+
+    /**
+     * Mark the one field a drop would land in.
+     *
+     * The window outline says "this panel"; this says "this row", which is the answer a
+     * creator actually needs when twelve properties are stacked a row apart. Marking is a
+     * view concern, so it lives with the view rather than in the shell that resolved it.
+     *
+     * @param {HTMLElement|null} node - The field under the pointer
+     * @param {boolean} allowed - What the rule said about it
+     */
+    #markDropZone(node, allowed) {
+        if (this.#dropMark && this.#dropMark !== node) {
+            this.#dropMark.classList.remove('drop', 'drop-refused');
+        }
+        this.#dropMark = node;
+        node?.classList.toggle('drop', allowed);
+        node?.classList.toggle('drop-refused', !allowed);
+    }
+
+    /** Take the row mark off, when the gesture ends wherever it ended. */
+    clearDropMarks() {
+        this.#markDropZone(null, false);
     }
 
     /**
@@ -1272,25 +1459,54 @@ export class Inspector extends Element {
         }, icon('grip', 16));
         header.prepend(grip);
 
-        grip.addEventListener('pointerdown', event => {
-            event.stopPropagation();
-            this.#armDrag(event, object, type, section);
+        this.#makeDraggable(grip, header, {
+            element: section,
+            // Read at the moment the drag starts rather than captured now: a component
+            // added or removed in between must not leave this holding a stale list.
+            siblings: () => this.#orderedSections(),
+            rank: () => object.componentTypes().indexOf(type),
+            commit: rank => moveComponent(object, type, rank)
         });
-        grip.addEventListener('click', event => event.stopPropagation());
-        header.addEventListener('pointermove', event => this.#dragMove(event));
-        header.addEventListener('pointerup', event => this.#dragDrop(event));
-        header.addEventListener('pointercancel', () => this.#cancelDrag());
     }
 
-    #armDrag(event, object, type, section) {
+    // --- one reorder gesture, for every flat list in this panel ----------------------
+    //
+    // TWO LISTS, ONE MECHANISM. A component's rank and a declared property's rank are the
+    // same question asked about different things, and ADR-0028 §1 gives them the same
+    // answer: a flat list reorganises under the pointer. Writing it twice would be two
+    // chances to get the rank arithmetic subtly different — which is the one part of this
+    // gesture nobody can check by looking at it.
+    //
+    // What differs between the two is passed in: which elements take part, what rank the
+    // carried one holds in the MODEL, and what to call when the pointer is released. The
+    // preview itself knows none of that.
+
+    /**
+     * Make a handle start a reorder of the list its element belongs to.
+     *
+     * @param {HTMLElement} handle - The grip; the only part that starts the drag
+     * @param {HTMLElement} surface - Where the move and the release are heard
+     * @param {object} list - `{ element, siblings, rank, commit }`
+     */
+    #makeDraggable(handle, surface, list) {
+        handle.addEventListener('pointerdown', event => {
+            event.stopPropagation();
+            this.#armDrag(event, list);
+        });
+        handle.addEventListener('click', event => event.stopPropagation());
+        surface.addEventListener('pointermove', event => this.#dragMove(event));
+        surface.addEventListener('pointerup', event => this.#dragDrop(event));
+        surface.addEventListener('pointercancel', () => this.#cancelDrag());
+    }
+
+    #armDrag(event, list) {
         if (event.button > 0) return;
         // A filtered panel shows a subset, so the ranks on screen are not the model's.
         if (this.#query.trim() !== '') return;
 
         this.#drag = {
-            object,
-            type,
-            section,
+            list,
+            element: list.element,
             grip: event.currentTarget,
             pointerId: event.pointerId,
             from: event.clientY,
@@ -1310,18 +1526,18 @@ export class Inspector extends Element {
             drag.started = true;
             capture(drag.grip, drag.pointerId);
 
-            // The layout as it is BEFORE anything slides. Measuring live would read
-            // the animated position of a section mid-transition, so the rank would
-            // depend on how far the previous answer had got to drawing itself.
-            const sections = this.#orderedSections();
-            drag.sections = sections;
-            drag.boxes = sections.map(section => {
-                const box = section.getBoundingClientRect();
+            // The layout as it is BEFORE anything slides. Measuring live would read the
+            // animated position of an element mid-transition, so the rank would depend on
+            // how far the previous answer had got to drawing itself.
+            const siblings = drag.list.siblings();
+            drag.siblings = siblings;
+            drag.boxes = siblings.map(element => {
+                const box = element.getBoundingClientRect();
                 return { start: box.top, size: box.height };
             });
-            drag.index = sections.indexOf(drag.section);
+            drag.index = siblings.indexOf(drag.element);
 
-            drag.section.classList.add('dragging');
+            drag.element.classList.add('dragging');
         }
 
         event.preventDefault();
@@ -1333,19 +1549,18 @@ export class Inspector extends Element {
         if (!drag || event.pointerId !== drag.pointerId) return;
 
         const rank = drag.started ? this.#rankUnder(event.clientY) : null;
-        const { object, type } = drag;
-        const current = object.componentTypes().indexOf(type);
+        const list = drag.list;
+        const current = list.rank();
         this.#dragged = drag.started;
         this.#cancelDrag();
 
         // NO insertionIndex() HERE, and that is the subtle part. That helper converts a
         // rank counted in the list WITH the carried item still in it. The preview counts
         // ranks in the resulting order instead — dnd/reflow.js is splice-out-then-splice-in,
-        // which is exactly what moveComponent() does — so the rank is already the one the
-        // primitive wants. Adjusting it again turned every downward move into a no-op.
-        if (rank !== null && rank !== current) {
-            moveComponent(object, type, rank);
-        }
+        // which is exactly what moveComponent() and moveProperty() do — so the rank is
+        // already the one the primitive wants. Adjusting it again turned every downward
+        // move into a no-op.
+        if (rank !== null && rank !== current) list.commit(rank);
     }
 
     #cancelDrag() {
@@ -1355,61 +1570,27 @@ export class Inspector extends Element {
 
         if (drag.started) {
             release(drag.grip, drag.pointerId);
-            drag.section.classList.remove('dragging');
+            drag.element.classList.remove('dragging');
         }
-        this.#clearPreview();
+        this.#clearPreview(drag);
     }
 
-    /**
-     * The rank the pointer is currently over.
-     * @param {number} clientY - The pointer's vertical position
-     * @returns {{index: number, section: HTMLElement, position: string}|null} The drop
-     */
-    #resolveDrop(clientY) {
-        const drag = this.#drag;
-        if (!drag) return null;
-
-        const types = drag.object.componentTypes();
-        const current = types.indexOf(drag.type);
-
-        const sections = [...this.#body.querySelectorAll('section[data-type]')];
-        const over = sections.find(section => {
-            const box = section.getBoundingClientRect();
-            return clientY >= box.top && clientY < box.bottom;
-        });
-
-        // Past the last section: the end of the collection, which is how a component is
-        // sent behind everything that draws.
-        if (!over) {
-            const last = sections.at(-1);
-            if (!last || clientY < last.getBoundingClientRect().bottom) return null;
-            const index = insertionIndex(current, types.length);
-            return index === current ? null : { index, section: last, position: DropPosition.AFTER };
-        }
-
-        if (over === drag.section) return null;
-
-        // A section is a header and a body, so its middle is not a nesting zone: there is
-        // nothing to nest a component into. Before or after, and nothing else.
-        const position = dropPositionAt(clientY, over.getBoundingClientRect(), { canNest: false });
-        const rank = types.indexOf(over.dataset.type);
-        if (rank === -1) return null;
-
-        const index = insertionIndex(current, position === DropPosition.AFTER ? rank + 1 : rank);
-        return index === current ? null : { index, section: over, position };
-    }
-
-    /** The sections that take part in a reorder, in model order. */
+    /** The component sections that take part in a reorder, in model order. */
     #orderedSections() {
         return [...(this.#body?.querySelectorAll('section[data-type]') ?? [])];
+    }
+
+    /** The declared properties of a `.px`, in model order. */
+    #orderedProperties() {
+        return [...(this.#body?.querySelectorAll('.property[data-property]') ?? [])];
     }
 
     /**
      * The rank the pointer is over, in the list as the model orders it.
      *
-     * Answered from the snapshot taken when the drag began, never from the live DOM:
-     * the preview slides boxes around and animates them, so measuring would make the
-     * answer depend on how far the previous answer had got to drawing itself.
+     * Answered from the snapshot taken when the drag began, never from the live DOM: the
+     * preview slides boxes around and animates them, so measuring would make the answer
+     * depend on how far the previous answer had got to drawing itself.
      *
      * @param {number} clientY - The pointer vertical position
      * @returns {number|null} A rank, or null when the drag holds no layout
@@ -1423,9 +1604,9 @@ export class Inspector extends Element {
     /**
      * Show the list as it would be, without changing it (ADR-0028, sections 1 and 2).
      *
-     * Nothing here writes: the offsets come from dnd/reflow.js, they live on the
-     * elements as transforms, and the gesture ending removes them. A cancelled drag is
-     * therefore not an undo, because there was never anything to undo.
+     * Nothing here writes: the offsets come from dnd/reflow.js, they live on the elements
+     * as transforms, and the gesture ending removes them. A cancelled drag is therefore
+     * not an undo, because there was never anything to undo.
      *
      * @param {number} clientY - The pointer vertical position
      */
@@ -1433,9 +1614,9 @@ export class Inspector extends Element {
         const drag = this.#drag;
         if (!drag) return;
 
-        const sections = drag.sections;
+        const siblings = drag.siblings;
         const from = drag.index;
-        if (!sections || from === -1) return;
+        if (!siblings || from === -1) return;
 
         const to = this.#rankUnder(clientY);
         if (to === null) return;
@@ -1444,32 +1625,28 @@ export class Inspector extends Element {
             drag.shown = to;
             const offsets = previewOffsets(drag.boxes.map(box => box.size), from, to);
 
-            this.#shifts ??= new globalThis.Map();
-            sections.forEach((section, i) => {
-                // The carried section follows the pointer instead of its computed slot:
-                // it is the one thing the creator is actually holding.
+            siblings.forEach((element, i) => {
+                // The carried element follows the pointer instead of its computed slot: it
+                // is the one thing the creator is actually holding.
                 if (i === from) return;
-                this.#shifts.set(section, offsets[i]);
-                section.classList.add('sliding');
-                section.style.transform = offsets[i] === 0 ? '' : 'translateY(' + offsets[i] + 'px)';
+                element.classList.add('sliding');
+                element.style.transform = offsets[i] === 0 ? '' : 'translateY(' + offsets[i] + 'px)';
             });
         }
 
-        const carried = clientY - drag.from;
-        drag.section.style.transform = 'translateY(' + carried + 'px)';
-        // Recorded like every other shift: the next measurement has to subtract it, or
-        // the carried box reads where the hand is rather than where the model says.
-        this.#shifts ??= new globalThis.Map();
-        this.#shifts.set(drag.section, carried);
+        drag.element.style.transform = 'translateY(' + (clientY - drag.from) + 'px)';
     }
 
-    /** Put every section back where the model says it is. */
-    #clearPreview() {
-        for (const section of this.#orderedSections()) {
-            section.classList.remove('sliding', 'before', 'after');
-            section.style.transform = '';
+    /**
+     * Put every element back where the model says it is.
+     * @param {object} [drag] - The gesture that is ending, when there was one
+     */
+    #clearPreview(drag = null) {
+        const touched = drag?.siblings ?? [...this.#orderedSections(), ...this.#orderedProperties()];
+        for (const element of touched) {
+            element.classList.remove('sliding', 'before', 'after');
+            element.style.transform = '';
         }
-        this.#shifts?.clear();
     }
 
     /**
@@ -1545,6 +1722,28 @@ export class Inspector extends Element {
         return section;
     }
 
+    /**
+     * The control one descriptor is edited with.
+     *
+     * ONE PLACE DECIDES, so a `resource` property gets the same control whether it belongs
+     * to a Component, to a `.px` being declared or to a graph node's params. `px-field`
+     * covers every shape of VALUE; a reference is not a value a creator types, so it has
+     * its own element and this is the fork between them (ui/resource-field.js).
+     *
+     * @param {object} target - The reactive target holding the property
+     * @param {object} descriptor - A descriptor from inspector/schema.js
+     * @param {object} [options] - Passed through to whichever control is built
+     * @returns {HTMLElement} The bound control
+     */
+    #control(target, descriptor, options = {}) {
+        if (descriptor.kind !== FieldKind.RESOURCE) return el('px-field').bind(target, descriptor, options);
+
+        return el('px-resource').bind(target, descriptor, {
+            project: this.#workspace?.project ?? null,
+            write: options.write ?? null
+        });
+    }
+
     #renderRows(target, fields) {
         return rows(fields).map(row => (row.fields.length === 1
             ? this.#renderRow(target, row.fields[0])
@@ -1552,12 +1751,12 @@ export class Inspector extends Element {
     }
 
     #renderRow(target, descriptor) {
-        const field = el('px-field').bind(target, descriptor);
+        const field = this.#control(target, descriptor);
         const label = el('span', { class: 'label', textContent: descriptor.label });
         this.#makeDroppable(field, { zone: DropZone.PROPERTY, component: target, prop: descriptor.name });
         // The panel drew the label; the field decides whether dragging it means
         // something, and owns every line of the value logic behind it.
-        field.bindLabel(label);
+        field.bindLabel?.(label);
 
         // A plain number is a value in a column of values; a slider, a colour or a
         // string is content and takes the width it needs.
@@ -1623,6 +1822,15 @@ export class Inspector extends Element {
  * @param {string} name - The type name
  * @returns {string} The title to show
  */
+/**
+ * A declared property type, as the badge on its header reads it.
+ * @param {string} type - One of PropertyType
+ * @returns {string} The displayed name
+ */
+function typeLabel(type) {
+    return PROPERTY_TYPE_LABELS[type] ?? type ?? '';
+}
+
 function humanise(name) {
     return name.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
 }

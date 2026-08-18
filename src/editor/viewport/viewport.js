@@ -61,6 +61,7 @@ import { editorBounds } from './picking.js';
 import { measureSurface, quantiseCamera, sameSurface } from './surface.js';
 import { ZOOM_DETENT, clampZoom, notchZoom } from './zoom.js';
 import { GUIDE_STYLES, Guides } from './guides.js';
+import { frameDelta } from '../transport.js';
 import { SelectTool } from './tools/select-tool.js';
 import { PanTool } from './tools/pan-tool.js';
 
@@ -72,6 +73,15 @@ const ZOOM_SETTLED = 0.001;
 
 /** Device pixels a finger may wander and still be a tap rather than a pan. */
 const TAP_SLOP = 6;
+
+/**
+ * The most simulated time one frame may account for.
+ *
+ * A quarter of a second: long enough that an ordinary stutter still catches up, short
+ * enough that a tab left in the background does not hand back thirty seconds of gap for
+ * the clock to run through in one tick (ADR-0029).
+ */
+const MAX_FRAME_SECONDS = 0.25;
 
 /** The structural events that change what there is to draw, and what to watch. */
 const STRUCTURE = ['added', 'removed', 'child:added', 'child:removed', 'component:added', 'component:removed'];
@@ -172,6 +182,8 @@ export class Viewport extends Element {
     #sceneRenderer = null;
     #viewport = new Surface(1, 1);
     #runtime = null;
+    /** When the last simulated frame was drawn, in `requestAnimationFrame` milliseconds. */
+    #lastFrame = 0;
     #guides = null;
 
     #tool = null;
@@ -227,6 +239,22 @@ export class Viewport extends Element {
     /** The runtime drawing this viewport. */
     get runtime() {
         return this.#runtime;
+    }
+
+    /**
+     * Ask for a frame.
+     *
+     * THE LOOP IS DEMAND-DRIVEN, and that is why this exists. A frame is scheduled when
+     * something the Viewport WATCHES changes — a property, the camera, the structure of
+     * the scene. `Runtime.running` is none of those: it is a flag on an object this
+     * element owns but does not observe, so starting the simulation used to set it and
+     * then wait for a frame nobody was going to ask for. The transport says "go" once,
+     * and the running branch of the tick keeps asking from there (ADR-0029).
+     *
+     * @returns {void}
+     */
+    wake() {
+        this.#invalidate();
     }
 
     /**
@@ -494,14 +522,31 @@ export class Viewport extends Element {
         }
     }
 
-    #tick = () => {
+    #tick = timestamp => {
         this.#frame = 0;
 
         this.#flushPointer();
         if (this.#easeZoom()) this.#invalidate();
-        // A running simulation changes the scene without writing through the Property
-        // System on every frame, so it is the one case that needs a standing loop.
-        if (this.#runtime?.running) this.#invalidate();
+
+        // THE LOOP LIVES HERE, AND THAT IS WHY THE TRANSPORT DOES NOT NEED ONE (ADR-0029).
+        // This element already owns the only `requestAnimationFrame` in the Editor, so a
+        // running simulation is one call added to a tick that was happening anyway — not a
+        // second loop to keep in step with this one.
+        //
+        // The elapsed time is CLAMPED. A tab in the background stops getting frames, and
+        // returning to it hands over a gap of several seconds; `Clock.advance()` would
+        // faithfully catch every fixed step up, which is a scene lurching forward half a
+        // minute the moment a creator looks back at it. Its own step cap covers the same
+        // ground, and this makes the intent visible at the call site.
+        if (this.#runtime?.running) {
+            const now = typeof timestamp === 'number' ? timestamp : performance.now();
+            const elapsed = frameDelta(now, this.#lastFrame, MAX_FRAME_SECONDS);
+            this.#lastFrame = now;
+            this.#runtime.advance(elapsed);
+            this.#invalidate();
+        } else {
+            this.#lastFrame = 0;
+        }
 
         if (!this.#dirty) return;
         this.#dirty = false;

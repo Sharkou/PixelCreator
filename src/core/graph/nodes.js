@@ -56,6 +56,7 @@ export const NODE_CATEGORIES = ['Events', 'Properties', 'Flow', 'Values', 'Math'
  * @property {string} type - Stable identity, written into every graph that uses it
  * @property {string} label - What a creator reads
  * @property {string} [category] - Menu group; `Other` when absent
+ * @property {string[]} [keywords] - What else a creator might type when looking for it
  * @property {Array|Function} [inputs] - Input ports, or (node, context) => ports
  * @property {Array|Function} [outputs] - Output ports, or (node, context) => ports
  * @property {object} [params] - Param descriptors, in the ADR-0007 property shape

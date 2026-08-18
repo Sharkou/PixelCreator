@@ -20,6 +20,7 @@ import { Layout } from './layout.js';
 import { registerBuiltIns } from './registry.js';
 import { deleteObject } from './commands.js';
 import { Workspace } from './project/workspace.js';
+import { Transport, TransportState } from './transport.js';
 import { fillStarterScene } from './project/starter.js';
 import { installDocumentStyles, sheet } from './ui/styles.js';
 import { el, fill } from './ui/element.js';
@@ -109,6 +110,32 @@ const shellStyles = sheet(`
     }
 
     .titlebar .sep { color: var(--px-border-subtle); }
+
+    /* The transport, centred: it acts on the scene rather than on a panel, and it is
+       grouped in its own well so the three read as one control instead of as three more
+       chrome buttons. */
+    .titlebar .transport {
+        display: flex;
+        align-items: center;
+        gap: var(--px-space-0);
+        flex: 0 0 auto;
+        padding: var(--px-space-0);
+        border-radius: var(--px-radius);
+        background: var(--px-surface);
+        border: 1px solid var(--px-border);
+    }
+
+    /* Play is the one green thing in the Editor, and only while it is the thing to do. */
+    .titlebar .transport .play:hover { color: var(--px-success); }
+    .titlebar .transport .play.on { color: var(--px-success); background: transparent; }
+
+    .titlebar .transport.running { border-color: var(--px-success); }
+    .titlebar .transport[data-state='paused'] { border-color: var(--px-warning); }
+
+    /* THE RUNNING SCENE IS MARKED, because everything changed while it runs is lost at
+       Stop (ADR-0029 section 4). A hairline along the top of the stage: present enough to
+       be noticed, quiet enough to work with. */
+    .shell.playing .stage { box-shadow: inset 0 2px 0 var(--px-success); }
     .titlebar .gap { width: var(--px-space-2); flex: 0 0 auto; }
 
     /* The prototype's avatar: a gradient disc, 22 px, and a real button — it opens a menu
@@ -128,6 +155,14 @@ const shellStyles = sheet(`
 
     /* A file dragged over the scene: the surface says it will take it. */
     px-viewport.importing { outline: 2px dashed var(--px-accent); outline-offset: -4px; }
+
+    /* The window the shell has decided a drop would land in (ADR-0028 §3). The viewport
+       lives in the document, so its mark is written here; the windows in shadow roots
+       style the same two classes on their own host. The graph canvas has no rule that
+       accepts anything yet, so it has no mark — a highlight for a drop that cannot happen
+       would be the lie this Editor keeps refusing. */
+    px-viewport.dnd-over { outline: 2px solid var(--px-accent); outline-offset: -3px; }
+    px-viewport.dnd-refused { outline: 2px solid var(--px-danger); outline-offset: -3px; }
     .titlebar .spacer { flex: 1; }
     .titlebar .toggles { display: flex; gap: var(--px-space-0); }
 
@@ -320,13 +355,31 @@ export function start(mount = document.body) {
         timeline
     );
 
+    const chrome = titlebar(scene, layout, workspace);
     const shell = el('div', { class: 'shell' },
-        titlebar(scene, layout, workspace),
+        chrome.element,
         el('div', { class: 'workspace' }, stack, rightSplit, columnRight)
     );
 
     mount.append(shell);
     layout.mount(shell);
+
+    // AFTER THE MOUNT, AND THAT IS NOT AN ACCIDENT OF ORDER. The Viewport builds its
+    // Runtime when it connects, so there is nothing to drive until the shell is in the
+    // document — and the transport takes the Runtime that is already drawing rather than
+    // making a second one, which is the whole of ADR-0029 section 1.
+    const transport = new Transport({
+        scene,
+        runtime: viewport.runtime,
+        histories,
+        registry: components
+    });
+    chrome.transport(transport);
+
+    // The Viewport draws on demand, and `running` is not something it watches — so the
+    // transport tells it once that there is a reason to. From there the running branch of
+    // its own tick keeps the frames coming.
+    transport.observe(() => viewport.wake());
 
     const applyVisibility = () => {
         hierarchy.hidden = !layout.shows('hierarchy');
@@ -399,7 +452,7 @@ export function start(mount = document.body) {
     bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarchy, inspector, project });
     bindShortcuts({ scene, selection, viewport, history, workspace });
 
-    return { scene, camera, selection, layout, viewport, history, histories, workspace };
+    return { scene, camera, selection, layout, viewport, history, histories, workspace, transport };
 }
 
 /**
@@ -418,12 +471,18 @@ export function createEditorCamera() {
     return camera;
 }
 
-// THERE IS NO TRANSPORT HERE, AND THAT IS DELIBERATE. The prototype draws Play / Pause /
-// Stop, and Play needs a scene snapshot restored on stop, which does not exist yet
-// (docs/migration/MIGRATION_STATUS.md). A green button that does nothing would be the one
-// kind of lie this Editor has consistently refused. It arrives with its mechanism.
+// THE TRANSPORT IS HERE NOW, AND IT ARRIVED WITH ITS MECHANISM. This file used to say:
 //
-// Nor is there a Ctrl K bar: there is no command registry to search. Both are named in the
+//   "THERE IS NO TRANSPORT HERE, AND THAT IS DELIBERATE. Play needs a scene snapshot
+//    restored on stop, which does not exist yet. A green button that does nothing would be
+//    the one kind of lie this Editor has consistently refused."
+//
+// serializeScene() / restoreScene(), Clock.reset() and a Viewport that owns the frame loop
+// are what was missing; editor/transport.js is the three-state machine ADR-0029 describes,
+// and these three buttons are its only control surface. They are not decoration: Play
+// really runs the scene, and Stop really puts it back.
+//
+// There is still no Ctrl K bar: there is no command registry to search. It is named in the
 // report rather than mocked up here.
 function titlebar(scene, layout, workspace) {
     const buttons = TOGGLES.map(toggle => {
@@ -487,18 +546,89 @@ function titlebar(scene, layout, workspace) {
         ], () => {}, { label: 'profile' })
     });
 
-    return el('div', { class: 'titlebar' },
+    // The transport is filled in once the shell is mounted, because the Runtime it drives
+    // does not exist until the Viewport connects. A slot rather than a rebuild: the bar is
+    // assembled once, in the order it is read.
+    const slot = el('div', { class: 'transport-slot' });
+
+    const element = el('div', { class: 'titlebar' },
         el('div', { class: 'mark' }),
         el('span', { class: 'product', textContent: 'Pixel Creator' }),
         el('span', { class: 'sep', textContent: '/' }),
         name,
         unsaved,
         el('div', { class: 'spacer' }),
+        slot,
+        el('div', { class: 'spacer' }),
         el('div', { class: 'toggles' }, buttons),
         el('div', { class: 'gap' }),
         share,
         profile
     );
+
+    return { element, transport: machine => fill(slot, transportControls(machine)) };
+}
+
+/**
+ * Play, Pause and Stop, in the middle of the chrome where every editor puts them.
+ *
+ * THREE BUTTONS, THREE DEFINED MEANINGS (ADR-0029). Play takes a snapshot and starts the
+ * runtime; Pause holds time without leaving the session; Stop restores the snapshot. The
+ * state machine is editor/transport.js and it holds no DOM, so what is left here is drawing
+ * the three states and saying which one the Editor is in.
+ *
+ * THE RUNNING STATE IS VISIBLE, and it has to be: everything a creator changes while the
+ * scene runs is lost at Stop (ADR-0029 section 4). A transport that looked the same running
+ * and stopped would make that a discovery rather than a warning.
+ *
+ * @param {Transport} transport - The machine these three drive
+ * @returns {HTMLElement} The control group
+ */
+function transportControls(transport) {
+    const play = el('button', {
+        class: 'ghost play',
+        type: 'button',
+        title: 'Play',
+        'aria-label': 'Play',
+        onclick: () => transport.play()
+    }, icon('play'));
+
+    const pause = el('button', {
+        class: 'ghost',
+        type: 'button',
+        title: 'Pause',
+        'aria-label': 'Pause',
+        onclick: () => transport.pause()
+    }, icon('pause'));
+
+    const stop = el('button', {
+        class: 'ghost',
+        type: 'button',
+        title: 'Stop - restores the scene as Play found it',
+        'aria-label': 'Stop',
+        onclick: () => transport.stop()
+    }, icon('stop'));
+
+    const group = el('div', { class: 'transport' }, play, pause, stop);
+
+    transport.observe(state => {
+        const editing = state === TransportState.EDITING;
+        play.classList.toggle('on', state === TransportState.PLAYING);
+        pause.classList.toggle('on', state === TransportState.PAUSED);
+        // Pause and Stop mean nothing before Play, so they say so rather than doing nothing
+        // when pressed.
+        pause.disabled = editing;
+        stop.disabled = editing;
+        play.title = state === TransportState.PAUSED ? 'Resume' : 'Play';
+        group.classList.toggle('running', !editing);
+        group.dataset.state = state;
+
+        // The whole shell carries the state, because a scene that is running is a fact
+        // about the Editor rather than about three buttons.
+        group.closest('.shell')?.classList.toggle('playing', !editing);
+    });
+
+    return group;
 }
 
 /**
@@ -548,37 +678,81 @@ function bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarc
     const ghost = createDragGhost(shell);
 
     /**
-     * The drop target under a point, whichever window owns it.
+     * The drop target under a point, and the window that owns it.
      *
-     * ONE RESOLUTION, TWO READERS. The hover highlight and the drop itself have to
-     * agree about what is under the pointer, so they ask the same function rather than
-     * each walking the windows in its own order. No rule is evaluated here: this says
-     * WHERE the pointer is, and `canDrop()` says what that means (ADR-0026 §6).
+     * ONE RESOLUTION, THREE READERS. The hover outline, the cursor and the drop itself
+     * have to agree about what is under the pointer, so they ask this rather than each
+     * walking the windows in its own order. No rule is evaluated here: this says WHERE
+     * the pointer is, and `canDrop()` says what that means (ADR-0026 §6).
+     *
+     * A REFUSED ZONE IS STILL A ZONE. The Inspector used to answer `null` for a property
+     * that will not take what is being carried, which sent the search on to the viewport
+     * behind it — so dropping an image on a `number` field silently placed it in the
+     * scene. Being over something that says no is not the same as being over nothing.
      *
      * @param {object} payload - What is being carried
      * @param {number} clientX - Pointer position
      * @param {number} clientY - Pointer position
-     * @returns {object|null} A target for the rules, or null when nothing answers
+     * @returns {{target: object, element: HTMLElement}|null} Where it would land
      */
     function targetAt(payload, clientX, clientY) {
         const found = inspector.zoneAt(payload, clientX, clientY);
-        if (found) return found.zone;
+        if (found) return { target: found.zone, element: inspector };
 
         if (viewport.containsClient(clientX, clientY)) {
             const point = viewport.worldAt(clientX, clientY);
-            return { zone: DropZone.SCENE, x: point.x, y: point.y };
+            return { target: { zone: DropZone.SCENE, x: point.x, y: point.y }, element: viewport };
         }
 
-        if (within(hierarchy, clientX, clientY)) return { zone: DropZone.HIERARCHY };
-        if (within(project, clientX, clientY)) return project.dropTargetAt(clientX, clientY);
+        if (within(hierarchy, clientX, clientY)) {
+            return { target: { zone: DropZone.HIERARCHY }, element: hierarchy };
+        }
+        if (within(project, clientX, clientY)) {
+            const target = project.dropTargetAt(clientX, clientY);
+            return target ? { target, element: project } : null;
+        }
 
         return null;
+    }
+
+    /**
+     * Show, everywhere at once, what releasing here would do (ADR-0028 §3).
+     *
+     * THREE MARKS, ONE ANSWER: the window that would take the drop is outlined, the
+     * cursor says accepted or refused, and the ghost carries the rule's own sentence.
+     * They are set together because they are one statement — a window outlined in accent
+     * under a `no-drop` cursor is the Editor contradicting itself.
+     *
+     * @param {object|null} found - What `targetAt()` answered
+     * @param {object|null} verdict - What `canDrop()` said about it
+     */
+    let marked = null;
+    function markTarget(found, verdict) {
+        const element = verdict?.allowed === false && !found ? null : found?.element ?? null;
+
+        if (marked && marked !== element) marked.classList.remove('dnd-over', 'dnd-refused');
+        marked = element;
+
+        element?.classList.toggle('dnd-over', verdict?.allowed === true);
+        element?.classList.toggle('dnd-refused', verdict?.allowed === false);
+
+        shell.classList.toggle('dragging-copy', verdict?.allowed === true);
+        shell.classList.toggle('dragging-refused', verdict?.allowed !== true);
+    }
+
+    /** Take every mark off, whatever state the gesture ended in. */
+    function clearMarks() {
+        marked?.classList.remove('dnd-over', 'dnd-refused');
+        marked = null;
+        inspector.clearDropMarks();
+        shell.classList.remove('dragging', 'dragging-copy', 'dragging-refused');
     }
 
     shell.addEventListener('px-drag-start', event => {
         carried = event.detail.payload;
         const { clientX, clientY } = event.detail;
         ghost.show(describePayload(carried), clientX ?? 0, clientY ?? 0);
+        shell.classList.add('dragging');
     });
 
     shell.addEventListener('px-drag-move', event => {
@@ -588,8 +762,10 @@ function bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarc
 
         // The rules already answer whether a drop is legal AND why. Showing that answer
         // is the whole of the fix: a refusal used to look like empty space.
-        const target = targetAt(carried, clientX, clientY);
-        const verdict = target ? canDrop(carried, target) : null;
+        const found = targetAt(carried, clientX, clientY);
+        const verdict = found ? canDrop(carried, found.target) : null;
+
+        markTarget(found, verdict);
         ghost.verdict(verdict && !verdict.reason
             ? { ...verdict, reason: verdict.allowed ? null : 'This cannot be dropped here.' }
             : verdict);
@@ -599,20 +775,24 @@ function bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarc
         const payload = carried;
         carried = null;
         ghost.hide();
+        clearMarks();
         if (!payload) return;
 
         const { clientX, clientY } = event.detail;
+        const found = targetAt(payload, clientX, clientY);
+        if (!found) return;
 
-        if (inspector.drop(payload, clientX, clientY)) return;
-
-        if (viewport.containsClient(clientX, clientY)) {
-            const point = viewport.worldAt(clientX, clientY);
-            const target = { zone: DropZone.SCENE, x: point.x, y: point.y };
-            if (canDrop(payload, target).allowed) performDrop(payload, target, context());
+        // The Inspector performs its own drop, because it has to redraw the panel the
+        // value landed in; everything else goes straight through the rules.
+        if (found.element === inspector) {
+            inspector.drop(payload, clientX, clientY);
             return;
         }
-
-        if (within(hierarchy, clientX, clientY)) hierarchy.drop(payload);
+        if (found.element === hierarchy) {
+            hierarchy.drop(payload);
+            return;
+        }
+        if (canDrop(payload, found.target).allowed) performDrop(payload, found.target, context());
     });
 }
 

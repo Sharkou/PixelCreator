@@ -37,7 +37,8 @@ import { pickFile, readAsDataUrl } from '../ui/file.js';
 import { DropZone, resourcePayload } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
 import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
-import { DropPosition, dropPositionAt, insertionIndex } from './drop.js';
+import { DropPosition, dropPositionAt } from './drop.js';
+import { previewSlots, rankAtPoint } from '../dnd/reflow.js';
 import '../ui/window.js';
 
 /** How far a pointer travels before a press on a tile becomes a drag. */
@@ -71,7 +72,7 @@ export class Project extends Element {
         .crumbs .crumb {
             display: inline-flex;
             align-items: center;
-            gap: var(--px-space-0);
+            gap: var(--px-space-1);
             padding: 0 var(--px-space-1);
             height: var(--px-control);
             border-radius: var(--px-radius-sm);
@@ -79,13 +80,37 @@ export class Project extends Element {
             background: none;
             border: none;
             font: inherit;
-            cursor: default;
+            font-size: var(--px-text-xs);
+            /* A crumb IS a button — it walks somewhere — so it says so. The panel used
+               to draw every one of them with a default cursor, which is the mark of a
+               label, on a control that navigates. */
+            cursor: pointer;
         }
 
         .crumbs .crumb:hover { background: var(--px-surface-hover); color: var(--px-text-strong); }
-        .crumbs .crumb.here { color: var(--px-text-strong); }
+
+        /* The folder being looked at is not a place to go, so it is not a button: it is
+           the title of the view, and it reads as one. */
+        .crumbs .crumb.here {
+            color: var(--px-text-strong);
+            font-weight: var(--px-weight-medium);
+            cursor: default;
+        }
+
+        .crumbs .crumb.here:hover { background: none; }
+        .crumbs .crumb .glyph { display: flex; color: var(--px-text-dim); }
+        .crumbs .crumb.here .glyph { color: var(--px-accent); }
         .crumbs .crumb.drop { background: var(--px-accent-muted); color: var(--px-text-strong); }
-        .crumbs .sep { color: var(--px-border-subtle); }
+
+        /* A chevron rather than a slash: the trail points somewhere, and a slash reads as
+           a path a creator could type — which this is not, because the model has no paths
+           (ADR-0025). */
+        .crumbs .sep {
+            display: flex;
+            align-items: center;
+            color: var(--px-border-subtle);
+            flex: 0 0 auto;
+        }
 
         /* ── the grid ───────────────────────────────────────────────────── */
 
@@ -103,11 +128,19 @@ export class Project extends Element {
             min-height: 100%;
         }
 
+        /* It GROWS with its tiles and SHRINKS to the panel when it has none. With the
+           old flex-shrink of zero an empty folder's message set the height and the body
+           scrolled past it — a scrollbar shown for nothing. */
         .surface {
             box-sizing: border-box;
-            flex: 1 0 auto;
+            flex: 1 1 auto;
+            min-height: 0;
             padding: var(--px-space-2);
         }
+
+        /* Nothing to list: the message takes the whole surface and centres in it, rather
+           than being a block the surface has to be tall enough to hold. */
+        .surface:not(.grid) { display: flex; flex-direction: column; padding: 0; }
 
         .surface.grid {
             display: grid;
@@ -124,13 +157,21 @@ export class Project extends Element {
             padding: var(--px-space-1);
             border-radius: var(--px-radius-md);
             border: 1px solid transparent;
-            cursor: default;
+            /* A tile opens, selects, renames and drags. The default cursor is that of a
+               label; this is a card a creator acts on. */
+            cursor: pointer;
             -webkit-user-select: none;
             user-select: none;
         }
 
         .tile:hover { background: var(--px-surface-raised); border-color: var(--px-border-subtle); }
         .tile.selected { background: var(--px-accent-muted); border-color: var(--px-accent); }
+
+        /* THE CHECKERBOARD IS PART OF THE ASSET, NOT PART OF THE TILE. It says which
+           pixels are transparent, so covering it with the hover or selection tint would
+           answer a question about the picture with a fact about the pointer. The thumb
+           paints its own ground, and these two rules keep it doing that in both states. */
+        .tile:hover .thumb, .tile.selected .thumb { background-color: var(--px-surface-sunken); }
 
         /* The checkerboard says "this is where a picture goes" even when the picture is a
            glyph — it is the one place in the Editor that draws transparency. */
@@ -195,32 +236,39 @@ export class Project extends Element {
 
         /* ── dragging ───────────────────────────────────────────────────── */
 
-        .tile.dragging { opacity: 0.4; }
-        .tile.into { box-shadow: inset 0 0 0 2px var(--px-accent); }
-
-        /* Between two tiles: a rail down the edge the tile would land at. A grid has rows,
-           so the mark is vertical — the horizontal line a list uses would point at the
-           wrong neighbour. */
-        .tile.before::after,
-        .tile.after::after {
-            content: '';
-            position: absolute;
-            top: var(--px-space-1);
-            bottom: var(--px-space-1);
-            width: 2px;
-            background: var(--px-accent);
+        /* THE GRID REORGANISES UNDER THE POINTER (ADR-0028 §1). Tiles are a flat list, so
+           they ask one question — at what rank? — and a flat list may answer it in place:
+           the carried tile follows the hand and the others slide into the slots they would
+           hold, so the drop CONFIRMS something already visible instead of revealing it.
+           Nothing here writes: the offsets come from dnd/reflow.js and die with the
+           gesture. The Hierarchy does the opposite, and says why in windows/hierarchy.js. */
+        .tile.dragging {
+            z-index: 2;
+            opacity: 0.9;
+            border-color: var(--px-accent);
             pointer-events: none;
         }
 
-        .tile.before::after { left: calc(var(--px-space-1) * -1); }
-        .tile.after::after { right: calc(var(--px-space-1) * -1); }
+        /* Only the tiles that step aside animate. The carried one tracks the pointer and
+           must not lag a frame behind the hand holding it. */
+        .tile.sliding { transition: transform var(--px-duration) var(--px-ease); }
 
-        /* A file being dragged in from outside: the whole window says so, because the
-           whole window accepts it. */
-        :host(.importing) .surface {
-            outline: 2px dashed var(--px-accent);
-            outline-offset: -4px;
-        }
+        /* Dropping INTO a folder is the other answer, and it is not a rank — so it is not
+           drawn as one. */
+        .tile.into { box-shadow: inset 0 0 0 2px var(--px-accent); }
+
+        /* A file being dragged in from outside: the WHOLE window says so, because the
+           whole window accepts it. The outline used to sit on the grid, which was also
+           the only element listening — so a file held over the breadcrumb, over the
+           search bar, or over an empty project's message was over nothing at all. Both
+           the listener and the mark are now the window itself. */
+        :host(.importing) { outline: 2px dashed var(--px-accent); outline-offset: -3px; }
+
+        /* Something carried from another panel, hovering here. The shell decides which
+           window is the target and marks it; every window styles that one class, so the
+           answer cannot differ between them (ADR-0028 §3). */
+        :host(.dnd-over) { outline: 2px solid var(--px-accent); outline-offset: -3px; }
+        :host(.dnd-refused) { outline: 2px solid var(--px-danger); outline-offset: -3px; }
 
         .none {
             padding: var(--px-space-2) var(--px-space-3);
@@ -261,6 +309,17 @@ export class Project extends Element {
 
     connectedCallback() {
         if (this.shadowRoot.childElementCount === 0) this.#build();
+
+        // ONE LISTENER, ON THE WINDOW ITSELF. A file from the desktop may be released on
+        // a tile, on the gap between two, on the padding below the last one, on the
+        // breadcrumb, on the search bar, or on the words an empty project shows — and all
+        // of those are "the Project panel" to the person holding the file. Events from a
+        // shadow root retarget to the host, so the host is the one place that hears every
+        // one of them (ADR-0026 §6).
+        this.addEventListener('dragover', event => this.#dragOver(event));
+        this.addEventListener('dragleave', event => this.#dragLeave(event));
+        this.addEventListener('drop', event => this.#dropFiles(event));
+
         if (!this.#workspace) return;
 
         this.track(this.#workspace.project.operations.on('operation', () => this.#render()));
@@ -269,14 +328,25 @@ export class Project extends Element {
         }
         this.track(this.#workspace.on('selection', () => this.#applySelection()));
 
+        // TWO KEYS, AND THEY ARE THE TWO GESTURES THIS PANEL HAS. `F2` renames now — the
+        // shortcut the Hierarchy already answers to — and `Enter` OPENS, which is what a
+        // creator who has walked a list with the keyboard expects: a folder is walked
+        // into, anything else opens its editor. They are the keyboard's spelling of the
+        // second click and of the double-click, so there is no third gesture to learn.
         const onKey = event => {
-            if (event.key !== 'F2' || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (event.ctrlKey || event.metaKey || event.altKey) return;
+            if (event.key !== 'F2' && event.key !== 'Enter') return;
+            // A field being typed into owns its own Enter, including the rename box.
+            if (isEditing()) return;
+
             const resource = this.#workspace.selected;
             const tile = resource ? this.#tiles.get(resource.id) : null;
             if (!tile) return;
+
             event.preventDefault();
             this.#cancelRename();
-            this.#beginRename(resource, tile.name);
+            if (event.key === 'Enter') this.#open(resource);
+            else this.#beginRename(resource, tile.name);
         };
         globalThis.addEventListener('keydown', onKey);
         this.track(() => globalThis.removeEventListener('keydown', onKey));
@@ -294,9 +364,6 @@ export class Project extends Element {
                 this.#cancelRename();
                 this.#workspace?.select(null);
             },
-            ondragover: event => this.#dragOver(event),
-            ondragleave: () => this.classList.remove('importing'),
-            ondrop: event => this.#dropFiles(event)
         });
         this.#crumbs = el('div', { class: 'crumbs' });
 
@@ -443,19 +510,38 @@ export class Project extends Element {
         const project = this.#workspace.project;
         const chain = this.#folder ? [...ancestors(project, this.#folder), project.get(this.#folder)] : [];
 
-        const crumb = (label, id, here) => el('button', {
-            class: `crumb${here ? ' here' : ''}`,
-            type: 'button',
-            textContent: label,
-            onclick: () => this.#openFolder(id),
-            onpointerenter: event => this.#hoverCrumb(event.currentTarget, id),
-            onpointerleave: event => event.currentTarget.classList.remove('drop')
-        });
+        const crumb = (label, id, here, glyph) => {
+            const button = el('button', {
+                class: `crumb${here ? ' here' : ''}`,
+                type: 'button',
+                title: here ? label : `Go to ${label}`,
+                onclick: () => this.#openFolder(id),
+                onpointerenter: event => this.#hoverCrumb(event.currentTarget, id),
+                onpointerleave: event => event.currentTarget.classList.remove('drop')
+            },
+                el('span', { class: 'glyph' }, icon(glyph, 16)),
+                el('span', { textContent: label })
+            );
 
-        const nodes = [crumb('Project', null, chain.length === 0)];
+            // A crumb NAMES A FOLDER, so a folder renamed anywhere retitles it on the
+            // keystroke — the same rule the tiles and the Inspector live by (ADR-0026 §3).
+            if (id) {
+                const entry = project.get(id);
+                if (entry) {
+                    this.track(observe(entry, 'name', change => {
+                        button.lastElementChild.textContent = change.value || 'Untitled';
+                    }), 'crumbs');
+                }
+            }
+            return button;
+        };
+
+        this.release('crumbs');
+        const nodes = [crumb('Project', null, chain.length === 0, 'folder')];
         chain.forEach((folder, index) => {
-            nodes.push(el('span', { class: 'sep', textContent: '/' }));
-            nodes.push(crumb(folder?.name || 'Untitled', folder?.id ?? null, index === chain.length - 1));
+            nodes.push(el('span', { class: 'sep' }, icon('chevron', 16)));
+            nodes.push(crumb(folder?.name || 'Untitled', folder?.id ?? null,
+                index === chain.length - 1, 'folder'));
         });
 
         fill(this.#crumbs, nodes);
@@ -526,8 +612,6 @@ export class Project extends Element {
                 this.#cancelRename();
                 this.#open(resource);
             },
-            ondragover: event => this.#dragOver(event),
-            ondrop: event => this.#dropFiles(event)
         },
             this.#thumbnail(resource),
             name
@@ -698,6 +782,22 @@ export class Project extends Element {
             drag.started = true;
             this.#cancelRename();
             capture(drag.tile, drag.pointerId);
+
+            // The layout as it is BEFORE anything slides. Measuring live would read a tile
+            // mid-transition, so the rank would depend on how far the previous answer had
+            // got to drawing itself.
+            // FROM THE DOM, NOT FROM THE MAP. Tiles survive a re-render keyed by id, so
+            // the Map keeps the order they were FIRST seen in — which stops matching the
+            // grid the moment a resource is moved. What the creator is aiming at is what
+            // is on screen.
+            drag.tiles = [...this.#grid.querySelectorAll('.tile')];
+            drag.boxes = drag.tiles.map(tile => {
+                const box = tile.getBoundingClientRect();
+                return { x: box.left, y: box.top, width: box.width, height: box.height };
+            });
+            drag.index = drag.tiles.indexOf(drag.tile);
+            drag.shown = null;
+
             drag.tile.classList.add('dragging');
             // The Editor learns what is being carried, so the viewport and the Hierarchy
             // can accept it: one payload, one vocabulary (ADR-0026 §8).
@@ -713,7 +813,15 @@ export class Project extends Element {
         }
 
         event.preventDefault();
-        this.#markDrop(this.#dropAt(event.clientX, event.clientY));
+
+        const target = this.#dropAt(event.clientX, event.clientY);
+        this.#markDrop(target);
+        // NESTING AND REORDERING ARE TWO ANSWERS, AND ONLY ONE OF THEM IS A RANK. Over the
+        // middle of a folder the question is "into what?", so the grid holds still and the
+        // folder is outlined; anywhere else it is "at what rank?", and the grid answers by
+        // showing it.
+        if (target?.position === DropPosition.INTO) this.#clearPreview({ keepCarried: true });
+        else this.#preview(event.clientX, event.clientY);
 
         // The shell follows the pointer with the ghost and asks the rules what a drop
         // here would mean. It cannot read this window pointer events, so the drag says
@@ -747,14 +855,65 @@ export class Project extends Element {
         performDrop(resourcePayload(resource), target.drop, this.#context());
     }
 
+    /**
+     * Show the grid as it would be, without changing it (ADR-0028 §§1-2).
+     *
+     * Nothing here writes: the offsets come from dnd/reflow.js, they live on the tiles as
+     * transforms, and the gesture ending removes them. A cancelled drag is therefore not
+     * an undo, because there was never anything to undo.
+     *
+     * @param {number} clientX - Pointer position
+     * @param {number} clientY - Pointer position
+     */
+    #preview(clientX, clientY) {
+        const drag = this.#drag;
+        if (!drag?.boxes || drag.index === -1) return;
+
+        const to = rankAtPoint({ x: clientX, y: clientY }, drag.boxes);
+        if (to !== drag.shown) {
+            drag.shown = to;
+            const offsets = previewSlots(drag.boxes, drag.index, to);
+
+            drag.tiles.forEach((tile, i) => {
+                // The carried tile follows the pointer instead of its computed slot: it is
+                // the one thing the creator is actually holding.
+                if (i === drag.index) return;
+                tile.classList.add('sliding');
+                tile.style.transform = offsets[i].dx === 0 && offsets[i].dy === 0
+                    ? ''
+                    : `translate(${offsets[i].dx}px, ${offsets[i].dy}px)`;
+            });
+        }
+
+        drag.tile.style.transform =
+            `translate(${clientX - drag.from.x}px, ${clientY - drag.from.y}px)`;
+    }
+
+    /**
+     * Put every tile back where the model says it is.
+     * @param {object} [options] - Options
+     * @param {boolean} [options.keepCarried] - Leave the carried tile under the pointer
+     */
+    #clearPreview({ keepCarried = false } = {}) {
+        const drag = this.#drag;
+        for (const entry of this.#tiles.values()) {
+            if (keepCarried && entry.tile === drag?.tile) continue;
+            entry.tile.classList.remove('sliding');
+            entry.tile.style.transform = '';
+        }
+        if (drag) drag.shown = null;
+    }
+
     #cancelDrag() {
         const drag = this.#drag;
+        this.#clearPreview();
         this.#drag = null;
         if (!drag) return;
 
         if (drag.started) {
             release(drag.tile, drag.pointerId);
-            drag.tile.classList.remove('dragging');
+            drag.tile.classList.remove('dragging', 'sliding');
+            drag.tile.style.transform = '';
         }
         this.#markDrop(null);
         for (const crumb of this.#crumbs?.querySelectorAll('.crumb') ?? []) crumb.classList.remove('drop');
@@ -773,33 +932,41 @@ export class Project extends Element {
 
         const project = this.#workspace.project;
 
+        // A FOLDER IS THE ONE TARGET THAT IS NOT A RANK. Over the middle of a folder tile
+        // the question is "into what?", and its answer changes where the resource lives
+        // rather than where it sits — so it is resolved first, and separately.
         for (const entry of this.#tiles.values()) {
             if (entry.resource.id === drag.resource.id) continue;
+            if (!isFolder(entry.resource)) continue;
 
             const box = entry.tile.getBoundingClientRect();
             if (clientX < box.left || clientX >= box.right) continue;
             if (clientY < box.top || clientY >= box.bottom) continue;
 
-            const position = dropPositionAt(clientX, { top: box.left, height: box.width }, {
-                canNest: isFolder(entry.resource)
-            });
-
-            if (position === DropPosition.INTO) {
-                if (!canMove(project, drag.resource.id, entry.resource.id)) return null;
-                return { entry, position, drop: this.#target(entry.resource.id, null) };
-            }
-
-            const siblings = project.children(this.#folder);
-            const rank = siblings.indexOf(entry.resource);
-            if (rank === -1) return null;
-
-            const displayed = position === DropPosition.AFTER ? rank + 1 : rank;
-            const index = insertionIndex(project.indexOf(drag.resource.id), displayed);
-            return { entry, position, drop: this.#target(this.#folder, index) };
+            const position = dropPositionAt(clientX, { top: box.left, height: box.width }, { canNest: true });
+            if (position !== DropPosition.INTO) continue;
+            if (!canMove(project, drag.resource.id, entry.resource.id)) return null;
+            return { entry, position, drop: this.#target(entry.resource.id, null) };
         }
 
-        // Past the tiles: the folder that is open, appended.
-        return { entry: null, position: null, drop: this.#target(this.#folder, null) };
+        // Anywhere else in the open folder: a rank, read the way the preview reads it.
+        //
+        // NO insertionIndex() HERE, AND THAT IS THE SUBTLE PART. That helper converts a
+        // rank counted in the list WITH the carried tile still in it. `rankAtPoint()`
+        // counts ranks in the RESULTING order — dnd/reflow.js is splice-out-then-splice-in,
+        // which is exactly what `Project.#place()` does with the rank it is given — so the
+        // number is already the one the model wants. Adjusting it again turned every
+        // forward move into a no-op.
+        if (!drag.boxes || drag.index === -1) return null;
+
+        const rank = rankAtPoint({ x: clientX, y: clientY }, drag.boxes);
+        if (rank === drag.index) return null;
+
+        // The tiles on screen are the open folder's children, in model order — unless a
+        // search is showing everything, in which case a rank on screen means nothing.
+        if (this.#query.trim() !== '') return null;
+
+        return { entry: null, position: null, drop: this.#target(this.#folder, rank) };
     }
 
     /**
@@ -862,6 +1029,19 @@ export class Project extends Element {
         this.classList.add('importing');
     }
 
+    /**
+     * Drop the import mark, but only when the pointer really left the window.
+     *
+     * `dragleave` fires on every boundary INSIDE the window too — crossing from the
+     * breadcrumb onto a tile is a leave and an enter — so a naive handler makes the
+     * outline flicker its way across the panel. `relatedTarget` is where the pointer went;
+     * anything still inside is not a departure.
+     */
+    #dragLeave(event) {
+        if (event.relatedTarget && this.contains(event.relatedTarget)) return;
+        this.classList.remove('importing');
+    }
+
     async #dropFiles(event) {
         if (!carriesFiles(event)) return;
         event.preventDefault();
@@ -910,6 +1090,24 @@ function ancestors(project, id) {
         parent = folder.parent ?? null;
     }
     return chain;
+}
+
+/**
+ * Whether the creator is typing, in which case a key belongs to the field.
+ *
+ * Walks into shadow roots, because the box being typed into is inside one and
+ * `document.activeElement` alone only ever reports the window — the same guard
+ * `editor.js` and `windows/graph.js` use, for the same reason.
+ *
+ * @returns {boolean} True when a text control has focus
+ */
+function isEditing() {
+    let element = document.activeElement;
+    while (element?.shadowRoot?.activeElement) element = element.shadowRoot.activeElement;
+
+    if (!element) return false;
+    if (element.isContentEditable) return true;
+    return element.tagName === 'INPUT' || element.tagName === 'SELECT' || element.tagName === 'TEXTAREA';
 }
 
 /**

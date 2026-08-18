@@ -5,6 +5,7 @@ import { Camera, RectangleRenderer } from '../../runtime/mod.js';
 import { PropertyType, propertyTypes } from '../../core/mod.js';
 import {
     FieldKind,
+    fieldFor,
     fieldKindFor,
     describeComponent,
     formatValue,
@@ -306,9 +307,10 @@ test('every Core property type maps to a control, explicitly', () => {
     assert.equal(fieldKindFor(PropertyType.STRING), FieldKind.STRING);
     assert.equal(fieldKindFor(PropertyType.COLOR), FieldKind.COLOR);
     assert.equal(fieldKindFor(PropertyType.ENUM), FieldKind.ENUM);
-    // Supported at the Core — a defined starting value, a validity rule, a serialized
-    // shape — and shown read-only until a list control and a resource browser exist.
-    assert.equal(fieldKindFor(PropertyType.RESOURCE), FieldKind.READONLY);
+    // A reference is picked, dropped or cleared — never typed (ui/resource-field.js).
+    assert.equal(fieldKindFor(PropertyType.RESOURCE), FieldKind.RESOURCE);
+    // A list is still shown read-only: it is a real type at the Core, and what it lacks
+    // is a control, which is a visible piece of work rather than a silent dead end.
     assert.equal(fieldKindFor(PropertyType.ARRAY), FieldKind.READONLY);
 });
 
@@ -332,9 +334,9 @@ test('a range is still derived from the constraints a component already declares
     assert.equal(describeComponent(new Bounded())[0].kind, FieldKind.RANGE);
 });
 
-test('a resource property shows its identifier read-only rather than as editable text', () => {
+test('a resource property is a reference control, never a text box', () => {
     // A ResourceId is opaque. Offering it as a text field invites a creator to type over
-    // it and break the reference.
+    // it and break the reference — so it gets a control that shows what it points at.
     const Sprited = defineComponent({
         type: 'res_sprited',
         label: 'Sprited',
@@ -342,6 +344,24 @@ test('a resource property shows its identifier read-only rather than as editable
     });
     const field = describeComponent(new Sprited())[0];
 
-    assert.equal(field.kind, FieldKind.READONLY);
-    assert.equal(field.readonly, false, 'the property itself is writable; only the control is not');
+    assert.equal(field.kind, FieldKind.RESOURCE);
+    assert.equal(field.readonly, false);
+    assert.deepEqual(field.accepts, { kind: null, mime: null }, 'undeclared means any resource');
+});
+
+test('a resource property carries the narrowing it declared', () => {
+    const Sprited = defineComponent({
+        type: 'res_narrowed',
+        label: 'Narrowed',
+        properties: { source: { type: 'resource', kind: 'asset', mime: 'image/' } }
+    });
+    const field = describeComponent(new Sprited())[0];
+
+    assert.deepEqual(field.accepts, { kind: 'asset', mime: 'image/' },
+        'the picker and the drop rule read the same declaration');
+});
+
+test('only a resource property carries an accepts clause', () => {
+    const descriptor = fieldFor('speed', { type: PropertyType.NUMBER });
+    assert.equal(descriptor.accepts, null);
 });

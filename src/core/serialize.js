@@ -159,12 +159,24 @@ export function deserializeObject(data, { registry = defaultRegistry } = {}) {
  * @returns {Scene} The scene
  */
 export function deserializeScene(data, { registry = defaultRegistry, authority } = {}) {
-    if (data?.version !== FORMAT_VERSION) {
-        throw new Error(`deserializeScene: unsupported format version ${data?.version}`);
-    }
-
+    checkVersion(data);
     const scene = new Scene(data.name ?? '', { id: data.id, authority, registry });
+    return populate(scene, data, registry);
+}
 
+/**
+ * Fill a scene from a payload, in the three passes the format needs.
+ *
+ * Shared by `deserializeScene()` and `restoreScene()`, which differ only in whether the
+ * scene is new: the order of the passes IS the format's contract, and having it written
+ * twice is how two readers of one format start disagreeing.
+ *
+ * @param {object} scene - The scene to fill; assumed empty
+ * @param {object} data - A payload from `serializeScene()`
+ * @param {object} registry - Component registry used to resolve type names
+ * @returns {object} The scene
+ */
+function populate(scene, data, registry) {
     for (const objectData of data.objects ?? []) {
         scene.add(deserializeObject(objectData, { registry }));
     }
@@ -187,6 +199,46 @@ export function deserializeScene(data, { registry = defaultRegistry, authority }
         if (scene.has(id)) scene.reparent(id, null, index);
     });
 
+    return scene;
+}
+
+function checkVersion(data) {
+    if (data?.version !== FORMAT_VERSION) {
+        throw new Error(`deserializeScene: unsupported format version ${data?.version}`);
+    }
+}
+
+/**
+ * Put a scene back exactly as a snapshot recorded it, IN PLACE.
+ *
+ * WHY IT IS NOT `deserializeScene()`. That one builds a new `Scene`, which is the wrong
+ * shape for Stop: the Runtime, the Viewport, the Hierarchy and the Inspector all hold the
+ * scene the Editor started with, and handing them a different object would mean rebinding
+ * every one of them — the copy ADR-0029 §1 refuses to make. So the snapshot is unpacked
+ * into a detached scene and its contents are transplanted into the live one, which keeps
+ * its identity, its pipeline and every listener attached to it.
+ *
+ * IT WRITES NO OPERATION, and that is deliberate. Restoring is not an authored intent: it
+ * is the Editor undoing a session that was never recorded (ADR-0029 §5). `add` and
+ * `remove` are the model's own primitives and announce themselves through `added` and
+ * `removed`, which is what the views listen to.
+ *
+ * @param {object} scene - The live scene to restore into
+ * @param {object} data - A payload from `serializeScene()`
+ * @param {object} [options] - Options
+ * @param {object} [options.registry] - The component registry to rebuild through
+ * @returns {object} The same scene, restored
+ */
+export function restoreScene(scene, data, { registry } = {}) {
+    if (!scene) throw new TypeError('restoreScene: expected a scene');
+    checkVersion(data);
+
+    // Emptied by the roots: `remove` takes a subtree with it, so removing a root removes
+    // its descendants and every listener hears exactly one `removed` per object.
+    for (const root of scene.roots()) scene.remove(root);
+
+    populate(scene, data, registry ?? scene.registry);
+    if (scene.name !== (data.name ?? '')) scene.name = data.name ?? '';
     return scene;
 }
 

@@ -98,6 +98,7 @@ export const STANDARD_NODES = [
         type: 'event.start',
         label: 'On Start',
         category: 'Events',
+        keywords: ['event', 'begin', 'awake', 'init'],
         event: 'start',
         outputs: [flow('out')],
         tooltip: 'Runs once, on this component\'s first simulation step'
@@ -107,6 +108,7 @@ export const STANDARD_NODES = [
         type: 'event.update',
         label: 'On Update',
         category: 'Events',
+        keywords: ['event', 'tick', 'frame', 'loop', 'delta'],
         event: 'update',
         outputs: [
             flow('out'),
@@ -123,6 +125,7 @@ export const STANDARD_NODES = [
         type: 'property.get',
         label: 'Get Property',
         category: 'Properties',
+        keywords: ['read', 'variable', 'field'],
         params: propertyParam,
         // The output takes the SHAPE OF THE PROPERTY, so wiring a `string` into a number
         // input is refused at the moment of the gesture rather than discovered at run time.
@@ -137,6 +140,7 @@ export const STANDARD_NODES = [
         type: 'property.set',
         label: 'Set Property',
         category: 'Properties',
+        keywords: ['write', 'assign', 'variable', 'field'],
         params: propertyParam,
         inputs: (node, context) => {
             const property = referencedProperty(node, context);
@@ -161,6 +165,7 @@ export const STANDARD_NODES = [
         type: 'flow.branch',
         label: 'Branch',
         category: 'Flow',
+        keywords: ['if', 'else', 'condition', 'test'],
         inputs: [flow('in'), data('condition', PropertyType.BOOLEAN, 'Condition', false)],
         outputs: [flow('true', 'True'), flow('false', 'False')],
         execute: io => (io.input('condition') ? 'true' : 'false')
@@ -170,6 +175,7 @@ export const STANDARD_NODES = [
         type: 'flow.sequence',
         label: 'Sequence',
         category: 'Flow',
+        keywords: ['then', 'order', 'chain'],
         inputs: [flow('in')],
         outputs: [flow('first', 'First'), flow('second', 'Second')],
         // Two flows, in the order they are declared. Determinism is not a property the
@@ -183,6 +189,7 @@ export const STANDARD_NODES = [
         type: 'value.number',
         label: 'Number',
         category: 'Values',
+        keywords: ['float', 'int', 'literal', 'constant'],
         params: { value: { type: PropertyType.NUMBER, default: 0, label: 'Value' } },
         outputs: [data('value', PropertyType.NUMBER)],
         evaluate: io => ({ value: io.param('value') ?? 0 })
@@ -192,6 +199,7 @@ export const STANDARD_NODES = [
         type: 'value.boolean',
         label: 'Boolean',
         category: 'Values',
+        keywords: ['bool', 'true', 'false', 'flag', 'literal'],
         params: { value: { type: PropertyType.BOOLEAN, default: false, label: 'Value' } },
         outputs: [data('value', PropertyType.BOOLEAN)],
         evaluate: io => ({ value: Boolean(io.param('value')) })
@@ -201,6 +209,7 @@ export const STANDARD_NODES = [
         type: 'value.string',
         label: 'Text',
         category: 'Values',
+        keywords: ['string', 'literal', 'constant'],
         params: { value: { type: PropertyType.STRING, default: '', label: 'Value' } },
         outputs: [data('value', PropertyType.STRING)],
         evaluate: io => ({ value: globalThis.String(io.param('value') ?? '') })
@@ -225,6 +234,7 @@ export const STANDARD_NODES = [
         type: 'compare.equal',
         label: 'Equal',
         category: 'Compare',
+        keywords: ['equals', '==', 'same', 'comparison'],
         inputs: [data('a', ANY_TYPE, 'A'), data('b', ANY_TYPE, 'B')],
         outputs: [data('result', PropertyType.BOOLEAN, 'Result')],
         evaluate: io => ({ result: io.input('a') === io.input('b') })
@@ -236,6 +246,7 @@ export const STANDARD_NODES = [
         type: 'logic.not',
         label: 'Not',
         category: 'Logic',
+        keywords: ['invert', 'negate', 'boolean'],
         inputs: [data('value', PropertyType.BOOLEAN, 'Value', false)],
         outputs: [data('result', PropertyType.BOOLEAN, 'Result')],
         evaluate: io => ({ result: !io.input('value') })
@@ -250,6 +261,7 @@ export const STANDARD_NODES = [
         type: 'debug.log',
         label: 'Log',
         category: 'Debug',
+        keywords: ['print', 'console', 'trace', 'debug'],
         inputs: [flow('in'), data('value', ANY_TYPE, 'Value')],
         outputs: [flow('out')],
         // THE ONLY ENVIRONMENT-SPECIFIC NODE, and it takes its sink from the host instead of
@@ -283,6 +295,11 @@ function arithmetic(type, label, apply) {
         type,
         label,
         category: 'Math',
+        // WHAT ELSE A CREATOR MIGHT TYPE. The picker scores a query against the name, the
+        // type, the category AND these (editor/ui/relevance.js), which is what lets `times`
+        // find Multiply and `arithmetic` find all four. A node with none is still findable
+        // by its name; these only widen the door.
+        keywords: ['arithmetic', 'maths', 'operator', label.toLowerCase()],
         inputs: [data('a', PropertyType.NUMBER, 'A', 0), data('b', PropertyType.NUMBER, 'B', 0)],
         outputs: [data('result', PropertyType.NUMBER, 'Result')],
         evaluate: io => ({ result: apply(number(io.input('a')), number(io.input('b'))) })
@@ -294,6 +311,7 @@ function comparison(type, label, apply) {
         type,
         label,
         category: 'Compare',
+        keywords: ['comparison', 'compare', 'operator', label.toLowerCase()],
         inputs: [data('a', PropertyType.NUMBER, 'A', 0), data('b', PropertyType.NUMBER, 'B', 0)],
         outputs: [data('result', PropertyType.BOOLEAN, 'Result')],
         evaluate: io => ({ result: apply(number(io.input('a')), number(io.input('b'))) })
@@ -305,6 +323,7 @@ function logical(type, label, apply) {
         type,
         label,
         category: 'Logic',
+        keywords: ['boolean', 'operator', label.toLowerCase()],
         inputs: [
             data('a', PropertyType.BOOLEAN, 'A', false),
             data('b', PropertyType.BOOLEAN, 'B', false)

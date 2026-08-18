@@ -18,6 +18,7 @@
 // still one line in the Core and one in `FieldKind`, and nothing here changes.
 
 import { PropertyType, propertyTypes } from '../../core/mod.js';
+import { iconForPropertyType } from '../ui/icons.js';
 import { FieldKind, fieldFor } from './schema.js';
 
 /** How each Core property type is named for a creator, since a raw enum value is not a word. */
@@ -72,6 +73,10 @@ export function describeProperty(property) {
                 label: 'Type',
                 values: propertyTypes(),
                 labels: propertyTypes().map(type => PROPERTY_TYPE_LABELS[type] ?? type),
+                // The Type dropdown is the control a creator meets first, on every property
+                // they declare, so it shows the shape rather than only naming it — and the
+                // same glyph appears on the property's badge and beside a node's ports.
+                icons: propertyTypes().map(type => iconForPropertyType(type)),
                 tooltip: 'The shape of the value. Changing it resets the default'
             }),
             defaultField(property)
@@ -86,9 +91,10 @@ export function describeProperty(property) {
  * swatch and a `number` default gets a stepper — the Inspector a creator will meet when
  * they attach the Component, shown while they are declaring it.
  *
- * `resource` and `array` are read-only here for the same reason they are read-only
- * everywhere (ADR-0023): what they lack is a control, and inventing a text box for an
- * opaque identifier would invite a creator to type over it.
+ * `resource` is a real control here too, for the same reason it is one everywhere else:
+ * a reference is picked or dropped, never typed. `array` is still read-only, because what
+ * it lacks is a list control (ADR-0023) — and a text box for it would be an invitation to
+ * corrupt a value nobody can see.
  *
  * @param {object} property - The reactive descriptor
  * @returns {object} A field descriptor for `default`

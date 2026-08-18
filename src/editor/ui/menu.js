@@ -26,6 +26,7 @@
 import { Element, el, fill } from './element.js';
 import { sheet } from './styles.js';
 import { icon } from './icons.js';
+import { rank } from './relevance.js';
 
 export class Menu extends Element {
 
@@ -113,6 +114,31 @@ export class Menu extends Element {
         button.selected { color: var(--px-text-strong); }
         button.selected .glyph { color: var(--px-accent); }
 
+        /* A category row: what it is, how many it holds, and that it goes somewhere. */
+        button .count {
+            flex: 0 0 auto;
+            color: var(--px-text-dim);
+            font-size: var(--px-text-2xs);
+            font-variant-numeric: tabular-nums;
+        }
+
+        button .into { display: flex; flex: 0 0 auto; color: var(--px-text-dim); }
+        button.group.selected .into { color: var(--px-accent); }
+
+        /* Where a search result came from. Quiet, because the name is the answer and the
+           group is only how to be sure it is the right one. */
+        button .meta {
+            flex: 0 0 auto;
+            max-width: 40%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--px-text-dim);
+            font-size: var(--px-text-2xs);
+        }
+
+        button.back .glyph { transform: rotate(180deg); }
+        button.back .name { color: var(--px-text-muted); }
+
         button[disabled] { color: var(--px-text-dim); cursor: default; }
         button[disabled]:hover { background: none; box-shadow: none; color: var(--px-text-dim); }
 
@@ -176,6 +202,10 @@ export class Menu extends Element {
     #items = [];
     #list = null;
     #query = '';
+    /** Whether the menu opens on its categories rather than on everything (browse mode). */
+    #browse = false;
+    /** The category being looked inside, or null for the top level. */
+    #category = null;
 
     /**
      * Fill and place the menu.
@@ -186,10 +216,13 @@ export class Menu extends Element {
      * @param {object} [options] - Options
      * @param {boolean} [options.search] - Show a filter field and the key hints
      * @param {string} [options.label] - What is being chosen, for the placeholder
+     * @param {boolean} [options.browse] - Open on the categories rather than on everything
      */
-    open(rect, items, onPick, { search = false, label = '' } = {}) {
+    open(rect, items, onPick, { search = false, label = '', browse = false } = {}) {
         this.#onPick = onPick;
         this.#items = items;
+        this.#browse = browse;
+        this.#category = null;
         this.#list = el('div', { class: 'list' });
 
         const parts = [];
@@ -247,7 +280,25 @@ export class Menu extends Element {
             if (!this.contains(event.target)) this.remove();
         };
         const onKey = event => {
-            if (event.key === 'Escape') return this.remove();
+            if (event.key === 'Escape') {
+                // ESCAPE UNDOES THE LAST STEP, not the whole gesture. Inside a category,
+                // or with a query typed, the creator has moved somewhere and expects to
+                // come back — closing outright would make them reopen the menu to try
+                // again. With nothing to step back from it closes, as it always did.
+                if (this.#query !== '') {
+                    this.#query = '';
+                    const box = this.shadowRoot.querySelector('.search input');
+                    if (box) box.value = '';
+                    this.#renderList();
+                    return undefined;
+                }
+                if (this.#category !== null) {
+                    this.#category = null;
+                    this.#renderList();
+                    return undefined;
+                }
+                return this.remove();
+            }
             if (event.key === 'ArrowDown') return this.#step(1, event);
             if (event.key === 'ArrowUp') return this.#step(-1, event);
             if (event.key === 'Enter') return this.#confirm(event);
@@ -260,47 +311,175 @@ export class Menu extends Element {
     }
 
     /**
-     * Draw the entries that survive the filter.
+     * Draw what the menu is currently showing.
+     *
+     * THREE STATES, AND THE QUERY DECIDES WHICH. A menu that opens onto its full contents
+     * is fine at eight entries and useless at twenty: the node catalogue put every node
+     * behind one scroll, so finding `Multiply` meant reading past nineteen others. In
+     * `browse` mode the menu therefore opens on the CATEGORIES, one row each, and a
+     * category is walked into. Typing at any point leaves both states behind and searches
+     * everything — because someone who knows the name should never have to know the group.
+     *
+     *   query, any mode      ranked results across every entry (ui/relevance.js)
+     *   browse, no category  one row per category
+     *   otherwise            the entries, under their headings
      *
      * A heading whose whole group was filtered away is dropped with it: a category title
      * over nothing says the Editor has a group it does not.
      */
     #renderList() {
-        const query = this.#query.trim().toLowerCase();
-        const kept = [];
+        const query = this.#query.trim();
+
+        if (query !== '') return this.#renderResults(query);
+        if (this.#browse && this.#category === null) return this.#renderCategories();
+        return this.#renderEntries();
+    }
+
+    /** The ranked answer to a query, across every entry whatever section it lives in. */
+    #renderResults(query) {
+        // SCORED, NOT FILTERED. `label.includes(query)` answered nothing for `float` — the
+        // node is called Number — and could not tell `Multiply` from a node whose category
+        // happens to contain the letters. The scorer reads the name, the type, the category
+        // and any declared aliases, and it is pure and tested (ui/relevance.js).
+        const found = rank(this.#entries(), query);
+
+        if (found.length === 0) {
+            fill(this.#list, el('div', { class: 'empty', textContent: `No match for “${query}”` }));
+            return;
+        }
+
+        fill(this.#list, found.map(item => this.#entryRow(item, { meta: item.category })));
+        this.#highlight(this.#list.querySelector('button:not([disabled])'));
+    }
+
+    /** One row per category, which is what `browse` opens on. */
+    #renderCategories() {
+        const groups = this.#groups();
+
+        if (groups.length === 0) {
+            fill(this.#list, el('div', { class: 'empty', textContent: 'Nothing to add' }));
+            return;
+        }
+
+        fill(this.#list, groups.map(group => el('button', {
+            class: 'line group',
+            type: 'button',
+            onpointerenter: event => this.#highlight(event.currentTarget),
+            onclick: () => {
+                this.#category = group.category;
+                this.#renderList();
+            }
+        },
+            el('span', { class: 'glyph' }, icon(group.icon ?? 'chevron')),
+            el('span', { class: 'name', textContent: group.category }),
+            el('span', { class: 'count', textContent: globalThis.String(group.entries.length) }),
+            el('span', { class: 'into' }, icon('chevron'))
+        )));
+
+        this.#highlight(this.#list.querySelector('button:not([disabled])'));
+    }
+
+    /** The entries themselves: one category's, or the whole list under its headings. */
+    #renderEntries() {
+        const rows = [];
+
+        if (this.#browse && this.#category !== null) {
+            // The way out of a category. A row rather than a chevron in the header: it is
+            // the first thing under the pointer, and it navigates like everything else here.
+            rows.push(el('button', {
+                class: 'line back',
+                type: 'button',
+                onpointerenter: event => this.#highlight(event.currentTarget),
+                onclick: () => {
+                    this.#category = null;
+                    this.#renderList();
+                }
+            },
+                el('span', { class: 'glyph' }, icon('chevron')),
+                el('span', { class: 'name', textContent: 'All categories' })
+            ));
+            rows.push(el('div', { class: 'heading', textContent: this.#category }));
+            for (const item of this.#entries()) {
+                if ((item.category ?? null) === this.#category) rows.push(this.#entryRow(item));
+            }
+        } else {
+            const kept = [];
+            for (const item of this.#items) kept.push(item);
+
+            // Drop a heading immediately followed by another heading or by nothing.
+            const visible = kept.filter((item, index) =>
+                !item.heading || (kept[index + 1] && !kept[index + 1].heading));
+
+            if (visible.filter(item => !item.heading).length === 0) {
+                fill(this.#list, el('div', { class: 'empty', textContent: 'Nothing to add' }));
+                return;
+            }
+
+            for (const item of visible) {
+                rows.push(item.heading
+                    ? el('div', { class: 'heading', textContent: item.heading })
+                    : this.#entryRow(item));
+            }
+        }
+
+        fill(this.#list, rows);
+        this.#highlight(this.#list.querySelector('button:not([disabled])'));
+    }
+
+    /**
+     * One choosable row.
+     * @param {object} item - The entry
+     * @param {object} [options] - Options
+     * @param {string} [options.meta] - A second, quieter line: which group it came from
+     * @returns {HTMLElement} The row
+     */
+    #entryRow(item, { meta = null } = {}) {
+        return el('button', {
+            class: 'line',
+            type: 'button',
+            disabled: Boolean(item.disabled),
+            title: item.tooltip ?? '',
+            onpointerenter: event => this.#highlight(event.currentTarget),
+            onclick: () => this.#pick(item)
+        },
+            item.icon ? el('span', { class: 'glyph' }, icon(item.icon)) : null,
+            el('span', { class: 'name', textContent: item.label }),
+            meta ? el('span', { class: 'meta', textContent: meta }) : null
+        );
+    }
+
+    /** Every choosable entry, headings dropped. */
+    #entries() {
+        return this.#items.filter(item => !item.heading);
+    }
+
+    /**
+     * The categories, in the order the caller declared them.
+     *
+     * A category is a HEADING followed by its entries — the shape every menu in this Editor
+     * already passes — so `browse` needs no second data format and no caller changes the way
+     * it builds its list.
+     *
+     * @returns {Array<{category: string, icon: string|null, entries: object[]}>} The groups
+     */
+    #groups() {
+        const groups = [];
+        let current = null;
 
         for (const item of this.#items) {
             if (item.heading) {
-                kept.push(item);
+                current = { category: item.heading, icon: item.icon ?? null, entries: [] };
+                groups.push(current);
                 continue;
             }
-            if (query === '' || item.label.toLowerCase().includes(query)) kept.push(item);
+            if (!current) {
+                current = { category: 'Other', icon: null, entries: [] };
+                groups.push(current);
+            }
+            current.entries.push(item);
         }
 
-        // Drop a heading immediately followed by another heading or by nothing.
-        const visible = kept.filter((item, index) =>
-            !item.heading || (kept[index + 1] && !kept[index + 1].heading));
-
-        const entries = visible.filter(item => !item.heading);
-
-        fill(this.#list,
-            entries.length === 0
-                ? el('div', { class: 'empty', textContent: query === '' ? 'Nothing to add' : `No match for “${this.#query.trim()}”` })
-                : visible.map(item => (item.heading
-                    ? el('div', { class: 'heading', textContent: item.heading })
-                    : el('button', {
-                        class: 'line',
-                        type: 'button',
-                        disabled: Boolean(item.disabled),
-                        onpointerenter: event => this.#highlight(event.currentTarget),
-                        onclick: () => this.#pick(item)
-                    },
-                        item.icon ? el('span', { class: 'glyph' }, icon(item.icon)) : null,
-                        el('span', { class: 'name', textContent: item.label }))))
-        );
-
-        // Something is always the candidate, so Enter never does nothing.
-        this.#highlight(this.#list.querySelector('button:not([disabled])'));
+        return groups.filter(group => group.entries.length > 0);
     }
 
     #buttons() {

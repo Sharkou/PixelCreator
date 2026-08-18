@@ -93,9 +93,16 @@ export class Hierarchy extends Element {
             --indent: var(--px-space-3);
         }
 
+        /* The window the shell has decided a drop would land in (ADR-0028 §3). One class,
+           styled by every window, so the answer cannot differ between them. */
+        :host(.dnd-over) { outline: 2px solid var(--px-accent); outline-offset: -3px; }
+        :host(.dnd-refused) { outline: 2px solid var(--px-danger); outline-offset: -3px; }
+
         px-window { height: 100%; }
 
-        .tree { padding: var(--px-space-1) 0 var(--px-space-3); }
+        /* The tree fills the body, so releasing an object below the last row still lands
+           on the tree rather than on nothing. */
+        .tree { padding: var(--px-space-1) 0 var(--px-space-3); min-height: 100%; box-sizing: border-box; }
 
         .row {
             position: relative;

@@ -251,3 +251,91 @@ test('undoing the deletion makes the graph valid again', () => {
 
     assert.deepEqual(model.validate(), []);
 });
+
+// --- reordering the schema (ADR-0028: a flat list, so the rank is the only question) ---
+
+test('a property moves to another rank, and keeps its identity', () => {
+    const model = definition();
+    const a = model.addProperty({ name: 'a' });
+    const b = model.addProperty({ name: 'b' });
+    const c = model.addProperty({ name: 'c' });
+
+    assert.equal(model.moveProperty(a.id, 2), true);
+    assert.deepEqual(model.properties().map(property => property.name), ['b', 'c', 'a']);
+    assert.equal(model.indexOf(a.id), 2);
+    assert.ok(model.property(a.id), 'the identifier a node stores still resolves');
+    assert.deepEqual([b.id, c.id].map(id => Boolean(model.property(id))), [true, true]);
+});
+
+test('moving a property upwards works the same way', () => {
+    const model = definition();
+    model.addProperty({ name: 'a' });
+    model.addProperty({ name: 'b' });
+    const c = model.addProperty({ name: 'c' });
+
+    model.moveProperty(c.id, 0);
+    assert.deepEqual(model.properties().map(property => property.name), ['c', 'a', 'b']);
+});
+
+test('a move is one history entry, made of two existing operations', () => {
+    const model = definition();
+    const a = model.addProperty({ name: 'a' });
+    model.addProperty({ name: 'b' });
+
+    const seen = record(model);
+    model.moveProperty(a.id, 1);
+
+    assert.deepEqual(seen.map(operation => operation.type), ['REMOVE_PROPERTY', 'ADD_PROPERTY']);
+    assert.equal(seen[0].batch, seen[1].batch, 'one batch is one Ctrl Z (ADR-0024 §4)');
+    assert.ok(seen[0].batch, 'and the batch is a real identifier');
+});
+
+test('inverting a move, in reverse, puts the property back', () => {
+    const model = definition();
+    const a = model.addProperty({ name: 'a' });
+    model.addProperty({ name: 'b' });
+    model.addProperty({ name: 'c' });
+
+    const seen = record(model);
+    model.moveProperty(a.id, 2);
+    assert.deepEqual(model.properties().map(property => property.name), ['b', 'c', 'a']);
+
+    // What History does with a batch: invert each operation, newest first.
+    for (const operation of [...seen].reverse()) model.operations.submit(invert(operation));
+
+    assert.deepEqual(model.properties().map(property => property.name), ['a', 'b', 'c']);
+    assert.equal(model.property(a.id).name, 'a', 'and it is the same property, not a copy');
+});
+
+test('a move that changes nothing is refused rather than recorded', () => {
+    const model = definition();
+    const a = model.addProperty({ name: 'a' });
+    model.addProperty({ name: 'b' });
+
+    const seen = record(model);
+    assert.equal(model.moveProperty(a.id, 0), false, 'to where it already is');
+    assert.equal(model.moveProperty('nope', 1), false, 'a property nobody declared');
+    assert.deepEqual(seen, []);
+});
+
+test('a rank beyond the ends lands at the nearest end', () => {
+    const model = definition();
+    const a = model.addProperty({ name: 'a' });
+    model.addProperty({ name: 'b' });
+    model.addProperty({ name: 'c' });
+
+    model.moveProperty(a.id, 99);
+    assert.deepEqual(model.properties().map(property => property.name), ['b', 'c', 'a']);
+
+    model.moveProperty(a.id, -5);
+    assert.deepEqual(model.properties().map(property => property.name), ['a', 'b', 'c']);
+});
+
+test('a reordered schema serializes in its new order', () => {
+    const model = definition();
+    const a = model.addProperty({ name: 'speed', type: PropertyType.NUMBER });
+    model.addProperty({ name: 'jump', type: PropertyType.NUMBER });
+
+    model.moveProperty(a.id, 1);
+    assert.deepEqual(globalThis.Object.keys(model.serialize().properties), ['jump', 'speed']);
+});

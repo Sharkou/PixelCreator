@@ -17,6 +17,8 @@
 // and a target, asks whether the drop is legal, and performs it — no window contains a
 // line of "if this is an image then create a sprite".
 
+import { iconForResource } from '../ui/icons.js';
+
 /** The sources a drag can come from. */
 export const DragKind = {
     FILES: 'files',
@@ -89,7 +91,9 @@ export function describePayload(payload) {
             };
         }
         case DragKind.RESOURCE:
-            return { label: payload.resource?.name || 'Resource', icon: 'folder' };
+            // The ghost shows what the RESOURCE is, not a generic folder: a creator
+            // carrying an image should see an image (ADR-0026 §11).
+            return { label: payload.resource?.name || 'Resource', icon: iconForResource(payload.resource) };
         case DragKind.OBJECT:
             return { label: payload.object?.name || 'Object', icon: 'object' };
         case DragKind.COMPONENT:

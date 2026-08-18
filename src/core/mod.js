@@ -97,5 +97,6 @@ export {
     serializeScene,
     deserializeObject,
     deserializeScene,
+    restoreScene,
     restoreSubtree
 } from './serialize.js';

@@ -314,6 +314,56 @@ export class ComponentDefinition {
     }
 
     /**
+     * Move a property to another rank in the schema.
+     *
+     * NO `MOVE_PROPERTY` OPERATION, AND THAT IS THE DECISION. `REMOVE_PROPERTY` already
+     * carries the descriptor and the rank it held, and `ADD_PROPERTY` already places one at
+     * a rank — so a move is the two of them under one `batch`, which is one history entry
+     * (ADR-0024 §4) and one thing to replicate. A third operation would need its own
+     * inverse, its own handler and its own tests to say what those two already say.
+     *
+     * THE IDENTITY SURVIVES, which is what a graph depends on: the descriptor is re-added
+     * with the same `id`, so every node that reads this property is still wired to it
+     * (ADR-0027). What does not survive is the reactive record itself — the panel redraws
+     * on a structural operation, which is exactly what this pair is.
+     *
+     * @param {string} id - The property's identifier
+     * @param {number} index - The rank it should hold
+     * @param {object} [options] - Options
+     * @param {string} [options.actor] - Who authored the intent
+     * @param {string} [options.batch] - Groups this into a larger history entry
+     * @returns {boolean} True when the property moved
+     */
+    moveProperty(id, index, { actor, batch } = {}) {
+        const property = this.#properties.get(id);
+        if (!property) return false;
+
+        const from = this.indexOf(id);
+        const to = Math.max(0, Math.min(this.#properties.size - 1, Math.trunc(index)));
+        if (!globalThis.Number.isFinite(to) || from === to) return false;
+
+        const descriptor = snapshot(property);
+        const group = batch ?? createId();
+
+        const removed = this.#operations.submit(removePropertyOperation({
+            property: descriptor,
+            index: from,
+            origin: Origin.EDITOR,
+            actor,
+            batch: group
+        }));
+        if (!removed.applied) return false;
+
+        return this.#operations.submit(addPropertyOperation({
+            property: descriptor,
+            index: to,
+            origin: Origin.EDITOR,
+            actor,
+            batch: group
+        })).applied;
+    }
+
+    /**
      * Change a property's default value.
      * @param {string} id - The property's identifier
      * @param {any} value - The new default

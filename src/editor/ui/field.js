@@ -37,6 +37,8 @@
 import { createId, observe } from '../../core/mod.js';
 import { Element, el, fill } from './element.js';
 import { sheet } from './styles.js';
+import { icon } from './icons.js';
+import { openMenu } from './menu.js';
 import { attachScrub } from './scrub.js';
 import {
     FieldKind,
@@ -70,7 +72,50 @@ export class Field extends Element {
         .control > input[type='range'],
         .control > select { flex: 1; min-width: 0; }
 
+        .control > .choice { flex: 1; min-width: 0; }
         .control > input[type='checkbox'] { flex: 0 0 auto; }
+
+        /* The Editor's dropdown trigger: the same well an input sits in, plus a glyph for
+           what is chosen and a caret for the fact that there is a list behind it. */
+        .choice {
+            display: flex;
+            align-items: center;
+            gap: var(--px-space-1);
+            height: var(--px-control);
+            padding: 0 var(--px-space-0) 0 var(--px-space-1);
+            background: var(--px-surface-input);
+            border: 1px solid var(--px-border-subtle);
+            border-radius: var(--px-radius-sm);
+            color: var(--px-text);
+            font: inherit;
+            font-size: var(--px-text-xs);
+            text-align: left;
+            cursor: pointer;
+            transition: border-color var(--px-duration-fast) var(--px-ease);
+        }
+
+        .choice:hover { border-color: var(--px-accent-border); }
+        .choice:focus-visible { outline: 2px solid var(--px-accent); outline-offset: -1px; }
+        .choice[disabled] { cursor: default; color: var(--px-text-dim); }
+        .choice[disabled]:hover { border-color: var(--px-border-subtle); }
+
+        .choice-glyph { display: flex; flex: 0 0 auto; color: var(--px-accent); }
+        .choice-glyph[hidden] { display: none; }
+
+        .choice-name {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .choice-caret {
+            display: flex;
+            flex: 0 0 auto;
+            color: var(--px-text-dim);
+            transform: rotate(90deg);
+        }
         .control > input[type='color'] { width: 44px; flex: 0 0 auto; }
 
         .amount {
@@ -232,21 +277,7 @@ export class Field extends Element {
             });
         }
 
-        if (descriptor.kind === FieldKind.ENUM) {
-            // An option may be LABELLED apart from the value it stores. A graph node keeps
-            // a property's identity so a rename cannot break it (ADR-0027), and a dropdown
-            // of opaque identifiers would be unusable; everywhere else the value is its own
-            // label, and this collapses to what it always was.
-            const select = el('select', {
-                disabled: descriptor.readonly,
-                onchange: event => this.#push(event.target.value)
-            }, descriptor.values.map((option, index) => el('option', {
-                value: option,
-                textContent: descriptor.labels?.[index] ?? option
-            })));
-            select.value = globalThis.String(value ?? '');
-            return select;
-        }
+        if (descriptor.kind === FieldKind.ENUM) return this.#createChoice(descriptor, value);
 
         if (descriptor.kind === FieldKind.COLOR) {
             return el('input', {
@@ -330,6 +361,72 @@ export class Field extends Element {
         return input;
     }
 
+    /**
+     * A choice, as the Editor's own dropdown rather than as a native `select`.
+     *
+     * WHY NOT `<select>`. A native one draws the platform's list: the operating system's
+     * font, the operating system's highlight, no icons, no group headings, no filter — in
+     * the middle of a panel that has all four. It was the one control in the Inspector that
+     * did not look like the Editor, and it was the control a creator meets first, on the
+     * Type of every property they declare.
+     *
+     * IT IS THE SAME DROPDOWN AS EVERY OTHER (ADR-0026 §10). `ui/menu.js` is what Add
+     * Object, Add Component, the Project `+` and the node picker open, so a creator who has
+     * learned one has learned this. It filters when the list is long enough to need it, and
+     * it does not when it is not.
+     *
+     * @param {object} descriptor - The field descriptor
+     * @param {any} value - The value the model holds
+     * @returns {HTMLElement} The control
+     */
+    #createChoice(descriptor, value) {
+        // An option may be LABELLED apart from the value it stores. A graph node keeps a
+        // property's identity so a rename cannot break it (ADR-0027), and a dropdown of
+        // opaque identifiers would be unusable; everywhere else the value is its own label,
+        // and this collapses to what it always was.
+        const labelOf = option => {
+            const at = descriptor.values.indexOf(option);
+            return (at === -1 ? null : descriptor.labels?.[at]) ?? option;
+        };
+        const iconOf = option => {
+            const at = descriptor.values.indexOf(option);
+            return (at === -1 ? null : descriptor.icons?.[at]) ?? null;
+        };
+
+        const glyph = el('span', { class: 'choice-glyph' });
+        const text = el('span', { class: 'choice-name' });
+
+        const button = el('button', {
+            class: 'choice',
+            type: 'button',
+            disabled: descriptor.readonly,
+            onclick: () => openMenu(
+                button,
+                descriptor.values.map(option => ({
+                    id: option,
+                    label: labelOf(option),
+                    icon: iconOf(option)
+                })),
+                option => this.#push(option),
+                // A filter earns its row once the list is longer than a glance.
+                { search: descriptor.values.length > 8, label: descriptor.label.toLowerCase() }
+            )
+        }, glyph, text, el('span', { class: 'choice-caret' }, icon('chevron', 16)));
+
+        // The control shows what the MODEL holds, so an undo or a collaborator moves it
+        // the same way a click does. `#pull()` calls this back through `value`.
+        button.pxSetValue = next => {
+            const option = globalThis.String(next ?? '');
+            text.textContent = labelOf(option);
+            const name = iconOf(option);
+            fill(glyph, name ? icon(name, 16) : null);
+            glyph.hidden = !name;
+        };
+        button.pxSetValue(value);
+
+        return button;
+    }
+
     /** Send what the creator entered to the model. */
     #push(raw) {
         const descriptor = this.#descriptor;
@@ -361,7 +458,8 @@ export class Field extends Element {
         // Either way the rule is the same one Legacy had: never overwrite what has focus.
         if (control.tagName !== 'PX-NUMBER' && this.shadowRoot.activeElement === control) return;
 
-        if (descriptor.kind === FieldKind.BOOLEAN) control.checked = Boolean(value);
+        if (descriptor.kind === FieldKind.ENUM) control.pxSetValue?.(value);
+        else if (descriptor.kind === FieldKind.BOOLEAN) control.checked = Boolean(value);
         else if (descriptor.kind === FieldKind.COLOR) control.value = colorOrBlack(value);
         else if (descriptor.kind === FieldKind.READONLY) control.textContent = formatValue(descriptor, value);
         else if (isNumeric(descriptor)) control.value = toDisplay(descriptor, value) ?? '';

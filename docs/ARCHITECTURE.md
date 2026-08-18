@@ -32,6 +32,10 @@
 | Feedback de drag | **Reflow live dans les listes plates, jamais dans l’arbre** : une liste plate pose une question (quel rang ?), un arbre en pose deux (quel parent, quel rang ?) et sa cible ne doit pas bouger pendant qu’on vise (ADR-0028) |
 | Surfaces de l’Editor | Le **stage** porte ce qui s’édite — Viewport et Graph s’y échangent par onglets. Le Graph n’ira pas dans la bande basse : un éditeur nodal a besoin de surface (ADR-0028 §4) |
 | Transport | **Play joue la scène vivante**, pas une copie. Play prend un instantané, Stop le restaure, les modifications faites en jeu sont perdues et l’historique est vidé au démarrage (ADR-0029) |
+| Références | Une propriété `resource` est **choisie, déposée ou vidée — jamais tapée** : un contrôle qui montre ce que la référence désigne, et une déclaration (`kind`, `mime`) que le sélecteur et la règle de dépôt lisent tous les deux (ADR-0030 §1) |
+| Rangs | Réordonner une propriété de `.px` est `REMOVE_PROPERTY` + `ADD_PROPERTY` **sous un `batch`** : deux opérations existantes portent déjà le descripteur et l'index, donc il n'y a pas de `MOVE_PROPERTY` (ADR-0030 §2) |
+| Recherche | Un menu long **s'ouvre sur ses catégories**, et une requête est **notée** contre le nom, le type, la catégorie et les alias — module pur et testé, jamais un `includes()` (ADR-0030 §3) |
+| Couleur | **Six teintes, deux questions** : ce qu'est un nœud et ce que transporte un fil puisent dans la même palette, donc un nœud Math et un port `number` sont le même bleu (ADR-0030 §4) |
 | Projets Legacy | **Aucune migration de données à concevoir** — il n'existe pas de projets v1 |
 
 ---

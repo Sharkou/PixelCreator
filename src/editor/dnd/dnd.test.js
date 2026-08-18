@@ -207,12 +207,14 @@ test('a property may narrow what it accepts, and the refusal is declared', () =>
     const object = ctx.scene.add(new SceneObject('Hero'));
     const sprite = object.addComponent(new Sprite());
 
-    // Sprite.source declares `type: 'resource'` with no narrowing, so it takes any
-    // resource; a schema that narrows is honoured by the same code path.
-    assert.equal(acceptsResource({ component: sprite, prop: 'source' }, sound), true);
+    // Sprite.source declares `kind: 'asset'` and `mime: 'image/'`, so a sound is refused
+    // by the declaration rather than by a branch anybody wrote about sprites.
+    assert.equal(acceptsResource({ component: sprite, prop: 'source' }, sound), false);
+
+    // A reference that narrows nothing takes any resource, which is also a statement.
     assert.equal(
-        acceptsResource({ component: { constructor: { schema: { source: { type: 'resource', mime: 'image/' } } } }, prop: 'source' }, sound),
-        false
+        acceptsResource({ component: { constructor: { schema: { source: { type: 'resource' } } } }, prop: 'source' }, sound),
+        true
     );
 });
 
