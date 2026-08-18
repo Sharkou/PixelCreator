@@ -121,10 +121,37 @@ export const RULES = [
         accepts: (payload, target) => payload.kind === DragKind.RESOURCE
             && target.zone === DropZone.PROPERTY
             && acceptsResource(target, payload.resource),
-        describe: (payload, target) => `Assign to ${target.prop}`,
+        describe: (payload, target) => `Assign to ${target.label ?? target.prop}`,
         perform: (payload, target) => {
-            target.component.setProperty(target.prop, payload.resource.id);
+            assignResource(target, payload.resource.id);
             return { assigned: payload.resource.id };
+        }
+    },
+
+    {
+        // A FILE FROM THE DESKTOP, STRAIGHT ONTO A REFERENCE. Importing and then assigning
+        // is what a creator means by dropping a PNG on a `source` field, and doing it in
+        // two gestures is the kind of thing an asset browser exists to avoid. Both halves
+        // are the ones already written: the import is `importFiles()`, the assignment is
+        // the rule above.
+        id: 'files-to-property',
+        accepts: (payload, target) => payload.kind === DragKind.FILES
+            && target.zone === DropZone.PROPERTY
+            && Boolean(target.accepts ?? true)
+            && acceptsFiles(target, payload),
+        describe: (payload, target) => `Import ${countFiles(payload)} and assign it to ${target.label ?? target.prop}`,
+        perform: (payload, target, context) => {
+            // ONE FILE, BECAUSE ONE PROPERTY HOLDS ONE REFERENCE. The rest would be
+            // imported and then silently dropped, which is worse than not taking them.
+            const entry = payload.entries[0];
+            if (!entry) return null;
+
+            const created = importFiles({ ...payload, entries: [entry] }, context.folder ?? null, context);
+            const resource = created[0];
+            if (!resource) return null;
+
+            assignResource(target, resource.id);
+            return { imported: created, assigned: resource.id };
         }
     },
 
@@ -161,6 +188,30 @@ export const RULES = [
         perform: (payload, target, context) => ({
             moved: context.project.move(payload.resource.id, target.parent ?? null, { index: target.index ?? null })
         })
+    },
+
+    {
+        // A `.px` IS A COMPONENT (ADR-0026 §1), so dropping one on an object is the same
+        // intent as picking it from Add Component — and it produces the same operation.
+        // What it needs first is for the definition to be a registered TYPE, which is the
+        // Project layer's job and which `context.install` performs (project/graphs.js).
+        id: 'component-to-object',
+        accepts: (payload, target) => payload.kind === DragKind.RESOURCE
+            && target.zone === DropZone.COMPONENTS
+            && payload.resource?.kind === ResourceKind.COMPONENT
+            && Boolean(target.object),
+        refuses: (payload, target) => (target.object.hasComponent(payload.resource.id)
+            ? `${payload.resource.name || 'This Component'} is already on ${target.object.name}.`
+            : null),
+        describe: (payload, target) => `Add ${payload.resource.name || 'this Component'} to ${target.object.name}`,
+        perform: async (payload, target, context) => {
+            // A DEFINITION IS DATA UNTIL SOMETHING REGISTERS IT. The identity of the type
+            // is the `.px`'s own ResourceId (ADR-0021), so installing twice is idempotent.
+            const type = await context.install?.(payload.resource.id);
+            if (!type) return null;
+
+            return { component: context.addComponent?.(target.object, type) ?? null, type };
+        }
     },
 
     // --- refusals that are worth stating -------------------------------------------
@@ -242,18 +293,76 @@ export function instantiator(resource) {
  * @returns {boolean} True when the property takes it
  */
 export function acceptsResource(target, resource) {
-    if (!target?.component || !target.prop || !resource) return false;
+    if (!target || !resource) return false;
+
+    const clause = target.accepts ?? componentClause(target);
+    if (!clause) return false;
+
+    // A property may narrow what it takes: `kind: 'asset'`, `mime: 'image/'`. Absent, it
+    // takes any resource — the declaration said `resource`, and that is a statement.
+    if (clause.kind && clause.kind !== resource.kind) return false;
+    if (clause.mime && !(resource.mime ?? '').startsWith(clause.mime)) return false;
+
+    return true;
+}
+
+/**
+ * What a component's own schema says about one of its properties.
+ *
+ * TWO SHAPES OF TARGET, ONE QUESTION. A component instance carries its declaration in
+ * `static schema`; a `.px` property being DECLARED carries it in the descriptor the
+ * Inspector is editing, and there is no component to ask. So a target may state its clause
+ * outright — `accepts: { kind, mime }` — and this is the fallback for the ones that do not.
+ * Both go through `acceptsResource()`, so there is still one authority on what a reference
+ * will take (ADR-0030 §1).
+ *
+ * @param {object} target - A PROPERTY target carrying a component and a prop
+ * @returns {{kind: string|null, mime: string|null}|null} The clause, or null
+ */
+function componentClause(target) {
+    if (!target.component || !target.prop) return null;
 
     const schema = componentSchema(target.component);
     const property = schema?.[target.prop];
-    if (property?.type !== PropertyType.RESOURCE) return false;
+    if (property?.type !== PropertyType.RESOURCE) return null;
 
-    // A property may narrow what it takes: `kind: 'asset'`, `mime: 'image/'`. Absent, it
-    // takes any resource — the schema said `resource`, and that is a statement.
-    if (property.kind && property.kind !== resource.kind) return false;
-    if (property.mime && !(resource.mime ?? '').startsWith(property.mime)) return false;
+    return { kind: property.kind ?? null, mime: property.mime ?? null };
+}
 
-    return true;
+/**
+ * Write a resource into whatever the target points at.
+ *
+ * A component property is written through `setProperty()`; anything else hands in its own
+ * `assign`, because the operation belongs to a pipeline this module must not have to know
+ * about — a `.px` property's default travels the definition's, not a scene's (ADR-0027).
+ *
+ * @param {object} target - A PROPERTY target
+ * @param {string|null} id - The ResourceId to store
+ */
+function assignResource(target, id) {
+    if (target.assign) target.assign(id);
+    else target.component.setProperty(target.prop, id);
+}
+
+/**
+ * Whether a property would take what these files will become.
+ *
+ * Files import as assets, so a property that narrows itself to another kind refuses them
+ * outright, and one that narrows by mime is checked against the file's own. Asked BEFORE
+ * anything is imported: a refusal that leaves a stray resource behind is not a refusal.
+ *
+ * @param {object} target - A PROPERTY target
+ * @param {object} payload - The files being carried
+ * @returns {boolean} True when the first file could be assigned
+ */
+function acceptsFiles(target, payload) {
+    const entry = payload.entries?.[0];
+    if (!entry) return false;
+
+    return acceptsResource(target, {
+        kind: ResourceKind.ASSET,
+        mime: entry.mime ?? ''
+    });
 }
 
 /**

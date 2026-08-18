@@ -53,17 +53,22 @@ const PATHS = {
         + `<path d="M6.2 2.5v11M9.8 2.5v11M2.5 6.2h11M2.5 9.8h11" ${S}/>`,
     component: `<path d="M8 1.8 13.7 5v6L8 14.2 2.3 11V5z" ${S}/><path d="M2.3 5 8 8.2 13.7 5" ${S}/>`
         + `<path d="M8 8.2v6" ${S}/>`,
-    // Two nodes and the wire between them: a `.px` graph is a behaviour, not a script.
-    graph: `<rect x="1.8" y="3" width="4.6" height="3.4" rx="0.8" ${S}/>`
-        + `<rect x="9.6" y="9.6" width="4.6" height="3.4" rx="0.8" ${S}/>`
-        + `<path d="M6.4 4.7h2.2a2 2 0 0 1 2 2v2.9" ${S}/>`,
-    // A SCENE RESOURCE IS NOT THE HIERARCHY WINDOW. The window's glyph says "the tree of
-    // what is in the scene"; this one says "a scene, as a thing you can open" — a frame
-    // with something standing in it, which is also how the create menu reads it.
-    scene: `<rect x="2" y="3" width="12" height="10" rx="1.2" ${S}/>`
-        + `<path d="M2 10.4h12" ${S}/>`
-        + `<circle cx="6" cy="7.2" r="1.5" ${S}/>`
-        + `<path d="M9 8.6 11.4 6.2l2.6 2.6" ${S}/>`,
+    // THE PROTOTYPE'S DRAWING, VERBATIM — three nodes and the edges between them
+    // (`design/icons.js`, `graph`). The Editor had invented two boxes and a wire, which
+    // read as a flowchart rather than as a node graph, and `design/prototype.js` settles
+    // it twice: the asset `walk.px` carries `glyph: 'graph'`, and the Add Component menu
+    // lists "Behavior Graph" with the same one. A `.px` IS a behaviour graph, so that is
+    // the glyph a `.px` wears.
+    graph: `<circle cx="4" cy="4.5" r="1.8" ${S}/><circle cx="12" cy="7.6" r="1.8" ${S}/>`
+        + `<circle cx="5.2" cy="12" r="1.8" ${S}/><path d="M5.7 5.3 10.3 7M10.7 9 6.6 10.9" ${S}/>`,
+    // A SCENE IS STACKED PLANES, and it is the prototype's answer rather than the
+    // Editor's: `design/prototype.js` gives `arena.scene` the `layers` glyph. The frame
+    // this file used to draw said "a picture", which is what an image already says.
+    //
+    // A SCENE RESOURCE IS STILL NOT THE HIERARCHY WINDOW. The window's glyph says "the
+    // tree of what is in the scene"; this one says "a scene, as a thing you can open".
+    layers: `<path d="M8 2.2 14 5.4 8 8.6 2 5.4z" ${S}/><path d="m2 8.6 6 3.2 6-3.2" ${S}/>`
+        + `<path d="m2 11.4 6 3.2 6-3.2" ${S}/>`,
     image: `<rect x="2" y="3" width="12" height="10" rx="1.2" ${S}/>`
         + `<path d="M2.4 11.2 6 7.7l2.4 2.2L10.4 8l3.2 3" ${S}/>`
         + `<circle cx="5.6" cy="5.9" r="1" ${F}/>`,
@@ -91,8 +96,14 @@ const PATHS = {
     share: `<circle cx="11.8" cy="4.2" r="2" ${S}/><circle cx="4.2" cy="8" r="2" ${S}/>`
         + `<circle cx="11.8" cy="11.8" r="2" ${S}/>`
         + `<path d="M6 7 10 5M6 9l4 2" ${S}/>`,
-    sound: `<path d="M3 6.2h2.2L8.4 3.6v8.8L5.2 9.8H3z" ${S}/>`
-        + `<path d="M10.8 6.2a2.6 2.6 0 0 1 0 3.6" ${S}/>`,
+    // The prototype's `audio`: two arcs rather than one, which is what tells a speaker
+    // from a muted one at 16 px.
+    sound: `<path d="M3 6.2h2.3L8.4 3.6v8.8L5.3 9.8H3z" ${S}/>`
+        + `<path d="M10.6 6.1a2.8 2.8 0 0 1 0 3.8M12.4 4.5a5.2 5.2 0 0 1 0 7" ${S}/>`,
+    // `.js` behaviour, the other half of ADR-0009. Drawn now because the resource table
+    // below has a row for it the moment a `.js` kind exists.
+    script: `<path d="M4 2.5h5.4L12.4 5.6v7.9H4z" ${S}/><path d="M9.2 2.6v3.1h3.1" ${S}/>`
+        + `<path d="M6 8.4h4.2M6 10.6h3" ${S}/>`,
     minus: `<path d="M3.5 8h9" ${S}/>`,
     // Two columns of dots: the universal "carry me" mark, and the only draggable handle
     // in the Inspector.
@@ -105,6 +116,15 @@ const PATHS = {
     focus: `<path d="M2.5 5.5v-3h3M13.5 5.5v-3h-3M2.5 10.5v3h3M13.5 10.5v3h-3" ${S}/>`
         + `<circle cx="8" cy="8" r="2" ${S}/>`,
     grid: `<path d="M2 6h12M2 10h12M6 2v12M10 2v12" ${S}/>`,
+    // WHAT A THING DECLARES versus WHAT IS TRUE OF IT. The Inspector drew both its
+    // Properties section and its Details section with the window's own glyph, so the two
+    // read as the same kind of list — and they are opposites: one is the schema a creator
+    // writes, the other is what the store knows. A list with a stub on each line for the
+    // declaration; an "i" for the facts.
+    properties: `<path d="M6 4.6h7.4M6 8h7.4M6 11.4h5" ${S}/>`
+        + `<path d="M2.6 4.6h.9M2.6 8h.9M2.6 11.4h.9" ${S}/>`,
+    info: `<circle cx="8" cy="8" r="6" ${S}/><path d="M8 7.4v3.6" ${S}/>`
+        + `<circle cx="8" cy="5.1" r="0.95" ${F}/>`,
 
     // --- shapes of a value (ADR-0023) ------------------------------------------------
     //
@@ -146,10 +166,12 @@ const PATHS = {
     'node-debug': `<rect x="5" y="5.4" width="6" height="7.2" rx="3" ${S}/>`
         + `<path d="M5 8H2.4M11 8h2.6M5.6 5.6 4 4M10.4 5.6 12 4M5.6 11.6 4 13.2M10.4 11.6 12 13.2" ${S}/>`,
 
-    // Transport (ADR-0029). Three shapes a creator has known since the first tape deck.
-    play: `<path d="M5 3.2 12.4 8 5 12.8z" ${S}/>`,
-    pause: `<path d="M6 3.6v8.8M10 3.6v8.8" ${S}/>`,
-    stop: `<rect x="4" y="4" width="8" height="8" rx="1" ${S}/>`,
+    // Transport (ADR-0029), FILLED, as `design/icons.js` draws them. A transport is the
+    // one place in this chrome where the control is the shape: a hollow triangle reads as
+    // an outline of Play, and the prototype is right to make it solid.
+    play: `<path d="M4.5 3.2 12.8 8l-8.3 4.8z" ${F}/>`,
+    pause: `<path d="M5 3.4h2.1v9.2H5zM8.9 3.4H11v9.2H8.9z" ${F}/>`,
+    stop: `<rect x="4.2" y="4.2" width="7.6" height="7.6" rx="0.6" ${F}/>`,
 
     // States
     eye: `<path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8z" ${S}/>`
@@ -245,11 +267,42 @@ export function iconForComponent(component, type) {
  */
 const RESOURCE_ICONS = {
     folder: 'folder',
-    scene: 'scene',
-    component: 'component',
+    // `design/prototype.js`: `arena.scene` carries `layers`, `walk.px` carries `graph`.
+    // The Editor used to draw a `.px` with the Component cube — which is the glyph of a
+    // CAPABILITY AN OBJECT HAS, not of a file a creator opens. The two are different
+    // things and now look different: `iconForComponent()` keeps the cube.
+    scene: 'layers',
+    component: 'graph',
     graph: 'graph',
     asset: 'image'
 };
+
+/**
+ * The four families of glyph, and why they must not be shared.
+ *
+ * A RESOURCE is a thing in the Project panel — `folder`, `layers`, `graph`, `image`.
+ * A WINDOW is a panel of the Editor — `hierarchy`, `inspector`, `folder`, `timeline`.
+ * A COMPONENT is a capability an object has — `component`, `sprite`, `rectangle`, …
+ * A NODE is a step in a behaviour, drawn by its CATEGORY — `node-event`, `node-math`, …
+ *
+ * They overlapped twice and both times it read as a bug: a `.px` row wearing the Add
+ * Component cube, and every entry of the node menu wearing the graph canvas's own glyph
+ * (ADR-0026 §11, ADR-0030 §5). `folder` is the one deliberate sharing — the Project window
+ * IS a folder — and it is the exception that the table above makes visible.
+ *
+ * THERE IS NO PREFAB GLYPH, and that is not an oversight: `design/icons.js` draws none,
+ * and prefabs are not designed (ADR-0026 §7). Inventing one would be the first half of a
+ * format nobody has decided.
+ */
+export const ICON_FAMILIES = globalThis.Object.freeze({
+    resource: globalThis.Object.freeze({ ...RESOURCE_ICONS }),
+    window: globalThis.Object.freeze({
+        hierarchy: 'hierarchy',
+        inspector: 'inspector',
+        project: 'folder',
+        timeline: 'timeline'
+    })
+});
 
 /**
  * The icon for a resource, from its kind.

@@ -369,6 +369,11 @@ function field(name, property = {}) {
         // and `rules.acceptsResource()` read the same two words — so a resource the menu
         // offers can never be the one the drop refuses. Nested rather than spread, because
         // `kind` above already means "which control", and one word cannot mean both.
+        // WHAT A FRESH ONE STARTS AT, carried so a view can SHOW it without writing it.
+        // A graph node's params are stored only once a creator has touched them, so a
+        // `Number` node drawn from an empty `params` had a blank box while the runtime was
+        // quietly using 0 — the box and the simulation disagreeing about the same value.
+        default: property.default ?? null,
         accepts: declared === PropertyType.RESOURCE
             ? { kind: property.kind ?? null, mime: property.mime ?? null }
             : null,

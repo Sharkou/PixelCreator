@@ -95,6 +95,7 @@ export {
     graphBounds,
     hitTest as hitTestGraph,
     nodeSize,
+    paramBoxes,
     placePorts,
     portPosition,
     snap,

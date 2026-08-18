@@ -28,7 +28,13 @@ import { Element, el, fill } from './element.js';
 import { sheet } from './styles.js';
 import { icon, iconForResource } from './icons.js';
 import { openMenu } from './menu.js';
-import { isFolder } from '../../project/mod.js';
+import { pickFile, readAsDataUrl } from './file.js';
+import { DropZone, filesPayload } from '../dnd/payload.js';
+import { performDrop } from '../dnd/rules.js';
+import { ResourceKind, isFolder } from '../../project/mod.js';
+
+/** The picker entry that opens a file dialog rather than choosing something that exists. */
+const IMPORT = '\u0000import';
 
 export class ResourceField extends Element {
 
@@ -123,6 +129,8 @@ export class ResourceField extends Element {
     #descriptor = null;
     #project = null;
     #write = null;
+    /** What a rule needs to import: the project, the workspace, the open folder. */
+    #context = null;
 
     /**
      * Point the control at a property holding a ResourceId.
@@ -132,13 +140,15 @@ export class ResourceField extends Element {
      * @param {object} [options] - Options
      * @param {object} [options.project] - The project its resources are looked up in
      * @param {Function} [options.write] - (value) => void; `setProperty` by default
+     * @param {object} [options.context] - What a rule needs to import: project, workspace, folder
      * @returns {ResourceField} This control
      */
-    bind(target, descriptor, { project = null, write = null } = {}) {
+    bind(target, descriptor, { project = null, write = null, context = null } = {}) {
         this.#target = target;
         this.#descriptor = descriptor;
         this.#project = project;
         this.#write = write;
+        this.#context = context;
         this.toggleAttribute('disabled', Boolean(descriptor?.readonly));
         if (descriptor?.tooltip) this.title = descriptor.tooltip;
         if (this.isConnected) this.#render();
@@ -219,13 +229,18 @@ export class ResourceField extends Element {
     /**
      * The list of resources this property would accept.
      *
-     * The same two declared narrowings the drop rule reads, applied to the manifest: what
-     * a creator can drag onto this control and what the menu offers are one answer, so a
-     * resource that appears here can never be refused on release.
+     * IT READS `accepts`, AND THAT WAS THE BUG. This used to destructure `kind` straight
+     * off the descriptor — but `descriptor.kind` is the FIELD KIND, the word that says
+     * which control to draw, and for every reference in the Editor it is the string
+     * `'resource'`. So the filter asked for resources whose kind was `'resource'`, no
+     * manifest entry has ever been one, and every picker in the Editor offered exactly
+     * one entry: None. The declaration lives in `descriptor.accepts` (ADR-0030 §1), which
+     * is also what `rules.acceptsResource()` reads — so what the menu offers and what a
+     * drop will take are once again one answer.
      */
     #candidates() {
         if (!this.#project) return [];
-        const { kind = null, mime = null } = this.#descriptor ?? {};
+        const { kind = null, mime = null } = this.#descriptor?.accepts ?? {};
 
         return this.#project.resources().filter(resource => {
             if (isFolder(resource)) return false;
@@ -233,6 +248,64 @@ export class ResourceField extends Element {
             if (mime && !(resource.mime ?? '').startsWith(mime)) return false;
             return true;
         });
+    }
+
+    /**
+     * Whether this reference could be filled from a file the creator picks.
+     *
+     * Only when the declaration says the reference takes an ASSET — importing produces one
+     * and nothing else, so offering "Import…" on a field that wants a scene would be an
+     * entry that cannot work.
+     *
+     * @returns {string|null} The accept filter for the file dialog, or null
+     */
+    #importable() {
+        const { kind = null, mime = null } = this.#descriptor?.accepts ?? {};
+        if (kind && kind !== ResourceKind.ASSET) return null;
+        return mime ? `${mime}*` : 'image/*';
+    }
+
+    /**
+     * Import a file and point this reference at it.
+     *
+     * THE SAME RULE A DROP USES. `files-to-property` imports and assigns in one step
+     * (dnd/rules.js); the only thing a menu entry adds is the dialog, which is the one
+     * part of this a browser has to do. Writing the import a second time here is exactly
+     * the divergence ADR-0026 §6 exists to prevent.
+     */
+    async #import() {
+        const accept = this.#importable();
+        if (!accept) return;
+
+        const file = await pickFile({ accept });
+        if (!file) return;
+
+        const payload = await readAsDataUrl(file);
+        if (!payload) return;
+
+        performDrop(
+            filesPayload([{ name: file.name, mime: file.type, payload }]),
+            this.#dropTarget(),
+            this.#context ?? {}
+        );
+    }
+
+    /**
+     * The target the rules see for this control.
+     *
+     * The panel stamps one on the element for the shell to find (`pxDropZone`); when it
+     * has, that is the authority. A control used outside the Inspector states its own from
+     * the descriptor, so it still knows what it takes.
+     *
+     * @returns {object} A PROPERTY target
+     */
+    #dropTarget() {
+        return this.pxDropZone ?? {
+            zone: DropZone.PROPERTY,
+            label: this.#descriptor?.label,
+            accepts: this.#descriptor?.accepts ?? { kind: null, mime: null },
+            assign: id => this.#assign(id)
+        };
     }
 
     #openPicker(anchor) {
@@ -243,6 +316,13 @@ export class ResourceField extends Element {
 
         if (this.#target[this.#descriptor.name]) {
             items.push({ id: '', label: 'None', icon: 'close' });
+        }
+
+        // BRINGING A FILE IN IS PART OF CHOOSING ONE. A creator pointing a Sprite at an
+        // image they have not imported yet should not have to leave for the Project panel,
+        // import, come back and pick — that is three windows for one intention.
+        if (this.#importable()) {
+            items.push({ id: IMPORT, label: 'Import…', icon: 'image' });
         }
 
         // Grouped by kind, like every other menu in the Editor, and searchable once the
@@ -259,7 +339,10 @@ export class ResourceField extends Element {
             }
         }
 
-        openMenu(anchor, items, id => this.#assign(id || null), {
+        openMenu(anchor, items, id => {
+            if (id === IMPORT) return this.#import();
+            return this.#assign(id || null);
+        }, {
             search: candidates.length > 6,
             label: 'resources'
         });

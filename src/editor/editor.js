@@ -13,13 +13,14 @@
 // finger: delete sits in the Hierarchy row, framing is a double-click, deselecting is a
 // tap on empty space. A tablet must never hit a wall (docs/architecture/EDITOR.md).
 
-import { Object, Scene, Transform, components, registerStandardNodes } from '../core/mod.js';
+import { Object, Scene, Transform, components, observe, registerStandardNodes } from '../core/mod.js';
 import { Camera } from '../runtime/mod.js';
 import { Selection } from './selection.js';
 import { Layout } from './layout.js';
 import { registerBuiltIns } from './registry.js';
-import { deleteObject } from './commands.js';
+import { addComponent, deleteObject } from './commands.js';
 import { Workspace } from './project/workspace.js';
+import { createDefinitions } from './project/definitions.js';
 import { Transport, TransportState } from './transport.js';
 import { fillStarterScene } from './project/starter.js';
 import { installDocumentStyles, sheet } from './ui/styles.js';
@@ -30,6 +31,7 @@ import { ResourceKind } from '../project/mod.js';
 import { DropZone, describePayload } from './dnd/payload.js';
 import { createDragGhost } from './ui/drag-ghost.js';
 import { canDrop, performDrop } from './dnd/rules.js';
+import { previewOffsets, rankAt } from './dnd/reflow.js';
 import { carriesFiles, readDroppedFiles } from './dnd/files.js';
 
 import './ui/window.js';
@@ -52,6 +54,9 @@ import './windows/timeline.js';
  * across the scene, right column — so the row of buttons is a small map of the layout
  * rather than an arbitrary list.
  */
+/** How far a pointer travels before a press on a tab becomes a reorder. */
+const TAB_DRAG_THRESHOLD = 4;
+
 const TOGGLES = [
     { panel: 'hierarchy', label: 'Hierarchy', icon: 'hierarchy' },
     { panel: 'project', label: 'Project', icon: 'folder' },
@@ -125,9 +130,20 @@ const shellStyles = sheet(`
         border: 1px solid var(--px-border);
     }
 
-    /* Play is the one green thing in the Editor, and only while it is the thing to do. */
-    .titlebar .transport .play:hover { color: var(--px-success); }
+    /* ONE COLOUR PER BUTTON, AND HOVER STRENGTHENS IT RATHER THAN INVENTING ONE. Play is
+       go, Pause is hold, Stop is the destructive one — it throws away everything done
+       since Play (ADR-0029 §4), and the danger token is what the Editor already uses to say
+       so on a Delete. The tint stays on the glyph: a filled red button in the middle of
+       the chrome would read as an alarm rather than as a control. */
+    .titlebar .transport .ghost:hover { background: var(--px-surface-hover); }
+
+    .titlebar .transport .play:hover:not([disabled]) { color: var(--px-success); }
     .titlebar .transport .play.on { color: var(--px-success); background: transparent; }
+
+    .titlebar .transport .pause:hover:not([disabled]) { color: var(--px-warning); }
+    .titlebar .transport .pause.on { color: var(--px-warning); background: transparent; }
+
+    .titlebar .transport .stop:hover:not([disabled]) { color: var(--px-danger); }
 
     .titlebar .transport.running { border-color: var(--px-success); }
     .titlebar .transport[data-state='paused'] { border-color: var(--px-warning); }
@@ -161,8 +177,8 @@ const shellStyles = sheet(`
        style the same two classes on their own host. The graph canvas has no rule that
        accepts anything yet, so it has no mark — a highlight for a drop that cannot happen
        would be the lie this Editor keeps refusing. */
-    px-viewport.dnd-over { outline: 2px solid var(--px-accent); outline-offset: -3px; }
-    px-viewport.dnd-refused { outline: 2px solid var(--px-danger); outline-offset: -3px; }
+    px-viewport.dnd-over { outline: 2px dashed var(--px-accent); outline-offset: -3px; }
+    px-viewport.dnd-refused { outline: 2px dashed var(--px-danger); outline-offset: -3px; }
     .titlebar .spacer { flex: 1; }
     .titlebar .toggles { display: flex; gap: var(--px-space-0); }
 
@@ -229,14 +245,43 @@ const shellStyles = sheet(`
         color: var(--px-text-muted);
         font: inherit;
         font-size: var(--px-text-xs);
+        line-height: 1;
         white-space: nowrap;
         cursor: pointer;
     }
 
     .stage-tab:hover { background: var(--px-surface-hover); color: var(--px-text); }
     .stage-tab.on { background: var(--px-surface); color: var(--px-text-strong); }
-    .stage-tab .glyph { color: var(--px-text-dim); }
+
+    /* THE GLYPH SAT ON A TEXT BASELINE, and that is the whole of the misalignment. The
+       wrapper was an inline span, so the icon inside it was laid out as a character: it
+       inherited the line box and rode a couple of pixels low against a label whose own
+       box is centred by the flex row. Making the wrapper a flex box takes it out of the
+       inline formatting context entirely: no offset hack, nothing to retune
+       when the density tokens change. The label gets the same treatment for the same
+       reason. */
+    .stage-tab .glyph {
+        display: flex;
+        align-items: center;
+        flex: 0 0 auto;
+        color: var(--px-text-dim);
+    }
+
+    .stage-tab .name { display: flex; align-items: center; min-width: 0; }
     .stage-tab.on .glyph { color: var(--px-accent); }
+
+    /* Carried, and stepping aside — the same two marks every other flat list wears
+       (ADR-0028 §1). Which tab sits where is view state, so the move is announced by the
+       Workspace and never recorded in the undo stack. */
+    .stage-tab.dragging {
+        position: relative;
+        z-index: 2;
+        opacity: 0.9;
+        background: var(--px-surface-active);
+        cursor: grabbing;
+    }
+
+    .stage-tab.sliding { transition: transform var(--px-duration) var(--px-ease); }
 
     /* The close button is always there — a tab with unsaved work is exactly the one a
        creator may want to close, and hiding the control behind the dot that says so was
@@ -245,6 +290,7 @@ const shellStyles = sheet(`
         display: flex;
         align-items: center;
         justify-content: center;
+        flex: 0 0 auto;
         width: 18px;
         height: 18px;
         border: none;
@@ -296,9 +342,15 @@ export function start(mount = document.body) {
     const histories = workspace.histories;
     const history = workspace.history;
 
+    // A `.px` IS A COMPONENT, and something has to register it as a type before an object
+    // can carry one. The Project layer owns that step (project/definitions.js); the shell
+    // owns the registry, so it is the shell that hands the two to each other — the same
+    // arrangement `project/graphs.js` describes for binding a graph.
+    const definitions = createDefinitions({ project: workspace.project, registry: components, workspace });
+
     const viewport = el('px-viewport').bind({ scene, camera, selection, onError: reportFailure });
     const hierarchy = el('px-hierarchy').bind({ scene, selection, viewport, workspace });
-    const inspector = el('px-inspector').bind({ scene, selection, registry: components, workspace });
+    const inspector = el('px-inspector').bind({ scene, selection, registry: components, workspace, definitions });
     const project = el('px-project').bind({ workspace, scene, selection });
     const graph = el('px-graph', { hidden: true });
     const timeline = el('px-timeline');
@@ -344,7 +396,7 @@ export function start(mount = document.body) {
     // THE SCENE AND EVERY OPEN `.px` SHARE ONE SURFACE (ADR-0027). They are the same kind
     // of thing — a resource being edited — and both want the room; a strip above says what
     // else is open, and appears only when there is more than one.
-    const tabs = stageTabs({ workspace, viewport, graph, inspector });
+    const tabs = stageTabs({ workspace, viewport, graph });
     const stack = el('div', { class: 'stack' },
         el('div', { class: 'work' },
             columnLeft,
@@ -409,34 +461,55 @@ export function start(mount = document.body) {
         if (selection.has(object)) selection.clear();
     });
 
-    // ONE INSPECTOR, SO ONE SUBJECT. An object and a resource are both things a creator
-    // selects, and the panel shows one at a time: selecting in either place clears the
-    // other, here rather than inside a window, because neither window should have to know
-    // the other exists (ADR-0025).
-    // THREE SUBJECTS, ONE PANEL. An Object, a Resource and a graph node are all things a
-    // creator selects, and the Inspector shows one at a time: selecting in any of the three
-    // places clears the other two, here rather than inside a window, because no window
+    // THREE SUBJECTS, ONE PANEL, AND ONE PLACE THAT ROUTES BETWEEN THEM. An Object, a
+    // Resource and a graph node are all things a creator selects, and the Inspector shows
+    // one at a time. The routing lives here rather than inside a window, because no window
     // should have to know the others exist (ADR-0025, ADR-0027).
-    selection.observe(({ object }) => {
-        if (!object) return;
+    //
+    // CLEARING IS A SELECTION TOO, and that is what changed. Each handler used to return
+    // early when the new selection was empty, so clicking bare canvas cleared the object
+    // and left the Project tile selected — two panels claiming the subject at once, and an
+    // Inspector still showing a resource nobody had in mind. An empty selection now
+    // propagates like any other.
+    //
+    // THE FLAG IS WHAT MAKES THAT SAFE. Without it, propagating an empty selection is a
+    // loop: selecting a resource clears the object, which clears the resource. `routing`
+    // says "this change is already an echo of one being handled", which is the same
+    // anti-echo idea `Operations` uses for a replicated write (ADR-0011).
+    let routing = false;
+    const route = act => {
+        if (routing) return;
+        routing = true;
+        try {
+            act();
+        } finally {
+            routing = false;
+        }
+    };
+
+    selection.observe(() => route(() => {
         workspace.select(null);
-        inspector.inspectNode(null);
-    });
-    workspace.on('selection', ({ id }) => {
-        if (!id) return;
+    }));
+    workspace.on('selection', () => route(() => {
         selection.clear();
-        inspector.inspectNode(null);
-    });
+    }));
 
     // The canvas announces what it selected; the shell routes it. Neither element holds a
     // reference to the other (ADR-0006).
+    // A NODE IS EDITED IN THE GRAPH, AND THE INSPECTOR SHOWS THE `.px` IT BELONGS TO.
+    // There used to be a third subject here: selecting a node swapped the Inspector for a
+    // panel of that node's params. Two problems with it, and the second is the reason it
+    // is gone. A creator wiring a graph read the value in one window and typed it in
+    // another — the params are now inside the node (windows/graph.js). And the panel that
+    // vanished was the Component's own: its properties, the very things the nodes refer
+    // to, disappeared the moment a node was touched.
+    //
+    // So a node selection means "the Component is what you are working on", which is a
+    // resource selection — the subject the Workspace already owns, routed like any other
+    // (ADR-0025). The Graph keeps its own selection for moving and deleting.
     shell.addEventListener('px-node-selected', event => {
-        const { node, definition } = event.detail;
-        if (node) {
-            selection.clear();
-            workspace.select(null);
-        }
-        inspector.inspectNode(node, definition);
+        const { definition } = event.detail;
+        if (definition) workspace.select(definition.type);
     });
 
     // DOUBLE-CLICK OPENS A RESOURCE. The Project panel announces the intent and knows
@@ -452,7 +525,7 @@ export function start(mount = document.body) {
     bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarchy, inspector, project });
     bindShortcuts({ scene, selection, viewport, history, workspace });
 
-    return { scene, camera, selection, layout, viewport, history, histories, workspace, transport };
+    return { scene, camera, selection, layout, viewport, history, histories, workspace, transport, definitions };
 }
 
 /**
@@ -594,7 +667,7 @@ function transportControls(transport) {
     }, icon('play'));
 
     const pause = el('button', {
-        class: 'ghost',
+        class: 'ghost pause',
         type: 'button',
         title: 'Pause',
         'aria-label': 'Pause',
@@ -602,9 +675,9 @@ function transportControls(transport) {
     }, icon('pause'));
 
     const stop = el('button', {
-        class: 'ghost',
+        class: 'ghost stop',
         type: 'button',
-        title: 'Stop - restores the scene as Play found it',
+        title: 'Stop — restores the scene as Play found it',
         'aria-label': 'Stop',
         onclick: () => transport.stop()
     }, icon('stop'));
@@ -648,7 +721,9 @@ function bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarc
         project: workspace.project,
         workspace,
         folder: null,
-        select: object => selection.set(object)
+        select: object => selection.set(object),
+        install: id => definitions.install(id),
+        addComponent: (object, type) => addComponent(object, type, components)
     });
 
     // Files dropped on the scene surface: imported, then placed where they landed.
@@ -904,13 +979,98 @@ function isEditing() {
  * The strip hides itself when there is nothing to choose between, so a creator who never
  * opens a `.px` never sees a row of chrome (ADR-0026 §14: only what exists).
  *
- * @param {object} context - The workspace, the two surfaces, and the Inspector
+ * @param {object} context - The workspace and the two surfaces it switches between
  * @returns {{element: HTMLElement, sync: Function}} The strip, and how to refresh it
  */
-function stageTabs({ workspace, viewport, graph, inspector }) {
+function stageTabs({ workspace, viewport, graph }) {
     const element = el('div', { class: 'stage-tabs', role: 'tablist' });
 
+    // A NAME IS THE MODEL'S, AND A TAB READS IT LIKE EVERY OTHER VIEW. The strip used to
+    // print `resource.name` once per rebuild, so renaming a scene from the Project panel
+    // left the tab showing the old name until something unrelated happened to redraw it —
+    // the one representation in the Editor that did not follow a keystroke (ADR-0026 §3).
+    // Now each tab subscribes to the entry it names, and the subscriptions are dropped
+    // whenever the strip is rebuilt.
+    let watching = [];
+    const unwatch = () => {
+        for (const stop of watching) stop();
+        watching = [];
+    };
+
+    // --- reordering ------------------------------------------------------------------
+    //
+    // A flat list, so it reorganises under the pointer like every other one (ADR-0028 §1),
+    // and the arithmetic is the shared one. What it is NOT is undoable: which tab sits
+    // where is view state, and `Workspace.reorder()` says why.
+    let drag = null;
+
+    const cancelDrag = () => {
+        if (!drag) return;
+        for (const tab of element.children) {
+            tab.classList.remove('dragging', 'sliding');
+            tab.style.transform = '';
+        }
+        drag = null;
+    };
+
+    const beginDrag = (event, tab, id) => {
+        if (event.button > 0) return;
+        drag = { tab, id, pointerId: event.pointerId, from: event.clientX, started: false, shown: null };
+    };
+
+    const moveDrag = event => {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+
+        if (!drag.started) {
+            if (Math.abs(event.clientX - drag.from) < TAB_DRAG_THRESHOLD) return;
+            drag.started = true;
+            try {
+                drag.tab.setPointerCapture(drag.pointerId);
+            } catch {
+                // The gesture still resolves from the events it does receive.
+            }
+
+            // Measured before anything slides: reading a tab mid-transition would make the
+            // rank depend on how far the previous answer had got to drawing itself.
+            drag.tabs = [...element.children];
+            drag.boxes = drag.tabs.map(tab => {
+                const box = tab.getBoundingClientRect();
+                return { start: box.left, size: box.width };
+            });
+            drag.index = drag.tabs.indexOf(drag.tab);
+            drag.tab.classList.add('dragging');
+        }
+
+        event.preventDefault();
+        const to = rankAt(event.clientX, drag.boxes);
+        if (to !== drag.shown) {
+            drag.shown = to;
+            const offsets = previewOffsets(drag.boxes.map(box => box.size), drag.index, to);
+            drag.tabs.forEach((tab, i) => {
+                if (i === drag.index) return;
+                tab.classList.add('sliding');
+                tab.style.transform = offsets[i] === 0 ? '' : `translateX(${offsets[i]}px)`;
+            });
+        }
+        drag.tab.style.transform = `translateX(${event.clientX - drag.from}px)`;
+    };
+
+    const endDrag = event => {
+        if (!drag || event.pointerId !== drag.pointerId) return;
+
+        const moved = drag.started;
+        const { id, shown, index } = drag;
+        cancelDrag();
+
+        if (moved && shown !== null && shown !== index) workspace.reorder(id, shown);
+        return moved;
+    };
+
     const sync = () => {
+        // A rebuild in the middle of a gesture would drop the element under the pointer.
+        if (drag?.started) return;
+
+        unwatch();
         const open = workspace.opened();
         const active = workspace.activeId;
 
@@ -926,27 +1086,47 @@ function stageTabs({ workspace, viewport, graph, inspector }) {
                 type: 'button',
                 title: `Close ${resource.name}`,
                 'aria-label': `Close ${resource.name}`,
+                onpointerdown: event => event.stopPropagation(),
                 onclick: event => {
                     event.stopPropagation();
                     workspace.close(resource.id);
                 }
             }, icon('close', 12));
 
-            return el('button', {
+            const label = el('span', { class: 'name', textContent: resource.name || 'Untitled' });
+
+            const tab = el('button', {
                 class: `stage-tab${on ? ' on' : ''}`,
                 type: 'button',
                 role: 'tab',
                 'aria-selected': globalThis.String(on),
-                onclick: () => workspace.activate(resource.id)
+                onpointerdown: event => beginDrag(event, tab, resource.id),
+                onpointermove: moveDrag,
+                onpointerup: event => {
+                    // A press that became a drag is not a click on a tab.
+                    if (endDrag(event)) return;
+                    workspace.activate(resource.id);
+                },
+                onpointercancel: cancelDrag
             },
                 el('span', { class: 'glyph' }, icon(iconForResource(resource), 14)),
-                el('span', { textContent: resource.name || 'Untitled' }),
+                label,
                 // THE DOT DOES NOT REPLACE THE CLOSE BUTTON. Sharing one slot looked tidy
                 // and meant a tab with unsaved work could not be closed at all — the one
                 // state in which a creator most needs the choice. Both, always.
                 dirty ? el('span', { class: 'dot', title: 'Unsaved changes' }) : null,
                 close
             );
+
+            const entry = workspace.project.get(resource.id);
+            if (entry) {
+                watching.push(observe(entry, 'name', change => {
+                    label.textContent = change.value || 'Untitled';
+                    close.title = `Close ${change.value}`;
+                }));
+            }
+
+            return tab;
         }));
 
         // WHICH SURFACE IS SHOWN follows the active editor's KIND, not a flag somebody has
@@ -958,11 +1138,12 @@ function stageTabs({ workspace, viewport, graph, inspector }) {
         graph.hidden = !isGraph;
         graph.bind(isGraph ? workspace.attached(showing.id) : null);
 
-        // A node selected on a canvas that is no longer on screen is not selected.
-        if (!isGraph) inspector.inspectNode(null);
+
     };
 
-    for (const event of ['opened', 'closed', 'active', 'dirty', 'saved']) workspace.on(event, sync);
+    for (const event of ['opened', 'closed', 'active', 'dirty', 'saved', 'reordered']) {
+        workspace.on(event, sync);
+    }
     sync();
 
     return { element, sync };

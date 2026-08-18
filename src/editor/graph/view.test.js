@@ -15,6 +15,7 @@ import {
     graphBounds,
     hitTest,
     nodeSize,
+    paramBoxes,
     placePorts,
     portPosition,
     snap,
@@ -209,4 +210,66 @@ test('fitting puts the content in the middle of the viewport', () => {
 test('fitting an empty graph, or a viewport with no size, is the identity view', () => {
     assert.deepEqual(fitView([], { width: 800, height: 600 }), { x: 0, y: 0, zoom: 1 });
     assert.deepEqual(fitView([place('event.start', 0, 0)], { width: 0, height: 0 }), { x: 0, y: 0, zoom: 1 });
+});
+
+// --- params drawn inside the node (ADR-0031) -------------------------------------------
+
+test('a node with params is taller, by one row each', () => {
+    const ports = { inputs: [], outputs: [{ id: 'value', kind: 'data' }] };
+    const bare = nodeSize(ports).height;
+
+    assert.ok(nodeSize(ports, 1).height > bare, 'one param makes room for itself');
+    assert.equal(
+        nodeSize(ports, 2).height - nodeSize(ports, 1).height,
+        nodeSize(ports, 3).height - nodeSize(ports, 2).height,
+        'each further param costs the same'
+    );
+});
+
+test('a param box sits under the last port, inside the node', () => {
+    const node = { x: 100, y: 50 };
+    const ports = { inputs: [], outputs: [{ id: 'value', kind: 'data' }] };
+    const size = nodeSize(ports, 1);
+    const [box] = paramBoxes(node, ports, 1);
+
+    assert.ok(box.y >= node.y + HEADER_HEIGHT, 'never under the header');
+    assert.ok(box.y + box.height <= node.y + size.height + 0.001, 'never past the bottom');
+    assert.ok(box.x > node.x && box.x + box.width < node.x + size.width, 'inset from the edges');
+});
+
+test('param boxes stack in order and do not overlap', () => {
+    const node = { x: 0, y: 0 };
+    const ports = { inputs: [{ id: 'a', kind: 'data' }], outputs: [] };
+    const boxes = paramBoxes(node, ports, 3);
+
+    assert.equal(boxes.length, 3);
+    for (let i = 1; i < boxes.length; i++) {
+        assert.ok(boxes[i].y >= boxes[i - 1].y + boxes[i - 1].height, `${i} overlaps its predecessor`);
+    }
+});
+
+test('a node with no params reserves no room for them', () => {
+    const ports = { inputs: [], outputs: [] };
+    assert.deepEqual(paramBoxes({ x: 0, y: 0 }, ports, 0), []);
+    assert.equal(nodeSize(ports, 0).height, nodeSize(ports).height);
+});
+
+test('the whole of a node with params is clickable', () => {
+    const node = { id: 'n1', x: 0, y: 0 };
+    const ports = { inputs: [], outputs: [{ id: 'value', kind: 'data' }] };
+    const layout = [{ node, ports, params: [{ name: 'value' }] }];
+    const size = nodeSize(ports, 1);
+
+    // A point in the param strip is inside the node, and used to fall through to canvas.
+    const hit = hitTest(layout, { x: NODE_WIDTH / 2, y: size.height - 4 });
+    assert.equal(hit.kind, 'node');
+    assert.equal(hit.node.id, 'n1');
+});
+
+test('the bounds of a node with params include them', () => {
+    const ports = { inputs: [], outputs: [{ id: 'value', kind: 'data' }] };
+    const withParams = graphBounds([{ node: { x: 0, y: 0 }, ports, params: [{ name: 'value' }] }]);
+    const without = graphBounds([{ node: { x: 0, y: 0 }, ports }]);
+
+    assert.ok(withParams.height > without.height);
 });

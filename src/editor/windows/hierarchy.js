@@ -95,8 +95,8 @@ export class Hierarchy extends Element {
 
         /* The window the shell has decided a drop would land in (ADR-0028 §3). One class,
            styled by every window, so the answer cannot differ between them. */
-        :host(.dnd-over) { outline: 2px solid var(--px-accent); outline-offset: -3px; }
-        :host(.dnd-refused) { outline: 2px solid var(--px-danger); outline-offset: -3px; }
+        :host(.dnd-over) { outline: 2px dashed var(--px-accent); outline-offset: -3px; }
+        :host(.dnd-refused) { outline: 2px dashed var(--px-danger); outline-offset: -3px; }
 
         px-window { height: 100%; }
 
@@ -197,7 +197,11 @@ export class Hierarchy extends Element {
         /* Nesting tints the whole row, reordering draws a line at the edge it will land
            on. Two different answers, two different marks — an indicator that looked the
            same for both would make "into" and "after" a guess. */
-        .row.into { box-shadow: inset 0 0 0 1px var(--px-accent); border-radius: var(--px-radius-sm); }
+        .row.into {
+            outline: 1px dashed var(--px-accent);
+            outline-offset: -1px;
+            border-radius: var(--px-radius-sm);
+        }
 
         .row.before::after,
         .row.after::after {

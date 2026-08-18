@@ -113,6 +113,8 @@ export const DropZone = {
     HIERARCHY: 'hierarchy',
     /** One property of one component, in the Inspector. */
     PROPERTY: 'property',
+    /** The component list of an object, in the Inspector: what a `.px` attaches to. */
+    COMPONENTS: 'components',
     /** The Content section of a resource being inspected. */
     CONTENT: 'content'
 };

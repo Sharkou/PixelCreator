@@ -43,8 +43,29 @@ export const PORT_RADIUS = 5;
 /** How close a pointer must be to a port to be treated as on it. */
 export const PORT_HIT_RADIUS = 11;
 
+/** One row of a node's editable params, including the gap under it. */
+export const PARAM_HEIGHT = 22;
+
+/** Space between two param rows, taken out of the row above. */
+export const PARAM_GAP = 4;
+
+/** How far a param row is inset from the node's edge. */
+export const PARAM_INSET = 8;
+
+/** Space between the last port and the first param. */
+export const PARAM_PADDING = 4;
+
 /** Node positions snap to this, so a graph a creator dragged still looks arranged. */
 export const GRID = 8;
+
+/**
+ * How many fine grid lines make one emphasised line.
+ *
+ * The same ratio `viewport/grid.js` uses, and deliberately: the scene and the canvas are
+ * both infinite planes, so they draw the same grid rather than two that resemble each
+ * other (ADR-0028 draws the same conclusion about feedback).
+ */
+export const MAJOR_EVERY = 4;
 
 /** How far the view may be zoomed. */
 export const MIN_ZOOM = 0.25;
@@ -60,12 +81,44 @@ export const MAX_ZOOM = 2.5;
  * @param {{inputs: object[], outputs: object[]}} ports - The node's ports
  * @returns {{width: number, height: number}} Its box, in graph units
  */
-export function nodeSize(ports) {
+export function nodeSize(ports, params = 0) {
     const rows = Math.max(ports.inputs.length, ports.outputs.length);
     return {
         width: NODE_WIDTH,
-        height: HEADER_HEIGHT + PORT_PADDING * 2 + Math.max(0, rows - 1) * PORT_SPACING + (rows > 0 ? PORT_SPACING : 0)
+        height: HEADER_HEIGHT
+            + PORT_PADDING * 2
+            + Math.max(0, rows - 1) * PORT_SPACING
+            + (rows > 0 ? PORT_SPACING : 0)
+            // A node that carries params grows a strip under its ports to hold them. It
+            // is the node's own body, not a row of ports, so it has its own height —
+            // a field needs to be typed into, and a 20 px port row is not a text box.
+            + (params > 0 ? params * PARAM_HEIGHT + PARAM_PADDING : 0)
     };
+}
+
+/**
+ * Where a node's editable params sit, in graph space.
+ *
+ * @param {object} node - The node record, carrying its position
+ * @param {{inputs: object[], outputs: object[]}} ports - Its ports
+ * @param {number} count - How many params it draws
+ * @returns {Array<{index: number, x: number, y: number, width: number, height: number}>}
+ *   One box per param, in order
+ */
+export function paramBoxes(node, ports, count) {
+    if (count <= 0) return [];
+
+    const rows = Math.max(ports.inputs.length, ports.outputs.length);
+    const top = node.y + HEADER_HEIGHT + PORT_PADDING * 2
+        + Math.max(0, rows - 1) * PORT_SPACING + (rows > 0 ? PORT_SPACING : 0);
+
+    return Array.from({ length: count }, (_, index) => ({
+        index,
+        x: node.x + PARAM_INSET,
+        y: top + index * PARAM_HEIGHT,
+        width: NODE_WIDTH - PARAM_INSET * 2,
+        height: PARAM_HEIGHT - PARAM_GAP
+    }));
 }
 
 /**
@@ -225,8 +278,8 @@ export function hitTest(layout, point) {
     }
 
     for (let index = layout.length - 1; index >= 0; index--) {
-        const { node, ports } = layout[index];
-        const size = nodeSize(ports);
+        const { node, ports, params } = layout[index];
+        const size = nodeSize(ports, params?.length ?? 0);
 
         if (point.x >= node.x && point.x <= node.x + size.width
             && point.y >= node.y && point.y <= node.y + size.height) {
@@ -252,8 +305,8 @@ export function graphBounds(layout) {
     let right = -Infinity;
     let bottom = -Infinity;
 
-    for (const { node, ports } of layout) {
-        const size = nodeSize(ports);
+    for (const { node, ports, params } of layout) {
+        const size = nodeSize(ports, params?.length ?? 0);
         left = Math.min(left, node.x);
         top = Math.min(top, node.y);
         right = Math.max(right, node.x + size.width);

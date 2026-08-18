@@ -258,3 +258,58 @@ function humanisePort(id) {
         .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
         .replace(/^./, first => first.toUpperCase());
 }
+
+/**
+ * The node types that could take a connection from one port.
+ *
+ * WHY IT LIVES IN THE CORE. "Which node types have a port this one may reach" is the same
+ * question `typesCompatible()` answers for a single pair, asked of a whole catalogue — the
+ * rule is the model's, and an Editor that reimplemented it would be a second opinion about
+ * what may be wired to what. The picker that opens when a wire is let go over empty space
+ * asks this (windows/graph.js).
+ *
+ * PORTS MAY DEPEND ON THE NODE, and here there is no node yet: a type is offered when ANY
+ * of its statically declared ports would take the connection. A type whose ports are a
+ * function of an instance — `Set Property` takes the shape of whatever it names — is
+ * offered on the strength of its `ANY_TYPE` fallback, which is the honest answer before a
+ * property has been chosen.
+ *
+ * @param {NodeRegistry} registry - The catalogue to search
+ * @param {Port} port - The port the connection would start from
+ * @param {string} direction - Which side that port is: one of PortDirection
+ * @returns {Set<string>} The type names that could accept it
+ */
+export function compatibleTargets(registry, port, direction) {
+    const found = new Set();
+    if (!port) return found;
+
+    // A wire from an output looks for inputs, and the other way round.
+    const wanted = direction === PortDirection.OUTPUT ? 'inputs' : 'outputs';
+
+    for (const definition of registry.definitions()) {
+        const declared = definition[wanted === 'inputs' ? 'inputs' : 'outputs'];
+        // A dynamic port list needs an instance to resolve; asked with a bare record it
+        // answers with the shape it falls back to, which is what a creator would get.
+        const ports = typeof declared === 'function'
+            ? declared({ id: '', type: definition.type, params: {} }, {})
+            : declared;
+
+        for (const candidate of ports ?? []) {
+            const kind = candidate.kind ?? PortKind.DATA;
+            if (kind !== (port.kind ?? PortKind.DATA)) continue;
+            if (kind === PortKind.FLOW) {
+                found.add(definition.type);
+                break;
+            }
+
+            const from = direction === PortDirection.OUTPUT ? port.type : candidate.type ?? ANY_TYPE;
+            const to = direction === PortDirection.OUTPUT ? candidate.type ?? ANY_TYPE : port.type;
+            if (typesCompatible(from ?? ANY_TYPE, to ?? ANY_TYPE)) {
+                found.add(definition.type);
+                break;
+            }
+        }
+    }
+
+    return found;
+}

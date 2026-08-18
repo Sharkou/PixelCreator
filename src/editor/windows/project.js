@@ -30,7 +30,7 @@ import { emptyState } from '../ui/empty-state.js';
 import { icon, iconForResource, IconSize } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import { searchField } from '../ui/search-field.js';
-import { observe } from '../../core/mod.js';
+import { createId, observe } from '../../core/mod.js';
 import { baseNameOf, canMove, isFolder, withExtension } from '../../project/mod.js';
 import { createResourceOfKind, resourceKind, resourceMenuItems } from '../project/commands.js';
 import { pickFile, readAsDataUrl } from '../ui/file.js';
@@ -39,6 +39,7 @@ import { canDrop, performDrop } from '../dnd/rules.js';
 import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
 import { DropPosition, dropPositionAt } from './drop.js';
 import { previewSlots, rankAtPoint } from '../dnd/reflow.js';
+import { foldTrail } from '../ui/trail.js';
 import '../ui/window.js';
 
 /** How far a pointer travels before a press on a tile becomes a drag. */
@@ -55,6 +56,12 @@ export class Project extends Element {
 
         /* ── breadcrumb ─────────────────────────────────────────────────── */
 
+        /* IT COLLAPSES, IT DOES NOT SCROLL. A horizontal scrollbar inside a 26 px strip is
+           a control nobody finds, and hiding the overflow instead would put the folders
+           the creator is actually in beyond reach. So the trail keeps its ends — the root
+           and the folder being looked at, plus its parent — and folds the middle into one
+           button that lists what it swallowed (see renderCrumbs). Nothing becomes
+           unreachable: everything the fold hides is one click away inside it. */
         .crumbs {
             display: flex;
             align-items: center;
@@ -63,11 +70,16 @@ export class Project extends Element {
             height: var(--px-row);
             flex: 0 0 auto;
             border-bottom: 1px solid var(--px-border);
-            overflow-x: auto;
+            overflow: hidden;
             white-space: nowrap;
             -webkit-user-select: none;
             user-select: none;
         }
+
+        /* The last crumb is the one that may be squeezed: a long folder name should
+           shorten rather than push the trail off the edge. */
+        .crumbs .crumb.here { min-width: 0; }
+        .crumbs .crumb.here span:last-child { overflow: hidden; text-overflow: ellipsis; }
 
         .crumbs .crumb {
             display: inline-flex;
@@ -100,11 +112,26 @@ export class Project extends Element {
         .crumbs .crumb.here:hover { background: none; }
         .crumbs .crumb .glyph { display: flex; color: var(--px-text-dim); }
         .crumbs .crumb.here .glyph { color: var(--px-accent); }
-        .crumbs .crumb.drop { background: var(--px-accent-muted); color: var(--px-text-strong); }
+        /* A CRUMB IS A DROP TARGET, and it wears the same mark every other one does: a
+           dashed outline in the accent (ADR-0028 §3). It is the only way OUT of a folder,
+           so it cannot be the one target with feedback of its own invention. */
+        .crumbs .crumb.drop {
+            background: var(--px-accent-muted);
+            color: var(--px-text-strong);
+            outline: 1px dashed var(--px-accent);
+            outline-offset: -1px;
+        }
 
         /* A chevron rather than a slash: the trail points somewhere, and a slash reads as
            a path a creator could type — which this is not, because the model has no paths
            (ADR-0025). */
+        /* The fold: a quiet ellipsis that opens the folders it swallowed. */
+        .crumbs .crumb.folded {
+            padding: 0 var(--px-space-1);
+            font-weight: var(--px-weight-bold);
+            letter-spacing: 1px;
+        }
+
         .crumbs .sep {
             display: flex;
             align-items: center;
@@ -255,7 +282,9 @@ export class Project extends Element {
 
         /* Dropping INTO a folder is the other answer, and it is not a rank — so it is not
            drawn as one. */
-        .tile.into { box-shadow: inset 0 0 0 2px var(--px-accent); }
+        /* Dashed, like every other drop mark in the Editor: the outline and the badge on
+           the cursor are one statement (ADR-0028 §3). */
+        .tile.into { outline: 2px dashed var(--px-accent); outline-offset: -2px; }
 
         /* A file being dragged in from outside: the WHOLE window says so, because the
            whole window accepts it. The outline used to sit on the grid, which was also
@@ -267,8 +296,8 @@ export class Project extends Element {
         /* Something carried from another panel, hovering here. The shell decides which
            window is the target and marks it; every window styles that one class, so the
            answer cannot differ between them (ADR-0028 §3). */
-        :host(.dnd-over) { outline: 2px solid var(--px-accent); outline-offset: -3px; }
-        :host(.dnd-refused) { outline: 2px solid var(--px-danger); outline-offset: -3px; }
+        :host(.dnd-over) { outline: 2px dashed var(--px-accent); outline-offset: -3px; }
+        :host(.dnd-refused) { outline: 2px dashed var(--px-danger); outline-offset: -3px; }
 
         .none {
             padding: var(--px-space-2) var(--px-space-3);
@@ -506,45 +535,87 @@ export class Project extends Element {
             .filter(resource => (resource.name || 'Untitled').toLowerCase().includes(needle));
     }
 
+    /**
+     * The trail, folded when it is longer than the strip can hold.
+     *
+     * WHAT A DEEP TRAIL MUST NOT DO: scroll sideways, or hide its far end. `ui/trail.js`
+     * says which steps survive; this draws them. Nothing becomes unreachable — the fold
+     * lists what it swallowed, in the same dropdown every other menu opens.
+     */
     #renderCrumbs() {
         const project = this.#workspace.project;
         const chain = this.#folder ? [...ancestors(project, this.#folder), project.get(this.#folder)] : [];
 
-        const crumb = (label, id, here, glyph) => {
-            const button = el('button', {
-                class: `crumb${here ? ' here' : ''}`,
-                type: 'button',
-                title: here ? label : `Go to ${label}`,
-                onclick: () => this.#openFolder(id),
-                onpointerenter: event => this.#hoverCrumb(event.currentTarget, id),
-                onpointerleave: event => event.currentTarget.classList.remove('drop')
-            },
-                el('span', { class: 'glyph' }, icon(glyph, 16)),
-                el('span', { textContent: label })
-            );
-
-            // A crumb NAMES A FOLDER, so a folder renamed anywhere retitles it on the
-            // keystroke — the same rule the tiles and the Inspector live by (ADR-0026 §3).
-            if (id) {
-                const entry = project.get(id);
-                if (entry) {
-                    this.track(observe(entry, 'name', change => {
-                        button.lastElementChild.textContent = change.value || 'Untitled';
-                    }), 'crumbs');
-                }
-            }
-            return button;
-        };
-
         this.release('crumbs');
-        const nodes = [crumb('Project', null, chain.length === 0, 'folder')];
-        chain.forEach((folder, index) => {
+
+        const nodes = [this.#crumb('Project', null, chain.length === 0)];
+        for (const step of foldTrail(chain)) {
             nodes.push(el('span', { class: 'sep' }, icon('chevron', 16)));
-            nodes.push(crumb(folder?.name || 'Untitled', folder?.id ?? null,
-                index === chain.length - 1, 'folder'));
-        });
+            nodes.push(step.folded
+                ? this.#foldedCrumb(step.hidden)
+                : this.#crumb(step.folder?.name || 'Untitled', step.folder?.id ?? null, step.here));
+        }
 
         fill(this.#crumbs, nodes);
+    }
+
+    /**
+     * One step of the trail.
+     *
+     * IT IS ALSO A DROP TARGET, and that is what makes a resource able to leave a folder:
+     * the grid below only ever holds the folder being looked at, so the way OUT has to be
+     * the trail. `#dropAt()` resolves it like any other target, which is why the mark, the
+     * ghost and the cursor are the same here as anywhere else (ADR-0028 §3).
+     *
+     * @param {string} label - What it is called
+     * @param {string|null} id - The folder it walks to; null for the top level
+     * @param {boolean} here - Whether it is the folder being looked at
+     * @returns {HTMLElement} The crumb
+     */
+    #crumb(label, id, here) {
+        const button = el('button', {
+            class: `crumb${here ? ' here' : ''}`,
+            type: 'button',
+            title: here ? label : `Go to ${label}`,
+            dataset: { crumb: id ?? '' },
+            onclick: () => this.#openFolder(id)
+        },
+            el('span', { class: 'glyph' }, icon('folder', 16)),
+            el('span', { textContent: label })
+        );
+
+        // A crumb NAMES A FOLDER, so a folder renamed anywhere retitles it on the
+        // keystroke — the same rule the tiles and the Inspector live by (ADR-0026 §3).
+        const record = id ? this.#workspace.project.get(id) : null;
+        if (record) {
+            this.track(observe(record, 'name', change => {
+                button.lastElementChild.textContent = change.value || 'Untitled';
+            }), 'crumbs');
+        }
+
+        return button;
+    }
+
+    /** The button standing in for the folders the trail could not show. */
+    #foldedCrumb(hidden) {
+        const button = el('button', {
+            class: 'crumb folded',
+            type: 'button',
+            title: `${hidden.length} more folder${hidden.length === 1 ? '' : 's'}`,
+            'aria-label': 'Show the folders in between',
+            onclick: () => openMenu(
+                button,
+                hidden.map(folder => ({
+                    id: folder?.id ?? '',
+                    label: folder?.name || 'Untitled',
+                    icon: 'folder'
+                })),
+                id => this.#openFolder(id || null),
+                { label: 'folders' }
+            )
+        }, el('span', { textContent: '…' }));
+
+        return button;
     }
 
     #openFolder(id) {
@@ -702,57 +773,88 @@ export class Project extends Element {
         this.#rename = null;
     }
 
+    /**
+     * Edit a name in place.
+     *
+     * IT WRITES ON EVERY KEYSTROKE, and that is the fix rather than a preference. Renaming
+     * from the Inspector moved every other view on each letter; renaming from HERE waited
+     * for blur, so the Project panel was the one place in the Editor where a name did not
+     * propagate as it was typed — which read as "Project to Inspector is broken" when what
+     * was broken was this window's idea of when a rename happens. One model, one behaviour,
+     * whichever view the creator is typing into (ADR-0026 §3).
+     *
+     * ELEVEN KEYSTROKES ARE STILL ONE UNDO. The typing session mints a `batch` on entry and
+     * drops it on exit, which is the mechanism the operation format already carries
+     * (ADR-0024 §4) — no debounce, no second history.
+     *
+     * WHAT IS EDITED IS THE BASE: the extension belongs to the kind and cannot be typed
+     * away (ADR-0026 §4), so every write goes through `withExtension()`.
+     *
+     * @param {object} resource - The manifest entry being renamed
+     * @param {HTMLElement} name - The tile's name element
+     */
     #beginRename(resource, name) {
         if (!resource || name.classList.contains('editing')) return;
 
-        // What is edited is the BASE: the extension belongs to the kind and cannot be
-        // typed away (ADR-0026 §5).
-        const original = baseNameOf(resource);
+        const project = this.#workspace.project;
+        const original = project.get(resource.id)?.name ?? '';
+        const base = baseNameOf(resource);
+        const batch = createId();
+
         name.classList.add('editing');
         name.contentEditable = 'plaintext-only';
         if (!name.isContentEditable) name.contentEditable = 'true';
-        name.textContent = original;
+        name.textContent = base;
         name.focus();
         globalThis.getSelection()?.selectAllChildren(name);
 
-        const stop = () => {
-            if (!name.classList.contains('editing')) return false;
+        // Leaving edit mode is its own step, called directly by whatever ended the edit —
+        // not a side effect of blur. `blur()` only fires when the element actually held
+        // focus, and a tile that keeps `editing` because focus went somewhere unexpected is
+        // a tile that has stopped answering to the model. The Hierarchy learned this first.
+        const finish = () => {
+            if (!name.classList.contains('editing')) return;
             name.classList.remove('editing');
             name.contentEditable = 'false';
+            name.oninput = null;
             name.onblur = null;
             name.onkeydown = null;
-            return true;
-        };
 
-        const settle = () => {
-            const current = this.#workspace.project.get(resource.id);
+            const current = project.get(resource.id);
             name.textContent = current?.name || 'Untitled';
         };
 
-        const commit = () => {
-            if (!stop()) return;
-            const typed = name.textContent.trim();
-            const current = this.#workspace.project.get(resource.id);
-            if (!current || typed === '') return settle();
+        const write = typed => {
+            const current = project.get(resource.id);
+            if (!current) return;
+
+            // An empty box is a name being cleared, not a name of nothing: the model keeps
+            // what it had until there is something to put there.
+            if (typed === '') return;
 
             const next = withExtension(typed, current);
-            if (next !== current.name) this.#workspace.project.setProperty(resource.id, 'name', next);
-            settle();
+            if (next !== current.name) project.setProperty(resource.id, 'name', next, { batch });
         };
 
-        name.onblur = commit;
+        name.oninput = () => write(name.textContent.trim());
+        name.onblur = finish;
         name.onkeydown = event => {
             event.stopPropagation();
             if (event.key === 'Enter') {
                 event.preventDefault();
-                commit();
+                write(name.textContent.trim());
                 name.blur();
+                finish();
             }
             if (event.key === 'Escape') {
                 event.preventDefault();
-                stop();
-                settle();
+                // As it was when the edit began — through the model, so every view follows
+                // and the whole session still collapses into one history entry.
+                if (project.get(resource.id)?.name !== original) {
+                    project.setProperty(resource.id, 'name', original, { batch });
+                }
                 name.blur();
+                finish();
             }
         };
     }
@@ -898,7 +1000,11 @@ export class Project extends Element {
         const drag = this.#drag;
         for (const entry of this.#tiles.values()) {
             if (keepCarried && entry.tile === drag?.tile) continue;
-            entry.tile.classList.remove('sliding');
+            // THE CLASS STAYS WHILE THE GESTURE DOES. Taking `sliding` off in the same
+            // frame as the transform makes the tiles SNAP back the instant the pointer
+            // crosses a folder — which is what read as the grid getting stuck. They are
+            // going home either way; they may as well travel.
+            if (!drag) entry.tile.classList.remove('sliding');
             entry.tile.style.transform = '';
         }
         if (drag) drag.shown = null;
@@ -912,19 +1018,27 @@ export class Project extends Element {
 
         if (drag.started) {
             release(drag.tile, drag.pointerId);
-            drag.tile.classList.remove('dragging', 'sliding');
+            drag.tile.classList.remove('dragging');
             drag.tile.style.transform = '';
         }
+        // Now that the gesture is over, the transitions come off too — a re-render must
+        // not animate tiles into the places the model has just put them.
+        for (const entry of this.#tiles.values()) entry.tile.classList.remove('sliding');
         this.#markDrop(null);
-        for (const crumb of this.#crumbs?.querySelectorAll('.crumb') ?? []) crumb.classList.remove('drop');
     }
 
     /**
-     * What the pointer is over: a folder to go into, or a rank between two tiles.
+     * What the pointer is over: a folder to go into, a crumb to come out to, or a rank.
      *
-     * The middle of a folder tile nests; the left and right thirds of any tile insert
-     * before or after it. The same geometry the Hierarchy uses, turned on its side because
-     * a grid flows across (windows/drop.js).
+     * THE WAY OUT IS THE TRAIL, and it is resolved here rather than by a handler bolted to
+     * a button. The grid only ever shows one folder's children, so "move this up a level"
+     * has no target among the tiles — it has to be the breadcrumb. It used to be, through
+     * an `onpointerup` the hover handler attached to the crumb, which meant the crumb was
+     * the one drop target in the Editor with no ghost, no cursor and no shared mark. Now
+     * it is a row in the same resolution as everything else (ADR-0028 §3).
+     *
+     * The order is the rule: crumbs first — they sit above the grid and never overlap it —
+     * then folders, which answer "into what?", then a rank among the tiles.
      */
     #dropAt(clientX, clientY) {
         const drag = this.#drag;
@@ -932,9 +1046,25 @@ export class Project extends Element {
 
         const project = this.#workspace.project;
 
+        // --- out of this folder, through the trail --------------------------------------
+        for (const crumb of this.#crumbs?.querySelectorAll('.crumb[data-crumb]') ?? []) {
+            const box = crumb.getBoundingClientRect();
+            if (clientX < box.left || clientX >= box.right) continue;
+            if (clientY < box.top || clientY >= box.bottom) continue;
+
+            const parent = crumb.dataset.crumb || null;
+            // The folder already being looked at is not a move; it is where the resource is.
+            if (parent === (this.#folder ?? null)) return null;
+            if (!canMove(project, drag.resource.id, parent)) return null;
+
+            return { crumb, position: null, drop: this.#target(parent, null) };
+        }
+
+        // --- into a folder ---------------------------------------------------------------
+        //
         // A FOLDER IS THE ONE TARGET THAT IS NOT A RANK. Over the middle of a folder tile
         // the question is "into what?", and its answer changes where the resource lives
-        // rather than where it sits — so it is resolved first, and separately.
+        // rather than where it sits — so it is resolved separately.
         for (const entry of this.#tiles.values()) {
             if (entry.resource.id === drag.resource.id) continue;
             if (!isFolder(entry.resource)) continue;
@@ -949,7 +1079,7 @@ export class Project extends Element {
             return { entry, position, drop: this.#target(entry.resource.id, null) };
         }
 
-        // Anywhere else in the open folder: a rank, read the way the preview reads it.
+        // --- a rank in the open folder -----------------------------------------------------
         //
         // NO insertionIndex() HERE, AND THAT IS THE SUBTLE PART. That helper converts a
         // rank counted in the list WITH the carried tile still in it. `rankAtPoint()`
@@ -959,12 +1089,12 @@ export class Project extends Element {
         // forward move into a no-op.
         if (!drag.boxes || drag.index === -1) return null;
 
-        const rank = rankAtPoint({ x: clientX, y: clientY }, drag.boxes);
-        if (rank === drag.index) return null;
-
         // The tiles on screen are the open folder's children, in model order — unless a
         // search is showing everything, in which case a rank on screen means nothing.
         if (this.#query.trim() !== '') return null;
+
+        const rank = rankAtPoint({ x: clientX, y: clientY }, drag.boxes);
+        if (rank === drag.index) return null;
 
         return { entry: null, position: null, drop: this.#target(this.#folder, rank) };
     }
@@ -973,8 +1103,9 @@ export class Project extends Element {
      * The target a drop at this point would use, for a drag this window does not own.
      *
      * The shell asks while a payload from ANOTHER window is overhead, so it cannot go
-     * through the reorder path — that one needs a resource of its own to move. The
-     * open folder, appended, is what any foreign payload would land in.
+     * through the reorder path — that one needs a resource of its own to move. A crumb
+     * still answers, because importing a file into the folder above is as reasonable a
+     * gesture as importing into this one.
      *
      * @param {number} clientX - Pointer position
      * @param {number} clientY - Pointer position
@@ -982,6 +1113,23 @@ export class Project extends Element {
      */
     dropTargetAt(clientX, clientY) {
         if (!this.#workspace) return null;
+
+        for (const crumb of this.#crumbs?.querySelectorAll('.crumb[data-crumb]') ?? []) {
+            const box = crumb.getBoundingClientRect();
+            if (clientX < box.left || clientX >= box.right) continue;
+            if (clientY < box.top || clientY >= box.bottom) continue;
+            return this.#target(crumb.dataset.crumb || null, null);
+        }
+
+        for (const entry of this.#tiles.values()) {
+            if (!isFolder(entry.resource)) continue;
+
+            const box = entry.tile.getBoundingClientRect();
+            if (clientX < box.left || clientX >= box.right) continue;
+            if (clientY < box.top || clientY >= box.bottom) continue;
+            return this.#target(entry.resource.id, null);
+        }
+
         return this.#target(this.#folder, null);
     }
 
@@ -998,23 +1146,17 @@ export class Project extends Element {
         for (const entry of this.#tiles.values()) {
             entry.tile.classList.remove('before', 'after', 'into');
         }
+        for (const crumb of this.#crumbs?.querySelectorAll('.crumb') ?? []) {
+            crumb.classList.remove('drop');
+        }
+
+        if (target?.crumb) {
+            target.crumb.classList.add('drop');
+            return;
+        }
         if (!target?.entry) return;
 
-        entryClass(target).classList.add(target.position === DropPosition.INTO ? 'into' : target.position);
-    }
-
-    /** A drag held over a breadcrumb moves the resource there when it is released. */
-    #hoverCrumb(button, id) {
-        const drag = this.#drag;
-        if (!drag?.started) return;
-        if (!canMove(this.#workspace.project, drag.resource.id, id)) return;
-
-        button.classList.add('drop');
-        button.onpointerup = () => {
-            const resource = drag.resource;
-            this.#cancelDrag();
-            performDrop(resourcePayload(resource), this.#target(id, null), this.#context());
-        };
+        target.entry.tile.classList.add(target.position === DropPosition.INTO ? 'into' : target.position);
     }
 
     // --- files from outside the browser -------------------------------------------
@@ -1069,11 +1211,6 @@ export class Project extends Element {
     accepts(payload) {
         return canDrop(payload, this.#target(this.#folder, null)).allowed;
     }
-}
-
-/** The tile element a drop marker goes on. */
-function entryClass(target) {
-    return target.entry.tile;
 }
 
 /** The folders above one, outermost first. Local, because the panel only draws them. */

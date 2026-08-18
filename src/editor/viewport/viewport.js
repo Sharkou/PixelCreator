@@ -563,7 +563,11 @@ export class Viewport extends Element {
         const signature = `${this.#camera.x}|${this.#camera.y}|${this.#camera.rotation}`
             + `|${this.#zoom()}|${this.#gridRenderer.width}x${this.#gridRenderer.height}`;
         if (signature !== this.#gridSignature) {
-            drawGrid(this.#gridRenderer, view, { density });
+            // THE COLOURS COME FROM THE TOKENS, so the scene's grid and the graph's are
+            // the same three values rather than two sets that happen to look alike
+            // (ui/styles.js). Read here rather than in `drawGrid()`, which draws through
+            // the renderer contract and must stay free of the DOM.
+            drawGrid(this.#gridRenderer, view, { density, ...gridColours(this) });
             this.#gridSignature = signature;
         }
 
@@ -866,3 +870,22 @@ export class Viewport extends Element {
 }
 
 customElements.define('px-viewport', Viewport);
+
+/**
+ * The grid's three roles, as the theme currently defines them.
+ *
+ * @param {HTMLElement} element - Anything inside the shell, for the cascade
+ * @returns {{background: string, minor: string, major: string, axis: string}} The colours
+ */
+function gridColours(element) {
+    const style = getComputedStyle(element);
+    const token = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
+
+    return {
+        background: token('--px-grid-background', '#131418'),
+        minor: token('--px-grid-minor', '#1c1e24'),
+        major: token('--px-grid-major', '#24272f'),
+        axis: token('--px-grid-axis', '#343945')
+    };
+}
+

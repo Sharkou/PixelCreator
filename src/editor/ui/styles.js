@@ -41,6 +41,8 @@
 // Nothing important is ever revealed by hover alone; hover only strengthens what is
 // already visible.
 
+import { dragCursorRules } from './cursors.js';
+
 /**
  * Build a constructable stylesheet.
  * @param {string} css - The rules
@@ -177,6 +179,19 @@ const tokens = sheet(`
         --px-hue-reference: #b07ce8; /* a property, a resource — a pointer */
         --px-hue-any: #949aa8;     /* unconstrained — the absence of a type */
 
+        /* ─── Grid ────────────────────────────────────────────────────────
+           ONE GRID LANGUAGE, TWO SURFACES. The scene and the graph canvas are
+           both infinite planes a creator pans and zooms across, and they were
+           drawing different grids: the scene had a fine line every 32 world
+           units with an emphasised one every fourth and an axis at zero, the
+           graph had one flat square. Same three roles, same three values, read
+           by both — the viewport hands them to its renderer, the canvas reads
+           them as custom properties (viewport/grid.js, windows/graph.js). */
+        --px-grid-background: #131418;
+        --px-grid-minor: #1c1e24;
+        --px-grid-major: #24272f;
+        --px-grid-axis: #343945;
+
         /* ─── Type ────────────────────────────────────────────────────────
            A system sans for the interface. A mono for values only: numbers,
            the ruler, the zoom readout, coordinates — anything a creator reads
@@ -309,15 +324,12 @@ const tokens = sheet(`
        no-drop badge of its own — which is why a refused drop used to look
        exactly like a legal one right up to the moment nothing happened.
 
-       The class goes on the SHELL and the rule reaches every descendant with
-       !important, because the element under the pointer is inside a shadow
-       root this sheet cannot see, and it is already asserting a cursor of its
-       own (default on a row, pointer on a button, crosshair on a port).
-       During a drag those are all wrong: what the pointer is over matters, not
-       what it would do if clicked. */
-    .shell.dragging, .shell.dragging * { cursor: grabbing !important; }
-    .shell.dragging-copy, .shell.dragging-copy * { cursor: copy !important; }
-    .shell.dragging-refused, .shell.dragging-refused * { cursor: no-drop !important; }
+       THE CURSORS ARE DRAWN, NOT BORROWED. A system copy cursor is smooth and
+       platform-shaped next to an interface whose every glyph is on a 16-unit
+       grid; the ones in ui/cursors.js are pixel sprites, and the accept badge
+       is the same dashed square a drop zone outlines itself with. The rules
+       themselves live there too, because they interpolate the sprites. */
+    ${dragCursorRules()}
 
     /* ─── L4 ──────────────────────────────────────────────────────────────
        Two bands across, and the order is the decision: everything that

@@ -8,6 +8,7 @@ import {
     NodeRegistry,
     PortDirection,
     PortKind,
+    compatibleTargets,
     createPort,
     groupNodes,
     portOf,
@@ -147,4 +148,65 @@ test('no shipped node reaches for an environment', () => {
             assert.equal(forbidden.test(definition[hook].toString()), false, `${definition.type}.${hook}`);
         }
     }
+});
+
+// --- what a wire may reach (the picker that opens on a dropped link) --------------------
+
+test('a number output offers the nodes that take a number', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const port = createPort({ id: 'value', kind: PortKind.DATA, type: PropertyType.NUMBER });
+
+    const found = compatibleTargets(registry, port, PortDirection.OUTPUT);
+
+    assert.ok(found.has('math.add'), 'Add takes a number');
+    assert.ok(found.has('compare.greater'), 'Greater Than takes a number');
+    assert.ok(found.has('debug.log'), 'Log takes anything');
+    assert.equal(found.has('event.start'), false, 'On Start has no inputs at all');
+    assert.equal(found.has('value.number'), false, 'a literal takes nothing');
+});
+
+test('a boolean output does not offer arithmetic', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const port = createPort({ id: 'result', kind: PortKind.DATA, type: PropertyType.BOOLEAN });
+
+    const found = compatibleTargets(registry, port, PortDirection.OUTPUT);
+
+    assert.ok(found.has('logic.not'));
+    assert.ok(found.has('flow.branch'), 'a condition is a boolean');
+    assert.equal(found.has('math.add'), false);
+});
+
+test('a flow output offers only nodes with a flow input', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const port = createPort({ id: 'out', kind: PortKind.FLOW });
+
+    const found = compatibleTargets(registry, port, PortDirection.OUTPUT);
+
+    assert.ok(found.has('flow.branch'));
+    assert.ok(found.has('property.set'));
+    assert.equal(found.has('value.number'), false, 'a literal has no flow');
+    assert.equal(found.has('math.add'), false);
+});
+
+test('a data input looks the other way, for outputs', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const port = createPort({ id: 'a', kind: PortKind.DATA, type: PropertyType.NUMBER });
+
+    const found = compatibleTargets(registry, port, PortDirection.INPUT);
+
+    assert.ok(found.has('value.number'), 'a literal can feed it');
+    assert.ok(found.has('math.add'), 'so can the result of a sum');
+    assert.equal(found.has('debug.log'), false, 'Log produces no value');
+});
+
+test('int and number reach each other, as the compatibility rule says', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const port = createPort({ id: 'value', kind: PortKind.DATA, type: PropertyType.INT });
+
+    assert.ok(compatibleTargets(registry, port, PortDirection.OUTPUT).has('math.add'));
+});
+
+test('asking about nothing answers nothing rather than everything', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    assert.equal(compatibleTargets(registry, null, PortDirection.OUTPUT).size, 0);
 });

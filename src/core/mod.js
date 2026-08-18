@@ -69,6 +69,7 @@ export {
     PortDirection,
     PortKind,
     createPort,
+    compatibleTargets,
     groupNodes,
     nodes,
     portOf,

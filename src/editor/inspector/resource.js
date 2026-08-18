@@ -21,7 +21,7 @@
 // THE PATH IS DERIVED, and shown as text: moving a resource is a drag in the Project
 // panel, not a field to type a path into — the model has no path to type (ADR-0025).
 
-import { ResourceKind, baseNameOf, extensionOf, folderPath, hasPayload } from '../../project/mod.js';
+import { ResourceKind, baseNameOf, folderPath, hasPayload } from '../../project/mod.js';
 import { formatSize, imageSize } from '../../project/image.js';
 import { FieldKind } from './schema.js';
 
@@ -113,9 +113,9 @@ export function describeResource(resource, { project = null, payload = null, siz
         // `.px` from the kind (ADR-0026 §4) — neither is something a creator typed, and
         // neither is something they can change here. Repeating a derived suffix in the one
         // line of the panel that is meant to say WHAT THIS IS makes the title read like a
-        // path. The extension is carried alongside, for the panel to show quietly.
+        // path. The extension is drawn once, beside the Name field, where the rule about
+        // what may be typed actually applies.
         title: baseNameOf(resource) || resource.name || 'Untitled',
-        extension: extensionOf(resource),
         kind: resource.kind,
         kindName: KIND_NAMES[resource.kind] ?? resource.kind,
 

@@ -195,6 +195,53 @@ export class Workspace {
         return [...this.#editors.values()].filter(editor => editor.open).map(editor => editor.resource);
     }
 
+    /**
+     * Move an open editor to another rank in the strip.
+     *
+     * WHICH TAB SITS WHERE IS VIEW STATE, AND IT STAYS OUT OF THE UNDO STACK. The strip is
+     * a view of `opened()` — which resources a window is presenting — and that is a fact
+     * about this session, not about the project (ADR-0017, ADR-0020). Putting it on a
+     * pipeline would make `Ctrl Z` sometimes take back an edit and sometimes shuffle a row
+     * of chrome, which is the worst possible answer to a shortcut a creator presses without
+     * looking. It is announced, so the strip redraws; it is not recorded.
+     *
+     * The rank counts among the OPEN editors, in the resulting order — the same convention
+     * every other reorder in the Editor uses (dnd/reflow.js is splice-out-then-splice-in).
+     *
+     * @param {string} id - The open resource to move
+     * @param {number} index - Its new rank among the open editors
+     * @returns {boolean} True when the strip changed
+     */
+    reorder(id, index) {
+        const open = [...this.#editors.values()].filter(editor => editor.open);
+        const editor = this.#editors.get(id);
+        if (!editor?.open || open.length < 2) return false;
+
+        const from = open.indexOf(editor);
+        const to = Math.max(0, Math.min(open.length - 1, Math.trunc(index)));
+        if (!globalThis.Number.isFinite(to) || from === to) return false;
+
+        open.splice(from, 1);
+        open.splice(to, 0, editor);
+
+        // A Map has no splice, so the strip's order is a rewrite — of the OPEN entries
+        // only, in the holes they already occupy, so an attached-but-unopened editor keeps
+        // its place and its identity.
+        const slots = [...this.#editors.entries()];
+        let next = 0;
+        for (let i = 0; i < slots.length; i++) {
+            if (!slots[i][1].open) continue;
+            const moved = open[next++];
+            slots[i] = [moved.resource.id, moved];
+        }
+
+        this.#editors.clear();
+        for (const [key, value] of slots) this.#editors.set(key, value);
+
+        this.#emitter.emit('reordered', { id, index: to });
+        return true;
+    }
+
     /** The active editor's ResourceId, or null. */
     get activeId() {
         return this.#active;

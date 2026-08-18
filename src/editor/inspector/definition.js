@@ -21,17 +21,45 @@ import { PropertyType, propertyTypes } from '../../core/mod.js';
 import { iconForPropertyType } from '../ui/icons.js';
 import { FieldKind, fieldFor } from './schema.js';
 
-/** How each Core property type is named for a creator, since a raw enum value is not a word. */
+/**
+ * How each Core property type is named for a creator, since a raw enum value is not a word.
+ *
+ * AMERICAN SPELLING, because that is what the API uses. `PropertyType.COLOR` is the
+ * identifier a creator will meet in a `.px` payload, in a schema and eventually in a
+ * script; showing them `Colour` in the one place they choose it teaches a word the rest of
+ * the product does not answer to.
+ */
 export const PROPERTY_TYPE_LABELS = {
     [PropertyType.NUMBER]: 'Number',
     [PropertyType.INT]: 'Integer',
     [PropertyType.BOOLEAN]: 'Boolean',
     [PropertyType.STRING]: 'Text',
-    [PropertyType.COLOR]: 'Colour',
+    [PropertyType.COLOR]: 'Color',
     [PropertyType.ENUM]: 'Choice',
     [PropertyType.RESOURCE]: 'Resource',
     [PropertyType.ARRAY]: 'List'
 };
+
+/**
+ * The types a creator may declare a property AS.
+ *
+ * NOT THE SAME LIST AS THE CORE'S, AND DELIBERATELY. `int` stays a real Core type: the
+ * Object's own `layer` is one, `typesCompatible()` pairs it with `number` so a graph can
+ * add 1 to a counter (ADR-0027), and a component shipped in JavaScript may declare one.
+ * What it is not is a CHOICE worth offering: `Number` and `Integer` differ by a promise
+ * about decimals that a creator declaring `speed` has no way to act on, and the picker
+ * asking them to make that call is the picker inventing a decision.
+ *
+ * Removing it from the Core instead would have been the destructive version of this: a
+ * stored `int` would stop validating, `layer` would lose its stepper, and the graph's
+ * numeric compatibility rule would lose the pair it is written about. This is a UI list,
+ * and it says so.
+ *
+ * @returns {string[]} The types the Type dropdown offers, in the order it offers them
+ */
+export function authorableTypes() {
+    return propertyTypes().filter(type => type !== PropertyType.INT);
+}
 
 /**
  * Describe a `.px` for the Inspector.
@@ -71,12 +99,12 @@ export function describeProperty(property) {
             fieldFor('type', {
                 type: PropertyType.ENUM,
                 label: 'Type',
-                values: propertyTypes(),
-                labels: propertyTypes().map(type => PROPERTY_TYPE_LABELS[type] ?? type),
+                values: authorableTypes(),
+                labels: authorableTypes().map(type => PROPERTY_TYPE_LABELS[type] ?? type),
                 // The Type dropdown is the control a creator meets first, on every property
                 // they declare, so it shows the shape rather than only naming it — and the
                 // same glyph appears on the property's badge and beside a node's ports.
-                icons: propertyTypes().map(type => iconForPropertyType(type)),
+                icons: authorableTypes().map(type => iconForPropertyType(type)),
                 tooltip: 'The shape of the value. Changing it resets the default'
             }),
             defaultField(property)

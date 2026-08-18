@@ -2,9 +2,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ComponentDefinition, NodeRegistry, PropertyType, registerStandardNodes } from '../../core/mod.js';
+import { ComponentDefinition, NodeRegistry, PropertyType, propertyTypes, registerStandardNodes } from '../../core/mod.js';
 import { FieldKind } from './schema.js';
-import { PROPERTY_TYPE_LABELS, defaultField, describeDefinition, describeProperty } from './definition.js';
+import { PROPERTY_TYPE_LABELS, authorableTypes, defaultField, describeDefinition, describeProperty } from './definition.js';
 
 function definition(payload = {}) {
     return new ComponentDefinition(payload, { registry: registerStandardNodes(new NodeRegistry()) });
@@ -97,4 +97,38 @@ test('the description follows the model, so an edit is visible on the next read'
 
     assert.equal(row.name, 'walkSpeed');
     assert.equal(row.fields[2].kind, FieldKind.BOOLEAN);
+});
+
+// --- what a creator may declare (§5.4, §5.7) -------------------------------------------
+
+test('the Type picker does not offer Integer', () => {
+    const offered = authorableTypes();
+
+    assert.equal(offered.includes(PropertyType.INT), false,
+        'Number and Integer differ by a promise a creator declaring `speed` cannot act on');
+    assert.ok(offered.includes(PropertyType.NUMBER));
+});
+
+test('int stays a real Core type, because things depend on it', () => {
+    // The Object's own `layer` is one, and the graph pairs int with number so a counter
+    // can be incremented (ADR-0027). Dropping it from the Core would break both.
+    assert.ok(propertyTypes().includes(PropertyType.INT));
+});
+
+test('the picker offers every other Core type, and only those', () => {
+    const offered = new Set(authorableTypes());
+    const core = propertyTypes().filter(type => type !== PropertyType.INT);
+
+    assert.deepEqual([...offered], core);
+});
+
+test('every offered type has a name a creator can read', () => {
+    for (const type of authorableTypes()) {
+        assert.equal(typeof PROPERTY_TYPE_LABELS[type], 'string', `${type} has no label`);
+        assert.notEqual(PROPERTY_TYPE_LABELS[type], type, `${type} shows its raw enum value`);
+    }
+});
+
+test('the spelling is American, because the API is', () => {
+    assert.equal(PROPERTY_TYPE_LABELS[PropertyType.COLOR], 'Color');
 });

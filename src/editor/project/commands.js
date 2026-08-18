@@ -15,6 +15,7 @@
 // The point of extension is here, and it is one row wide.
 
 import { Scene, createId } from '../../core/mod.js';
+import { iconForResource } from '../ui/icons.js';
 import {
     KIND_LABELS,
     ResourceKind,
@@ -32,14 +33,12 @@ export const RESOURCE_KINDS = [
     {
         id: ResourceKind.FOLDER,
         label: 'Folder',
-        icon: 'folder',
         category: 'General',
         create: (project, { parent, actor }) => project.addFolder({ parent, actor })
     },
     {
         id: ResourceKind.SCENE,
         label: 'Scene',
-        icon: 'scene',
         category: 'Scenes',
         create: (project, { parent, actor }) => {
             const name = uniqueResourceName(
@@ -55,14 +54,12 @@ export const RESOURCE_KINDS = [
     {
         id: ResourceKind.COMPONENT,
         label: 'Component',
-        icon: 'component',
         category: 'Components',
         create: (project, { parent, actor }) => createComponent(project, { parent, actor })
     },
     {
         id: ResourceKind.ASSET,
         label: 'Image…',
-        icon: 'image',
         category: 'Graphics',
         // A KIND MAY DECLARE THAT IT NEEDS A FILE FIRST. The panel reads this flag, not the
         // kind: it asks for a file, reads it, and hands both to `create`. That keeps the
@@ -114,7 +111,11 @@ export function resourceMenuItems() {
         if (group.length === 0) continue;
 
         items.push({ heading: category });
-        for (const { id, label, icon } of group) items.push({ id, label, icon });
+        // THE GLYPH IS NOT DECLARED HERE, it is derived. A kind's icon is a fact about
+        // the kind (ui/icons.js), so the menu that creates one and the tile that shows it
+        // afterwards read the same table — they used to carry two literals each, and the
+        // Scene entry had drifted from the one the Project panel drew.
+        for (const { id, label } of group) items.push({ id, label, icon: iconForResource(id) });
     }
 
     return items;

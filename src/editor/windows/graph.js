@@ -23,13 +23,25 @@
 // questions; shipping half of one is how a canvas becomes unpredictable. What is here is
 // the loop a creator needs to write a behaviour: place, wire, move, inspect, delete.
 
-import { ANY_TYPE, GraphSeverity, PropertyType, groupNodes } from '../../core/mod.js';
+import {
+    ANY_TYPE,
+    GraphSeverity,
+    PropertyType,
+    compatibleTargets,
+    groupNodes,
+    makeReactive,
+    observe
+} from '../../core/mod.js';
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { ICON_GRID, icon, iconForNode, iconPaths } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
+import { describeNode } from '../inspector/node.js';
+import '../ui/field.js';
 import {
     GRID,
+    MAJOR_EVERY,
+    paramBoxes,
     HEADER_HEIGHT,
     NODE_WIDTH,
     PORT_RADIUS,
@@ -57,7 +69,16 @@ export class GraphWindow extends Element {
             position: relative;
             min-width: 0;
             min-height: 0;
-            background: var(--px-background);
+            /* The same ground the scene is drawn on: two surfaces, one plane. */
+            background: var(--px-grid-background);
+        }
+
+        .axes {
+            fill: none;
+            stroke: var(--px-grid-axis);
+            stroke-width: 1;
+            pointer-events: none;
+            vector-effect: non-scaling-stroke;
         }
 
         :host([hidden]) { display: none; }
@@ -86,22 +107,51 @@ export class GraphWindow extends Element {
 
         .node .box {
             fill: var(--px-surface-raised);
-            stroke: var(--px-border);
             stroke-width: 1;
+            stroke-opacity: 0.55;
         }
 
-        .node:hover .box { stroke: var(--px-border-subtle); }
+        .node:hover .box { stroke-opacity: 0.85; }
 
         /* The header takes the category's colour at a tenth of its strength: enough to
            group at a glance, never enough to compete with the wires. */
         .node .header { fill-opacity: 0.16; }
         .node .header-rule { stroke-width: 1; stroke-opacity: 0.5; }
 
-        .node.selected .box { stroke: var(--px-accent); stroke-width: 2; }
+        /* Selected: the same hue, at full strength and twice the weight. A creator can
+           still tell what the node IS while they are working on it. */
+        .node.selected .box { stroke-width: 2; stroke-opacity: 1; }
         .node.selected .header { fill-opacity: 0.26; }
-        .node.invalid .box { stroke: var(--px-danger); }
+
+        /* Broken beats family: something is wrong here, and that is the more urgent fact. */
+        .node.invalid .box { stroke: var(--px-danger) !important; stroke-opacity: 1; }
 
         .node .glyph { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+        /* A param row, drawn inside the node through a foreignObject. It is HTML, so the
+           Editor's own controls work here unchanged — and it inherits the content group's
+           transform, so it pans and zooms with the node rather than floating over it. */
+        .param { overflow: visible; }
+
+        .param-row {
+            display: flex;
+            align-items: center;
+            gap: var(--px-space-1);
+            height: 100%;
+            font-family: var(--px-font-sans);
+            font-size: var(--px-text-2xs);
+            color: var(--px-text-muted);
+        }
+
+        .param-row .param-label {
+            flex: 0 0 auto;
+            max-width: 45%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .param-row px-field { flex: 1; min-width: 0; }
 
         .node .title {
             fill: var(--px-text-strong);
@@ -146,6 +196,20 @@ export class GraphWindow extends Element {
            comfortable thing to aim at with a finger. */
         .port-hit { fill: transparent; cursor: crosshair; }
         .port-hit:hover ~ .port-halo { opacity: 0.45; }
+
+        /* WIRING IS A DIFFERENT QUESTION FROM POINTING. While a wire is in flight the
+           creator is not asking "what is this port", they are asking "will it take this
+           one" — so the answer is louder, and it is the verdict rather than the hue.
+           The graph model already produces it (ADR-0027); this draws it. */
+        .port-halo.candidate { opacity: 0.9; stroke: var(--px-success); }
+        .port-halo.rejected { opacity: 0.9; stroke: var(--px-danger); }
+        .port.candidate { stroke: var(--px-success); stroke-width: 2.5; }
+        .port.rejected { stroke: var(--px-danger); stroke-width: 2.5; }
+
+        /* Every other port dims, so the ones that could take the wire are what is left to
+           look at. */
+        svg.wiring .node .port:not(.candidate):not(.rejected) { opacity: 0.35; }
+        svg.wiring { cursor: crosshair; }
 
         /* ── wires ─────────────────────────────────────────────────────── */
 
@@ -229,6 +293,8 @@ export class GraphWindow extends Element {
     #status = null;
     #empty = null;
     #grid = null;
+    #gridMinor = null;
+    #axes = null;
     #controls = null;
 
     #view = { x: 0, y: 0, zoom: 1 };
@@ -290,19 +356,47 @@ export class GraphWindow extends Element {
         this.#pending = svg('path', { class: 'wire pending' });
         this.#content = svg('g', {}, this.#wires, this.#pending, this.#nodesLayer);
 
-        // The grid is a pattern rather than a thousand lines: it tiles for free, it scales
-        // with the view, and it costs one rect however far a creator pans.
-        this.#grid = svg('pattern', {
-            id: 'px-graph-grid',
-            width: GRID * 4,
-            height: GRID * 4,
+        // THE SAME GRID THE SCENE DRAWS, in the language the scene draws it in: a fine
+        // line every GRID units, an emphasised one every fourth, and an axis at the
+        // origin (viewport/grid.js). It used to be one flat square, which read as graph
+        // paper rather than as the same infinite plane — and the two surfaces a creator
+        // pans across should not disagree about what a plane looks like.
+        //
+        // IT IS A PATTERN RATHER THAN A THOUSAND LINES: it tiles for free, it carries the
+        // view in `patternTransform`, and it costs one rect however far a creator pans.
+        // Two nested patterns, and BOTH are transformed — the inner one paints in its own
+        // coordinate system, so a transform on the outer alone would scale the major
+        // squares and leave the minor ones nailed to the screen.
+        this.#gridMinor = svg('pattern', {
+            id: 'px-graph-grid-minor',
+            width: GRID,
+            height: GRID,
             patternUnits: 'userSpaceOnUse'
         }, svg('path', {
-            d: `M ${GRID * 4} 0 L 0 0 0 ${GRID * 4}`,
+            d: `M ${GRID} 0 L 0 0 0 ${GRID}`,
             fill: 'none',
-            stroke: 'var(--px-border-subtle)',
+            stroke: 'var(--px-grid-minor)',
             'stroke-width': 1
         }));
+
+        this.#grid = svg('pattern', {
+            id: 'px-graph-grid',
+            width: GRID * MAJOR_EVERY,
+            height: GRID * MAJOR_EVERY,
+            patternUnits: 'userSpaceOnUse'
+        },
+            svg('rect', {
+                width: GRID * MAJOR_EVERY,
+                height: GRID * MAJOR_EVERY,
+                fill: 'url(#px-graph-grid-minor)'
+            }),
+            svg('path', {
+                d: `M ${GRID * MAJOR_EVERY} 0 L 0 0 0 ${GRID * MAJOR_EVERY}`,
+                fill: 'none',
+                stroke: 'var(--px-grid-major)',
+                'stroke-width': 1
+            })
+        );
 
         const background = svg('rect', {
             width: '100%',
@@ -310,7 +404,14 @@ export class GraphWindow extends Element {
             fill: 'url(#px-graph-grid)'
         });
 
-        this.#svg = svg('svg', {}, svg('defs', {}, this.#grid), background, this.#content);
+        // The origin, drawn once rather than tiled: a graph has a zero and a creator who
+        // has panned a long way needs to be able to find it. Inside the content group, so
+        // it travels with the nodes instead of needing a transform of its own.
+        this.#axes = svg('path', { class: 'axes', d: `M -4000 0 H 4000 M 0 -4000 V 4000` });
+        this.#content.prepend(this.#axes);
+
+        this.#svg = svg('svg', {},
+            svg('defs', {}, this.#gridMinor, this.#grid), background, this.#content);
 
         this.#svg.addEventListener('pointerdown', event => this.#onPointerDown(event));
         this.#svg.addEventListener('pointermove', event => this.#onPointerMove(event));
@@ -360,7 +461,18 @@ export class GraphWindow extends Element {
     #layout() {
         const graph = this.#definition?.graph;
         if (!graph) return [];
-        return graph.nodes().map(node => ({ node, ports: graph.portsOf(node) }));
+
+        return graph.nodes().map(node => ({
+            node,
+            ports: graph.portsOf(node),
+            // A NODE'S PARAMS ARE PART OF ITS SHAPE, not of a panel somewhere else. They
+            // decide how tall the box is, so the geometry has to know about them before
+            // anything is drawn or hit-tested (graph/view.js).
+            params: describeNode(node, {
+                registry: this.#definition.registry,
+                properties: this.#definition.properties()
+            })?.fields ?? []
+        }));
     }
 
     #draw() {
@@ -388,6 +500,7 @@ export class GraphWindow extends Element {
         // panel while the nodes slid over them, which reads as the nodes drifting rather
         // than the canvas moving.
         this.#grid.setAttribute('patternTransform', transform);
+        this.#gridMinor.setAttribute('patternTransform', transform);
 
         fill(this.#wires, graph.connections().map(connection => this.#drawWire(connection, byId)).filter(Boolean));
         fill(this.#nodesLayer, layout.map(entry => this.#drawNode(entry)));
@@ -428,8 +541,8 @@ export class GraphWindow extends Element {
         return svg('g', {}, hit, svg('path', { class: `wire ${kind}`, stroke: hue, d }));
     }
 
-    #drawNode({ node, ports }) {
-        const size = nodeSize(ports);
+    #drawNode({ node, ports, params }) {
+        const size = nodeSize(ports, params.length);
         const broken = this.#issues.some(
             issue => issue.node === node.id && issue.severity === GraphSeverity.ERROR
         );
@@ -447,7 +560,18 @@ export class GraphWindow extends Element {
             transform: `translate(${node.x} ${node.y})`,
             'data-node': node.id
         },
-            svg('rect', { class: 'box', width: size.width, height: size.height, rx: 6 }),
+            // THE BORDER IS THE CATEGORY'S, not the accent's. Every node used to be outlined
+            // in coral the moment it was selected and in the same grey otherwise, so the
+            // canvas said nothing about what anything was until the header was read. The
+            // hue is the one from the six-colour table (ADR-0030 §4); selection makes it
+            // brighter and thicker rather than replacing it with a seventh colour.
+            svg('rect', {
+                class: 'box',
+                width: size.width,
+                height: size.height,
+                rx: 6,
+                stroke: hue
+            }),
             // THE HEADER IS TINTED BY WHAT THE NODE IS. Six hues, reused between the
             // categories and the value types (ui/styles.js) — an Add node and a `number`
             // port are the same blue because they are the same idea seen twice. A colour
@@ -473,7 +597,71 @@ export class GraphWindow extends Element {
             group.append(...this.#drawPort(node, placed, size));
         }
 
+        for (const box of paramBoxes(node, ports, params.length)) {
+            group.append(this.#drawParam(node, params[box.index], box));
+        }
+
         return group;
+    }
+
+    /**
+     * One editable param, inside the node.
+     *
+     * THE GRAPH IS WHERE A GRAPH IS EDITED. A `Number` node whose value could only be
+     * changed in a panel on the other side of the window was a node that told you what it
+     * was and not what it held — and reading `42` in one place while typing it in another
+     * is the split ADR-0027 keeps the Inspector out of for Components.
+     *
+     * IT IS THE SAME CONTROL, NOT A SECOND ONE. `px-field` owns every line of value logic
+     * in this Editor — parsing, clamping, the focus guard, the batch that makes a typing
+     * session one undo — and none of that is worth writing twice for a canvas. A
+     * `foreignObject` is what lets an HTML control live in an SVG, and it inherits the
+     * content group's transform, so the field pans and zooms with the node it belongs to.
+     *
+     * @param {object} node - The node record
+     * @param {object} descriptor - A field descriptor from inspector/node.js
+     * @param {object} box - Where it goes, from graph/view.js
+     * @returns {SVGElement} The wrapper
+     */
+    #drawParam(node, descriptor, box) {
+        const holder = svg('foreignObject', {
+            class: 'param',
+            x: box.x - node.x,
+            y: box.y - node.y,
+            width: box.width,
+            height: box.height
+        });
+
+        // A view of the one value being edited: a node's params live in one reactive
+        // record, so the field is bound to a stand-in and every write goes through
+        // `setParam` — a SET_PROPERTY on the node, undoable like everything else.
+        // Falls back to what the TYPE declares, not to nothing: an untouched param is not
+        // an empty one, it is one still holding the default the interpreter will read.
+        const seed = node.params?.[descriptor.name] ?? descriptor.default ?? null;
+        const view = makeReactive({ [descriptor.name]: seed });
+        this.track(observe(node, 'params', change => {
+            const value = change.value?.[descriptor.name] ?? descriptor.default ?? null;
+            if (view[descriptor.name] !== value) view[descriptor.name] = value;
+        }), 'graph');
+
+        const field = el('px-field').bind(view, { ...descriptor, label: descriptor.label }, {
+            write: (value, options) =>
+                this.#definition.graph.setParam(node.id, descriptor.name, value, options)
+        });
+
+        const row = el('div', { class: 'param-row' },
+            el('span', { class: 'param-label', textContent: descriptor.label }),
+            field
+        );
+
+        // The canvas turns a press into a pan or a node drag; inside a field it is a
+        // caret. Stopping here is what keeps typing from moving the node underneath.
+        for (const kind of ['pointerdown', 'pointerup', 'pointermove', 'dblclick', 'wheel']) {
+            row.addEventListener(kind, event => event.stopPropagation());
+        }
+
+        holder.append(row);
+        return holder;
     }
 
     #drawPort(node, placed, size) {
@@ -488,11 +676,20 @@ export class GraphWindow extends Element {
         const hue = placed.port.kind === 'flow' ? FLOW_HUE : typeHue(placed.port.type);
 
         const classes = `port ${placed.port.kind}${connected ? ' connected' : ''}`;
+        // Stamped so a wire in flight can find the one shape it is over without a second
+        // registry of rectangles — the same trick the Inspector's drop zones use.
+        const identity = {
+            'data-node': node.id,
+            'data-port': placed.port.id,
+            'data-direction': placed.direction
+        };
+
         const shape = placed.port.kind === 'flow'
             ? svg('path', {
                 class: classes,
                 stroke: hue,
                 fill: connected ? hue : 'var(--px-surface)',
+                ...identity,
                 d: `M ${local.x - 4} ${local.y - 5} L ${local.x + 5} ${local.y} `
                     + `L ${local.x - 4} ${local.y + 5} Z`
             })
@@ -500,6 +697,7 @@ export class GraphWindow extends Element {
                 class: classes,
                 stroke: hue,
                 fill: connected ? hue : 'var(--px-surface)',
+                ...identity,
                 cx: local.x,
                 cy: local.y,
                 r: PORT_RADIUS
@@ -528,7 +726,14 @@ export class GraphWindow extends Element {
             'data-direction': placed.direction
         });
 
-        const halo = svg('circle', { class: 'port-halo', cx: local.x, cy: local.y, r: 9, stroke: hue });
+        const halo = svg('circle', {
+            class: 'port-halo',
+            cx: local.x,
+            cy: local.y,
+            r: 9,
+            stroke: hue,
+            ...identity
+        });
 
         // The halo is LAST so the hover rule can reach it: a sibling combinator only
         // looks forward.
@@ -594,6 +799,7 @@ export class GraphWindow extends Element {
                 direction: hit.direction,
                 origin: portPosition(hit.node, this.#definition.graph.portsOf(hit.node), hit.direction, hit.port.id)
             };
+            this.#svg.classList.add('wiring');
             capture(this.#svg, event.pointerId);
             return;
         }
@@ -646,6 +852,7 @@ export class GraphWindow extends Element {
                 ? connectionPath(drag.origin, point)
                 : connectionPath(point, drag.origin);
             this.#pending.setAttribute('d', d);
+            this.#markWireTarget(point);
             return;
         }
 
@@ -675,7 +882,9 @@ export class GraphWindow extends Element {
         }
 
         if (drag.kind === 'wire') {
-            const hit = hitTest(this.#layout(), this.#pointerAt(event));
+            const point = this.#pointerAt(event);
+            const hit = hitTest(this.#layout(), point);
+
             if (hit.kind === 'port' && hit.direction !== drag.direction) {
                 const ends = drag.direction === 'out'
                     ? [drag.from, { node: hit.node.id, port: hit.port.id }]
@@ -684,15 +893,73 @@ export class GraphWindow extends Element {
                 const verdict = this.#definition.graph.canConnect(ends[0], ends[1]);
                 if (verdict.allowed) this.#definition.graph.connect(ends[0], ends[1]);
                 else this.#report(verdict.reason);
+                this.#cancelDrag(event.pointerId);
+                return;
             }
+
+            // A WIRE LET GO OVER NOTHING IS A QUESTION, NOT A MISTAKE. Cancelling it threw
+            // away the one thing the creator had already said — what they want to connect —
+            // and made them place a node, find it, and drag the wire again. Instead the
+            // gesture finishes as an offer: the picker opens where the wire was dropped,
+            // showing the node types that can actually take this port.
+            const source = { ...drag.from, direction: drag.direction };
+            this.#cancelDrag(event.pointerId);
+            this.#openNodeMenu(event, null, source);
+            return;
         }
 
         this.#cancelDrag(event.pointerId);
     }
 
+    /**
+     * Say what releasing the wire here would do (ADR-0028 §3, applied to the canvas).
+     *
+     * `canConnect()` already answers whether two ends may be joined and why (ADR-0027),
+     * and until now that answer only appeared AFTER the drop, as a red line in the corner.
+     * A creator dragging a wire is asking the question continuously, so it is answered
+     * continuously: the port under the pointer goes green or red, and every port that is
+     * not a candidate dims so the ones that are become the thing to look at.
+     *
+     * @param {{x: number, y: number}} point - The pointer, in graph space
+     */
+    #markWireTarget(point) {
+        const drag = this.#drag;
+        if (drag?.kind !== 'wire') return;
+
+        const hit = hitTest(this.#layout(), point);
+        const over = hit.kind === 'port' && hit.direction !== drag.direction
+            ? { node: hit.node.id, port: hit.port.id }
+            : null;
+
+        let allowed = false;
+        if (over) {
+            const ends = drag.direction === 'out' ? [drag.from, over] : [over, drag.from];
+            allowed = this.#definition.graph.canConnect(ends[0], ends[1]).allowed;
+        }
+
+        for (const shape of this.#nodesLayer.querySelectorAll('.port, .port-halo')) {
+            const marked = over
+                && shape.dataset.node === over.node
+                && shape.dataset.port === over.port
+                && shape.dataset.direction === hit.direction;
+
+            shape.classList.toggle('candidate', Boolean(marked && allowed));
+            shape.classList.toggle('rejected', Boolean(marked && !allowed));
+        }
+    }
+
+    /** Take the wiring marks off, whatever ended the gesture. */
+    #clearWireMarks() {
+        this.#svg.classList.remove('wiring');
+        for (const shape of this.#nodesLayer?.querySelectorAll('.candidate, .rejected') ?? []) {
+            shape.classList.remove('candidate', 'rejected');
+        }
+    }
+
     #cancelDrag(pointerId) {
         this.#pending.removeAttribute('d');
         this.#svg.classList.remove('panning');
+        this.#clearWireMarks();
         if (pointerId !== undefined && this.#svg.hasPointerCapture?.(pointerId)) {
             this.#svg.releasePointerCapture(pointerId);
         }
@@ -749,7 +1016,7 @@ export class GraphWindow extends Element {
      * (ADR-0026 §10): a creator who has learned one has learned all four, and a node type
      * that declares a new category takes its place without a line here.
      */
-    #openNodeMenu(event, anchor) {
+    #openNodeMenu(event, anchor, source = null) {
         if (!this.#definition) return;
 
         // A right-click lands the node where the pointer is; the button has no pointer, so
@@ -768,10 +1035,24 @@ export class GraphWindow extends Element {
         // EACH ENTRY CARRIES WHAT THE SCORER READS: its label, its type, its category and
         // the aliases the catalogue declares — so `float` finds Number, `times` finds
         // Multiply and `event` finds both event nodes (ui/relevance.js).
+        // WHAT THE SOURCE PORT CARRIES NARROWS THE LIST. Dropping a wire from a `number`
+        // output and being offered `On Start` is the picker ignoring the only thing the
+        // creator has already told it. The compatibility question is the model's
+        // (`compatibleTargets`, core/graph/nodes.js), so the menu asks rather than guesses.
+        const wanted = source ? this.#sourcePort(source) : null;
+        const targets = wanted
+            ? compatibleTargets(this.#definition.registry, wanted, source.direction)
+            : null;
+
         const items = [];
         for (const group of groupNodes(this.#definition.registry)) {
+            const entries = targets
+                ? group.entries.filter(entry => targets.has(entry.type))
+                : group.entries;
+            if (entries.length === 0) continue;
+
             items.push({ heading: group.category, icon: iconForNode(group.category) });
-            for (const entry of group.entries) {
+            for (const entry of entries) {
                 items.push({
                     id: entry.type,
                     label: entry.label,
@@ -791,8 +1072,65 @@ export class GraphWindow extends Element {
 
         openMenu(from, items, type => {
             const node = this.#definition.graph.addNode({ type, x: at.x, y: at.y });
-            if (node) this.#select(node.id);
-        }, { label: 'nodes', search: true, browse: true });
+            if (!node) return;
+
+            // ONE BATCH: placing the node and joining it are one thing the creator did, so
+            // one Ctrl Z takes both back (ADR-0024 §4).
+            if (source) this.#connectNew(source, node, `${node.id}:link`);
+            this.#select(node.id);
+        }, {
+            label: 'nodes',
+            search: true,
+            // A filtered list is already short and already about one thing; opening it on
+            // its categories would add a step to a gesture that is mid-flow.
+            browse: !source
+        });
+    }
+
+    /**
+     * The port a dropped wire started from.
+     * @param {object} source - `{ node, port, direction }`
+     * @returns {object|null} The port descriptor
+     */
+    #sourcePort(source) {
+        const node = this.#definition.graph.node(source.node);
+        if (!node) return null;
+
+        const ports = this.#definition.graph.portsOf(node);
+        const side = source.direction === 'out' ? ports.outputs : ports.inputs;
+        return side.find(port => port.id === source.port) ?? null;
+    }
+
+    /**
+     * Join a freshly created node to the port the wire came from.
+     *
+     * The FIRST port that would take it, in declaration order — which is the one a node
+     * type puts first because it is the one that matters. Asking the creator to choose
+     * again, immediately after they chose the node, would undo the point of the gesture.
+     *
+     * @param {object} source - `{ node, port, direction }` the wire started from
+     * @param {object} node - The node that was just created
+     * @param {string} batch - Groups the creation and the connection into one undo entry
+     * @returns {boolean} True when a connection was made
+     */
+    #connectNew(source, node, batch) {
+        const graph = this.#definition.graph;
+        const ports = graph.portsOf(node);
+        const side = source.direction === 'out' ? ports.inputs : ports.outputs;
+
+        for (const port of side) {
+            const ends = source.direction === 'out'
+                ? [{ node: source.node, port: source.port }, { node: node.id, port: port.id }]
+                : [{ node: node.id, port: port.id }, { node: source.node, port: source.port }];
+
+            if (!graph.canConnect(ends[0], ends[1]).allowed) continue;
+            graph.connect(ends[0], ends[1], { batch });
+            return true;
+        }
+
+        // Nothing took it. The node is still placed where the creator dropped the wire,
+        // which is the half of the gesture that always makes sense.
+        return false;
     }
 
     /**

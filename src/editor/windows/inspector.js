@@ -40,7 +40,6 @@ import { addComponent, availableComponents, moveComponent, removeComponent } fro
 import { previewOffsets, rankAt } from '../dnd/reflow.js';
 import { describeResource } from '../inspector/resource.js';
 import { PROPERTY_TYPE_LABELS, describeDefinition } from '../inspector/definition.js';
-import { describeNode } from '../inspector/node.js';
 import { ResourceKind, baseNameOf, extensionOf, hasPayload, withExtension } from '../../project/mod.js';
 import { pickFile, readAsDataUrl } from '../ui/file.js';
 import { DropZone } from '../dnd/payload.js';
@@ -88,8 +87,12 @@ export class Inspector extends Element {
 
         /* The window the shell has decided a drop would land in (ADR-0028 §3). One class,
            styled by every window, so the answer cannot differ between them. */
-        :host(.dnd-over) { outline: 2px solid var(--px-accent); outline-offset: -3px; }
-        :host(.dnd-refused) { outline: 2px solid var(--px-danger); outline-offset: -3px; }
+        :host(.dnd-over) { outline: 2px dashed var(--px-accent); outline-offset: -3px; }
+        :host(.dnd-refused) { outline: 2px dashed var(--px-danger); outline-offset: -3px; }
+
+        /* A Component about to be attached. The panel is not a row, so it is tinted as a
+           whole rather than outlining one line of itself. */
+        :host(.dnd-attach) { background: var(--px-accent-muted); }
         px-window { height: 100%; }
 
         /* ── identity ───────────────────────────────────────────────────── */
@@ -323,7 +326,9 @@ export class Inspector extends Element {
             align-items: center;
             gap: var(--px-space-1);
             height: var(--px-hit);
-            padding: 0 var(--px-space-0) 0 0;
+            /* A LITTLE AIR ON THE LEFT. The grip was flush against the card's border, so
+               the one control that says "carry me" read as part of the frame. */
+            padding: 0 var(--px-space-0) 0 var(--px-space-1);
             cursor: pointer;
         }
 
@@ -355,8 +360,11 @@ export class Inspector extends Element {
         .property .pbody { padding: var(--px-space-0) var(--px-space-1) var(--px-space-1); }
         .property:not(.open) .pbody { display: none; }
 
-        .property .remove { flex: 0 0 auto; opacity: 0; }
-        .property > header:hover .remove { opacity: 1; }
+        /* VISIBLE BY DEFAULT. Hiding the only way to delete a property behind a hover
+           makes removing one something a creator has to discover; the hover still
+           strengthens it, which is all a hover should ever do (ui/styles.js). */
+        .property .remove { flex: 0 0 auto; opacity: 0.55; }
+        .property > header:hover .remove, .property .remove:focus-visible { opacity: 1; }
         .property .remove:hover { color: var(--px-danger); }
 
         /* The same two marks a component section wears while it is being carried
@@ -481,6 +489,8 @@ export class Inspector extends Element {
     #selection = null;
     #registry = null;
     #workspace = null;
+    /** The installer that turns a `.px` into a registered type (project/definitions.js). */
+    #definitions = null;
     #body = null;
     #search = null;
     #create = null;
@@ -489,7 +499,6 @@ export class Inspector extends Element {
     // it is selected on a canvas rather than in a tree — so it is held here and cleared by
     // the shell when either of the other two selections speaks, exactly as those two clear
     // each other.
-    #node = null;
     /** `.px` resources whose live model is being fetched, so one render does not ask twice. */
     #attaching = new globalThis.Set();
     // View state, and only view state: which sections the creator folded away. Keyed by
@@ -502,6 +511,8 @@ export class Inspector extends Element {
     #dragged = false;
     /** The field currently marked as the one a drop would land in. */
     #dropMark = null;
+    /** Where a `.px` would attach, while an object is being inspected. */
+    #componentsZone = null;
 
     /**
      * Point the window at the selections it follows.
@@ -518,7 +529,8 @@ export class Inspector extends Element {
      * @param {object} [context.workspace] - The workspace, for the selected resource
      * @returns {Inspector} This element
      */
-    bind({ scene, selection, registry, workspace = null }) {
+    bind({ scene, selection, registry, workspace = null, definitions = null }) {
+        this.#definitions = definitions;
         this.#scene = scene;
         this.#selection = selection;
         this.#registry = registry;
@@ -537,12 +549,6 @@ export class Inspector extends Element {
      * @param {object|null} definition - The `.px` it belongs to
      * @returns {Inspector} This element
      */
-    inspectNode(node, definition = null) {
-        this.#node = node ? { node, definition } : null;
-        this.#render();
-        return this;
-    }
-
     connectedCallback() {
         if (this.shadowRoot.childElementCount === 0) {
             this.#body = el('div');
@@ -649,6 +655,10 @@ export class Inspector extends Element {
     }
 
     #render() {
+        // The object panel's drop zone is rebuilt below when there is an object to attach
+        // to; anything else must not inherit the last one.
+        this.#componentsZone = null;
+
         // NOTHING TO DRAW INTO YET. The shell wires this panel's subjects while it is still
         // assembling the layout, so a selection can arrive before `connectedCallback()` has
         // built the body. Rendering then would reach for controls that do not exist; the
@@ -657,15 +667,13 @@ export class Inspector extends Element {
 
         this.release('panel');
 
-        // A graph node, a resource, or an object. All three selections are mutually
-        // exclusive — the shell clears the others when one speaks — so this is a route
-        // rather than a priority.
-        if (this.#node) {
-            this.#create.disabled = true;
-            this.#renderNode(this.#node);
-            return;
-        }
-
+        // A resource, or an object. The two are mutually exclusive — the shell clears one
+        // when the other speaks — so this is a route rather than a priority.
+        //
+        // THERE IS NO THIRD SUBJECT ANY MORE. Selecting a graph node used to swap this
+        // panel for that node's params; a node is now edited where it lives, and selecting
+        // one selects the `.px` it belongs to (editor.js). `describeNode()` did not go
+        // away with the panel — the canvas draws its fields.
         const resource = this.#workspace?.selected ?? null;
         if (resource) {
             this.#create.disabled = true;
@@ -690,6 +698,12 @@ export class Inspector extends Element {
         const types = object.componentTypes();
         const shown = types.filter(type => this.#matches(this.#titleOf(type)));
         const searching = this.#query.trim() !== '';
+
+        // A `.px` DROPPED HERE ATTACHES ITSELF. The whole panel is the target, because
+        // "add this Component to this object" is a statement about the OBJECT and not
+        // about any one row of it. The rule lives next door like every other one, and the
+        // marks are the shared ones (ADR-0026 §6, ADR-0028 §3).
+        this.#componentsZone = { zone: DropZone.COMPONENTS, object };
 
         fill(this.#body,
             this.#renderIdentity(object, types.length),
@@ -745,7 +759,10 @@ export class Inspector extends Element {
             this.#renderSection({
                 name: 'Details',
                 key: 'resource:details',
-                glyph: 'inspector',
+                // WHAT IS TRUE OF IT, not what it declares. Details and Properties used to
+                // share the Inspector window's own glyph, so two opposite sections read as
+                // the same kind of list (ui/icons.js).
+                glyph: 'info',
                 body: description.metadata.map(entry => el('div', { class: 'row' },
                     el('span', { class: 'label', textContent: entry.label }),
                     el('span', { class: 'value', textContent: globalThis.String(entry.value) })
@@ -830,7 +847,7 @@ export class Inspector extends Element {
         return this.#renderSection({
             name: 'Properties',
             key: 'resource:properties',
-            glyph: 'inspector',
+            glyph: 'properties',
             body: [
                 description.properties.length === 0
                     ? el('div', { class: 'none', textContent: 'This Component declares no properties yet.' })
@@ -951,6 +968,19 @@ export class Inspector extends Element {
         const label = el('span', { class: 'label', textContent: descriptor.label });
         field.bindLabel?.(label);
 
+        // A DEFAULT THAT HOLDS A REFERENCE TAKES A DROP, like the property it is the
+        // default of. There is no component to ask what it accepts, so the target states
+        // its clause and its writer outright — which is the shape `acceptsResource()` now
+        // takes for exactly this case (dnd/rules.js).
+        if (descriptor.kind === FieldKind.RESOURCE) {
+            this.#makeDroppable(field, {
+                zone: DropZone.PROPERTY,
+                label: descriptor.label,
+                accepts: descriptor.accepts ?? { kind: null, mime: null },
+                assign: value => write(value)
+            });
+        }
+
         return el('div', { class: 'row' },
             label,
             el('div', { class: 'fields' }, field, extra)
@@ -960,104 +990,6 @@ export class Inspector extends Element {
     #focusProperty(id) {
         const field = this.#body.querySelector(`.property[data-property="${id}"] px-field`);
         field?.shadowRoot?.querySelector('input')?.focus();
-    }
-
-    // --- a graph node (ADR-0027) ------------------------------------------------------
-    //
-    // NO CHAIN OF BRANCHES HERE EITHER. What a node exposes is its `params`, declared in the
-    // node catalogue in the same shape a Component declares a property, so this renders an
-    // answer `describeNode()` produced and never asks what type the node is. A node type
-    // added tomorrow inspects correctly without this file changing — the rule ADR-0007 sets
-    // for components, applied to nodes.
-
-    #renderNode({ node, definition }) {
-        // A PARAM CHANGE CAN CHANGE THE PORTS. `Set Property` takes the shape of the
-        // property it names, so picking one rewrites what this panel reports — the same
-        // reason a property's type redraws its section. The value itself needs no redraw:
-        // the field observes it.
-        this.track(observe(node, 'params', () => globalThis.queueMicrotask(() => this.#render())), 'panel');
-
-        const position = el('span', { class: 'value', textContent: `${Math.round(node.x)}, ${Math.round(node.y)}` });
-        for (const axis of ['x', 'y']) {
-            this.track(observe(node, axis, () => {
-                position.textContent = `${Math.round(node.x)}, ${Math.round(node.y)}`;
-            }), 'panel');
-        }
-
-        const description = describeNode(node, {
-            registry: definition?.registry,
-            properties: definition?.properties() ?? [],
-            issues: definition?.validate() ?? []
-        });
-
-        fill(this.#body,
-            el('div', { class: 'identity' },
-                el('span', { class: 'glyph' }, icon('graph', 20)),
-                el('div', { class: 'who' },
-                    el('span', { class: 'title', textContent: description.title }),
-                    el('span', { class: 'kind', textContent: description.category })
-                )
-            ),
-            // What is wrong with this node, in the panel that is showing it — the canvas
-            // outlines it in red, and here it says why (ADR-0027).
-            description.issues.length > 0
-                ? el('div', { class: 'none problem', textContent: description.issues[0].message })
-                : null,
-            description.fields.length > 0
-                ? this.#renderSection({
-                    name: 'Node',
-                    key: 'node:fields',
-                    glyph: 'graph',
-                    body: description.fields.map(descriptor => this.#renderNodeRow(node, definition, descriptor))
-                })
-                : null,
-            this.#renderSection({
-                name: 'Ports',
-                key: 'node:ports',
-                glyph: 'inspector',
-                body: [
-                    ...description.ports.inputs.map(port => portRow('In', port)),
-                    ...description.ports.outputs.map(port => portRow('Out', port))
-                ]
-            }),
-            this.#renderSection({
-                name: 'Details',
-                key: 'node:details',
-                glyph: 'inspector',
-                body: [
-                    detailRow('Type', description.type),
-                    // Live, so a node dragged across the canvas reads its own coordinates
-                    // rather than the ones it had when the panel was drawn.
-                    el('div', { class: 'row' },
-                        el('span', { class: 'label', textContent: 'Position' }),
-                        el('div', { class: 'fields' }, position)
-                    ),
-                    detailRow('Identifier', node.id)
-                ]
-            })
-        );
-    }
-
-    #renderNodeRow(node, definition, descriptor) {
-        // A node's params live inside one reactive `params` record, so the field is bound to
-        // a view of the one value it edits and every write goes through `setParam` — a
-        // SET_PROPERTY on the node, undoable like everything else (ADR-0027). The view is
-        // not a second source of truth: nothing writes to it but the record it follows.
-        const view = makeReactive({ [descriptor.name]: node.params?.[descriptor.name] ?? null });
-
-        this.track(observe(node, 'params', change => {
-            const value = change.value?.[descriptor.name] ?? null;
-            if (view[descriptor.name] !== value) view[descriptor.name] = value;
-        }), 'panel');
-
-        const field = this.#control(view, descriptor, {
-            write: (value, options) => definition.graph.setParam(node.id, descriptor.name, value, options)
-        });
-
-        const label = el('span', { class: 'label', textContent: descriptor.label });
-        field.bindLabel?.(label);
-
-        return el('div', { class: 'row' }, label, el('div', { class: 'fields' }, field));
     }
 
     #renderResourceIdentity(resource, description) {
@@ -1071,14 +1003,16 @@ export class Inspector extends Element {
             title.textContent = baseNameOf({ ...entry, name: change.value }) || 'Untitled';
         }), 'panel');
 
-        // The kind, then what the file would be called. Two facts, one quiet line.
-        const kind = [description.kindName, description.extension].filter(Boolean).join(' · ');
-
+        // THE KIND LINE NAMES THE KIND. The extension was put here last pass and it was
+        // the wrong home: `.png` is derived from the mime and repeating it under a title
+        // that already dropped it says the same thing twice. It belongs beside the field
+        // a creator edits — the Name row of the Resource section already draws it, and
+        // that is where the rule about what may be typed applies (ADR-0026 §4).
         return el('div', { class: 'identity' },
             el('span', { class: 'glyph' }, icon(iconForResource(resource), 20)),
             el('div', { class: 'who' },
                 title,
-                el('span', { class: 'kind', textContent: kind })
+                el('span', { class: 'kind', textContent: description.kindName })
             )
         );
     }
@@ -1253,25 +1187,62 @@ export class Inspector extends Element {
      * @returns {object|null} `{ node, zone, verdict }`, or null
      */
     zoneAt(payload, clientX, clientY) {
+        const row = this.#rowZoneAt(clientX, clientY);
+        const rowVerdict = row ? canDrop(payload, row.pxDropZone) : null;
+
+        // A ROW THAT WANTS THE DRAG WINS. Dropping an image on `source` must assign a
+        // picture, not attach a Component to the object behind the row.
+        if (rowVerdict?.allowed) {
+            this.#markDropZone(row, true);
+            return { node: row, zone: row.pxDropZone, verdict: rowVerdict };
+        }
+
+        // A ROW THAT DOES NOT WANT IT DOES NOT SHADOW THE PANEL. A `.px` carried over the
+        // Inspector passes over a dozen fields on its way, and none of them takes a
+        // Component — answering "refused" for each would make attaching one a matter of
+        // finding the one gap between two rows.
+        const panel = this.#componentsZone && this.#within(clientX, clientY)
+            ? { zone: this.#componentsZone, verdict: canDrop(payload, this.#componentsZone) }
+            : null;
+
+        if (panel?.verdict.allowed) {
+            this.#markDropZone(null, false);
+            this.classList.toggle('dnd-attach', true);
+            return { node: this, zone: panel.zone, verdict: panel.verdict };
+        }
+        this.classList.toggle('dnd-attach', false);
+
+        // NOTHING WANTS IT, AND THAT IS STILL AN ANSWER. A refused row is reported rather
+        // than skipped: this used to return null, which sent the shell looking behind the
+        // Inspector and landed an image in the scene instead of turning it down
+        // (ADR-0028 §3). Being over something that refuses is not being over nothing.
+        if (row) {
+            this.#markDropZone(row, false);
+            return { node: row, zone: row.pxDropZone, verdict: rowVerdict };
+        }
+
+        this.#markDropZone(null, false);
+        return panel ? { node: this, zone: panel.zone, verdict: panel.verdict } : null;
+    }
+
+    /** The field under a point, when one of them declared a drop zone. */
+    #rowZoneAt(clientX, clientY) {
         for (const node of this.shadowRoot.querySelectorAll('px-field, px-resource, .preview, .none, .add')) {
             if (!node.pxDropZone) continue;
 
             const box = node.getBoundingClientRect();
             if (clientX < box.left || clientX >= box.right) continue;
             if (clientY < box.top || clientY >= box.bottom) continue;
-
-            // A REFUSED ZONE IS STILL A ZONE. This used to answer null when the rule said
-            // no, which made the shell look behind the Inspector and find the viewport —
-            // so an image released on a `number` field landed in the scene instead of
-            // being turned down. Being over something that refuses is not being over
-            // nothing (ADR-0028 §3).
-            const verdict = canDrop(payload, node.pxDropZone);
-            this.#markDropZone(node, verdict.allowed);
-            return { node, zone: node.pxDropZone, verdict };
+            return node;
         }
-
-        this.#markDropZone(null, false);
         return null;
+    }
+
+    /** Whether a point is inside this window. */
+    #within(clientX, clientY) {
+        const box = this.getBoundingClientRect();
+        return clientX >= box.left && clientX < box.right
+            && clientY >= box.top && clientY < box.bottom;
     }
 
     /**
@@ -1296,6 +1267,7 @@ export class Inspector extends Element {
     /** Take the row mark off, when the gesture ends wherever it ended. */
     clearDropMarks() {
         this.#markDropZone(null, false);
+        this.classList.remove('dnd-attach');
     }
 
     /**
@@ -1319,7 +1291,13 @@ export class Inspector extends Element {
             project: this.#workspace?.project ?? null,
             workspace: this.#workspace,
             scene: this.#scene,
-            select: object => this.#selection.set(object)
+            folder: null,
+            select: object => this.#selection.set(object),
+            // A `.px` is data until something registers it as a type; the Project layer
+            // does that (project/definitions.js) and the rule is handed the result rather
+            // than reaching for a registry of its own.
+            install: id => this.#definitions?.install(id) ?? null,
+            addComponent: (object, type) => addComponent(object, type, this.#registry)
         };
     }
 
@@ -1740,7 +1718,11 @@ export class Inspector extends Element {
 
         return el('px-resource').bind(target, descriptor, {
             project: this.#workspace?.project ?? null,
-            write: options.write ?? null
+            write: options.write ?? null,
+            // Importing from the picker takes the same rule a dropped file does, and a
+            // rule acts on the model rather than on the DOM — so it is handed the context
+            // the panel already builds for every other drop (ADR-0026 §6).
+            context: this.#dropContext()
         });
     }
 
@@ -1753,7 +1735,13 @@ export class Inspector extends Element {
     #renderRow(target, descriptor) {
         const field = this.#control(target, descriptor);
         const label = el('span', { class: 'label', textContent: descriptor.label });
-        this.#makeDroppable(field, { zone: DropZone.PROPERTY, component: target, prop: descriptor.name });
+        this.#makeDroppable(field, {
+            zone: DropZone.PROPERTY,
+            component: target,
+            prop: descriptor.name,
+            label: descriptor.label,
+            accepts: descriptor.accepts ?? undefined
+        }, { accept: descriptor.accepts?.mime ?? '' });
         // The panel drew the label; the field decides whether dragging it means
         // something, and owns every line of the value logic behind it.
         field.bindLabel?.(label);
