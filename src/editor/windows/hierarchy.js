@@ -346,7 +346,7 @@ export class Hierarchy extends Element {
             onpointerdown: event => {
                 if (event.target !== this.#tree) return;
                 this.#cancelRename();
-                this.#selection.clear();
+                this.#deselect();
             },
             ondragover: event => {
                 if (!carriesFiles(event)) return;
@@ -693,6 +693,21 @@ export class Hierarchy extends Element {
      * do on its own, and deselecting is the keyboard-free way out of a selection. Nothing
      * is invented to make the list longer (ADR-0026 §14).
      */
+    /**
+     * Clear whatever the Editor is currently inspecting.
+     *
+     * BOTH HOLDERS, NOT JUST THE OBJECT ONE. The shell routes a selection change so the two
+     * subjects stay mutually exclusive — but `Selection.set(null)` announces nothing when
+     * nothing was selected, so clicking bare tree with a RESOURCE selected cleared nothing
+     * at all and the Project tile stayed lit next to an Inspector showing it. Asking both
+     * is not owning the selection: the panel states an intent, the holders keep the state
+     * (ADR-0017, ADR-0025).
+     */
+    #deselect() {
+        this.#selection.clear();
+        this.#workspace?.select(null);
+    }
+
     #openMoreMenu(anchor) {
         const items = [
             { heading: 'View' },
@@ -709,7 +724,7 @@ export class Hierarchy extends Element {
                     if (object.children.length > 0) this.#collapsed.add(object.id);
                 }
             }
-            if (choice === 'deselect') this.#selection.clear();
+            if (choice === 'deselect') this.#deselect();
             this.#renderTree();
         }, { label: 'actions' });
     }

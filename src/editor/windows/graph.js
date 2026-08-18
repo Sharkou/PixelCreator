@@ -37,6 +37,7 @@ import { sheet } from '../ui/styles.js';
 import { ICON_GRID, icon, iconForNode, iconPaths } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import { describeNode } from '../inspector/node.js';
+import { fieldFor } from '../inspector/schema.js';
 import '../ui/field.js';
 import {
     GRID,
@@ -152,6 +153,9 @@ export class GraphWindow extends Element {
         }
 
         .param-row px-field { flex: 1; min-width: 0; }
+
+        /* Masked by a wire: still readable, visibly not what is running. */
+        .param-row.masked { opacity: 0.45; }
 
         .node .title {
             fill: var(--px-text-strong);
@@ -468,11 +472,53 @@ export class GraphWindow extends Element {
             // A NODE'S PARAMS ARE PART OF ITS SHAPE, not of a panel somewhere else. They
             // decide how tall the box is, so the geometry has to know about them before
             // anything is drawn or hit-tested (graph/view.js).
-            params: describeNode(node, {
-                registry: this.#definition.registry,
-                properties: this.#definition.properties()
-            })?.fields ?? []
+            // WHAT THE NODE DRAWS INSIDE ITSELF: the params its type declares, then the
+            // input ports a creator may type a constant into (ADR-0031 §1). Both decide
+            // how tall the box is, so the geometry has to know before anything is drawn or
+            // hit-tested (graph/view.js).
+            params: [
+                ...(describeNode(node, {
+                    registry: this.#definition.registry,
+                    properties: this.#definition.properties()
+                })?.fields ?? []),
+                ...this.#inputRows(node, graph.portsOf(node))
+            ]
         }));
+    }
+
+    /**
+     * The input ports a creator can type a value into, as field descriptors.
+     *
+     * WHICH PORTS, AND WHY NOT ALL OF THEM. A FLOW port carries execution, not a value —
+     * there is nothing to type. An `any` port has no shape, so there is no control to draw.
+     * Everything else gets a row, whether or not something is wired to it: a connected port
+     * shows the value it would fall back to, greyed, because unwiring is meant to be an
+     * experiment a creator can undo by hand (ADR-0031 §1).
+     *
+     * The descriptor is built by the same `fieldFor()` every other value in the Editor goes
+     * through, so the control, the parsing and the bounds are not decided here.
+     *
+     * @param {object} node - The node record
+     * @param {{inputs: object[], outputs: object[]}} ports - Its ports right now
+     * @returns {object[]} Field descriptors, each carrying the port it edits
+     */
+    #inputRows(node, ports) {
+        const rows = [];
+
+        for (const port of ports.inputs) {
+            if (port.kind === 'flow') continue;
+            if (!port.type || port.type === ANY_TYPE) continue;
+
+            rows.push({
+                ...fieldFor(port.id, { type: port.type, label: port.label, default: port.default }),
+                // Marked so `#drawParam()` knows to write through `setInput` rather than
+                // `setParam`: two namespaces, two writers (ADR-0031 §1).
+                port: port.id,
+                connected: Boolean(this.#definition.graph.incoming(node.id, port.id))
+            });
+        }
+
+        return rows;
     }
 
     #draw() {
@@ -632,27 +678,36 @@ export class GraphWindow extends Element {
             height: box.height
         });
 
-        // A view of the one value being edited: a node's params live in one reactive
-        // record, so the field is bound to a stand-in and every write goes through
-        // `setParam` — a SET_PROPERTY on the node, undoable like everything else.
-        // Falls back to what the TYPE declares, not to nothing: an untouched param is not
+        // TWO RECORDS, ONE DRAWING. A param is what the TYPE declares as configuration; an
+        // input value is what THIS node holds on a port nothing is wired to (ADR-0031 §1).
+        // They are read and written through different fields of the node, and they look
+        // and behave identically, which is the point.
+        const record = descriptor.port ? 'inputs' : 'params';
+        const key = descriptor.port ?? descriptor.name;
+
+        // Falls back to what the TYPE declares, not to nothing: an untouched value is not
         // an empty one, it is one still holding the default the interpreter will read.
-        const seed = node.params?.[descriptor.name] ?? descriptor.default ?? null;
-        const view = makeReactive({ [descriptor.name]: seed });
-        this.track(observe(node, 'params', change => {
-            const value = change.value?.[descriptor.name] ?? descriptor.default ?? null;
+        const held = source => (source?.[key] === undefined ? descriptor.default ?? null : source[key]);
+
+        const view = makeReactive({ [descriptor.name]: held(node[record]) });
+        this.track(observe(node, record, change => {
+            const value = held(change.value);
             if (view[descriptor.name] !== value) view[descriptor.name] = value;
         }), 'graph');
 
         const field = el('px-field').bind(view, { ...descriptor, label: descriptor.label }, {
-            write: (value, options) =>
-                this.#definition.graph.setParam(node.id, descriptor.name, value, options)
+            write: (value, options) => (descriptor.port
+                ? this.#definition.graph.setInput(node.id, descriptor.port, value, options)
+                : this.#definition.graph.setParam(node.id, descriptor.name, value, options))
         });
 
-        const row = el('div', { class: 'param-row' },
+        // A CONNECTED PORT SHOWS ITS FALLBACK, GREYED. The wire is what runs; this is what
+        // would run without it, and hiding it would make unwiring a surprise.
+        const row = el('div', { class: `param-row${descriptor.connected ? ' masked' : ''}` },
             el('span', { class: 'param-label', textContent: descriptor.label }),
             field
         );
+        if (descriptor.connected) row.title = `${descriptor.label} is coming from a connection`;
 
         // The canvas turns a press into a pan or a node drag; inside a field it is a
         // caret. Stopping here is what keeps typing from moving the node underneath.

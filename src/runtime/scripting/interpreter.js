@@ -310,8 +310,30 @@ function evaluate(compiled, nodeId, portId, state, frame, visiting) {
     return frame.values.has(key) ? frame.values.get(key) : null;
 }
 
-/** What an unconnected data input yields: the port's own declared default. */
+/**
+ * What an unconnected data input yields (ADR-0031 §1).
+ *
+ * THE ONE PLACE THE PRIORITY IS RESOLVED, and that is why it is worth stating here rather
+ * than in the Editor:
+ *
+ *     connection  >  node.inputs[port]  >  the type's declared port default
+ *
+ * A connection never reaches this function — the caller has already followed it — so what
+ * is left is the last two: what the creator typed into this particular node, and what the
+ * catalogue promises a node nobody has touched.
+ *
+ * `in` rather than `??`, deliberately: `0`, `''` and `false` are values a creator may have
+ * meant, and a nullish check would quietly hand back the type's default for all three.
+ *
+ * @param {object} compiled - The compiled graph
+ * @param {object} node - The node whose input is being read
+ * @param {string} portId - The input port
+ * @param {object} state - The running state, carrying the component's properties
+ * @returns {any} The value the port yields
+ */
 function defaultOf(compiled, node, portId, state) {
+    if (node.inputs && portId in node.inputs) return node.inputs[portId];
+
     const ports = portsOf(compiled.definitions.get(node.id), node, { properties: state.properties });
     return ports.inputs.find(port => port.id === portId)?.default ?? null;
 }

@@ -472,3 +472,91 @@ test('the same graph and the same inputs reach the same state, twice', () => {
     assert.equal(run(), 15);
     assert.equal(run(), run(), 'a client and a server must reach the same number');
 });
+
+// --- what an unconnected port yields (ADR-0031 §1) ---------------------------------------
+//
+// The priority is `connection > node.inputs[port] > the type's declared default`, and it is
+// resolved in one place so the Editor and the Runtime cannot disagree. These run the graph
+// rather than reading the model, because it is the RUNNING answer that matters.
+
+/**
+ * A `.px` whose graph adds two numbers and logs the result on every step.
+ *
+ * @returns {{file: object, add: object, log: () => number[]}} The graph and what it printed
+ */
+function adder() {
+    const file = px();
+    const update = file.node('event.update');
+    const add = file.node('math.add');
+    const print = file.node('debug.log');
+    file.wire([update, 'out'], [print, 'in']);
+    file.wire([add, 'result'], [print, 'value']);
+
+    return {
+        graph: file.model.graph,
+        add,
+        // COMPILED AT RUN TIME, NOT AT SETUP. A graph is read once and identified by its
+        // object identity (ADR-0016 §7), so a behaviour built before the edits below would
+        // faithfully run the graph as it was — which is right, and useless for a test
+        // about what the edits do.
+        run: () => {
+            const printed = [];
+            const { behavior } = behaviourFor(file.model, { log: value => printed.push(value) });
+            behavior.update(null, { deltaTime: 0.016, time: 0 });
+            return printed;
+        }
+    };
+}
+
+test('an unconnected input falls back to what the catalogue declares', () => {
+    const { run } = adder();
+    assert.deepEqual(run(), [0], 'Add declares both of its inputs as 0');
+});
+
+test('an instance value beats the declared default', () => {
+    const { graph, add, run } = adder();
+
+    graph.setInput(add.id, 'a', 5);
+    graph.setInput(add.id, 'b', 7);
+
+    assert.deepEqual(run(), [12]);
+});
+
+test('a connection beats an instance value', () => {
+    const { graph, add, run } = adder();
+
+    graph.setInput(add.id, 'a', 5);
+    const literal = graph.addNode({ type: 'value.number', params: { value: 100 } });
+    graph.connect({ node: literal.id, port: 'value' }, { node: add.id, port: 'a' });
+
+    assert.deepEqual(run(), [100], 'the wire wins, and the 5 waits behind it');
+});
+
+test('unwiring gives the instance value back', () => {
+    const { graph, add, run } = adder();
+
+    graph.setInput(add.id, 'a', 5);
+    const literal = graph.addNode({ type: 'value.number', params: { value: 100 } });
+    const wire = graph.connect({ node: literal.id, port: 'value' }, { node: add.id, port: 'a' });
+    graph.disconnect(wire.id);
+
+    assert.deepEqual(run(), [5], 'wiring and unwiring is a non-destructive experiment');
+});
+
+test('zero is a value a creator meant, not an absence', () => {
+    const { graph, add, run } = adder();
+
+    graph.setInput(add.id, 'a', 0);
+    graph.setInput(add.id, 'b', 4);
+    assert.deepEqual(run(), [4]);
+});
+
+test('clearing an instance value returns the port to the catalogue', () => {
+    const { graph, add, run } = adder();
+
+    graph.setInput(add.id, 'a', 5);
+    graph.setInput(add.id, 'b', 5);
+    graph.clearInput(add.id, 'a');
+
+    assert.deepEqual(run(), [5], '0 + 5');
+});

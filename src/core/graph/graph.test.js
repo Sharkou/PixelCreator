@@ -18,6 +18,13 @@ function graph(options = {}) {
     return new Graph({ registry: catalogue(), ...options });
 }
 
+/** Every operation a graph announces from now on, in order. */
+function record(model) {
+    const seen = [];
+    model.operations.on('operation', operation => seen.push(operation));
+    return seen;
+}
+
 // --- identity ----------------------------------------------------------------------------
 
 test('a node and a connection each get an identity that is not a position', () => {
@@ -404,4 +411,111 @@ test('a connection naming a node that is not here is refused rather than stored'
 
     assert.equal(result.applied, false);
     assert.equal(model.connections().length, 0);
+});
+
+// --- what an unconnected port holds (ADR-0031 §1) ---------------------------------------
+
+test('a node starts with no instance values, so its ports keep the type default', () => {
+    const model = graph();
+    const add = model.addNode({ type: 'math.add' });
+
+    assert.deepEqual(add.inputs, {});
+    assert.deepEqual(model.portsOf(add).inputs.map(port => port.default), [0, 0]);
+});
+
+test('an instance value is stored on the node, not on the type', () => {
+    const model = graph();
+    const one = model.addNode({ type: 'math.add' });
+    const two = model.addNode({ type: 'math.add' });
+
+    assert.equal(model.setInput(one.id, 'a', 3), true);
+
+    assert.deepEqual(model.node(one.id).inputs, { a: 3 });
+    assert.deepEqual(model.node(two.id).inputs, {}, 'the other Add is untouched');
+    assert.equal(model.portsOf(two).inputs[0].default, 0, 'and so is the catalogue');
+});
+
+test('setting the same value again changes nothing', () => {
+    const model = graph();
+    const add = model.addNode({ type: 'math.add' });
+
+    model.setInput(add.id, 'a', 3);
+    const seen = record(model);
+    assert.equal(model.setInput(add.id, 'a', 3), false);
+    assert.deepEqual(seen, []);
+});
+
+test('an instance value is one SET_PROPERTY, so it inverts like any other', () => {
+    const model = graph();
+    const add = model.addNode({ type: 'math.add' });
+
+    const seen = record(model);
+    model.setInput(add.id, 'a', 7);
+
+    assert.deepEqual(seen.map(operation => operation.type), ['SET_PROPERTY']);
+    assert.equal(seen[0].prop, 'inputs');
+
+    model.operations.submit(invert(seen[0]));
+    assert.deepEqual(model.node(add.id).inputs, {}, 'undo gives the record back as it was');
+});
+
+test('clearing an instance value falls back to the declared default', () => {
+    const model = graph();
+    const add = model.addNode({ type: 'math.add' });
+
+    model.setInput(add.id, 'a', 9);
+    assert.equal(model.clearInput(add.id, 'a'), true);
+    assert.deepEqual(model.node(add.id).inputs, {});
+
+    assert.equal(model.clearInput(add.id, 'a'), false, 'clearing nothing is not a change');
+});
+
+test('falsy values are values, and survive the round trip', () => {
+    const model = graph();
+    const add = model.addNode({ type: 'math.add' });
+
+    for (const value of [0, false, '']) {
+        model.setInput(add.id, 'a', value);
+        assert.equal(model.node(add.id).inputs.a, value);
+        assert.equal('a' in model.node(add.id).inputs, true, `${JSON.stringify(value)} was dropped`);
+    }
+});
+
+test('instance values travel with the graph, and only when there are some', () => {
+    const model = graph();
+    const bare = model.addNode({ type: 'math.add' });
+    const set = model.addNode({ type: 'math.add' });
+    model.setInput(set.id, 'b', 12);
+
+    const data = model.serialize();
+    const written = new globalThis.Map(data.nodes.map(node => [node.id, node]));
+
+    assert.equal('inputs' in written.get(bare.id), false, 'an untouched node writes nothing');
+    assert.deepEqual(written.get(set.id).inputs, { b: 12 });
+
+    const reloaded = Graph.deserialize(data, { registry: catalogue() });
+    assert.deepEqual(reloaded.node(set.id).inputs, { b: 12 });
+    assert.deepEqual(reloaded.node(bare.id).inputs, {});
+});
+
+test('a value on a connected port is kept, so unwiring gives it back', () => {
+    const model = graph();
+    const literal = model.addNode({ type: 'value.number' });
+    const add = model.addNode({ type: 'math.add' });
+
+    model.setInput(add.id, 'a', 5);
+    const connection = model.connect(
+        { node: literal.id, port: 'value' },
+        { node: add.id, port: 'a' }
+    );
+    assert.deepEqual(model.node(add.id).inputs, { a: 5 }, 'wiring does not erase it');
+
+    model.disconnect(connection.id);
+    assert.deepEqual(model.node(add.id).inputs, { a: 5 }, 'and unwiring gives it back');
+});
+
+test('a node nobody declared cannot hold an instance value', () => {
+    const model = graph();
+    assert.equal(model.setInput('nope', 'a', 1), false);
+    assert.equal(model.clearInput('nope', 'a'), false);
 });

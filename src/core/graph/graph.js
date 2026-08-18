@@ -60,9 +60,10 @@ export const GRAPH_VERSION = 1;
  * @param {number} [spec.x] - Position in graph space
  * @param {number} [spec.y] - Position in graph space
  * @param {object} [spec.params] - Values the node type declares params for
+ * @param {object} [spec.inputs] - What an unconnected input port holds, per port (ADR-0031)
  * @returns {object} A plain node record
  */
-export function createNode({ type, id, x = 0, y = 0, params = {} }) {
+export function createNode({ type, id, x = 0, y = 0, params = {}, inputs = {} }) {
     if (typeof type !== 'string' || type === '') {
         throw new TypeError('createNode: a node needs a type');
     }
@@ -72,7 +73,13 @@ export function createNode({ type, id, x = 0, y = 0, params = {} }) {
         type,
         x,
         y,
-        params: { ...params }
+        params: { ...params },
+        // TWO NAMESPACES, AND THEY ARE NOT THE SAME THING (ADR-0031 §1). `params` is what
+        // the TYPE declares as configuration — the property a `Set Property` names; this
+        // is what an INSTANCE holds on a port nothing is wired to. `Set Property` has both
+        // — a `property` param and a `value` port — which is why merging them would need
+        // one of the two to win.
+        inputs: { ...inputs }
     };
 }
 
@@ -315,6 +322,76 @@ export class Graph {
     }
 
     /**
+     * Set what an input port holds while nothing is wired to it (ADR-0031 §1).
+     *
+     * THE PRIORITY IS CONNECTION, THEN THIS, THEN THE TYPE'S OWN DEFAULT. A connection is
+     * an explicit and immediate choice; this is an explicit and lasting one; the declared
+     * default is what the catalogue promises a node nobody has touched. The order is
+     * resolved in ONE place — `defaultOf()` in the interpreter — so the Editor and the
+     * Runtime cannot answer differently.
+     *
+     * A VALUE ON A CONNECTED PORT IS KEPT, NOT ERASED. Unwiring gives back whatever was
+     * there before, which is what makes wiring and unwiring a non-destructive experiment.
+     *
+     * @param {string} id - The node's identifier
+     * @param {string} port - The input port's identifier
+     * @param {any} value - What the port holds when unconnected
+     * @param {object} [options] - Options
+     * @param {string} [options.actor] - Who authored the intent
+     * @param {string} [options.batch] - Groups related operations into one history entry
+     * @returns {boolean} True when the value changed
+     */
+    setInput(id, port, value, { actor, batch } = {}) {
+        const node = this.#nodes.get(id);
+        if (!node) return false;
+        if (node.inputs?.[port] === value) return false;
+
+        // THE SAME OPERATION `setParam` USES, on a different field. That is the whole cost
+        // of the feature: replication, inversion and one history entry per typing session
+        // are already written, because this is a SET_PROPERTY on a reactive record like
+        // every other authored value in the Editor (ADR-0008, ADR-0024).
+        const result = this.#operations.submit(setPropertyOperation({
+            target: { object: id, component: null },
+            prop: 'inputs',
+            value: { ...node.inputs, [port]: value },
+            previous: { ...node.inputs },
+            origin: Origin.EDITOR,
+            actor,
+            batch
+        }));
+
+        return result.applied;
+    }
+
+    /**
+     * Forget an instance value, so the port falls back to what its type declares.
+     *
+     * @param {string} id - The node's identifier
+     * @param {string} port - The input port's identifier
+     * @param {object} [options] - Options
+     * @param {string} [options.actor] - Who authored the intent
+     * @param {string} [options.batch] - Groups related operations into one history entry
+     * @returns {boolean} True when a value was cleared
+     */
+    clearInput(id, port, { actor, batch } = {}) {
+        const node = this.#nodes.get(id);
+        if (!node || !(port in (node.inputs ?? {}))) return false;
+
+        const next = { ...node.inputs };
+        delete next[port];
+
+        return this.#operations.submit(setPropertyOperation({
+            target: { object: id, component: null },
+            prop: 'inputs',
+            value: next,
+            previous: { ...node.inputs },
+            origin: Origin.EDITOR,
+            actor,
+            batch
+        })).applied;
+    }
+
+    /**
      * Change one of a node's params, as one SET_PROPERTY operation on `params`.
      *
      * THE WHOLE RECORD IS REPLACED, NOT MUTATED, and that is what makes this an ordinary
@@ -474,12 +551,15 @@ export class Graph {
     serialize() {
         return {
             version: GRAPH_VERSION,
+            // `inputs` is written only when a node HAS one, so a graph nobody has typed a
+            // constant into serializes exactly as it did before this existed.
             nodes: this.nodes().map(node => ({
                 id: node.id,
                 type: node.type,
                 x: node.x,
                 y: node.y,
-                params: { ...node.params }
+                params: { ...node.params },
+                ...(hasEntries(node.inputs) ? { inputs: { ...node.inputs } } : {})
             })),
             connections: this.connections().map(entry => ({
                 id: entry.id,
@@ -615,8 +695,14 @@ function snapshot(node) {
         type: node.type,
         x: node.x,
         y: node.y,
-        params: { ...node.params }
+        params: { ...node.params },
+        inputs: { ...node.inputs }
     });
+}
+
+/** Whether a record holds anything worth writing. */
+function hasEntries(record) {
+    return Boolean(record) && globalThis.Object.keys(record).length > 0;
 }
 
 function refuse(code, reason) {

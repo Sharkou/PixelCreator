@@ -346,7 +346,7 @@ export function start(mount = document.body) {
     // can carry one. The Project layer owns that step (project/definitions.js); the shell
     // owns the registry, so it is the shell that hands the two to each other — the same
     // arrangement `project/graphs.js` describes for binding a graph.
-    const definitions = createDefinitions({ project: workspace.project, registry: components, workspace });
+    const definitions = createDefinitions({ project: workspace.project, registry: components, workspace, scene });
 
     const viewport = el('px-viewport').bind({ scene, camera, selection, onError: reportFailure });
     const hierarchy = el('px-hierarchy').bind({ scene, selection, viewport, workspace });

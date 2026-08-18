@@ -391,7 +391,11 @@ export class Project extends Element {
             onpointerdown: event => {
                 if (event.target !== this.#grid) return;
                 this.#cancelRename();
+                // BOTH HOLDERS, for the reason windows/hierarchy.js gives: clearing one of
+                // them announces nothing when it was already empty, so the OTHER panel
+                // would keep a selection this click was meant to drop.
                 this.#workspace?.select(null);
+                this.selection?.clear();
             },
         });
         this.#crumbs = el('div', { class: 'crumbs' });
