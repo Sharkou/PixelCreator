@@ -92,13 +92,28 @@ export class Project extends Element {
         /* Auto-filled tiles at the prototype's density: 62 px minimum, one gap step. The
            surface takes the whole window so a click below the last tile still lands on the
            panel — that empty space is what deselects. */
-        .grid {
+        /* THE SURFACE IS ALWAYS THE WHOLE CONTENT AREA. It used to be the grid that
+           carried the height, and the empty branch takes the grid class off — so an
+           empty project accepted a file only on the words telling it to drop one.
+           Height belongs to the container, layout belongs to the class. */
+        /* At least the height of the body, never less, and growing with its content. */
+        .content {
+            display: flex;
+            flex-direction: column;
+            min-height: 100%;
+        }
+
+        .surface {
+            box-sizing: border-box;
+            flex: 1 0 auto;
+            padding: var(--px-space-2);
+        }
+
+        .surface.grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
             gap: var(--px-space-1);
-            padding: var(--px-space-2);
             align-content: start;
-            min-height: 100%;
         }
 
         .tile {
@@ -202,7 +217,7 @@ export class Project extends Element {
 
         /* A file being dragged in from outside: the whole window says so, because the
            whole window accepts it. */
-        :host(.importing) .grid {
+        :host(.importing) .surface {
             outline: 2px dashed var(--px-accent);
             outline-offset: -4px;
         }
@@ -271,7 +286,7 @@ export class Project extends Element {
 
     #build() {
         this.#grid = el('div', {
-            class: 'grid',
+            class: 'surface grid',
             // The empty space between and below the tiles is a real target: clicking it
             // deselects, the same gesture the Hierarchy and the viewport answer to.
             onpointerdown: event => {
@@ -312,9 +327,7 @@ export class Project extends Element {
 
         this.shadowRoot.append(el('px-window', { label: 'Project', icon: 'folder' },
             el('div', { class: 'actions', slot: 'actions' }, this.#search.toggle, create, more),
-            this.#search.bar,
-            this.#crumbs,
-            this.#grid
+            el('div', { class: 'content' }, this.#search.bar, this.#crumbs, this.#grid)
         ));
     }
 
@@ -689,7 +702,11 @@ export class Project extends Element {
             // The Editor learns what is being carried, so the viewport and the Hierarchy
             // can accept it: one payload, one vocabulary (ADR-0026 §8).
             this.dispatchEvent(new CustomEvent('px-drag-start', {
-                detail: { payload: resourcePayload(drag.resource) },
+                detail: {
+                    payload: resourcePayload(drag.resource),
+                    clientX: event.clientX,
+                    clientY: event.clientY
+                },
                 bubbles: true,
                 composed: true
             }));
@@ -697,6 +714,15 @@ export class Project extends Element {
 
         event.preventDefault();
         this.#markDrop(this.#dropAt(event.clientX, event.clientY));
+
+        // The shell follows the pointer with the ghost and asks the rules what a drop
+        // here would mean. It cannot read this window pointer events, so the drag says
+        // where it is — the same way it said that it started.
+        this.dispatchEvent(new CustomEvent('px-drag-move', {
+            detail: { clientX: event.clientX, clientY: event.clientY },
+            bubbles: true,
+            composed: true
+        }));
     }
 
     #dragDrop(event) {
@@ -774,6 +800,22 @@ export class Project extends Element {
 
         // Past the tiles: the folder that is open, appended.
         return { entry: null, position: null, drop: this.#target(this.#folder, null) };
+    }
+
+    /**
+     * The target a drop at this point would use, for a drag this window does not own.
+     *
+     * The shell asks while a payload from ANOTHER window is overhead, so it cannot go
+     * through the reorder path — that one needs a resource of its own to move. The
+     * open folder, appended, is what any foreign payload would land in.
+     *
+     * @param {number} clientX - Pointer position
+     * @param {number} clientY - Pointer position
+     * @returns {object|null} A target for the rules, or null without a project
+     */
+    dropTargetAt(clientX, clientY) {
+        if (!this.#workspace) return null;
+        return this.#target(this.#folder, null);
     }
 
     #target(parent, index) {

@@ -29,6 +29,9 @@
 | Scripting | Un Component peut avoir un graphe `.px` qui définit son comportement. **Pas de Component `Script`**, pas de `ScriptSystem` |
 | Graphe `.px` | Modèle au **Core** (`core/graph/`), interprète au Runtime, rendu SVG à l'Editor. Nœuds, ports et connexions par **identité** ; une propriété utilisateur porte un `id` qu'un renommage ne touche pas (ADR-0027) |
 | Components créés par l'utilisateur | Une **définition** (`type` + propriétés + graphe) produit un Component ordinaire ; la définition appartient au type, jamais à l'instance |
+| Feedback de drag | **Reflow live dans les listes plates, jamais dans l’arbre** : une liste plate pose une question (quel rang ?), un arbre en pose deux (quel parent, quel rang ?) et sa cible ne doit pas bouger pendant qu’on vise (ADR-0028) |
+| Surfaces de l’Editor | Le **stage** porte ce qui s’édite — Viewport et Graph s’y échangent par onglets. Le Graph n’ira pas dans la bande basse : un éditeur nodal a besoin de surface (ADR-0028 §4) |
+| Transport | **Play joue la scène vivante**, pas une copie. Play prend un instantané, Stop le restaure, les modifications faites en jeu sont perdues et l’historique est vidé au démarrage (ADR-0029) |
 | Projets Legacy | **Aucune migration de données à concevoir** — il n'existe pas de projets v1 |
 
 ---

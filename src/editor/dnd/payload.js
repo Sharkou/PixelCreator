@@ -67,6 +67,38 @@ export function componentPayload(object, type) {
     return { kind: DragKind.COMPONENT, object, type };
 }
 
+/**
+ * What a drag is carrying, in words a creator can read.
+ *
+ * The ghost that follows the pointer has to name the thing being carried, and that name
+ * is a fact about the payload rather than about any window — the Hierarchy, the Project
+ * panel and the Inspector all show the same one for the same drag. Pure, so the wording
+ * is testable without a pointer.
+ *
+ * @param {object} payload - A payload from this module
+ * @returns {{label: string, icon: string}} What to show while it is in flight
+ */
+export function describePayload(payload) {
+    switch (payload?.kind) {
+        case DragKind.FILES: {
+            const count = payload.entries?.length ?? 0;
+            const first = payload.entries?.[0]?.name;
+            return {
+                label: count === 1 && first ? first : count + ' files',
+                icon: 'image'
+            };
+        }
+        case DragKind.RESOURCE:
+            return { label: payload.resource?.name || 'Resource', icon: 'folder' };
+        case DragKind.OBJECT:
+            return { label: payload.object?.name || 'Object', icon: 'object' };
+        case DragKind.COMPONENT:
+            return { label: payload.type || 'Component', icon: 'component' };
+        default:
+            return { label: 'Item', icon: 'object' };
+    }
+}
+
 /** Where a drop lands. A zone, plus whatever that zone needs to name a place. */
 export const DropZone = {
     /** The Project panel: a folder, or a row within it. */

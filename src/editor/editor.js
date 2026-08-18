@@ -26,7 +26,8 @@ import { el, fill } from './ui/element.js';
 import { icon, iconForResource } from './ui/icons.js';
 import { openMenu } from './ui/menu.js';
 import { ResourceKind } from '../project/mod.js';
-import { DropZone } from './dnd/payload.js';
+import { DropZone, describePayload } from './dnd/payload.js';
+import { createDragGhost } from './ui/drag-ghost.js';
 import { canDrop, performDrop } from './dnd/rules.js';
 import { carriesFiles, readDroppedFiles } from './dnd/files.js';
 
@@ -395,7 +396,7 @@ export function start(mount = document.body) {
         if (!model) reportUnopenable(resource);
     });
 
-    bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarchy, inspector });
+    bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarchy, inspector, project });
     bindShortcuts({ scene, selection, viewport, history, workspace });
 
     return { scene, camera, selection, layout, viewport, history, histories, workspace };
@@ -511,7 +512,7 @@ function titlebar(scene, layout, workspace) {
  *
  * @param {object} context - The windows, and the model they act on
  */
-function bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarchy, inspector }) {
+function bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarchy, inspector, project }) {
     const context = () => ({
         scene,
         project: workspace.project,
@@ -544,14 +545,60 @@ function bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarc
     // decides which window the pointer ended over, and asks the rules the same question
     // each of those windows would have asked.
     let carried = null;
+    const ghost = createDragGhost(shell);
+
+    /**
+     * The drop target under a point, whichever window owns it.
+     *
+     * ONE RESOLUTION, TWO READERS. The hover highlight and the drop itself have to
+     * agree about what is under the pointer, so they ask the same function rather than
+     * each walking the windows in its own order. No rule is evaluated here: this says
+     * WHERE the pointer is, and `canDrop()` says what that means (ADR-0026 §6).
+     *
+     * @param {object} payload - What is being carried
+     * @param {number} clientX - Pointer position
+     * @param {number} clientY - Pointer position
+     * @returns {object|null} A target for the rules, or null when nothing answers
+     */
+    function targetAt(payload, clientX, clientY) {
+        const found = inspector.zoneAt(payload, clientX, clientY);
+        if (found) return found.zone;
+
+        if (viewport.containsClient(clientX, clientY)) {
+            const point = viewport.worldAt(clientX, clientY);
+            return { zone: DropZone.SCENE, x: point.x, y: point.y };
+        }
+
+        if (within(hierarchy, clientX, clientY)) return { zone: DropZone.HIERARCHY };
+        if (within(project, clientX, clientY)) return project.dropTargetAt(clientX, clientY);
+
+        return null;
+    }
 
     shell.addEventListener('px-drag-start', event => {
         carried = event.detail.payload;
+        const { clientX, clientY } = event.detail;
+        ghost.show(describePayload(carried), clientX ?? 0, clientY ?? 0);
+    });
+
+    shell.addEventListener('px-drag-move', event => {
+        if (!carried) return;
+        const { clientX, clientY } = event.detail;
+        ghost.move(clientX, clientY);
+
+        // The rules already answer whether a drop is legal AND why. Showing that answer
+        // is the whole of the fix: a refusal used to look like empty space.
+        const target = targetAt(carried, clientX, clientY);
+        const verdict = target ? canDrop(carried, target) : null;
+        ghost.verdict(verdict && !verdict.reason
+            ? { ...verdict, reason: verdict.allowed ? null : 'This cannot be dropped here.' }
+            : verdict);
     });
 
     shell.addEventListener('px-drag-end', event => {
         const payload = carried;
         carried = null;
+        ghost.hide();
         if (!payload) return;
 
         const { clientX, clientY } = event.detail;

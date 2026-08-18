@@ -38,6 +38,7 @@ import { openMenu } from '../ui/menu.js';
 import { searchField } from '../ui/search-field.js';
 import { addComponent, availableComponents, moveComponent, removeComponent } from '../commands.js';
 import { DropPosition, dropPositionAt, insertionIndex } from './drop.js';
+import { previewOffsets, rankAt } from '../dnd/reflow.js';
 import { describeResource } from '../inspector/resource.js';
 import { describeDefinition } from '../inspector/definition.js';
 import { describeNode } from '../inspector/node.js';
@@ -188,8 +189,27 @@ export class Inspector extends Element {
         }
 
         section > header:hover .grip { opacity: 1; color: var(--px-text-muted); }
-        section.dragging { opacity: 0.4; }
+
+        /* THE LIST REORGANISES UNDER THE POINTER (ADR-0028). A flat list asks one
+           question — at what rank? — so it may answer it in place: the carried section
+           follows the pointer and the others slide out of its way before the drop, which
+           is what makes the drop confirm something already visible rather than reveal it.
+           Nothing here writes: the offsets come from dnd/reflow.js and die with the
+           gesture. The tree does the opposite, and says why in windows/hierarchy.js. */
+        section.dragging {
+            position: relative;
+            z-index: 2;
+            opacity: 0.85;
+            box-shadow: 0 0 0 1px var(--px-accent-border);
+            border-radius: var(--px-radius-sm);
+            pointer-events: none;
+        }
+
         section.dragging .grip { cursor: grabbing; }
+
+        /* Only the sections that step aside animate. The carried one tracks the pointer
+           and must not lag a frame behind the hand holding it. */
+        section.sliding { transition: transform var(--px-duration) var(--px-ease); }
 
         section[data-type] { position: relative; }
 
@@ -405,6 +425,7 @@ export class Inspector extends Element {
     #drag = null;
     /** Set for exactly one click: the one that ends a drag and must not also fold. */
     #dragged = false;
+    #shifts = null;
 
     /**
      * Point the window at the selections it follows.
@@ -1273,7 +1294,10 @@ export class Inspector extends Element {
             grip: event.currentTarget,
             pointerId: event.pointerId,
             from: event.clientY,
-            started: false
+            started: false,
+            // The rank the preview is showing, so a pointer wandering inside one row
+            // does not rebuild the same layout sixty times a second.
+            shown: null
         };
     }
 
@@ -1285,23 +1309,43 @@ export class Inspector extends Element {
             if (Math.abs(event.clientY - drag.from) < DRAG_THRESHOLD) return;
             drag.started = true;
             capture(drag.grip, drag.pointerId);
+
+            // The layout as it is BEFORE anything slides. Measuring live would read
+            // the animated position of a section mid-transition, so the rank would
+            // depend on how far the previous answer had got to drawing itself.
+            const sections = this.#orderedSections();
+            drag.sections = sections;
+            drag.boxes = sections.map(section => {
+                const box = section.getBoundingClientRect();
+                return { start: box.top, size: box.height };
+            });
+            drag.index = sections.indexOf(drag.section);
+
             drag.section.classList.add('dragging');
         }
 
         event.preventDefault();
-        this.#markDrop(this.#resolveDrop(event.clientY));
+        this.#preview(event.clientY);
     }
 
     #dragDrop(event) {
         const drag = this.#drag;
         if (!drag || event.pointerId !== drag.pointerId) return;
 
-        const drop = drag.started ? this.#resolveDrop(event.clientY) : null;
+        const rank = drag.started ? this.#rankUnder(event.clientY) : null;
         const { object, type } = drag;
+        const current = object.componentTypes().indexOf(type);
         this.#dragged = drag.started;
         this.#cancelDrag();
 
-        if (drop) moveComponent(object, type, drop.index);
+        // NO insertionIndex() HERE, and that is the subtle part. That helper converts a
+        // rank counted in the list WITH the carried item still in it. The preview counts
+        // ranks in the resulting order instead — dnd/reflow.js is splice-out-then-splice-in,
+        // which is exactly what moveComponent() does — so the rank is already the one the
+        // primitive wants. Adjusting it again turned every downward move into a no-op.
+        if (rank !== null && rank !== current) {
+            moveComponent(object, type, rank);
+        }
     }
 
     #cancelDrag() {
@@ -1313,7 +1357,7 @@ export class Inspector extends Element {
             release(drag.grip, drag.pointerId);
             drag.section.classList.remove('dragging');
         }
-        this.#markDrop(null);
+        this.#clearPreview();
     }
 
     /**
@@ -1355,12 +1399,77 @@ export class Inspector extends Element {
         return index === current ? null : { index, section: over, position };
     }
 
-    /** Draw the line where the component would land, and nowhere else. */
-    #markDrop(drop) {
-        for (const section of this.#body?.querySelectorAll('section[data-type]') ?? []) {
-            section.classList.remove('before', 'after');
+    /** The sections that take part in a reorder, in model order. */
+    #orderedSections() {
+        return [...(this.#body?.querySelectorAll('section[data-type]') ?? [])];
+    }
+
+    /**
+     * The rank the pointer is over, in the list as the model orders it.
+     *
+     * Answered from the snapshot taken when the drag began, never from the live DOM:
+     * the preview slides boxes around and animates them, so measuring would make the
+     * answer depend on how far the previous answer had got to drawing itself.
+     *
+     * @param {number} clientY - The pointer vertical position
+     * @returns {number|null} A rank, or null when the drag holds no layout
+     */
+    #rankUnder(clientY) {
+        const boxes = this.#drag?.boxes;
+        if (!boxes || boxes.length === 0) return null;
+        return rankAt(clientY, boxes);
+    }
+
+    /**
+     * Show the list as it would be, without changing it (ADR-0028, sections 1 and 2).
+     *
+     * Nothing here writes: the offsets come from dnd/reflow.js, they live on the
+     * elements as transforms, and the gesture ending removes them. A cancelled drag is
+     * therefore not an undo, because there was never anything to undo.
+     *
+     * @param {number} clientY - The pointer vertical position
+     */
+    #preview(clientY) {
+        const drag = this.#drag;
+        if (!drag) return;
+
+        const sections = drag.sections;
+        const from = drag.index;
+        if (!sections || from === -1) return;
+
+        const to = this.#rankUnder(clientY);
+        if (to === null) return;
+
+        if (to !== drag.shown) {
+            drag.shown = to;
+            const offsets = previewOffsets(drag.boxes.map(box => box.size), from, to);
+
+            this.#shifts ??= new globalThis.Map();
+            sections.forEach((section, i) => {
+                // The carried section follows the pointer instead of its computed slot:
+                // it is the one thing the creator is actually holding.
+                if (i === from) return;
+                this.#shifts.set(section, offsets[i]);
+                section.classList.add('sliding');
+                section.style.transform = offsets[i] === 0 ? '' : 'translateY(' + offsets[i] + 'px)';
+            });
         }
-        if (drop) drop.section.classList.add(drop.position);
+
+        const carried = clientY - drag.from;
+        drag.section.style.transform = 'translateY(' + carried + 'px)';
+        // Recorded like every other shift: the next measurement has to subtract it, or
+        // the carried box reads where the hand is rather than where the model says.
+        this.#shifts ??= new globalThis.Map();
+        this.#shifts.set(drag.section, carried);
+    }
+
+    /** Put every section back where the model says it is. */
+    #clearPreview() {
+        for (const section of this.#orderedSections()) {
+            section.classList.remove('sliding', 'before', 'after');
+            section.style.transform = '';
+        }
+        this.#shifts?.clear();
     }
 
     /**

@@ -179,8 +179,12 @@ export class Hierarchy extends Element {
 
         /* ── dragging ───────────────────────────────────────────────────── */
 
-        /* The row being carried stays in place and goes quiet: a list that reflows under
-           the pointer is a list you cannot aim at. */
+        /* NO REFLOW HERE, AND IT IS A RULE RATHER THAN A PREFERENCE (ADR-0028 §1). A flat
+           list asks one question — at what rank? — so it may reorganise under the pointer.
+           A tree asks two — under which parent, AND at what rank? — and dropping *into*
+           changes an object place in the world (ADR-0022). A target that moves while it is
+           being aimed at makes that mistake easy and expensive, so the tree holds still and
+           the indicator does the talking. */
         .row.dragging { opacity: 0.4; }
 
         /* Nesting tints the whole row, reordering draws a line at the edge it will land
