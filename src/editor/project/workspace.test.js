@@ -25,7 +25,7 @@ test('creating a scene declares it and opens it', () => {
     const workspace = new Workspace();
     const scene = sceneWithOne();
 
-    const resource = workspace.create(scene, { path: 'scenes/' });
+    const resource = workspace.create(scene, { name: 'Level 1' });
 
     assert.equal(workspace.scene, scene);
     assert.equal(workspace.resource.id, resource.id);
@@ -172,4 +172,126 @@ test('nothing about the workspace reaches the serialized project', () => {
     assert.deepEqual(globalThis.Object.keys(data), ['format', 'id', 'name', 'resources']);
     assert.equal(globalThis.JSON.stringify(data).includes('dirty'), false);
     assert.equal(globalThis.JSON.stringify(data).includes('history'), false);
+});
+
+// --- selecting a resource ---------------------------------------------------------------
+
+test('a resource is selected by id, and resolved from the manifest on every read', () => {
+    const workspace = new Workspace();
+    const resource = workspace.create(sceneWithOne());
+
+    workspace.select(resource.id);
+
+    assert.equal(workspace.selectedId, resource.id);
+    assert.equal(workspace.selected.name, 'Level 1');
+
+    // Renaming does not invalidate the selection: what is held is the identity.
+    workspace.project.setProperty(resource.id, 'name', 'Opening level');
+    assert.equal(workspace.selected.name, 'Opening level');
+});
+
+test('selecting announces the change, and selecting the same thing twice does not', () => {
+    const workspace = new Workspace();
+    const resource = workspace.create(sceneWithOne());
+    const seen = [];
+    workspace.on('selection', payload => seen.push(payload.id));
+
+    workspace.select(resource.id);
+    workspace.select(resource.id);
+    workspace.select(null);
+
+    assert.deepEqual(seen, [resource.id, null]);
+});
+
+test('selecting something the project does not declare selects nothing', () => {
+    const workspace = new Workspace();
+    workspace.create(sceneWithOne());
+
+    assert.equal(workspace.select('nothing'), null);
+    assert.equal(workspace.selected, null);
+});
+
+test('a removed resource stops being selected, however it was removed', () => {
+    const workspace = new Workspace();
+    const folder = workspace.project.addFolder({ name: 'Assets' });
+    const asset = workspace.project.add(
+        { kind: ResourceKind.ASSET, name: 'hero.png', parent: folder.id },
+        'binary'
+    );
+
+    workspace.select(asset.id);
+    workspace.project.removeTree(folder.id);
+
+    assert.equal(workspace.selected, null, 'the Inspector cannot go on editing what is gone');
+    assert.equal(workspace.selectedId, null);
+});
+
+test('undoing a creation clears a selection that pointed at it', () => {
+    const workspace = new Workspace();
+    const folder = workspace.project.addFolder({ name: 'Assets' });
+
+    workspace.select(folder.id);
+    workspace.projectHistory.undo();
+
+    assert.equal(workspace.project.has(folder.id), false);
+    assert.equal(workspace.selected, null);
+});
+
+test('the selection is Editor state, and reaches nothing that is persisted', () => {
+    const workspace = new Workspace();
+    const resource = workspace.create(sceneWithOne());
+    workspace.select(resource.id);
+
+    const data = globalThis.JSON.stringify(workspace.project.serialize());
+
+    assert.equal(data.includes('selected'), false);
+    assert.equal(data.includes('selection'), false);
+});
+
+// --- what may be deleted, and which stack undoes it --------------------------------------
+
+test('the open scene cannot be deleted, nor can a folder holding it', () => {
+    const workspace = new Workspace();
+    const folder = workspace.project.addFolder({ name: 'Scenes' });
+    const resource = workspace.create(sceneWithOne());
+    workspace.project.move(resource.id, folder.id);
+
+    assert.equal(workspace.canRemove(resource.id).allowed, false);
+    assert.match(workspace.canRemove(resource.id).reason, /open/);
+    assert.equal(workspace.canRemove(folder.id).allowed, false, 'a folder takes its contents');
+    assert.match(workspace.canRemove(folder.id).reason, /open scene/);
+    assert.equal(workspace.canRemove('nothing').allowed, false);
+});
+
+test('anything the Editor does not have open may be deleted', () => {
+    const workspace = new Workspace();
+    workspace.create(sceneWithOne());
+    const folder = workspace.project.addFolder({ name: 'Assets' });
+
+    assert.equal(workspace.canRemove(folder.id).allowed, true);
+});
+
+test('the active stack follows the last authored intent, not the selection', () => {
+    const workspace = new Workspace();
+    const scene = sceneWithOne();
+    workspace.create(scene);
+    const folder = workspace.project.addFolder({ name: 'Assets' });
+
+    assert.equal(workspace.context, 'project');
+    assert.equal(workspace.activeHistory, workspace.projectHistory);
+
+    // Deleting clears the selection — and the undo that puts it back must still be aimed
+    // at the manifest, which is what a selection-driven rule got wrong.
+    workspace.select(folder.id);
+    workspace.project.removeTree(folder.id);
+    assert.equal(workspace.selected, null);
+    assert.equal(workspace.activeHistory, workspace.projectHistory);
+
+    workspace.activeHistory.undo();
+    assert.equal(workspace.project.has(folder.id), true);
+
+    // A scene edit hands the shortcut back to the scene's stack.
+    scene.objects()[0].setProperty('name', 'Heroine');
+    assert.equal(workspace.context, 'scene');
+    assert.equal(workspace.activeHistory, workspace.history);
 });

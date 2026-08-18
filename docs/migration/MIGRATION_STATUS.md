@@ -33,20 +33,29 @@ Aucun fichier de `legacy/` n'a été modifié.
 | **3.5** | **Modern Pixel — chrome, fenêtres et layout L4** : `window` / `hierarchy` / `menu` / `splitter` / `tabs` / `toolbar` / `editor` convergés, bloc d'alias temporaires **supprimé**, `px-dock` scindé en `px-project` et `px-timeline`, disposition L4 (Hierarchy et Project à gauche, Inspector en colonne ininterrompue, Timeline conditionnelle) |
 
 | **4** | **Ordre structurel et Operations structurelles** (ADR-0018 à ADR-0024) : `PropertyType`, collections ordonnées, stockage ordonné des Components, primitives structurelles, `seq` par pipeline, `invert()`, gestionnaires qui refusent, sérialisation v2 avec ordre explicite (`FORMAT_VERSION = 2`), `Matrix.decompose()`, couche `project/`, historique Undo/Redo, politique de reparentage |
+| **4.3** | **Cohérence Project / Inspector / Drag & drop** (ADR-0026) : `.px` = **une** ressource (Component + graphe), `active` seul état de vie (`visible` supprimé), renommage identique dans Project et Hierarchy (second clic) et réactif dans l'Inspector avec **une** entrée d'undo par session de frappe, extension déterminée par le type, `MOVE_RESOURCE` (dossier **et** rang), système de drag & drop transverse (`editor/dnd/`), Project en navigateur d'assets avec aperçus, menus `+` catégorisés et `…`, `Share` et profil dans le titlebar |
+| **4.2** | **Project / Resource UX** (ADR-0025) : dossiers comme `Resource` et hiérarchie par lien `parent` (`MANIFEST_VERSION = 2`), menu `+` extensible par table de kinds, navigation à fil d'Ariane, déplacement par glisser-déposer, suppression d'arbre en un `batch`, renommage validé (une opération, pas une par frappe), sélection et désélection de ressource dans le `Workspace`, panneau `Resource` de l'Inspector piloté par `describeResource()`, import et remplacement d'image, icônes de ressources distinctes des icônes de fenêtres |
 | **4.1** | **Intégration Editor ↔ Project** : `Workspace`, scène déclarée comme `Resource`, `Ctrl S`, état « non enregistré » dérivé du pipeline, `<px-project>` listant le manifeste réel, reparentage et réordonnancement par glisser-déposer (Hierarchy et Inspector), vérification des imports morts dans `tools/layers/` |
 
-### État vérifié (2026-08-17, après étape 4.1)
+### État vérifié (2026-08-18, après étape 4.3)
 
 ```bash
-tools/test.sh              # 642 tests, 642 passés
+tools/test.sh              # 737 tests, 737 passés
 node tools/layers/run.js   # v2 : 0 violation, 0 import mort — legacy : 1 violation + 2 imports morts, trackés
 node tools/parity/run.js   # 39 identical, 0 problems
 ```
 
 Vérifié aussi dans le navigateur, sans erreur console : dépôt d'une ligne de Hierarchy sur
 une autre (imbrication) et entre deux lignes (réordonnancement), `Ctrl Z` / `Ctrl Y` sur un
-dépôt, réordonnancement d'un Component par son en-tête, liste des ressources, renommage
-d'une ressource, `Ctrl S` et point « non enregistré » du titlebar.
+dépôt, réordonnancement d'un Component par son en-tête, `Ctrl S` et point « non
+enregistré » du titlebar. Puis, pour l'étape 4.2 : créer un Folder, une Scene et un
+Component depuis `+`, renommer une ressource sur plusieurs caractères et valider par
+Entrée, annuler et rétablir ce renommage, entrer dans un dossier et revenir par le fil
+d'Ariane, déplacer une ressource dans un dossier par glisser-déposer, sélectionner une
+ressource et lire ses propriétés dans l'Inspector, la renommer depuis l'Inspector,
+désélectionner par un clic dans le vide, supprimer une ressource et annuler, et constater
+que la scène ouverte — comme le dossier qui la contient — refuse d'être supprimée en
+disant pourquoi.
 
 ### Trois défauts trouvés en implémentant, et corrigés
 
@@ -93,7 +102,9 @@ sauvegarde suivante. Voir `../architecture/CORE.md` §Serialization.
 | Migration des instances quand une définition change | Décision d'Editor, pas de runtime (ADR-0016) |
 | Play / Pause dans l'Editor | Demande un instantané de scène restauré à l'arrêt ; `serializeScene()` existe, l'échange de scène reste à concevoir |
 | Timeline fonctionnelle | Demande le système d'animation |
-| Import d'assets (images, sons) | Demande une entrée de fichier et des vignettes ; le modèle (`kind: 'asset'`, payload hors JSON) est prêt |
+| Prefab (Object → Project) | Ce qu'un prefab contient, comment une instance y reste liée, ce qu'un override signifie : rien n'est décidé. Le dépôt est refusé **en le disant** (ADR-0026 §7) |
+| Ouvrir une ressource au double-clic | Le geste est réservé et l'intention émise ; il n'existe aucun éditeur à ouvrir avant la fenêtre Graph |
+| Vignettes et import de sons | L'import d'images existe ; le reste demande des décodeurs et une grille, pas un modèle |
 | Renderer présenté comme un type unique dans l'Inspector | Question UX ouverte : un `Type ▼` affirmerait un seul renderer par Object, ce que le modèle n'impose pas |
 | `runtime/physics/`, `animation/`, `audio/` | Domaines non entamés |
 
@@ -134,6 +145,8 @@ Elles bloquent des éléments que la maquette dessine et que le code refuse d'in
 | Input | Abstrait, indexé par owner, passé à `step()` — jamais un global | ADR-0014 |
 | Scripting | Un Component peut avoir un graphe `.px` qui définit son comportement. Pas de Component `Script`, pas de `ScriptSystem` | ADR-0015 |
 | Components utilisateur | Une définition (`type` + propriétés + graphe) produit un Component ordinaire ; elle appartient au type | ADR-0016 |
+| Dossiers et ressources | Un dossier est une `Resource` ; la hiérarchie est un lien `parent` ; l'Inspector route vers un panneau `Resource` piloté par table | ADR-0025 |
+| Drag & drop, `.px`, `active` | Une table de règles pour tous les dépôts ; un Component et son graphe sont **une** ressource ; `Object.visible` supprimé ; `MOVE_RESOURCE` porte le rang | ADR-0026 |
 | Ordre structurel | L'ordre des Components et des racines est de la donnée : persisté, répliqué, annulable | ADR-0018 |
 | Operations structurelles | Sept types pour la Scene, deux pour le Project ; `REPARENT` couvre quatre gestes ; un gestionnaire refuse, il ne jette pas | ADR-0019 |
 | Ressources | Une seule unité `Resource` ; identité opaque, jamais un chemin ; `ResourceStore` asynchrone ; couche `project/` | ADR-0020 |

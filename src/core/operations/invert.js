@@ -95,6 +95,15 @@ const RULES = {
         type: OperationType.REMOVE_RESOURCE
     }),
 
+    // A move inverts into a move, for the same reason a REPARENT does: two operations that
+    // undo each other are the same operation (ADR-0019, ADR-0026).
+    [OperationType.MOVE_RESOURCE]: operation => ({
+        parent: operation.previousParent,
+        index: operation.previousIndex,
+        previousParent: operation.parent,
+        previousIndex: operation.index
+    }),
+
     [OperationType.REMOVE_RESOURCE]: operation => ({
         type: OperationType.ADD_RESOURCE
     })

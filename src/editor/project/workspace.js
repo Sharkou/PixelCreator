@@ -23,7 +23,7 @@
 // scene edit, which is the whole reason the stacks are per resource.
 
 import { Emitter } from '../../core/mod.js';
-import { Project, addScene, loadScene, saveScene } from '../../project/mod.js';
+import { Project, addScene, isDescendantOf, loadScene, saveScene } from '../../project/mod.js';
 import { Histories } from '../history.js';
 
 export class Workspace {
@@ -36,6 +36,24 @@ export class Workspace {
     #open = null;
     #dirty = false;
 
+    // WHICH RESOURCE IS SELECTED, kept here and not in the Project panel, because two
+    // windows need the same answer: the panel highlights a row, the Inspector shows the
+    // fields. A panel that owned it would be a second source of truth, and the Inspector
+    // would have to reach into another element to read it.
+    //
+    // It is a ResourceId rather than the entry, so it cannot go stale: the entry is a live
+    // reactive object that a removal drops, and holding one would keep a deleted resource
+    // inspectable.
+    #selected = null;
+
+    // WHICH STACK `Ctrl Z` ACTS ON. There is one History per resource (ADR-0024), so the
+    // shortcut has to name the resource being edited. The selection alone cannot: deleting
+    // a resource clears it, and the undo that would put it back would then be aimed at the
+    // scene. So this follows the LAST AUTHORED INTENT — the pipeline an operation was
+    // announced on — which is exactly "what the creator was just doing", and it survives
+    // the selection going away.
+    #context = 'scene';
+
     /**
      * @param {object} [options] - Options
      * @param {object} [options.project] - The project to work in; a new one by default
@@ -46,6 +64,16 @@ export class Workspace {
         this.#histories = new Histories({ actor });
         // The manifest is a resource like the ones it lists, so it gets its own stack.
         this.#histories.for(project.id, project.operations);
+
+        // A selected resource that is removed — by this creator, by a collaborator, or by
+        // an undo — stops being selected. Without this the Inspector would go on editing
+        // something the project no longer declares, which is the incoherent state a
+        // panel-owned selection always ends up in.
+        project.operations.on('operation', operation => {
+            this.#context = 'project';
+            if (operation.type !== 'REMOVE_RESOURCE') return;
+            if (operation.target.object === this.#selected) this.select(null);
+        });
     }
 
     /** The project being edited. */
@@ -61,6 +89,23 @@ export class Workspace {
     /** The stack for the manifest itself. */
     get projectHistory() {
         return this.#histories.get(this.#project.id);
+    }
+
+    /**
+     * Which of the two stacks the creator is working in: 'scene' or 'project'.
+     * @returns {string} The context
+     */
+    get context() {
+        return this.#context;
+    }
+
+    /**
+     * The stack an undo should act on right now.
+     *
+     * @returns {object|null} The History, or null when there is none
+     */
+    get activeHistory() {
+        return this.#context === 'project' ? this.projectHistory : this.history;
     }
 
     /** The open scene's model, or null. */
@@ -84,12 +129,85 @@ export class Workspace {
     }
 
     /**
+     * The selected resource's manifest entry, or null.
+     *
+     * Resolved on every read rather than held: the answer is whatever the manifest says
+     * now, so a removed resource inspects as nothing rather than as a ghost.
+     *
+     * @returns {object|null} The entry
+     */
+    get selected() {
+        return this.#selected ? this.#project.get(this.#selected) : null;
+    }
+
+    /** The selected resource's identifier, or null. */
+    get selectedId() {
+        return this.#selected;
+    }
+
+    /**
+     * Select a resource, or clear the selection.
+     *
+     * The same shape as the scene `Selection` (ADR-0017): Editor state, never replicated,
+     * never serialized — two creators looking at one project each have their own.
+     *
+     * @param {string|object|null} resource - The resource, its id, or null
+     * @returns {string|null} The selected identifier
+     */
+    select(resource) {
+        const id = typeof resource === 'string' ? resource : resource?.id ?? null;
+        const next = id && this.#project.has(id) ? id : null;
+        if (next === this.#selected) return next;
+
+        const previous = this.#selected;
+        this.#selected = next;
+        // Selecting a resource IS a statement about what is being edited; selecting
+        // nothing leaves the context where it was, so an undo right after a deletion still
+        // lands on the manifest.
+        if (next) this.#context = 'project';
+        this.#emitter.emit('selection', { id: next, resource: this.selected, previous });
+        return next;
+    }
+
+    /**
+     * Whether a resource can be deleted right now.
+     *
+     * THE OPEN SCENE CANNOT BE, and the reason is not squeamishness: every window is bound
+     * to that Scene, so removing the resource it came from would leave the Editor editing
+     * something the project no longer declares. Closing an editor is the gesture that
+     * would make it safe, and it does not exist yet — so this refuses, and says why,
+     * rather than leaving a control that half works.
+     *
+     * @param {string|object} resource - The resource, or its id
+     * @returns {{allowed: boolean, reason: string|null}} The verdict
+     */
+    canRemove(resource) {
+        const id = typeof resource === 'string' ? resource : resource?.id ?? null;
+        if (!id || !this.#project.has(id)) return { allowed: false, reason: 'It is not in this project.' };
+
+        const open = this.#open?.resource?.id ?? null;
+        if (!open) return { allowed: true, reason: null };
+
+        if (id === open) {
+            return { allowed: false, reason: 'This scene is open. Close it before deleting it.' };
+        }
+        // A FOLDER TAKES ITS CONTENTS, so a folder holding the open scene is the same
+        // refusal one level up. Without this the guard is decorative: dragging the open
+        // scene into a folder and deleting the folder would delete it anyway.
+        if (isDescendantOf(this.#project, id, open)) {
+            return { allowed: false, reason: 'It holds the open scene. Close the scene first.' };
+        }
+        return { allowed: true, reason: null };
+    }
+
+    /**
      * Subscribe to workspace changes.
      *
-     *   'opened'  { resource, scene }   a scene became the open one
-     *   'closed'  { resource, scene }   it stopped being open
-     *   'dirty'   { resource, dirty }   there is, or is no longer, unsaved work
-     *   'saved'   { resource, scene }   the store now holds what the model holds
+     *   'opened'    { resource, scene }        a scene became the open one
+     *   'closed'    { resource, scene }        it stopped being open
+     *   'dirty'     { resource, dirty }        there is, or is no longer, unsaved work
+     *   'saved'     { resource, scene }        the store now holds what the model holds
+     *   'selection' { id, resource, previous } another resource is selected, or none
      *
      * @param {string} event - Event name
      * @param {Function} listener - Called with the payload
@@ -177,7 +295,10 @@ export class Workspace {
         // operations — replicated ones — emit nothing, so a scene kept in step by the
         // network is not reported as locally modified, which is correct: there is nothing
         // of this creator's to lose.
-        const unsubscribe = scene.operations.on('operation', () => this.#setDirty(true));
+        const unsubscribe = scene.operations.on('operation', () => {
+            this.#context = 'scene';
+            this.#setDirty(true);
+        });
 
         this.#open = { resource, scene, history, unsubscribe };
         this.#setDirty(dirty);

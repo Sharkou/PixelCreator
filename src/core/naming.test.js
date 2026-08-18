@@ -46,7 +46,7 @@ test('an Object works with the native reflection helpers', () => {
     object.addComponent(new Transform(1, 2));
 
     assert.deepEqual(globalThis.Object.keys(object), [
-        'id', 'name', 'tag', 'layer', 'active', 'visible', 'lock', 'owner'
+        'id', 'name', 'tag', 'layer', 'active', 'lock', 'owner'
     ]);
     assert.equal(globalThis.Object.getPrototypeOf(object), Object.prototype);
 });

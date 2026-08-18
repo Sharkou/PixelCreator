@@ -645,6 +645,13 @@ avec les composants de jeu.
 définitions de Components et des scènes. IndexedDB reste à brancher : c'est un échange
 d'implémentation derrière l'interface, sans effet sur les appelants.
 
+**Complété le 2026-08-17 (ADR-0025) :** un dossier est une `Resource` de `kind: 'folder'`,
+et le rangement est un lien `parent` — pas une chaîne `path`. Renommer un dossier ne
+réécrit donc rien, déplacer une ressource est un `SET_PROPERTY`, et supprimer un dossier
+emporte son contenu en un seul `batch` annulable. `MANIFEST_VERSION = 2`. Le chemin affiché
+(`Assets/Images`) est dérivé des liens, jamais stocké. Les entrées portent aussi `created`
+et `modified` ; la taille appartient au store, qui la mesure ou répond `null`.
+
 ---
 
 ## 10. Registre des décisions

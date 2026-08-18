@@ -56,7 +56,7 @@ export class SceneRenderer {
 
         let drawn = 0;
         for (const object of this.#drawOrder(scene)) {
-            if (!object.active || !object.visible) continue;
+            if (!object.active) continue;
 
             const components = object.components;
             const types = globalThis.Object.keys(components);

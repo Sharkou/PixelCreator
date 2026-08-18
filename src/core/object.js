@@ -51,8 +51,12 @@ export class Object {
         this.name = name;
         this.tag = tag;
         this.layer = layer;
+        // ONE FLAG FOR "IS THIS OBJECT LIVE". `visible` used to sit beside `active`: the
+        // runtime skipped an inactive object entirely and the renderer skipped an invisible
+        // one, so an object could be simulated and not drawn — a distinction no control in
+        // the Editor ever exposed, and one the Hierarchy's eye and the Inspector's checkbox
+        // disagreed about because they wrote different fields (ADR-0026 §13).
         this.active = true;
-        this.visible = true;
         this.lock = false;
         this.owner = owner;
 

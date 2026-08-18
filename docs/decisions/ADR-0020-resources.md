@@ -18,18 +18,24 @@ rien ne chargeait un projet.
 
 ### 1. Une seule unité : `Resource`
 
-`kind ∈ { scene, component, graph, asset }`.
+`kind ∈ { folder, scene, component, graph, asset }` — **`folder` ajouté par ADR-0025**.
 
 | | |
 |---|---|
-| **Identité** | `ResourceId` opaque, **immuable**, indépendante du nom et du chemin |
-| **Contient** | `id`, `kind`, `name` (affiché), `path` (rangement), `revision`, `mime` pour un asset |
+| **Identité** | `ResourceId` opaque, **immuable**, indépendante du nom et du rangement |
+| **Contient** | `id`, `kind`, `name` (affiché), `parent` (rangement), `revision`, `created`, `modified`, `mime` pour un asset |
 | **Ne contient pas** | une référence par chemin ; de l'état d'exécution ; de l'état d'Editor |
 | **Propriétaire** | la couche **Project** |
 
-- `id` — identité. Jamais dérivée du nom ni du chemin, jamais réutilisée.
+- `id` — identité. Jamais dérivée du nom ni du rangement, jamais réutilisée.
 - `name` — affichage. Modifiable, non unique, **référencé par rien**.
-- `path` — rangement. Le déplacer ne casse rien.
+- `parent` — rangement, **par identité**. Le déplacer ne casse rien.
+
+> **Amendé le 2026-08-17 (ADR-0025).** Cette section écrivait `path` — une chaîne
+> indicative. Une chaîne faisait de la hiérarchie une convention de nommage : renommer un
+> dossier obligeait à réécrire chaque entrée qui le mentionnait, et rien ne disait qu'un
+> dossier existait. `parent` nomme un `Resource` de `kind: 'folder'`, comme `Object.parent`
+> nomme un objet ; le chemin affiché est **dérivé**. `MANIFEST_VERSION` passe à 2.
 
 Déplacer un projet : les chemins changent, les ids non. Copier un projet : ids identiques,
 cohérence interne préservée. Renommer : un champ d'affichage bouge, rien d'autre.

@@ -98,7 +98,7 @@ export function pick(objects, view, screenX, screenY) {
 
     for (let i = 0; i < objects.length; i++) {
         const object = objects[i];
-        if (!object.active || !object.visible || object.lock) continue;
+        if (!object.active || object.lock) continue;
         // Equal layers are decided by position, and i only ever grows, so a later object
         // always wins a tie: no comparison against the found index is needed.
         if (object.layer < bestLayer) continue;

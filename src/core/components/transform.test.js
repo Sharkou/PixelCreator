@@ -59,7 +59,7 @@ test('every facade property writes through to the component', () => {
         [1, 2, 3, 4, 5]
     );
     assert.deepEqual(globalThis.Object.keys(object), [
-        'id', 'name', 'tag', 'layer', 'active', 'visible', 'lock', 'owner'
+        'id', 'name', 'tag', 'layer', 'active', 'lock', 'owner'
     ], 'the facade stored nothing of its own');
 });
 

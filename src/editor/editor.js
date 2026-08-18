@@ -24,6 +24,10 @@ import { fillStarterScene } from './project/starter.js';
 import { installDocumentStyles, sheet } from './ui/styles.js';
 import { el } from './ui/element.js';
 import { icon } from './ui/icons.js';
+import { openMenu } from './ui/menu.js';
+import { DropZone } from './dnd/payload.js';
+import { canDrop, performDrop } from './dnd/rules.js';
+import { carriesFiles, readDroppedFiles } from './dnd/files.js';
 
 import './ui/window.js';
 import './ui/menu.js';
@@ -102,6 +106,25 @@ const shellStyles = sheet(`
     }
 
     .titlebar .sep { color: var(--px-border-subtle); }
+    .titlebar .gap { width: var(--px-space-2); flex: 0 0 auto; }
+
+    /* The prototype's avatar: a gradient disc, 22 px, and a real button — it opens a menu
+       rather than pretending to be a signed-in user. */
+    .titlebar .avatar {
+        width: 22px;
+        height: 22px;
+        margin-left: var(--px-space-1);
+        border-radius: 50%;
+        border: none;
+        flex: 0 0 auto;
+        background: linear-gradient(140deg, var(--px-accent), #7b4bff);
+        cursor: pointer;
+    }
+
+    .titlebar .avatar:hover { filter: brightness(1.15); }
+
+    /* A file dragged over the scene: the surface says it will take it. */
+    px-viewport.importing { outline: 2px dashed var(--px-accent); outline-offset: -4px; }
     .titlebar .spacer { flex: 1; }
     .titlebar .toggles { display: flex; gap: var(--px-space-0); }
 
@@ -157,14 +180,14 @@ export function start(mount = document.body) {
     // It starts in memory. An IndexedDB store is a swap of one implementation, which is
     // the whole reason `ResourceStore` is an interface.
     const workspace = new Workspace();
-    workspace.create(scene, { path: 'scenes/' });
+    workspace.create(scene);
     const histories = workspace.histories;
     const history = workspace.history;
 
     const viewport = el('px-viewport').bind({ scene, camera, selection, onError: reportFailure });
-    const hierarchy = el('px-hierarchy').bind({ scene, selection, viewport });
-    const inspector = el('px-inspector').bind({ scene, selection, registry: components });
-    const project = el('px-project').bind({ workspace });
+    const hierarchy = el('px-hierarchy').bind({ scene, selection, viewport, workspace });
+    const inspector = el('px-inspector').bind({ scene, selection, registry: components, workspace });
+    const project = el('px-project').bind({ workspace, scene, selection });
     const timeline = el('px-timeline');
 
     // The creation tools are slotted INTO the viewport, beside Frame selection and Reset
@@ -247,6 +270,18 @@ export function start(mount = document.body) {
         if (selection.has(object)) selection.clear();
     });
 
+    // ONE INSPECTOR, SO ONE SUBJECT. An object and a resource are both things a creator
+    // selects, and the panel shows one at a time: selecting in either place clears the
+    // other, here rather than inside a window, because neither window should have to know
+    // the other exists (ADR-0025).
+    selection.observe(({ object }) => {
+        if (object) workspace.select(null);
+    });
+    workspace.on('selection', ({ id }) => {
+        if (id) selection.clear();
+    });
+
+    bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarchy, inspector });
     bindShortcuts({ scene, selection, viewport, history, workspace });
 
     return { scene, camera, selection, layout, viewport, history, histories, workspace };
@@ -310,6 +345,33 @@ function titlebar(scene, layout, workspace) {
         sync();
     }
 
+    // SHARE AND THE PROFILE, as the prototype draws them (design/prototype.js, titlebar).
+    // Neither is wired to anything, and both say so when pressed: there is no publishing
+    // pipeline and no account system, and inventing a fake one is the kind of lie this
+    // Editor has consistently refused. What they are here for is the SHAPE — the row of
+    // chrome the real feature slots into, in the place a creator will look for it.
+    const share = el('button', {
+        class: 'ghost',
+        type: 'button',
+        title: 'Share',
+        'aria-label': 'Share',
+        onclick: () => openMenu(share, [
+            { heading: 'Share' },
+            { id: 'soon', label: 'Publishing is not built yet', icon: 'share' }
+        ], () => {}, { label: 'sharing' })
+    }, icon('share'));
+
+    const profile = el('button', {
+        class: 'avatar',
+        type: 'button',
+        title: 'Profile',
+        'aria-label': 'Profile',
+        onclick: () => openMenu(profile, [
+            { heading: 'Profile' },
+            { id: 'soon', label: 'Accounts are not built yet', icon: 'object' }
+        ], () => {}, { label: 'profile' })
+    });
+
     return el('div', { class: 'titlebar' },
         el('div', { class: 'mark' }),
         el('span', { class: 'product', textContent: 'Pixel Creator' }),
@@ -317,11 +379,101 @@ function titlebar(scene, layout, workspace) {
         name,
         unsaved,
         el('div', { class: 'spacer' }),
-        el('div', { class: 'toggles' }, buttons)
+        el('div', { class: 'toggles' }, buttons),
+        el('div', { class: 'gap' }),
+        share,
+        profile
     );
 }
 
+/**
+ * Drag and drop, wired once, for the whole Editor.
+ *
+ * TWO TRANSPORTS, ONE VOCABULARY (ADR-0026). A file from the desktop arrives as a
+ * `DataTransfer` and only the browser can read it; a resource carried out of the Project
+ * panel is a pointer gesture with no `DataTransfer` at all. Both become a payload, and both
+ * are answered by the same rules — which is why this function is short, and why no window
+ * contains a line about what an image means.
+ *
+ * @param {object} context - The windows, and the model they act on
+ */
+function bindDragAndDrop({ shell, scene, selection, viewport, workspace, hierarchy, inspector }) {
+    const context = () => ({
+        scene,
+        project: workspace.project,
+        workspace,
+        folder: null,
+        select: object => selection.set(object)
+    });
+
+    // Files dropped on the scene surface: imported, then placed where they landed.
+    viewport.addEventListener('dragover', event => {
+        if (!carriesFiles(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        viewport.classList.add('importing');
+    });
+    viewport.addEventListener('dragleave', () => viewport.classList.remove('importing'));
+    viewport.addEventListener('drop', async event => {
+        if (!carriesFiles(event)) return;
+        event.preventDefault();
+        viewport.classList.remove('importing');
+
+        const payload = await readDroppedFiles(event);
+        if (!payload) return;
+
+        const point = viewport.worldAt(event.clientX, event.clientY);
+        performDrop(payload, { zone: DropZone.SCENE, x: point.x, y: point.y }, context());
+    });
+
+    // A resource carried out of the Project panel. The panel announces the drag; the shell
+    // decides which window the pointer ended over, and asks the rules the same question
+    // each of those windows would have asked.
+    let carried = null;
+
+    shell.addEventListener('px-drag-start', event => {
+        carried = event.detail.payload;
+    });
+
+    shell.addEventListener('px-drag-end', event => {
+        const payload = carried;
+        carried = null;
+        if (!payload) return;
+
+        const { clientX, clientY } = event.detail;
+
+        if (inspector.drop(payload, clientX, clientY)) return;
+
+        if (viewport.containsClient(clientX, clientY)) {
+            const point = viewport.worldAt(clientX, clientY);
+            const target = { zone: DropZone.SCENE, x: point.x, y: point.y };
+            if (canDrop(payload, target).allowed) performDrop(payload, target, context());
+            return;
+        }
+
+        if (within(hierarchy, clientX, clientY)) hierarchy.drop(payload);
+    });
+}
+
+/** Whether a point is inside an element's box. */
+function within(element, clientX, clientY) {
+    const box = element.getBoundingClientRect();
+    return clientX >= box.left && clientX < box.right && clientY >= box.top && clientY < box.bottom;
+}
+
 function bindShortcuts({ scene, selection, viewport, history, workspace }) {
+    /**
+     * The stack `Ctrl Z` acts on.
+     *
+     * ONE STACK PER RESOURCE, so the shortcut has to say WHICH resource the creator is
+     * working in (ADR-0024). The Workspace answers it, from the last intent that was
+     * authored — not from the selection, which a deletion clears: the undo that would put
+     * a deleted resource back must not be aimed at the scene (ADR-0025).
+     *
+     * @returns {object|null} The History to act on
+     */
+    const active = () => workspace?.activeHistory ?? history;
+
     globalThis.addEventListener('keydown', event => {
         // Undo is the one shortcut that must work while a field has focus — a creator
         // mid-edit expects Ctrl Z to take back the last thing they did, and letting the
@@ -336,13 +488,15 @@ function bindShortcuts({ scene, selection, viewport, history, workspace }) {
                 return;
             }
             if (key === 'z' && !event.shiftKey) {
-                if (history?.canUndo) event.preventDefault();
-                history?.undo();
+                const stack = active();
+                if (stack?.canUndo) event.preventDefault();
+                stack?.undo();
                 return;
             }
             if ((key === 'z' && event.shiftKey) || key === 'y') {
-                if (history?.canRedo) event.preventDefault();
-                history?.redo();
+                const stack = active();
+                if (stack?.canRedo) event.preventDefault();
+                stack?.redo();
             }
             return;
         }
@@ -350,6 +504,16 @@ function bindShortcuts({ scene, selection, viewport, history, workspace }) {
         if (isEditing()) return;
 
         if (event.key === 'Delete' || event.key === 'Backspace') {
+            // Whichever of the two selections holds something. A folder takes its contents
+            // with it, as one undo entry (ADR-0025).
+            const resource = workspace?.selected;
+            if (resource) {
+                if (!workspace.canRemove(resource.id).allowed) return;
+                event.preventDefault();
+                workspace.project.removeTree(resource.id);
+                return;
+            }
+
             const object = selection.object;
             if (!object) return;
             event.preventDefault();
@@ -363,7 +527,10 @@ function bindShortcuts({ scene, selection, viewport, history, workspace }) {
             return;
         }
 
-        if (event.key === 'Escape') selection.clear();
+        if (event.key === 'Escape') {
+            selection.clear();
+            workspace.select(null);
+        }
     });
 }
 

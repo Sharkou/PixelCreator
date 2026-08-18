@@ -11,8 +11,26 @@
 // same project a browser does (ADR-0011). The rule is enforced, not merely written down:
 // see `tools/layers/rules.js`.
 
-export { ResourceKind, createResource, createResourceId, isResourceId } from './resource.js';
+export {
+    ResourceKind,
+    createResource,
+    createResourceId,
+    hasPayload,
+    isFolder,
+    isResourceId
+} from './resource.js';
 export { ResourceStore, MemoryResourceStore } from './store.js';
 export { Project, MANIFEST_VERSION } from './project.js';
 export { loadComponentDefinitions, bindGraph, readGraph } from './graphs.js';
 export { addScene, saveScene, loadScene, sceneResources } from './scenes.js';
+export { baseNameOf, extensionOf, hasValidExtension, withExtension } from './naming.js';
+export {
+    KIND_LABELS,
+    ancestorsOf,
+    canMove,
+    childrenOf,
+    descendantsOf,
+    folderPath,
+    isDescendantOf,
+    uniqueResourceName
+} from './folders.js';

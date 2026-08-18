@@ -9,7 +9,7 @@ import {
     componentSchema,
     defineComponent,
     componentDefinition,
-    componentGraphId,
+    componentGraph,
     serializeComponent,
     serializeScene,
     deserializeScene
@@ -29,7 +29,7 @@ function controllerDefinition() {
             speed: { type: 'number', default: 120 },
             jumping: { type: 'boolean', default: false }
         },
-        graph: 'res_d4'
+        graph: { version: 1, nodes: ['On Update'], connections: [] }
     };
 }
 
@@ -128,7 +128,7 @@ test('a definition needs neither properties nor a graph', () => {
     const Tagged = defineComponent({ type: 'res_tag', label: 'Tagged' });
 
     assert.deepEqual({ ...new Tagged() }, {});
-    assert.equal(componentGraphId(Tagged), null);
+    assert.equal(componentGraph(Tagged), null);
 });
 
 // --- identity is not a name (ADR-0021) ---------------------------------------------
@@ -173,23 +173,27 @@ test('a component with no label is shown under its type', () => {
 
 // --- the definition belongs to the type --------------------------------------------
 
-test('the graph is referenced by ResourceId, never inlined', () => {
+test('the graph is carried by the definition, and belongs to the type', () => {
     const definition = controllerDefinition();
     const Controller = defineComponent(definition);
 
     const first = new Controller();
     const second = new Controller();
 
-    assert.equal(componentGraphId(first), 'res_d4');
-    assert.equal(componentGraphId(second), 'res_d4', 'one graph for the type');
+    assert.equal(componentGraph(first), definition.graph);
+    assert.equal(componentGraph(second), componentGraph(first), 'one graph for the type');
     assert.deepEqual(globalThis.Object.keys(first), ['speed', 'jumping']);
-    assert.deepEqual(serializeComponent(first), { speed: 120, jumping: false });
+    assert.deepEqual(
+        serializeComponent(first),
+        { speed: 120, jumping: false },
+        'an instance carries values, never the behaviour'
+    );
 
-    // An inline graph would be a second copy of a resource that already exists on its
-    // own, and would stop the Graph window from opening it alone (ADR-0016, ADR-0020).
+    // A `.px` IS the component and its graph, so an identifier here would mean a second
+    // resource for one thing a creator made once (ADR-0026).
     assert.throws(
-        () => defineComponent({ type: 'A', graph: { version: 1, nodes: [] } }),
-        /must be a ResourceId or null/
+        () => defineComponent({ type: 'A', graph: 'res_d4' }),
+        /it does not point at one/
     );
     assert.throws(() => defineComponent({ type: 'A', graph: [] }), TypeError);
 });

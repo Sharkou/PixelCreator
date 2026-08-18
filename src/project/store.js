@@ -67,6 +67,20 @@ export class ResourceStore {
     delete(id) {
         throw new Error('ResourceStore.delete: not implemented');
     }
+
+    /**
+     * How many bytes a payload occupies, when the store can say.
+     *
+     * OPTIONAL, AND HONEST ABOUT IT. An HTTP store knows from a header, IndexedDB from the
+     * blob, and a store that cannot tell answers `null` rather than guessing — a panel
+     * showing "0 B" for a file it never measured is worse than a panel showing nothing.
+     *
+     * @param {string} id - The ResourceId
+     * @returns {Promise<number|null>|number|null} The size in bytes, or null
+     */
+    size(id) {
+        return null;
+    }
 }
 
 /**
@@ -121,6 +135,33 @@ export class MemoryResourceStore extends ResourceStore {
     has(id) {
         return this.#entries.has(id);
     }
+
+    size(id) {
+        if (!this.#payloads.has(id)) return null;
+        return byteLength(this.#payloads.get(id));
+    }
+}
+
+/**
+ * The size a payload would occupy, measured the way it is stored.
+ *
+ * A binary payload knows its own length; anything else is JSON here and on the wire, so
+ * its serialized length is the honest number rather than a guess about object overhead.
+ *
+ * @param {any} payload - The content
+ * @returns {number|null} Bytes, or null when there is nothing to measure
+ */
+function byteLength(payload) {
+    if (payload === null || payload === undefined) return null;
+    if (payload instanceof globalThis.ArrayBuffer) return payload.byteLength;
+    if (globalThis.ArrayBuffer?.isView(payload)) return payload.byteLength;
+
+    const text = typeof payload === 'string' ? payload : globalThis.JSON.stringify(payload);
+    if (typeof text !== 'string') return null;
+
+    // Counted in UTF-8, which is what a store writes and a transport sends. Available in
+    // every environment this runs in: browsers, Node, Deno.
+    return new globalThis.TextEncoder().encode(text).length;
 }
 
 function clone(value) {

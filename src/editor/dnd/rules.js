@@ -1,0 +1,318 @@
+// What a drop MEANS, as a table of rules (ADR-0026).
+//
+// THE POINT OF THIS FILE IS THAT THERE IS ONLY ONE OF IT. The alternative — and what every
+// editor grows without it — is `handleDropImage()` in the viewport, `handleDropFile()` in
+// the Project panel, `handleDropResource()` in the Inspector, each with its own idea of
+// what an image dropped somewhere ought to do. Here a drop is `(payload, target)`, and a
+// rule says whether it applies and what it performs.
+//
+// A RULE IS PURE OF THE DOM. It receives a context — the project, the scene, the
+// workspace, the registry — and calls the same model APIs a menu item would. That is what
+// lets every rule below be tested under Node, which is where the interesting cases are:
+// the refusals.
+//
+// A RULE MAY REFUSE, AND SAYING WHY IS PART OF THE CONTRACT. `describe()` returns the
+// sentence a panel shows and a test asserts, because "nothing happened" is the worst
+// possible answer to a drag a creator spent a gesture on.
+//
+// ORDER MATTERS: the first rule that accepts wins, so the specific ones come before the
+// general ones. Adding a kind of drop is adding a row.
+
+import { Object as SceneObject, Transform, PropertyType, componentSchema } from '../../core/mod.js';
+import { ResourceKind, isFolder, canMove } from '../../project/mod.js';
+import { Sprite } from '../../runtime/mod.js';
+import { DragKind, DropZone } from './payload.js';
+import { createResourceOfKind } from '../project/commands.js';
+import { uniqueName } from '../commands.js';
+
+/**
+ * What an image becomes when it is dropped into a scene.
+ *
+ * ONE PLACE SAYS "AN IMAGE IS A SPRITE". A second kind of asset — a sound, a tilemap —
+ * adds a row here and changes nothing else, which is the extension point ADR-0026 asks
+ * for. A kind with no row is not instantiable, and the rules below refuse it by name.
+ */
+const INSTANTIABLE = [
+    {
+        /** @param {object} resource - The manifest entry */
+        accepts: resource => resource.kind === ResourceKind.ASSET
+            && (resource.mime ?? '').startsWith('image/'),
+        label: 'Image',
+        /**
+         * Build the object an image becomes.
+         * @param {object} resource - The image resource
+         * @param {object} context - `{ scene }`
+         * @returns {object} A detached object, ready to be added
+         */
+        build: (resource, { scene }) => {
+            const object = new SceneObject(uniqueName(scene, baseName(resource.name)));
+            object.addComponent(new Transform());
+            // `source` is the ResourceId, never the bytes: a scene references its images
+            // and never carries them (ADR-0020).
+            object.addComponent(new Sprite(resource.id, 64, 64));
+            return object;
+        }
+    }
+];
+
+/** The rules, first match wins. */
+export const RULES = [
+    // --- files from outside the browser -------------------------------------------
+
+    {
+        id: 'files-to-project',
+        accepts: (payload, target) => payload.kind === DragKind.FILES && target.zone === DropZone.PROJECT,
+        describe: payload => `Import ${countFiles(payload)} into this folder`,
+        perform: (payload, target, context) => {
+            const created = importFiles(payload, target.parent ?? null, context);
+            if (created.length > 0) context.workspace?.select(created.at(-1).id);
+            return { imported: created };
+        }
+    },
+
+    {
+        id: 'files-to-scene',
+        accepts: (payload, target) => payload.kind === DragKind.FILES && target.zone === DropZone.SCENE,
+        describe: payload => `Import ${countFiles(payload)} and place it in the scene`,
+        perform: (payload, target, context) => {
+            // Imported first, instantiated second: what lands in the scene is a reference
+            // to a resource the project now declares, never a loose blob (ADR-0020).
+            const created = importFiles(payload, context.folder ?? null, context);
+            const objects = created
+                .map(resource => instantiate(resource, target, context))
+                .filter(Boolean);
+
+            return { imported: created, objects };
+        }
+    },
+
+    {
+        id: 'files-to-hierarchy',
+        accepts: (payload, target) => payload.kind === DragKind.FILES && target.zone === DropZone.HIERARCHY,
+        describe: payload => `Import ${countFiles(payload)} and add it to the scene`,
+        perform: (payload, target, context) => {
+            const created = importFiles(payload, context.folder ?? null, context);
+            const objects = created
+                .map(resource => instantiate(resource, { ...target, x: 0, y: 0 }, context))
+                .filter(Boolean);
+
+            return { imported: created, objects };
+        }
+    },
+
+    {
+        id: 'files-to-content',
+        accepts: (payload, target) => payload.kind === DragKind.FILES && target.zone === DropZone.CONTENT,
+        describe: () => 'Replace this content',
+        perform: (payload, target, context) => {
+            const entry = payload.entries[0];
+            if (!entry || !target.resource) return null;
+
+            // THE SAME PATH AS THE `Replace…` BUTTON: one way to replace content, whichever
+            // gesture asked for it.
+            return { replaced: replaceContent(target.resource, entry, context) };
+        }
+    },
+
+    // --- a resource being dragged out of the Project panel --------------------------
+
+    {
+        id: 'resource-to-property',
+        accepts: (payload, target) => payload.kind === DragKind.RESOURCE
+            && target.zone === DropZone.PROPERTY
+            && acceptsResource(target, payload.resource),
+        describe: (payload, target) => `Assign to ${target.prop}`,
+        perform: (payload, target) => {
+            target.component.setProperty(target.prop, payload.resource.id);
+            return { assigned: payload.resource.id };
+        }
+    },
+
+    {
+        id: 'resource-to-scene',
+        accepts: (payload, target) => payload.kind === DragKind.RESOURCE
+            && target.zone === DropZone.SCENE
+            && Boolean(instantiator(payload.resource)),
+        describe: payload => `Place ${payload.resource.name || 'this resource'} in the scene`,
+        perform: (payload, target, context) => ({
+            objects: [instantiate(payload.resource, target, context)].filter(Boolean)
+        })
+    },
+
+    {
+        id: 'resource-to-hierarchy',
+        accepts: (payload, target) => payload.kind === DragKind.RESOURCE
+            && target.zone === DropZone.HIERARCHY
+            && Boolean(instantiator(payload.resource)),
+        describe: payload => `Add ${payload.resource.name || 'this resource'} to the scene`,
+        // No world point: the Hierarchy is a list of what exists, not a place. The origin
+        // is the honest default, and the creator moves it in the viewport.
+        perform: (payload, target, context) => ({
+            objects: [instantiate(payload.resource, { ...target, x: 0, y: 0 }, context)].filter(Boolean)
+        })
+    },
+
+    {
+        id: 'resource-to-project',
+        accepts: (payload, target) => payload.kind === DragKind.RESOURCE
+            && target.zone === DropZone.PROJECT
+            && canMove(target.project ?? null, payload.resource.id, target.parent ?? null),
+        describe: (payload, target) => (target.parent ? 'Move into this folder' : 'Move to the top level'),
+        perform: (payload, target, context) => ({
+            moved: context.project.move(payload.resource.id, target.parent ?? null, { index: target.index ?? null })
+        })
+    },
+
+    // --- refusals that are worth stating -------------------------------------------
+
+    {
+        id: 'object-to-project',
+        accepts: (payload, target) => payload.kind === DragKind.OBJECT && target.zone === DropZone.PROJECT,
+        // A PREFAB IS NOT A FILE FORMAT, IT IS A DECISION (ADR-0026): what a prefab is, how
+        // an instance stays connected to it, and what an override means. None of that is
+        // decided, so the drop is refused with the reason rather than half-built.
+        refuses: () => 'Prefabs are not designed yet — an object cannot be saved as a resource.',
+        describe: () => 'Prefabs are not designed yet'
+    }
+];
+
+/**
+ * The rule that would handle a drop, or null.
+ *
+ * @param {object} payload - What is being dragged
+ * @param {object} target - Where it would land
+ * @returns {object|null} The rule
+ */
+export function ruleFor(payload, target) {
+    if (!payload || !target) return null;
+    return RULES.find(rule => rule.accepts(payload, target)) ?? null;
+}
+
+/**
+ * Whether a drop is legal, and what to say about it.
+ *
+ * @param {object} payload - What is being dragged
+ * @param {object} target - Where it would land
+ * @returns {{allowed: boolean, reason: string|null, rule: object|null}} The verdict
+ */
+export function canDrop(payload, target) {
+    const rule = ruleFor(payload, target);
+    if (!rule) return { allowed: false, reason: null, rule: null };
+
+    const refusal = rule.refuses?.(payload, target) ?? null;
+    if (refusal) return { allowed: false, reason: refusal, rule };
+
+    return { allowed: true, reason: rule.describe?.(payload, target) ?? null, rule };
+}
+
+/**
+ * Perform a drop.
+ *
+ * @param {object} payload - What is being dragged
+ * @param {object} target - Where it lands
+ * @param {object} context - `{ project, scene, workspace, folder }`
+ * @returns {object|null} What the rule did, or null when the drop was refused
+ */
+export function performDrop(payload, target, context = {}) {
+    const verdict = canDrop(payload, target);
+    if (!verdict.allowed) return null;
+
+    return verdict.rule.perform(payload, target, context) ?? null;
+}
+
+/**
+ * The instantiation rule for a resource, or null when it is not instantiable.
+ * @param {object} resource - The manifest entry
+ * @returns {object|null} The rule
+ */
+export function instantiator(resource) {
+    if (!resource || isFolder(resource)) return null;
+    return INSTANTIABLE.find(entry => entry.accepts(resource)) ?? null;
+}
+
+/**
+ * Whether a property would accept a resource.
+ *
+ * Declared, never guessed: a property says `type: 'resource'` in its schema (ADR-0007), and
+ * anything else refuses. That is what makes dropping an image on a number a visible refusal
+ * rather than a silent corruption.
+ *
+ * @param {object} target - A PROPERTY target: `{ component, prop }`
+ * @param {object} resource - The resource being dropped
+ * @returns {boolean} True when the property takes it
+ */
+export function acceptsResource(target, resource) {
+    if (!target?.component || !target.prop || !resource) return false;
+
+    const schema = componentSchema(target.component);
+    const property = schema?.[target.prop];
+    if (property?.type !== PropertyType.RESOURCE) return false;
+
+    // A property may narrow what it takes: `kind: 'asset'`, `mime: 'image/'`. Absent, it
+    // takes any resource — the schema said `resource`, and that is a statement.
+    if (property.kind && property.kind !== resource.kind) return false;
+    if (property.mime && !(resource.mime ?? '').startsWith(property.mime)) return false;
+
+    return true;
+}
+
+/**
+ * Declare a resource for each dropped file.
+ * @returns {object[]} The manifest entries that were created
+ */
+function importFiles(payload, parent, context) {
+    const created = [];
+
+    for (const entry of payload.entries) {
+        const resource = createResourceOfKind(context.project, ResourceKind.ASSET, {
+            parent,
+            file: { name: entry.name, type: entry.mime },
+            payload: entry.payload
+        });
+        if (resource) created.push(resource);
+    }
+
+    return created;
+}
+
+/** Write a new payload into a resource, the same way the Replace button does. */
+function replaceContent(resource, entry, context) {
+    if (entry.mime && entry.mime !== context.project.get(resource.id)?.mime) {
+        context.project.setProperty(resource.id, 'mime', entry.mime);
+    }
+    context.project.save(resource.id, entry.payload);
+    return resource.id;
+}
+
+/** Build the object a resource becomes, add it to the scene, and place it. */
+function instantiate(resource, target, context) {
+    const rule = instantiator(resource);
+    if (!rule || !context.scene) return null;
+
+    const object = rule.build(resource, context);
+    const transform = object.getComponent('Transform');
+    if (transform) {
+        transform.x = Math.round(target.x ?? 0);
+        transform.y = Math.round(target.y ?? 0);
+    }
+
+    // Through the Editor's own command, so what lands in the scene is one ADD_OBJECT and
+    // undoes like anything else (ADR-0019). `addObject` is passed in rather than imported
+    // to keep this module free of the window that owns the gesture.
+    const added = context.addObject
+        ? context.addObject(object, target)
+        : context.scene.add(object);
+
+    context.select?.(added);
+    return added;
+}
+
+/** A file name without its extension, for naming an object after the image it shows. */
+function baseName(name) {
+    return (name ?? '').replace(/\.[^.]+$/, '') || 'Image';
+}
+
+function countFiles(payload) {
+    const count = payload.entries.length;
+    return count === 1 ? `“${payload.entries[0].name}”` : `${count} files`;
+}

@@ -437,11 +437,11 @@ test('a defined Component runs its graph, keeps its data, and survives a round t
         type: 'res_c3',
         label: 'Controller',
         properties: { speed: { type: 'number', default: 120 }, travelled: { type: 'number' } },
-        graph: 'res_d4'
+        graph: { version: 1, nodes: ['On Update', 'move'], connections: [] }
     };
-    // The definition names its graph by ResourceId; the Project layer resolves it and
-    // binds the resolved graph (ADR-0020). Standing in for that here.
-    const resolved = { version: 1, nodes: ['On Update', 'move'], connections: [] };
+    // The `.px` carries its graph; the Project layer reads the payload and binds what it
+    // finds there (ADR-0020, ADR-0026). Standing in for that here.
+    const resolved = definition.graph;
     const registry = new ComponentRegistry();
     registry.register(Transform);
     const Controller = registry.register(defineComponent(definition));
@@ -483,9 +483,9 @@ test('every instance of a type shares one graph and no execution state', () => {
         type: 'res_counter',
         label: 'Counter',
         properties: { count: { type: 'number' } },
-        graph: 'res_counter_graph'
+        graph: { version: 1, nodes: [] }
     };
-    const resolved = { version: 1, nodes: [] };
+    const resolved = definition.graph;
     const Counter = defineComponent(definition);
     const graphs = [];
     const behaviors = new Behaviors(resource => {
@@ -514,8 +514,8 @@ test('every instance of a type shares one graph and no execution state', () => {
 test('a graph is immutable to the runtime: editing means binding a new one', () => {
     // Mutating a bound graph in place is not observed — the Editor produces a new graph
     // and binds it, which is what makes a hot edit predictable.
-    const Controller = defineComponent({ type: 'res_c3', label: 'Controller', graph: 'res_d4' });
     const first = { label: 'v1' };
+    const Controller = defineComponent({ type: 'res_c3', label: 'Controller', graph: first });
     const seen = [];
     let interpretations = 0;
     const behaviors = new Behaviors(resource => {

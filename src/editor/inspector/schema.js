@@ -121,9 +121,11 @@ export function describeComponent(component) {
  * Fixed and hand-written, unlike a component's: these are the Object's own contract, not
  * user data, so there is nothing to discover and nothing that can drift.
  *
- * `visible` and `lock` are absent on purpose — the Hierarchy row carries them, where they
- * are one click away for every object at once instead of one at a time. `id` is absent
- * because a creator never needs it and showing it makes the panel look like a debugger.
+ * `lock` is absent on purpose — the Hierarchy row carries it, where it is one click away
+ * for every object at once instead of one at a time. `active` IS here as well as in the
+ * row, because they are the same field: the checkbox and the eye read and write one value
+ * (ADR-0026 §13). `id` is absent because a creator never needs it and showing it makes the
+ * panel look like a debugger.
  *
  * @returns {object[]} Field descriptors
  */
@@ -132,7 +134,9 @@ export function objectFields() {
         field('name', { type: FieldKind.STRING }),
         field('tag', { type: FieldKind.STRING, tooltip: 'One free-form tag, used by findByTag()' }),
         field('layer', { type: FieldKind.INT, tooltip: 'Draw order: higher draws later' }),
-        field('active', { type: FieldKind.BOOLEAN, tooltip: 'Simulated and drawn' })
+        // The same value the Hierarchy's eye writes: one flag, two controls, no drift
+        // (ADR-0026 §13).
+        field('active', { type: FieldKind.BOOLEAN, tooltip: 'Simulated and drawn — the Hierarchy eye' })
     ];
 }
 

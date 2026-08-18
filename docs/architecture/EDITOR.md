@@ -247,8 +247,8 @@ valeur n'est touchée.
 ### Le projet, les ressources et ce qui est ouvert — IMPLÉMENTÉ (2026-08-17)
 
 `Workspace` (`editor/project/workspace.js`) tient le `Project` de la couche `project/`, la
-ressource ouverte et les piles d'annulation. C'est **l'`OpenEditor` d'ADR-0020**, jamais
-sérialisé dans le projet.
+ressource ouverte, **la ressource sélectionnée** et les piles d'annulation. C'est
+**l'`OpenEditor` d'ADR-0020**, jamais sérialisé dans le projet.
 
 - La scène de démarrage est déclarée comme `Resource` de `kind: 'scene'`, donc listée,
   renommable et enregistrable comme n'importe quelle autre.
@@ -257,13 +257,135 @@ sérialisé dans le projet.
   n'est pas une intention (ADR-0003) — et une opération répliquée non plus.
 - `Ctrl S` écrit la scène dans le `ResourceStore` (en mémoire pour l'instant : passer à
   IndexedDB est un échange d'implémentation, pas une réécriture d'appelants).
-- Deux piles distinctes : celle de la scène et celle du manifeste. `Ctrl Z` dans le panneau
-  Project reprend un renommage de ressource, pas une édition de scène (ADR-0024).
+- Deux piles distinctes : celle de la scène et celle du manifeste. `Ctrl Z` vise **celle où
+  la dernière intention a été émise** — pas celle que la sélection désigne, parce qu'une
+  suppression efface la sélection et l'undo qui la restaure viserait alors la scène
+  (ADR-0024, ADR-0025).
 
-`<px-project>` liste le manifeste — groupé par `kind`, renommage sur double-clic,
-suppression par ligne — et **rien d'autre** : pas de grille de vignettes, pas de payload
-préchargé. La ressource ouverte ne peut pas être supprimée depuis la liste tant que fermer
-un éditeur n'existe pas.
+### Le Project est un gestionnaire de ressources — IMPLÉMENTÉ (2026-08-17)
+
+Un dossier est une `Resource` de `kind: 'folder'`, et la hiérarchie est un lien `parent`,
+jamais une chaîne de caractères (ADR-0025). Tout ce que le panneau fait passe par les
+Operations existantes :
+
+| Geste | Ce qui part |
+|---|---|
+| `+` ▸ Folder / Scene / Component / Image… | `ADD_RESOURCE` (deux, en un `batch`, pour un Component et son graphe) |
+| Renommer (double-clic, `F2`, ou l'Inspector) | **un** `SET_PROPERTY name`, à la validation |
+| Glisser sur un dossier, ou sur un fil d'Ariane | `SET_PROPERTY parent` |
+| Supprimer | `REMOVE_RESOURCE`, payload embarqué ; un dossier emporte son contenu en un `batch` |
+
+**Le menu `+` est une table, pas une suite de branches** (`editor/project/commands.js`).
+Un kind y déclare son libellé, son icône, sa fonction de création, et éventuellement
+`pick` — « il me faut un fichier d'abord ». Le panneau lit ce drapeau ; il n'apprend jamais
+ce qu'est une image.
+
+**Navigation :** un dossier à la fois, avec un fil d'Ariane `Project / Assets / Images`.
+Pas un second arbre à côté de celui de la Hierarchy : on **parcourt** un projet, on
+**arrange** une scène, et ce ne sont pas les mêmes gestes. Le fil d'Ariane est aussi une
+cible de dépôt — c'est ainsi qu'une ressource sort d'un dossier en un geste.
+
+**La recherche sort du dossier ouvert**, délibérément : un filtre qui ne regarderait que le
+dossier courant répondrait « aucun résultat » pour une ressource qui existe.
+
+**Désélectionner** est un clic dans le vide de la liste, ou `Échap`. La ressource ouverte —
+et tout dossier qui la contient — ne peut pas être supprimée tant que fermer un éditeur
+n'existe pas : le bouton est désactivé **et dit pourquoi**.
+
+### L'Inspector inspecte aussi les ressources — IMPLÉMENTÉ (2026-08-17)
+
+Sélectionner une ressource affiche un panneau `Resource` construit des **mêmes primitives**
+que le panneau d'`Object` : en-tête d'identité, sections, lignes, `<px-field>`.
+
+```
+Resource ─── Name        [ Opening Level ]
+Details  ─── Type        Scene
+             Location    Scenes
+             Objects     6
+             Size        2.2 KB
+             Revision    1
+             Created     17 août 2026, 22:50
+             Modified    17 août 2026, 22:50
+             Identifier  w4389jnjrq9e
+Content  ─── [ aperçu ]  [ Replace… ]        (uniquement pour un kind qui a du contenu)
+```
+
+Ce qui change d'un `kind` à l'autre est **une ligne de table** dans
+`editor/inspector/resource.js` — des champs en plus, et de quoi montrer le contenu. Un kind
+absent de la table s'inspecte quand même : la table ajoute, elle n'autorise pas. Il n'y a
+donc **aucun** `if (kind === 'image')` dans la fenêtre, et il ne doit jamais y en avoir.
+
+`describeResource()` est pur et testé sous Node, comme `describeComponent()` (ADR-0007).
+
+**Un seul Inspector, donc un seul sujet :** sélectionner un objet efface la sélection de
+ressource et réciproquement. L'exclusion est câblée dans `editor.js`, pas dans les
+fenêtres — aucune n'a besoin de savoir que l'autre existe.
+
+**Le nom d'une ressource se valide, il ne se propage pas lettre par lettre.** C'est
+l'exception à la règle du produit, et elle est énoncée : une opération par caractère, ce
+sont onze entrées d'historique et onze messages réseau pour un mot (ADR-0025 §6).
+
+### Drag & drop — une capacité, pas trois bricolages — IMPLÉMENTÉ (2026-08-18)
+
+`editor/dnd/` décrit ce qu'un dépôt **signifie** (ADR-0026 §6) :
+
+| Fichier | Rôle |
+|---|---|
+| `payload.js` | ce qui est porté : `files`, `resource`, `object`, `component` |
+| `rules.js` | ce qu'un dépôt fait, **pur**, testé sous Node |
+| `files.js` | la seule partie qui a besoin d'un navigateur (`DataTransfer`) |
+
+| Geste | Effet |
+|---|---|
+| Fichier(s) du bureau → Project | import dans le dossier ouvert, sélection de la dernière |
+| Fichier(s) → scène | import **puis** instanciation au point du dépôt |
+| Fichier(s) → Hierarchy | import puis instanciation à `(0, 0)` |
+| Fichier → section Content | remplacement du payload, même chemin que `Replace…` |
+| Image du Project → scène | `Object + Transform + Sprite(source)` au point du dépôt |
+| Image du Project → Hierarchy | idem, à `(0, 0)` |
+| Image du Project → propriété `resource` | affectation de la référence |
+| Ressource → dossier / entre deux tuiles | `MOVE_RESOURCE` (dossier **et** rang) |
+| Object → Project | **refusé, avec sa raison** : le prefab n'est pas conçu (ADR-0026 §7) |
+
+Une propriété n'accepte une ressource que si son schéma déclare `type: 'resource'`, et peut
+restreindre par `kind` ou par `mime` : dropper une image sur un nombre est un refus visible,
+jamais une valeur corrompue.
+
+Deux transports, un vocabulaire : un fichier arrive par `DataTransfer`, une ressource par un
+geste de pointeur (un drag HTML5 ne traverse pas proprement plusieurs Shadow Roots). Le shell
+convertit les deux en payload et pose la même question aux mêmes règles.
+
+### Project est un navigateur d'assets — IMPLÉMENTÉ (2026-08-18)
+
+Grille de tuiles à la densité du prototype, vignette en damier, **aperçu réel** pour une
+image, glyphe de type sinon. Fil d'Ariane, navigation par dossier, recherche et sélection
+conservés.
+
+Les gestes sont ceux de la Hierarchy, délibérément (ADR-0026 §3) : clic sélectionne, second
+clic sur une tuile déjà sélectionnée renomme après la même pause de 400 ms, `F2` renomme tout
+de suite, **double-clic ouvre** — un dossier s'ouvre, et pour le reste l'intention est émise
+et attend l'éditeur correspondant.
+
+Le renommage édite la **base** : l'extension est décidée par le type et affichée à côté du
+champ dans l'Inspector (ADR-0026 §4).
+
+### Un seul état de vie : `active` — IMPLÉMENTÉ (2026-08-18)
+
+L'œil de la Hierarchy et la case `Active` de l'Inspector écrivent **le même champ**. `visible`
+a été supprimé du contrat d'`Object` : le Runtime ignorait un objet inactif, le renderer en
+ignorait un invisible, aucun contrôle n'exposait la différence, et les deux vues étaient en
+désaccord (ADR-0026 §2).
+
+### `+` et `…` dans chaque fenêtre — IMPLÉMENTÉ (2026-08-18)
+
+Le menu de création du Project est le **même** dropdown catégorisé que Add Object et Add
+Component. `…` tient ce qu'une fenêtre peut faire au-delà de son action principale, et rien
+d'inventé : importer et remonter (Project), tout déplier / replier et désélectionner
+(Hierarchy), tout déplier / replier (Inspector).
+
+Le titlebar porte `Share` et un bouton de profil, à la place que la maquette leur donne. Ni
+l'un ni l'autre n'est branché, et **tous deux le disent** — il n'existe ni pipeline de
+publication ni système de comptes.
 
 ### Le renommage attend, et c'est la seule chose qui attend
 
@@ -307,12 +429,15 @@ où elle disparaît réellement.
 
 ### Ce qui n'est pas encore là
 
-Play / Pause · barre de commandes `Ctrl K` · Assets réels (import, vignettes) · Timeline
-fonctionnelle · Console · Graph · Players · sélection multiple · rotation à la poignée ·
-détachement de fenêtre · ouverture d'une seconde scène depuis le panneau Project.
+Play / Pause · barre de commandes `Ctrl K` · vignettes d'assets · Timeline fonctionnelle ·
+Console · Graph · Players · sélection multiple · rotation à la poignée · détachement de
+fenêtre · ouverture d'une seconde scène depuis le panneau Project · ordre à l'intérieur
+d'un dossier.
 
 Faits depuis : undo/redo (ADR-0024), Operations structurelles (ADR-0019), reparentage et
-réordonnancement par glisser-déposer, liste de ressources réelle et enregistrement.
+réordonnancement par glisser-déposer, enregistrement, et le Project comme véritable
+gestionnaire de ressources — dossiers, création, déplacement, suppression, inspection
+(ADR-0025).
 
 Le titlebar ne porte **ni transport ni barre de commandes**, bien que la maquette dessine
 les deux : Play demande l'instantané de scène restauré à l'arrêt, `Ctrl K` demande un

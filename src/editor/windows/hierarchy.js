@@ -8,10 +8,10 @@
 // Two levels of update, deliberately:
 //
 //   structure — the scene's five structural events rebuild the tree;
-//   values    — each row subscribes to its object's `name`, `active`, `visible` and
-//               `lock`, so renaming in the Inspector retitles the row on every keystroke
-//               without touching the tree at all. That letter-by-letter behaviour is a
-//               requirement of the product, not a side effect.
+//   values    — each row subscribes to its object's `name`, `active` and `lock`, so
+//               renaming in the Inspector retitles the row on every keystroke without
+//               touching the tree at all. That letter-by-letter behaviour is a requirement
+//               of the product, not a side effect.
 //
 // THE GESTURES, and why they are these ones (docs/architecture/EDITOR.md):
 //
@@ -60,7 +60,12 @@ import { icon, iconForObject } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import { searchField } from '../ui/search-field.js';
 import { createMenuItems, createObject, deleteObject, reparentObject } from '../commands.js';
-import { DropPosition, canDrop, dropPositionAt, dropTarget } from './drop.js';
+import { DropZone } from '../dnd/payload.js';
+import { canDrop, performDrop } from '../dnd/rules.js';
+import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
+// `canDropRow` is the geometry of a row drop; `canDrop` next door is the Editor-wide
+// rule table. Two questions, two names (CONVENTIONS.md).
+import { DropPosition, canDrop as canDropRow, dropPositionAt, dropTarget } from './drop.js';
 import { visibleObjects } from './search.js';
 import '../ui/window.js';
 
@@ -200,6 +205,11 @@ export class Hierarchy extends Element {
         /* Dropping past the last row appends to the top level, and says so. */
         .tree.append { box-shadow: inset 0 -2px 0 var(--px-accent); }
 
+        .tree.importing {
+            outline: 2px dashed var(--px-accent);
+            outline-offset: -4px;
+        }
+
         .empty {
             padding: var(--px-space-4) var(--px-space-3);
             color: var(--px-text-dim);
@@ -210,6 +220,7 @@ export class Hierarchy extends Element {
     #scene = null;
     #selection = null;
     #viewport = null;
+    #workspace = null;
 
     #collapsed = new globalThis.Set();
     // Rows survive a re-render, keyed by object id. That is not a cache for speed: a
@@ -234,11 +245,44 @@ export class Hierarchy extends Element {
      * @param {object} context.viewport - The viewport, for framing on double-click
      * @returns {Hierarchy} This element
      */
-    bind({ scene, selection, viewport }) {
+    bind({ scene, selection, viewport, workspace = null }) {
         this.#scene = scene;
         this.#selection = selection;
         this.#viewport = viewport;
+        this.#workspace = workspace;
         return this;
+    }
+
+    /**
+     * Whether a drag would be accepted here, and what it would do.
+     *
+     * Asked by the shell while a drag is in flight, so the cursor and the highlight are
+     * decided by the SAME rule that will perform the drop (ADR-0026 §8).
+     *
+     * @param {object} payload - What is being dragged
+     * @returns {{allowed: boolean, reason: string|null}} The verdict
+     */
+    accepts(payload) {
+        return canDrop(payload, { zone: DropZone.HIERARCHY });
+    }
+
+    /**
+     * Perform a drop of something dragged from elsewhere in the Editor.
+     * @param {object} payload - What is being dragged
+     * @returns {object|null} What the rule did
+     */
+    drop(payload) {
+        return performDrop(payload, { zone: DropZone.HIERARCHY }, this.#context());
+    }
+
+    #context() {
+        return {
+            scene: this.#scene,
+            project: this.#workspace?.project ?? null,
+            workspace: this.#workspace,
+            folder: null,
+            select: object => this.#selection.set(object)
+        };
     }
 
     connectedCallback() {
@@ -280,7 +324,24 @@ export class Hierarchy extends Element {
     }
 
     #build() {
-        this.#tree = el('div', { class: 'tree' });
+        this.#tree = el('div', {
+            class: 'tree',
+            // Clicking the empty space below the rows deselects — the same answer the
+            // viewport and the Project panel give to the same gesture (ADR-0026 §3).
+            onpointerdown: event => {
+                if (event.target !== this.#tree) return;
+                this.#cancelRename();
+                this.#selection.clear();
+            },
+            ondragover: event => {
+                if (!carriesFiles(event)) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'copy';
+                this.#tree.classList.add('importing');
+            },
+            ondragleave: () => this.#tree.classList.remove('importing'),
+            ondrop: event => this.#dropFiles(event)
+        });
 
         this.#search = searchField({
             placeholder: 'Search objects',
@@ -299,8 +360,16 @@ export class Hierarchy extends Element {
             onclick: () => this.#openCreateMenu(create)
         }, icon('plus'));
 
+        const more = el('button', {
+            class: 'ghost',
+            type: 'button',
+            title: 'More',
+            'aria-label': 'More hierarchy actions',
+            onclick: () => this.#openMoreMenu(more)
+        }, icon('more'));
+
         this.shadowRoot.replaceChildren(el('px-window', { label: 'Hierarchy', icon: 'hierarchy' },
-            el('div', { class: 'actions', slot: 'actions' }, this.#search.toggle, create),
+            el('div', { class: 'actions', slot: 'actions' }, this.#search.toggle, create, more),
             this.#search.bar,
             this.#tree
         ));
@@ -395,10 +464,16 @@ export class Hierarchy extends Element {
             glyph: () => (object.lock ? 'lock' : 'unlock')
         });
 
-        const visibility = this.#stateButton(object, 'visible', {
-            on: () => !object.visible,
-            title: () => (object.visible ? 'Hide' : 'Show'),
-            glyph: () => (object.visible ? 'eye' : 'eye-off')
+        // ONE FLAG, ONE CONTROL. This eye is `object.active` — the same value the
+        // Inspector shows and the same one the Runtime reads to decide whether an object
+        // updates and draws. There used to be a second flag, `visible`, which only the
+        // renderer consulted and only this button wrote: two states nobody could tell
+        // apart, and an Inspector checkbox that did not move when you hid a row
+        // (ADR-0026 §13).
+        const visibility = this.#stateButton(object, 'active', {
+            on: () => !object.active,
+            title: () => (object.active ? 'Hide' : 'Show'),
+            glyph: () => (object.active ? 'eye' : 'eye-off')
         });
 
         const remove = el('button', {
@@ -456,7 +531,7 @@ export class Hierarchy extends Element {
         const entry = { object, row, twisty, name };
         this.#applyState(entry);
 
-        for (const prop of ['active', 'visible', 'lock']) {
+        for (const prop of ['active', 'lock']) {
             this.track(object.observe(prop, () => this.#applyState(entry)), group);
         }
 
@@ -492,7 +567,7 @@ export class Hierarchy extends Element {
     }
 
     #applyState({ object, row }) {
-        row.classList.toggle('hidden', !object.visible || !object.active);
+        row.classList.toggle('hidden', !object.active);
         row.classList.toggle('locked', object.lock);
     }
 
@@ -596,6 +671,47 @@ export class Hierarchy extends Element {
         }, { label: 'objects' });
     }
 
+    /**
+     * The `…` menu.
+     *
+     * Folding and unfolding every branch is the one thing this window does that no row can
+     * do on its own, and deselecting is the keyboard-free way out of a selection. Nothing
+     * is invented to make the list longer (ADR-0026 §14).
+     */
+    #openMoreMenu(anchor) {
+        const items = [
+            { heading: 'View' },
+            { id: 'expand', label: 'Expand all', icon: 'chevron' },
+            { id: 'collapse', label: 'Collapse all', icon: 'minus' },
+            { heading: 'Selection' },
+            { id: 'deselect', label: 'Deselect', icon: 'close' }
+        ];
+
+        openMenu(anchor, items, choice => {
+            if (choice === 'expand') this.#collapsed.clear();
+            if (choice === 'collapse') {
+                for (const object of this.#scene.objects()) {
+                    if (object.children.length > 0) this.#collapsed.add(object.id);
+                }
+            }
+            if (choice === 'deselect') this.#selection.clear();
+            this.#renderTree();
+        }, { label: 'actions' });
+    }
+
+    async #dropFiles(event) {
+        if (!carriesFiles(event)) return;
+        event.preventDefault();
+        this.#tree.classList.remove('importing');
+
+        const payload = await readDroppedFiles(event);
+        if (!payload) return;
+
+        // A file dropped on the Hierarchy is imported AND instantiated, at the origin:
+        // the same rule the scene surface uses, minus a point (ADR-0026 §11).
+        performDrop(payload, { zone: DropZone.HIERARCHY }, this.#context());
+    }
+
     #delete(object) {
         if (this.#selection.has(object)) this.#selection.clear();
         deleteObject(this.#scene, object);
@@ -693,7 +809,7 @@ export class Hierarchy extends Element {
             ? dropPositionAt(clientY, entry.row.getBoundingClientRect())
             : DropPosition.INTO;
 
-        if (!canDrop(drag.object, target)) return null;
+        if (!canDropRow(drag.object, target)) return null;
 
         const drop = dropTarget(this.#scene, drag.object, target, position);
         return drop ? { ...drop, target, position } : null;

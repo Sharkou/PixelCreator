@@ -29,6 +29,7 @@ export {
     moveComponentOperation,
     reparentOperation,
     addResourceOperation,
+    moveResourceOperation,
     removeResourceOperation
 } from './operations/operation.js';
 export { invert, invertible } from './operations/invert.js';
@@ -48,7 +49,7 @@ export {
     reconcileValues
 } from './component.js';
 export { missingComponent, isMissingComponent } from './missing.js';
-export { defineComponent, componentDefinition, componentGraphId } from './definition.js';
+export { defineComponent, componentDefinition, componentGraph } from './definition.js';
 
 export { Matrix } from './math/matrix.js';
 export { Transform, localMatrix, worldMatrix, worldPosition } from './components/transform.js';

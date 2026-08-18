@@ -42,7 +42,14 @@ export const OperationType = {
 
     // Project scope: a second pipeline, same machine (ADR-0020).
     ADD_RESOURCE: 'ADD_RESOURCE',
-    REMOVE_RESOURCE: 'REMOVE_RESOURCE'
+    REMOVE_RESOURCE: 'REMOVE_RESOURCE',
+    /**
+     * The manifest's `REPARENT`: one operation for filing a resource in another folder AND
+     * for ranking it among its siblings (ADR-0026). The argument is the one ADR-0019 makes
+     * for objects — a drop between two rows changes the folder and the position at once,
+     * and the inverse of a move is a move.
+     */
+    MOVE_RESOURCE: 'MOVE_RESOURCE'
 };
 
 /**
@@ -303,6 +310,47 @@ export function addResourceOperation({ resource, payload = null, index = null, o
         resource,
         payload,
         index,
+        origin,
+        actor,
+        batch
+    });
+}
+
+/**
+ * Build a MOVE_RESOURCE operation, for the Project pipeline (ADR-0026).
+ *
+ * `index` is a rank AMONG SIBLINGS, never a position in the flat manifest: a creator drops
+ * a row between two rows of the folder they are looking at, and a global position would
+ * mean something different on every machine whose manifest grew differently.
+ *
+ * @param {object} spec - Operation fields
+ * @param {string} spec.resource - The ResourceId being moved
+ * @param {string|null} [spec.parent] - The destination folder, or null for the top level
+ * @param {number|null} [spec.index] - Rank among the destination's children; appended when null
+ * @param {string|null} [spec.previousParent] - The folder it was in
+ * @param {number|null} [spec.previousIndex] - The rank it held
+ * @param {string} spec.origin - One of Origin
+ * @param {string} [spec.actor] - Who authored it
+ * @param {string} [spec.batch] - History grouping
+ * @returns {object} A frozen Operation
+ */
+export function moveResourceOperation({
+    resource,
+    parent = null,
+    index = null,
+    previousParent = null,
+    previousIndex = null,
+    origin,
+    actor,
+    batch
+}) {
+    return createOperation({
+        type: OperationType.MOVE_RESOURCE,
+        target: { object: resource, component: null },
+        parent,
+        index,
+        previousParent,
+        previousIndex,
         origin,
         actor,
         batch

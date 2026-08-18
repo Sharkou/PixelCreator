@@ -1,13 +1,16 @@
-// Loading Component definitions, and resolving the graphs they reference.
+// Loading Component definitions, and binding the graphs they carry.
 //
 // THIS IS THE ANSWER TO "WHO CALLS bind()" — a question ADR-0009, ADR-0015 and ADR-0016
 // each left open. The Project layer does, because it is the only layer that can: the Core
 // never reaches storage, and the Runtime must not either.
 //
-//   definition.graph = 'res_d4'        a ResourceId, and nothing more (ADR-0016)
+//   MyComponent.px                     ONE resource: identity, properties, graph
 //        │
 //        ▼
-//   project.read('res_d4')             the Project resolves it
+//   project.read(id)                   the Project reads the payload, once
+//        │
+//        ▼
+//   defineComponent(definition)        the Core turns data into an ordinary type
 //        │
 //        ▼
 //   behaviors.bind(Type, graph)        the Runtime receives a value, never an identifier
@@ -16,11 +19,12 @@
 // existing while still letting the Project drive the binding: the caller — the Editor, a
 // server's start-up, a test — owns both objects and hands one to the other.
 //
-// The graph is not duplicated anywhere: one GraphResource, read once per load, bound by
-// object identity. Editing it means writing a new payload and binding again, which is
-// exactly the invalidation `Behaviors` already implements (ADR-0016 §7).
+// ONE RESOURCE, SO ONE COPY (ADR-0026). The graph travels inside the definition it belongs
+// to; editing it means writing that payload and binding again, which is exactly the
+// invalidation `Behaviors` already implements (ADR-0016 §7). There is no second read, no
+// second resource, and no way for the two halves of a `.px` to disagree.
 
-import { componentGraphId, defineComponent } from '../core/mod.js';
+import { componentGraph, defineComponent } from '../core/mod.js';
 import { ResourceKind } from './resource.js';
 
 /**
@@ -61,18 +65,19 @@ export async function loadComponentDefinitions(project, { registry, behaviors, o
 }
 
 /**
- * Resolve the graph a component type references, and bind it.
+ * Bind the graph a component type carries.
  *
- * @param {object} project - The project to read from
+ * `project` is still a parameter, and deliberately: reading a `.px` from storage is this
+ * layer's job even when the graph turns out to be already in hand, and a caller should not
+ * have to know which of the two it is.
+ *
+ * @param {object} project - The project the type was loaded from
  * @param {Function|object} component - A component class or instance
  * @param {object} behaviors - The runtime's Behaviors host
  * @returns {Promise<object|null>} The graph that was bound, or null when there is none
  */
 export async function bindGraph(project, component, behaviors) {
-    const graphId = componentGraphId(component);
-    if (!graphId) return null;
-
-    const graph = await project.read(graphId);
+    const graph = componentGraph(component);
     if (!graph) return null;
 
     behaviors.bind(component, graph);
@@ -80,11 +85,15 @@ export async function bindGraph(project, component, behaviors) {
 }
 
 /**
- * Read a graph payload by identifier.
+ * Read the graph held by a `.px` resource.
+ *
  * @param {object} project - The project to read from
- * @param {string} graphId - The GraphResource's identifier
- * @returns {Promise<object|null>|object|null} The graph, or null
+ * @param {string} id - The `.px` resource's identifier
+ * @returns {Promise<object|null>} The graph, or null when there is none
  */
-export function readGraph(project, graphId) {
-    return graphId ? project.read(graphId) : null;
+export async function readGraph(project, id) {
+    if (!id) return null;
+
+    const definition = await project.read(id);
+    return definition?.graph ?? null;
 }

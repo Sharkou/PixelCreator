@@ -38,7 +38,7 @@ import { rebuildObject, restoreSubtree } from './rebuild.js';
 export const FORMAT_VERSION = 2;
 
 /** Object fields that are part of the serialized contract, in a fixed order. */
-const OBJECT_FIELDS = ['id', 'name', 'tag', 'layer', 'active', 'visible', 'lock', 'owner'];
+const OBJECT_FIELDS = ['id', 'name', 'tag', 'layer', 'active', 'lock', 'owner'];
 
 /**
  * Serialize an object.

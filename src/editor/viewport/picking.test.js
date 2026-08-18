@@ -122,10 +122,10 @@ test('hidden, inactive and locked objects are not picked', () => {
     const object = place(scene, 'Block', { components: [new RectangleRenderer(40, 40)] });
     const view = centredView();
 
-    object.visible = false;
+    object.active = false;
     assert.equal(pick(scene.objects(), view, 100, 50), null);
 
-    object.visible = true;
+    object.active = true;
     object.active = false;
     assert.equal(pick(scene.objects(), view, 100, 50), null);
 

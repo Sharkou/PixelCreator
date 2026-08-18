@@ -32,19 +32,19 @@ import { createResource, ResourceKind } from './resource.js';
  * @param {object} scene - The scene to store
  * @param {object} [options] - Options
  * @param {string} [options.name] - Displayed name; the scene's own when omitted
- * @param {string} [options.path] - Where it is filed
+ * @param {string|null} [options.parent] - The folder it goes in
  * @param {string} [options.id] - Existing ResourceId, used when loading a manifest
  * @param {number} [options.index] - Rank in the manifest
  * @param {string} [options.actor] - Who authored the intent
  * @param {string} [options.batch] - Groups this into a larger history entry
  * @returns {object|null} The manifest entry, or null when the operation was refused
  */
-export function addScene(project, scene, { name, path, id, index, actor, batch } = {}) {
+export function addScene(project, scene, { name, parent = null, id, index, actor, batch } = {}) {
     const resource = createResource({
         kind: ResourceKind.SCENE,
         id,
         name: name ?? scene.name ?? '',
-        path: path ?? ''
+        parent
     });
 
     return project.add(resource, serializeScene(scene), { index, actor, batch });

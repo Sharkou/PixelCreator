@@ -154,7 +154,8 @@ test('the Object header carries no duplicate of the Hierarchy row', () => {
     const names = objectFields().map(field => field.name);
 
     assert.deepEqual(names, ['name', 'tag', 'layer', 'active']);
-    assert.equal(names.includes('visible'), false, 'the Hierarchy row owns visibility');
+    assert.equal(names.includes('lock'), false, 'the Hierarchy row owns the lock');
+    assert.equal(names.includes('active'), true, 'and `active` is shown in both, being one value');
     assert.equal(names.includes('lock'), false, 'and the lock');
     assert.equal(names.includes('id'), false, 'the id is never shown to a creator');
 });

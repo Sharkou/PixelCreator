@@ -29,8 +29,17 @@
 
 import { createId } from '../core/mod.js';
 
-/** What a Resource can be. Four kinds, and the list is meant to stay short. */
+/** What a Resource can be. The list is meant to stay short. */
 export const ResourceKind = {
+    /**
+     * A folder is a Resource, not a second concept beside one (ADR-0025).
+     *
+     * It has an id, a name and a place in the manifest like everything else; what it does
+     * not have is a payload. Making it a kind rather than a container means one identity
+     * scheme, one set of Operations, one undo stack — renaming a folder is the same
+     * `SET_PROPERTY` that renames a scene, and deleting one is the same `REMOVE_RESOURCE`.
+     */
+    FOLDER: 'folder',
     SCENE: 'scene',
     COMPONENT: 'component',
     GRAPH: 'graph',
@@ -46,7 +55,9 @@ const KINDS = new Set(globalThis.Object.values(ResourceKind));
  * @property {string} id - Opaque identity, immutable for as long as the resource exists
  * @property {string} kind - One of ResourceKind
  * @property {string} name - Displayed name. Editable, not unique, referenced by nothing
- * @property {string} path - Where it is filed. Indicative; moving it breaks nothing
+ * @property {string|null} parent - The folder holding it, by id, or null at the top level
+ * @property {number} created - When it was declared, epoch milliseconds
+ * @property {number} modified - When its payload was last written, epoch milliseconds
  * @property {string} [mime] - For an asset, what its payload is
  * @property {number} revision - Bumped when the payload changes, for invalidation
  */
@@ -66,24 +77,70 @@ export function createResourceId() {
 /**
  * Build a manifest entry.
  *
+ * `parent` REPLACED `path` (ADR-0025). A string path made the hierarchy a naming
+ * convention: renaming a folder meant rewriting every entry that mentioned it, two
+ * entries could disagree about the same folder, and nothing said whether `assets/` was a
+ * folder that existed. A parent NAMES the folder by its identity, which is the same thing
+ * an Object's `parent` does — one idea, applied twice.
+ *
  * @param {object} spec - The entry
  * @param {string} spec.kind - One of ResourceKind
  * @param {string} [spec.id] - Existing identifier, used when loading
  * @param {string} [spec.name] - Displayed name
- * @param {string} [spec.path] - Where it is filed
+ * @param {string|null} [spec.parent] - The folder holding it, by id
  * @param {string} [spec.mime] - For an asset, what its payload is
  * @param {number} [spec.revision] - Starting revision
+ * @param {number} [spec.created] - When it was declared; now by default
+ * @param {number} [spec.modified] - When its payload was last written; `created` by default
  * @returns {Resource} A frozen manifest entry
  */
-export function createResource({ kind, id, name = '', path = '', mime, revision = 1 }) {
+export function createResource({ kind, id, name = '', parent = null, mime, revision = 1, created, modified }) {
     if (!KINDS.has(kind)) {
         throw new TypeError(`createResource: unknown resource kind "${kind}"`);
     }
 
-    const resource = { id: id ?? createResourceId(), kind, name, path, revision };
+    // Stamped by the author, like the identifier and for the same reason: a receiver that
+    // stamped its own would make two machines disagree about when a thing was made.
+    const at = created ?? Date.now();
+
+    const resource = {
+        id: id ?? createResourceId(),
+        kind,
+        name,
+        parent: parent ?? null,
+        revision,
+        created: at,
+        modified: modified ?? at
+    };
     if (mime !== undefined) resource.mime = mime;
 
     return globalThis.Object.freeze(resource);
+}
+
+/**
+ * Tell whether a kind can hold other resources.
+ *
+ * One place answers it, so a second container kind — should one ever be justified — is a
+ * change here and nowhere else.
+ *
+ * @param {object|string} resource - A resource, or a kind
+ * @returns {boolean} True when it is a folder
+ */
+export function isFolder(resource) {
+    return (typeof resource === 'string' ? resource : resource?.kind) === ResourceKind.FOLDER;
+}
+
+/**
+ * Tell whether a kind carries a payload of its own.
+ *
+ * A folder does not, which is why saving one, or reading one, is meaningless rather than
+ * merely empty.
+ *
+ * @param {object|string} resource - A resource, or a kind
+ * @returns {boolean} True when the kind has content in the store
+ */
+export function hasPayload(resource) {
+    return !isFolder(resource);
 }
 
 /**

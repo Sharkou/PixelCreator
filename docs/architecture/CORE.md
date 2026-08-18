@@ -197,6 +197,19 @@ event never announces a tree that is half moved » et son pendant côté Editor 
 
 ---
 
+### `Object.visible` a été supprimé — 2026-08-18
+
+Un `Object` portait `active` **et** `visible` : le Runtime sautait un objet inactif, le
+SceneRenderer sautait en plus un objet invisible. Aucun contrôle de l'Editor n'exposait la
+différence, et les deux qui existaient — l'œil de la Hierarchy et la case de l'Inspector —
+écrivaient chacun un champ différent, donc se contredisaient à l'écran.
+
+`active` est désormais le seul état de vie d'un objet, et `serializeObject()` ne l'écrit
+plus qu'une fois (ADR-0026 §2). « Simulé mais non dessiné », s'il redevient un besoin,
+appartiendra à un Component de rendu — là où la question se pose.
+
+---
+
 ## Serialization
 
 `serialize()` explicite, versionné :
@@ -230,13 +243,20 @@ jamais eu d'`active` n'en gagne pas un, parce que « absent » veut déjà dire 
 
 ## Resources
 
-Voir `../ARCHITECTURE.md` §9. Points clés :
+**Elles ne sont pas dans le Core, et c'est la décision.** `Resource`, `ResourceStore` et
+`Project` vivent dans `src/project/` (ADR-0020) : le Core ne touche jamais au stockage.
+Voir `../ARCHITECTURE.md` §9 et `../decisions/ADR-0025-folders-and-resource-inspection.md`.
 
-- `Resource` devient réel — la classe existe dans Legacy (`src/core/resource.js`) mais
-  **n'est jamais utilisée** ; `Loader` fabrique des `File` natifs augmentés à la place.
-- Id stable, indépendant du chemin (ADR-0010).
-- La réactivité des ressources (un fichier se comporte comme un `Object`) est conservée :
-  c'est ce qui fait que renommer un script dans l'Inspector recompile le composant.
+Ce que le Core fournit et que la couche Project réutilise, sans rien de spécifique aux
+ressources :
+
+- `createId()` — une seule notion d'identité dans tout le produit (ADR-0010).
+- `makeReactive()` — une entrée de manifeste s'observe comme un `Object`, ce qui fait que
+  renommer une ressource retitre une ligne et un panneau sans que personne les pousse.
+- `Operations`, `invert()` — le pipeline du Project est **la même classe**, instanciée une
+  seconde fois avec un `resolve` différent. Un dossier créé, déplacé ou supprimé est donc
+  répliqué et annulé par la machinerie du Core, sans un type d'opération de plus
+  (ADR-0025 §3).
 
 ---
 

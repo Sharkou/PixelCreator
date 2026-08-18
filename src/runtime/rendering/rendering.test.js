@@ -139,7 +139,7 @@ test('objects draw in layer order', () => {
     assert.equal(renderer.of('fillRect').length, 2);
 });
 
-test('inactive and invisible objects are skipped', () => {
+test('inactive objects are skipped', () => {
     const renderer = recordingRenderer();
     const hidden = new Object('Hidden');
     const inactive = new Object('Inactive');
@@ -147,7 +147,7 @@ test('inactive and invisible objects are skipped', () => {
         object.addComponent(new Transform());
         object.addComponent(new RectangleRenderer());
     }
-    hidden.visible = false;
+    hidden.active = false;
     inactive.active = false;
 
     const drawn = new SceneRenderer(renderer).render(sceneWith(hidden, inactive));

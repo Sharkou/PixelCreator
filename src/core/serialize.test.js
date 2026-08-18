@@ -41,7 +41,7 @@ test('an object serializes its contract fields in a fixed order', () => {
     const data = serializeObject(object);
 
     assert.deepEqual(globalThis.Object.keys(data), [
-        'id', 'name', 'tag', 'layer', 'active', 'visible', 'lock', 'owner',
+        'id', 'name', 'tag', 'layer', 'active', 'lock', 'owner',
         'parent', 'children', 'components'
     ]);
     assert.equal(data.name, 'Player');
@@ -336,7 +336,7 @@ test('a dangling child reference fails loudly', () => {
         id: 'scene-1',
         name: 'Main',
         objects: [{
-            id: 'a', name: 'A', tag: '', layer: 0, active: true, visible: true, lock: false,
+            id: 'a', name: 'A', tag: '', layer: 0, active: true, lock: false,
             owner: null, parent: null, children: ['missing'], components: []
         }]
     };

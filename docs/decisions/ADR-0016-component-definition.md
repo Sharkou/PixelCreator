@@ -23,6 +23,19 @@ identité stable : le composant *était* le fichier, et rien ne décrivait ce qu
 
 ---
 
+## Amendement du 2026-08-18 (ADR-0026) — le graphe est PORTÉ, pas référencé
+
+Cet ADR exigeait que `definition.graph` soit un `ResourceId`, pour deux raisons : ne pas
+dupliquer un graphe, et laisser la fenêtre Graph l'ouvrir sans charger la définition.
+
+**Un Component et son graphe sont désormais une seule ressource `.px`**, et `graph` porte
+le graphe lui-même. Les deux raisons tiennent toujours, autrement : avec une ressource
+unique la duplication est impossible par construction, et « ouvrir le graphe » *est*
+« ouvrir le `.px` ». Ce qui change est qu'un créateur qui fait un Component obtient **un**
+fichier, pas deux.
+
+`defineComponent()` refuse maintenant une chaîne, avec un message qui dit pourquoi.
+
 ## Décision
 
 ### 1. Un Component est propriétés + comportement

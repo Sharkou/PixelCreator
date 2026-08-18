@@ -30,18 +30,43 @@
 // value and twice the panel to read. The object's id is not shown at all — a creator does
 // not need it, and a panel that opens with a random string looks like a debugger.
 
-import { isMissingComponent, observe } from '../../core/mod.js';
+import { isMissingComponent, makeReactive, observe } from '../../core/mod.js';
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
-import { icon, iconForComponent, iconForObject } from '../ui/icons.js';
+import { icon, iconForComponent, iconForObject, iconForResource } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import { searchField } from '../ui/search-field.js';
 import { addComponent, availableComponents, moveComponent, removeComponent } from '../commands.js';
 import { DropPosition, dropPositionAt, insertionIndex } from './drop.js';
+import { describeResource } from '../inspector/resource.js';
+import { baseNameOf, extensionOf, hasPayload, withExtension } from '../../project/mod.js';
+import { pickFile, readAsDataUrl } from '../ui/file.js';
+import { DropZone } from '../dnd/payload.js';
+import { canDrop, performDrop } from '../dnd/rules.js';
+import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
 import { describeType, groupTypes } from '../registry.js';
 import { FieldKind, describeComponent, isNumeric, objectFields, rows } from '../inspector/schema.js';
 import '../ui/window.js';
 import '../ui/field.js';
+
+/**
+ * A resource's payload, when reading one makes sense and costs nothing.
+ *
+ * Synchronous on purpose: the in-memory store answers at once, and a store that returns a
+ * promise answers with one — which this treats as "not read yet" rather than blocking a
+ * panel on storage. What the panel shows then is the facts it has, and no content preview:
+ * an asynchronous read belongs to the pass that adds an asynchronous store (ADR-0020).
+ *
+ * @param {object} project - The project
+ * @param {object} resource - The manifest entry
+ * @returns {any} The payload, or null
+ */
+function readable(project, resource) {
+    if (!hasPayload(resource)) return null;
+
+    const payload = project.read(resource.id);
+    return payload && typeof payload.then === 'function' ? null : payload;
+}
 
 /** How far a pointer travels before a press on a section header becomes a reorder. */
 const DRAG_THRESHOLD = 4;
@@ -143,11 +168,26 @@ export class Inspector extends Element {
 
         /* ── reordering ─────────────────────────────────────────────────── */
 
-        /* The order of these sections is the order the runtime updates in and the
-           renderer draws in (ADR-0018), so it is edited here, by dragging a header. */
-        section[data-type] > header { cursor: grab; }
+        /* THE HEADER IS A BUTTON, THE GRIP IS A HANDLE (ADR-0026 §10, §12). Clicking a
+           header folds the section, so it takes the pointer cursor; the drag that reorders
+           lives on a grip that shows grab, because a surface that can be clicked AND
+           dragged with no mark is one a creator has to discover by accident. */
+        section[data-type] > header { cursor: pointer; }
+
+        header .grip {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 12px;
+            flex: 0 0 auto;
+            color: var(--px-text-dim);
+            cursor: grab;
+            opacity: 0.55;
+        }
+
+        section > header:hover .grip { opacity: 1; color: var(--px-text-muted); }
         section.dragging { opacity: 0.4; }
-        section.dragging > header { cursor: grabbing; }
+        section.dragging .grip { cursor: grabbing; }
 
         section[data-type] { position: relative; }
 
@@ -230,6 +270,56 @@ export class Inspector extends Element {
             font-style: italic;
         }
 
+        /* ── resource facts and content ─────────────────────────────────── */
+
+        /* A fact is read, not edited, so it is set as text in the value column rather than
+           in a disabled control that invites a click. Monospace for the same reason every
+           value in this panel is: a column of numbers and identifiers has to align. */
+        .row .value {
+            font-family: var(--px-font-mono);
+            font-size: var(--px-text-sm);
+            color: var(--px-text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+        }
+
+        /* The part of a name a creator may not edit, drawn where it reads as part of the
+           value rather than as a second field. */
+        .row .suffix {
+            flex: 0 0 auto;
+            align-self: center;
+            font-family: var(--px-font-mono);
+            font-size: var(--px-text-xs);
+            color: var(--px-text-dim);
+        }
+
+        px-field.drop, .preview.drop, .none.drop, .add.drop {
+            outline: 2px dashed var(--px-accent);
+            outline-offset: 2px;
+            border-radius: var(--px-radius-sm);
+        }
+
+        .preview {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: var(--px-space-2);
+            margin-bottom: var(--px-space-2);
+            background: var(--px-surface-sunken);
+            border: 1px solid var(--px-border);
+            border-radius: var(--px-radius-sm);
+        }
+
+        /* Bounded so a large image cannot push the panel around, and pixellated because
+           this is a pixel-art editor: a thumbnail that smooths the art misreports it. */
+        .preview img {
+            max-width: 100%;
+            max-height: 180px;
+            image-rendering: pixelated;
+        }
+
         /* ── add ────────────────────────────────────────────────────────── */
 
         .add {
@@ -277,6 +367,7 @@ export class Inspector extends Element {
     #scene = null;
     #selection = null;
     #registry = null;
+    #workspace = null;
     #body = null;
     #search = null;
     #create = null;
@@ -291,17 +382,25 @@ export class Inspector extends Element {
     #dragged = false;
 
     /**
-     * Point the window at the selection it follows.
+     * Point the window at the selections it follows.
+     *
+     * TWO SELECTIONS, ONE PANEL. An Object comes from the scene's `Selection`, a Resource
+     * from the `Workspace` (ADR-0025). They are mutually exclusive — selecting in one
+     * clears the other, wired in `editor.js` — so this window never has to decide which of
+     * two things a creator meant.
+     *
      * @param {object} context - Editor context
      * @param {object} context.scene - The scene
      * @param {object} context.selection - The Editor selection
      * @param {object} context.registry - Component registry the Add menu lists
+     * @param {object} [context.workspace] - The workspace, for the selected resource
      * @returns {Inspector} This element
      */
-    bind({ scene, selection, registry }) {
+    bind({ scene, selection, registry, workspace = null }) {
         this.#scene = scene;
         this.#selection = selection;
         this.#registry = registry;
+        this.#workspace = workspace;
         return this;
     }
 
@@ -313,8 +412,11 @@ export class Inspector extends Element {
             // the same primitives: find what is already there, then add. A creator who has
             // learned one header has learned both.
             this.#search = searchField({
-                placeholder: 'Search components',
-                label: 'components',
+                // A Resource has properties and facts, an Object has components — one
+                // field searches whichever the panel is showing, so it is named for the
+                // thing they have in common (ADR-0026 §9).
+                placeholder: 'Search properties',
+                label: 'properties',
                 onQuery: query => {
                     this.#query = query;
                     this.#render();
@@ -334,9 +436,17 @@ export class Inspector extends Element {
 
             this.#create = create;
 
+            const more = el('button', {
+                class: 'ghost',
+                type: 'button',
+                title: 'More',
+                'aria-label': 'More inspector actions',
+                onclick: () => this.#openMoreMenu(more)
+            }, icon('more'));
+
             this.shadowRoot.append(
                 el('px-window', { label: 'Inspector', icon: 'inspector' },
-                    el('div', { class: 'actions', slot: 'actions' }, this.#search.toggle, create),
+                    el('div', { class: 'actions', slot: 'actions' }, this.#search.toggle, create, more),
                     this.#search.bar,
                     this.#body
                 )
@@ -353,11 +463,63 @@ export class Inspector extends Element {
             }));
         }
 
+        if (this.#workspace) {
+            this.track(this.#workspace.on('selection', () => this.#render()));
+            // A resource panel shows facts that a manifest mutation changes — a revision, a
+            // size, a location. Only the selected one is worth redrawing for.
+            this.track(this.#workspace.project.operations.on('operation', operation => {
+                const selected = this.#workspace.selectedId;
+                if (!selected) return;
+                // A rename arrives through the name field's own binding; redrawing on it
+                // would take the field being typed into with it.
+                if (operation.type === 'SET_PROPERTY' && operation.prop === 'name') return;
+                if (operation.target.object === selected) this.#render();
+            }));
+        }
+
         this.#render();
+    }
+
+    /**
+     * The `…` menu.
+     *
+     * Folding is the only view state this panel owns, and it is the only thing here that a
+     * creator cannot reach from a row. Nothing is invented to lengthen the list
+     * (ADR-0026 §14).
+     */
+    #openMoreMenu(anchor) {
+        const items = [
+            { heading: 'View' },
+            { id: 'expand', label: 'Expand all sections', icon: 'chevron' },
+            { id: 'collapse', label: 'Collapse all sections', icon: 'minus' }
+        ];
+
+        openMenu(anchor, items, choice => {
+            if (choice === 'expand') this.#folded.clear();
+            if (choice === 'collapse') {
+                const object = this.#selection.object;
+                for (const type of object?.componentTypes() ?? []) this.#folded.add(type);
+                if (this.#workspace?.selected) {
+                    for (const key of ['resource:fields', 'resource:details', 'resource:content']) {
+                        this.#folded.add(key);
+                    }
+                }
+            }
+            this.#render();
+        }, { label: 'actions' });
     }
 
     #render() {
         this.release('panel');
+
+        // A resource, when one is selected, and an object otherwise. The two selections are
+        // mutually exclusive (see bind()), so this is a route rather than a priority.
+        const resource = this.#workspace?.selected ?? null;
+        if (resource) {
+            this.#create.disabled = true;
+            this.#renderResource(resource);
+            return;
+        }
 
         const object = this.#selection.object;
         this.#create.disabled = !object;
@@ -365,7 +527,7 @@ export class Inspector extends Element {
         if (!object) {
             fill(this.#body, el('div', { class: 'empty' },
                 el('span', { class: 'glyph' }, icon('inspector', 20)),
-                el('span', { textContent: 'Select an object to inspect it.' })
+                el('span', { textContent: 'Select an object or a resource to inspect it.' })
             ));
             return;
         }
@@ -394,6 +556,277 @@ export class Inspector extends Element {
                 : null,
             searching ? null : this.#renderAddButton(object)
         );
+    }
+
+    // --- the Resource panel -------------------------------------------------------
+    //
+    // THE SAME PANEL, A DIFFERENT SUBJECT. Identity header, sections, rows, one field per
+    // editable value: everything below reuses what a component's panel is built from, so
+    // a Resource does not get a second Inspector with its own idea of what a row is.
+    //
+    // AND NO CHAIN OF BRANCHES. What differs between kinds — the extra facts, whether
+    // there is content to show — is answered by `describeResource()` (inspector/resource.js).
+    // This method renders an answer; it never asks what kind it is.
+
+    #renderResource(resource) {
+        const project = this.#workspace.project;
+        const payload = readable(project, resource);
+        const description = describeResource(resource, {
+            project,
+            payload,
+            size: project.store.size?.(resource.id) ?? null
+        });
+
+        fill(this.#body,
+            this.#renderResourceIdentity(resource, description),
+            this.#renderSection({
+                name: 'Resource',
+                key: 'resource:fields',
+                glyph: iconForResource(resource),
+                body: description.fields.map(descriptor => this.#renderResourceRow(resource, descriptor))
+            }),
+            this.#renderSection({
+                name: 'Details',
+                key: 'resource:details',
+                glyph: 'inspector',
+                body: description.metadata.map(entry => el('div', { class: 'row' },
+                    el('span', { class: 'label', textContent: entry.label }),
+                    el('span', { class: 'value', textContent: globalThis.String(entry.value) })
+                ))
+            }),
+            description.content
+                ? this.#renderSection({
+                    name: 'Content',
+                    key: 'resource:content',
+                    glyph: 'image',
+                    body: this.#renderContent(resource, description.content)
+                })
+                : null
+        );
+    }
+
+    #renderResourceIdentity(resource, description) {
+        const title = el('span', { class: 'title', textContent: description.title });
+
+        this.track(observe(this.#workspace.project.get(resource.id), 'name', change => {
+            title.textContent = change.value || 'Untitled';
+        }), 'panel');
+
+        return el('div', { class: 'identity' },
+            el('span', { class: 'glyph' }, icon(iconForResource(resource), 20)),
+            el('div', { class: 'who' },
+                title,
+                el('span', { class: 'kind', textContent: description.kindName })
+            )
+        );
+    }
+
+    /**
+     * One editable field of a resource.
+     *
+     * TWO THINGS DIFFER FROM A COMPONENT'S ROW, and both come from where the value lives.
+     * A manifest entry has no `setProperty()` of its own — the operation belongs to the
+     * Project's pipeline (ADR-0020) — so the writer is handed in; and the write happens on
+     * validate, because a rename is ONE intent and one undo entry, not one per keystroke
+     * (ADR-0025).
+     */
+    #renderResourceRow(resource, descriptor) {
+        const entry = this.#workspace.project.get(resource.id);
+
+        // The box holds the BASE name; the extension is drawn beside it, because the kind
+        // decides it and a creator may not type it away (ADR-0026).
+        const extension = descriptor.name === 'name' ? extensionOf(entry) : '';
+        const view = descriptor.name === 'name' ? this.#nameView(entry) : entry;
+
+        const field = el('px-field').bind(view, descriptor, {
+            // Letter by letter, like every other field in this panel: typing here retitles
+            // the Project row and the panel header on each keystroke, because the model is
+            // what both read (ADR-0003). The `batch` the field mints for the typing session
+            // is what keeps that ONE undo entry rather than eleven (ADR-0026).
+            write: (value, { batch }) => this.#workspace.project.setProperty(
+                resource.id,
+                descriptor.name,
+                descriptor.name === 'name' ? withExtension(value, entry) : value,
+                { batch }
+            )
+        });
+
+        const label = el('span', { class: 'label', textContent: descriptor.label });
+        field.bindLabel(label);
+
+        return el('div', { class: 'row' },
+            label,
+            el('div', { class: 'fields' },
+                field,
+                extension ? el('span', { class: 'suffix', textContent: extension }) : null
+            )
+        );
+    }
+
+    /**
+     * What a resource's content looks like, and how it is replaced.
+     *
+     * The preview is whatever `describeResource()` could make of the payload, including
+     * "this cannot be previewed" — which is said rather than drawn as a broken box.
+     */
+    #renderContent(resource, content) {
+        const nodes = [];
+        // The drop and the button take the SAME path: one import, one replacement, one
+        // place where a payload is written (ADR-0026).
+        const zone = { zone: DropZone.CONTENT, resource };
+
+        if (content.preview?.type === 'image') {
+            nodes.push(el('div', { class: 'preview' },
+                el('img', {
+                    src: content.preview.source,
+                    alt: resource.name || 'Preview',
+                    draggable: false
+                })));
+        } else if (content.preview?.note) {
+            nodes.push(el('div', { class: 'none', textContent: content.preview.note }));
+        }
+
+        for (const node of nodes) this.#makeDroppable(node, zone, { accept: content.accept });
+
+        if (content.replaceable) {
+            nodes.push(el('button', {
+                class: 'add',
+                type: 'button',
+                onclick: () => this.#replaceContent(resource, content)
+            }, icon('plus', 16), el('span', { textContent: 'Replace…' })));
+        }
+
+        return nodes;
+    }
+
+    /**
+     * Swap a resource's payload for a file the creator chooses.
+     *
+     * `project.save()` writes the payload, bumps the revision and stamps `modified` — the
+     * same path a scene save takes, so nothing about replacing content is a special case.
+     * The identity does not move, so every reference to this resource still resolves.
+     */
+    async #replaceContent(resource, content) {
+        const file = await pickFile({ accept: content.accept ?? '' });
+        if (!file) return;
+
+        const payload = await readAsDataUrl(file);
+        const project = this.#workspace.project;
+        // The declared format follows the file: replacing a PNG with a JPEG is a legal
+        // thing to do, and leaving the old mime would make the panel lie about it.
+        if (file.type && file.type !== project.get(resource.id)?.mime) {
+            project.setProperty(resource.id, 'mime', file.type);
+        }
+        project.save(resource.id, payload);
+        this.#render();
+    }
+
+    /**
+     * A reactive view of a resource's name, holding the part a creator edits.
+     *
+     * The field needs something to observe, and what it must show is the BASE name while
+     * the model holds the whole one. So this is a view-model of exactly one property, kept
+     * in step with the manifest — not a second source of truth: nothing writes to it, and
+     * every write goes to the project through the field's writer (ADR-0026).
+     *
+     * @param {object} entry - The reactive manifest entry
+     * @returns {object} A reactive `{ name }`
+     */
+    #nameView(entry) {
+        const view = makeReactive({ name: baseNameOf(entry) });
+
+        this.track(observe(entry, 'name', change => {
+            const base = baseNameOf({ ...entry, name: change.value });
+            if (view.name !== base) view.name = base;
+        }), 'panel');
+
+        return view;
+    }
+
+    /**
+     * Make an element a drop target for a zone the rules know about.
+     *
+     * The element learns nothing about what may land on it: it asks the rules whether the
+     * drag in flight is legal, and hands the same rules the drop (ADR-0026).
+     *
+     * @param {HTMLElement} element - What the pointer is over
+     * @param {object} zone - The target descriptor
+     * @param {object} [options] - Options
+     * @param {string} [options.accept] - Mime prefix for files, when the zone narrows it
+     */
+    #makeDroppable(element, zone, { accept = '' } = {}) {
+        element.addEventListener('dragover', event => {
+            if (!carriesFiles(event)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+            element.classList.add('drop');
+        });
+        element.addEventListener('dragleave', () => element.classList.remove('drop'));
+        element.addEventListener('drop', async event => {
+            if (!carriesFiles(event)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            element.classList.remove('drop');
+
+            const wanted = accept.startsWith('image/') ? 'image/' : '';
+            const payload = await readDroppedFiles(event, { accept: wanted });
+            if (!payload) return;
+
+            performDrop(payload, zone, this.#dropContext());
+            this.#render();
+        });
+
+        // A resource carried from the Project panel is a pointer drag, not a DataTransfer,
+        // so the shell asks this element what it would accept. Stamping the zone on the
+        // node is what lets `zoneAt()` answer without a second registry of rectangles.
+        element.pxDropZone = zone;
+    }
+
+    /**
+     * The drop zone under a point, when what is being dragged would be accepted there.
+     *
+     * @param {object} payload - What is being dragged
+     * @param {number} clientX - Pointer position
+     * @param {number} clientY - Pointer position
+     * @returns {object|null} `{ node, zone, verdict }`, or null
+     */
+    zoneAt(payload, clientX, clientY) {
+        for (const node of this.shadowRoot.querySelectorAll('px-field, .preview, .none, .add')) {
+            if (!node.pxDropZone) continue;
+
+            const box = node.getBoundingClientRect();
+            if (clientX < box.left || clientX >= box.right) continue;
+            if (clientY < box.top || clientY >= box.bottom) continue;
+
+            const verdict = canDrop(payload, node.pxDropZone);
+            return verdict.allowed ? { node, zone: node.pxDropZone, verdict } : null;
+        }
+        return null;
+    }
+
+    /**
+     * Perform a drop of something dragged from elsewhere in the Editor.
+     * @param {object} payload - What is being dragged
+     * @param {number} clientX - Pointer position
+     * @param {number} clientY - Pointer position
+     * @returns {object|null} What the rule did
+     */
+    drop(payload, clientX, clientY) {
+        const found = this.zoneAt(payload, clientX, clientY);
+        if (!found) return null;
+
+        const result = performDrop(payload, found.zone, this.#dropContext());
+        this.#render();
+        return result;
+    }
+
+    #dropContext() {
+        return {
+            project: this.#workspace?.project ?? null,
+            workspace: this.#workspace,
+            scene: this.#scene,
+            select: object => this.#selection.set(object)
+        };
     }
 
     /**
@@ -524,7 +957,19 @@ export class Inspector extends Element {
         section.dataset.type = type;
         const header = section.querySelector('header');
 
-        header.addEventListener('pointerdown', event => this.#armDrag(event, object, type, section));
+        // Six dots, before the caret: the one part of the header that means "carry me".
+        const grip = el('span', {
+            class: 'grip',
+            title: `Drag to reorder ${this.#titleOf(type)}`,
+            'aria-hidden': 'true'
+        }, icon('grip', 16));
+        header.prepend(grip);
+
+        grip.addEventListener('pointerdown', event => {
+            event.stopPropagation();
+            this.#armDrag(event, object, type, section);
+        });
+        grip.addEventListener('click', event => event.stopPropagation());
         header.addEventListener('pointermove', event => this.#dragMove(event));
         header.addEventListener('pointerup', event => this.#dragDrop(event));
         header.addEventListener('pointercancel', () => this.#cancelDrag());
@@ -534,14 +979,12 @@ export class Inspector extends Element {
         if (event.button > 0) return;
         // A filtered panel shows a subset, so the ranks on screen are not the model's.
         if (this.#query.trim() !== '') return;
-        // The tools are buttons; a press on one is not the start of a move.
-        if (event.target.closest('.tools')) return;
 
         this.#drag = {
             object,
             type,
             section,
-            header: event.currentTarget,
+            grip: event.currentTarget,
             pointerId: event.pointerId,
             from: event.clientY,
             started: false
@@ -555,7 +998,7 @@ export class Inspector extends Element {
         if (!drag.started) {
             if (Math.abs(event.clientY - drag.from) < DRAG_THRESHOLD) return;
             drag.started = true;
-            capture(drag.header, drag.pointerId);
+            capture(drag.grip, drag.pointerId);
             drag.section.classList.add('dragging');
         }
 
@@ -581,7 +1024,7 @@ export class Inspector extends Element {
         if (!drag) return;
 
         if (drag.started) {
-            release(drag.header, drag.pointerId);
+            release(drag.grip, drag.pointerId);
             drag.section.classList.remove('dragging');
         }
         this.#markDrop(null);
@@ -716,6 +1159,7 @@ export class Inspector extends Element {
     #renderRow(target, descriptor) {
         const field = el('px-field').bind(target, descriptor);
         const label = el('span', { class: 'label', textContent: descriptor.label });
+        this.#makeDroppable(field, { zone: DropZone.PROPERTY, component: target, prop: descriptor.name });
         // The panel drew the label; the field decides whether dragging it means
         // something, and owns every line of the value logic behind it.
         field.bindLabel(label);

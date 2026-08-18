@@ -34,7 +34,7 @@
 // controlled path and produces an Operation (CONVENTIONS.md). A plain `=` here would
 // change the value and never replicate, never undo, and never say so.
 
-import { observe } from '../../core/mod.js';
+import { createId, observe } from '../../core/mod.js';
 import { Element, el, fill } from './element.js';
 import { sheet } from './styles.js';
 import { attachScrub } from './scrub.js';
@@ -112,20 +112,43 @@ export class Field extends Element {
     // Element, so assigning it throws. Shadowing a global class means living by its
     // surface (CONVENTIONS.md).
     #prefix = null;
+    #write = null;
+    #commit = 'input';
+    // One typing session, one history entry. Minted on focus, dropped on blur — so eleven
+    // keystrokes replicate eleven times (the model is live, as it must be) and undo ONCE
+    // (ADR-0026). The mechanism is the `batch` the operation format already carries; there
+    // is no debounce and no second history.
+    #session = null;
 
     /**
      * Point the field at a property.
      *
-     * @param {object} target - The reactive Object or component holding the property
+     * TWO OPTIONS EXIST FOR THINGS THAT ARE NOT COMPONENTS. A manifest entry is reactive
+     * like a component, but it is not one: it has no `setProperty()` of its own, because
+     * the operation that changes it belongs to the Project's pipeline (ADR-0020). So a
+     * caller may hand in the writer, and may ask for the write to happen when the creator
+     * VALIDATES rather than on every keystroke.
+     *
+     * Letter-by-letter stays the default, and stays the rule for the model: typing in the
+     * Inspector retitles a Hierarchy row on every stroke, and that is the product's
+     * behaviour, not an accident. `commit: 'change'` is for a field whose every stroke
+     * would otherwise be its own Operation in the undo stack — a resource rename is one
+     * intent, not eleven (ADR-0025).
+     *
+     * @param {object} target - The reactive target holding the property
      * @param {object} descriptor - A descriptor from inspector/schema.js
      * @param {object} [options] - Options
      * @param {string} [options.prefix] - A one-letter label inside the control, for pairs
+     * @param {Function} [options.write] - (value, { batch }) => void; `setProperty` by default
+     * @param {string} [options.commit] - 'input' on every keystroke, 'change' on validate
      * @returns {Field} This field
      */
-    bind(target, descriptor, { prefix = null } = {}) {
+    bind(target, descriptor, { prefix = null, write = null, commit = 'input' } = {}) {
         this.#target = target;
         this.#descriptor = descriptor;
         this.#prefix = prefix;
+        this.#write = write;
+        this.#commit = commit;
         this.toggleAttribute('disabled', Boolean(descriptor?.readonly));
         if (descriptor?.tooltip) this.title = descriptor.tooltip;
         if (this.isConnected) this.#render();
@@ -259,14 +282,45 @@ export class Field extends Element {
             return number;
         }
 
-        return el('input', {
+        // `change` fires on Enter and on blur, which is what "the creator validated" means
+        // for a text box. Escape restores what the model holds and gives the focus back,
+        // so an abandoned edit leaves no trace — and neither produces an Operation.
+        const onValidate = this.#commit === 'change';
+
+        // What the creator typed before this session started, so Escape can put it back
+        // without the model having to remember an edit it was never told about.
+        let entry = null;
+
+        const input = el('input', {
             type: 'text',
             spellcheck: false,
             value: formatValue(descriptor, value),
             readOnly: descriptor.readonly,
-            oninput: event => this.#push(event.target.value),
-            onkeydown: event => event.stopPropagation()
+            onfocus: () => {
+                entry = this.#target[descriptor.name];
+                this.#session = createId();
+            },
+            onblur: () => {
+                this.#session = null;
+            },
+            oninput: onValidate ? null : event => this.#push(event.target.value),
+            onchange: onValidate ? event => this.#push(event.target.value) : null,
+            onkeydown: event => {
+                event.stopPropagation();
+                if (event.key === 'Enter') input.blur();
+                if (event.key !== 'Escape') return;
+
+                // Escape means "as it was when I started", whether the writes went out on
+                // every keystroke or waited for validation.
+                if (!onValidate && entry !== undefined && entry !== this.#target[descriptor.name]) {
+                    this.#push(entry);
+                }
+                input.value = formatValue(descriptor, this.#target[descriptor.name]);
+                input.blur();
+            }
         });
+
+        return input;
     }
 
     /** Send what the creator entered to the model. */
@@ -278,7 +332,14 @@ export class Field extends Element {
         // to "-1" is how a field ends up fighting the person typing into it.
         if (value === undefined) return;
 
-        this.#target.setProperty(descriptor.name, value);
+        // A writer supplied by the panel, or the controlled path a component carries. Both
+        // produce an Operation; which pipeline arbitrates it is the caller's business.
+        //
+        // The session is minted here when nothing minted it on focus. A field can be
+        // written to without ever having been focused — a scrub, a stepper, a test — and
+        // those writes belong to one gesture just as much as typing does.
+        if (this.#write) this.#write(value, { batch: this.#session ??= createId() });
+        else this.#target.setProperty(descriptor.name, value);
     }
 
     /** Bring a model change into the control, unless it is being typed into. */

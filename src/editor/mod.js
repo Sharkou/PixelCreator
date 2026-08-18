@@ -38,7 +38,23 @@ export {
 } from './commands.js';
 export { History, Histories } from './history.js';
 export { Workspace } from './project/workspace.js';
+export {
+    RESOURCE_CATEGORIES,
+    RESOURCE_KINDS,
+    emptyGraph,
+    createResourceOfKind,
+    resourceKind,
+    resourceMenuItems
+} from './project/commands.js';
 export { fillStarterScene } from './project/starter.js';
+
+export {
+    KIND_NAMES,
+    describeResource,
+    formatBytes,
+    formatDate,
+    hasContentPanel
+} from './inspector/resource.js';
 
 export {
     FieldKind,
@@ -64,6 +80,18 @@ export { matches, visibleObjects } from './windows/search.js';
 export { DropPosition, EDGE, canDrop, dropPositionAt, dropTarget, insertionIndex } from './windows/drop.js';
 
 export { Element, el, fill } from './ui/element.js';
+export { pickFile, readAsDataUrl } from './ui/file.js';
+
+export {
+    DragKind,
+    DropZone,
+    componentPayload,
+    filesPayload,
+    objectPayload,
+    resourcePayload
+} from './dnd/payload.js';
+export { RULES, acceptsResource, canDrop, instantiator, performDrop, ruleFor } from './dnd/rules.js';
+export { carriesFiles, readDroppedFiles } from './dnd/files.js';
 export { Window } from './ui/window.js';
 export { Tabs } from './ui/tabs.js';
 export { Splitter } from './ui/splitter.js';

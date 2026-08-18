@@ -13,7 +13,8 @@
 // it is described as a plain record instead — the same two halves, expressed as data:
 //
 //   { type: 'res_c3', label: 'Controller',
-//     properties: { speed: { type: 'number', default: 120 } }, graph: 'res_d4' }
+//     properties: { speed: { type: 'number', default: 120 } },
+//     graph: { version: 1, nodes: [], connections: [] } }
 //
 // `defineComponent()` turns that record into an ordinary component class. Ordinary is the
 // point: it goes into the ComponentRegistry, `addComponent()` attaches it, the Inspector
@@ -39,10 +40,18 @@
 // `speed` values and exactly one graph reference — and a snapshot or a replicated payload
 // never carries a behavior.
 //
-// THE GRAPH IS REFERENCED, NOT INLINED (ADR-0016 as amended by ADR-0020).
-// `graph` is a ResourceId, so a graph is a resource like any other: openable on its own in
-// the Graph window, stored once, diffed on its own. The Core never resolves it and never
-// reads it — resolving belongs to the Project layer, interpreting to the Runtime.
+// THE DEFINITION AND ITS GRAPH ARE ONE RESOURCE (ADR-0016 as amended by ADR-0026).
+// `MyComponent.px` IS the component: its identity, its properties and its behaviour, in
+// one payload. `graph` therefore holds the graph itself, not an identifier.
+//
+// This reverses the earlier rule, and the reason the earlier rule existed is the reason
+// the reversal is safe. A ResourceId was required so that one graph could not be copied
+// into two places and so the Graph window could open a graph without loading a definition.
+// With ONE resource there is exactly one copy — the payload — and opening the graph IS
+// opening the `.px`. What the id bought is now structural rather than enforced.
+//
+// The Core still neither resolves nor interprets: it hands the graph over as data, the
+// Project layer reads the payload, the Runtime runs it (ADR-0015, ADR-0020).
 //
 // A NEW INSTANCE HAS EXACTLY THE DECLARED PROPERTIES.
 // Every schema key exists on a fresh instance, with its declared default. That is what
@@ -59,7 +68,7 @@ import { defaultForProperty, isPropertyType } from './properties/types.js';
  * @property {string} type - Stable identity: a ResourceId for a creator's component
  * @property {string} [label] - Displayed name; the type itself when absent
  * @property {object} [properties] - Property schema, in the ADR-0007 shape
- * @property {string|null} [graph] - ResourceId of the `.px` graph that is this behavior
+ * @property {object|null} [graph] - The behaviour graph itself, carried in this payload
  * @property {number} [revision] - Bumped when the definition changes, for invalidation
  * @property {string} [icon] - Icon name, honoured by the Editor
  * @property {string} [category] - Menu group, honoured by the Editor
@@ -107,12 +116,14 @@ export function defineComponent(definition) {
         }
     }
 
-    // A ResourceId, or nothing. An inline graph is refused rather than tolerated: two
-    // copies of one graph is a class of bug found late, and the Graph window has to be
-    // able to open a graph without loading the definition that uses it (ADR-0016).
-    if (graph !== null && typeof graph !== 'string') {
+    // The graph itself, or nothing. A STRING IS REFUSED, and the message says why: an
+    // identifier here meant a second resource for one thing a creator thinks of as one
+    // file, which is exactly what ADR-0026 removed. An array is refused too — a graph is a
+    // record with nodes, not a list.
+    if (graph !== null && (typeof graph !== 'object' || globalThis.Array.isArray(graph))) {
         throw new TypeError(
-            `defineComponent: the graph of "${type}" must be a ResourceId or null, not an inline graph`
+            `defineComponent: the graph of "${type}" must be a graph object or null`
+            + (typeof graph === 'string' ? ' — a `.px` carries its graph, it does not point at one' : '')
         );
     }
 
@@ -152,14 +163,15 @@ export function componentDefinition(component) {
 }
 
 /**
- * Read the ResourceId of the graph a component type's behavior lives in.
+ * Read the behaviour graph a component type carries.
  *
- * The Core hands the identifier over and stops there. Resolving it into a graph belongs to
- * the Project layer, interpreting the graph to the Runtime (ADR-0015, ADR-0020).
+ * The Core hands the graph over as data and stops there: interpreting it belongs to the
+ * Runtime, and reading the resource it came from to the Project layer (ADR-0015, ADR-0020,
+ * ADR-0026).
  *
  * @param {Function|object} component - A component class or instance
- * @returns {string|null} The graph's ResourceId, or null
+ * @returns {object|null} The graph, or null when the type carries none
  */
-export function componentGraphId(component) {
+export function componentGraph(component) {
     return componentDefinition(component)?.graph ?? null;
 }

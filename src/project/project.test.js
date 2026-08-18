@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ComponentRegistry, componentGraphId, componentLabel, invert } from '../core/mod.js';
+import { ComponentRegistry, componentGraph, componentLabel, invert } from '../core/mod.js';
 import {
     MANIFEST_VERSION,
     MemoryResourceStore,
@@ -30,25 +30,16 @@ function behaviorsSpy() {
 
 function controllerProject() {
     const project = new Project('My game');
-    const graph = project.add(
-        { kind: ResourceKind.GRAPH, name: 'Controller', path: 'components/' },
-        { version: 1, nodes: ['On Update'] }
-    );
-    const component = project.add(
-        { kind: ResourceKind.COMPONENT, name: 'Controller', path: 'components/' },
-        {
-            type: null,   // filled in below, once the id is minted
-            label: 'Controller',
-            properties: { speed: { type: 'number', default: 120 } },
-            graph: graph.id
-        }
-    );
-    // The definition's `type` IS the ResourceId of its own resource (ADR-0021).
+    const graph = { version: 1, nodes: ['On Update'], connections: [] };
+    // ONE `.px`: identity, properties and behaviour in one payload (ADR-0026). The
+    // definition's `type` IS the ResourceId of its own resource (ADR-0021), so the entry is
+    // declared first and written once its id exists.
+    const component = project.add({ kind: ResourceKind.COMPONENT, name: 'Controller' }, null);
     project.save(component.id, {
         type: component.id,
         label: 'Controller',
         properties: { speed: { type: 'number', default: 120 } },
-        graph: graph.id
+        graph
     });
 
     return { project, graph, component };
@@ -57,10 +48,10 @@ function controllerProject() {
 // --- identity -------------------------------------------------------------------------
 
 test('a ResourceId is opaque, and never derived from a name or a path', () => {
-    const first = createResource({ kind: ResourceKind.SCENE, name: 'Level 1', path: 'scenes/' });
-    const second = createResource({ kind: ResourceKind.SCENE, name: 'Level 1', path: 'scenes/' });
+    const first = createResource({ kind: ResourceKind.SCENE, name: 'Level 1' });
+    const second = createResource({ kind: ResourceKind.SCENE, name: 'Level 1' });
 
-    assert.notEqual(first.id, second.id, 'same name, same path, different resources');
+    assert.notEqual(first.id, second.id, 'same name, same folder, different resources');
     assert.equal(first.id.includes('Level'), false);
     assert.equal(first.id.includes('scenes'), false);
     assert.equal(isResourceId(createResourceId()), true);
@@ -70,18 +61,22 @@ test('a ResourceId is opaque, and never derived from a name or a path', () => {
 
 test('an unknown kind is refused', () => {
     assert.throws(() => createResource({ kind: 'document' }), /unknown resource kind/);
-    assert.deepEqual(globalThis.Object.values(ResourceKind), ['scene', 'component', 'graph', 'asset']);
+    assert.deepEqual(
+        globalThis.Object.values(ResourceKind),
+        ['folder', 'scene', 'component', 'graph', 'asset']
+    );
 });
 
 test('renaming or moving a resource changes nothing that anything references', () => {
     const project = new Project('Game');
-    const resource = project.add({ kind: ResourceKind.SCENE, name: 'Level 1', path: 'scenes/' });
+    const folder = project.addFolder({ name: 'Act 2' });
+    const resource = project.add({ kind: ResourceKind.SCENE, name: 'Level 1' });
 
     project.setProperty(resource.id, 'name', 'The Cellar');
-    project.setProperty(resource.id, 'path', 'scenes/act-2/');
+    project.move(resource.id, folder.id);
 
     assert.equal(project.get(resource.id).name, 'The Cellar');
-    assert.equal(project.get(resource.id).path, 'scenes/act-2/');
+    assert.equal(project.get(resource.id).parent, folder.id);
     assert.equal(project.get(resource.id).id, resource.id, 'the identity did not move');
 });
 
@@ -193,7 +188,7 @@ test('saving a payload bumps the revision', () => {
 
 test('a manifest round-trips', () => {
     const project = new Project('Game');
-    project.add({ kind: ResourceKind.SCENE, name: 'Level 1', path: 'scenes/' });
+    project.add({ kind: ResourceKind.SCENE, name: 'Level 1' });
     project.add({ kind: ResourceKind.ASSET, name: 'player.png', mime: 'image/png' });
 
     const data = JSON.parse(JSON.stringify(project.serialize()));
@@ -239,7 +234,7 @@ test('the project holds no editor state', () => {
 
 // --- graphs: who resolves, who binds ------------------------------------------------
 
-test('the Project resolves a graph and hands the RESOLVED value to Behaviors', () => {
+test('the Project reads one `.px` and hands the graph it carries to Behaviors', () => {
     const { project, graph, component } = controllerProject();
     const registry = new ComponentRegistry();
     const behaviors = behaviorsSpy();
@@ -250,17 +245,19 @@ test('the Project resolves a graph and hands the RESOLVED value to Behaviors', (
         const Controller = registry.get(component.id);
         assert.ok(Controller, 'registered under its ResourceId, not its name');
         assert.equal(componentLabel(Controller), 'Controller');
-        assert.equal(componentGraphId(Controller), graph.id, 'referenced, never inlined');
+        assert.deepEqual(componentGraph(Controller), graph, 'the definition carries it');
 
-        assert.deepEqual(behaviors.bound.get(component.id), { version: 1, nodes: ['On Update'] },
+        assert.deepEqual(behaviors.bound.get(component.id), graph,
             'the runtime received a graph, never an identifier');
+        assert.equal(project.resources(ResourceKind.GRAPH).length, 0,
+            'and no second resource exists for it (ADR-0026)');
     });
 });
 
-test('a definition whose graph resource is absent registers, and simply has no behavior', () => {
+test('a definition with no graph registers, and simply has no behavior', () => {
     const project = new Project('Game');
     const component = project.add({ kind: ResourceKind.COMPONENT, name: 'Controller' });
-    project.save(component.id, { type: component.id, label: 'Controller', graph: 'res_gone' });
+    project.save(component.id, { type: component.id, label: 'Controller', graph: null });
 
     const registry = new ComponentRegistry();
     const behaviors = behaviorsSpy();

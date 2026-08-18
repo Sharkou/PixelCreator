@@ -34,7 +34,6 @@ export function rebuildObject(data, { registry = defaultRegistry } = {}) {
     });
 
     object.active = data.active ?? true;
-    object.visible = data.visible ?? true;
     object.lock = data.lock ?? false;
 
     // An array, in order: the collection order IS the data (ADR-0018), so components are

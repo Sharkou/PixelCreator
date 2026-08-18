@@ -46,11 +46,12 @@ test('a scene is declared as a resource, and its payload is stored beside the ma
     const project = new Project('My game');
     const scene = sampleScene();
 
-    const entry = addScene(project, scene, { path: 'scenes/' });
+    const folder = project.addFolder({ name: 'Scenes' });
+    const entry = addScene(project, scene, { parent: folder.id });
 
     assert.equal(entry.kind, ResourceKind.SCENE);
     assert.equal(entry.name, 'Level 1', 'the scene\'s own name is the displayed one');
-    assert.equal(entry.path, 'scenes/');
+    assert.equal(entry.parent, folder.id);
     assert.notEqual(entry.id, scene.id, 'a ResourceId is not the model id it points at');
     assert.equal(project.read(entry.id).version, FORMAT_VERSION);
 });
@@ -135,12 +136,13 @@ test('loading a scene that has no payload answers null rather than throwing', as
 test('a scene resource survives a manifest round trip, payload included', async () => {
     const store = new MemoryResourceStore();
     const project = new Project('My game', { store });
-    const entry = addScene(project, sampleScene(), { path: 'scenes/' });
+    const folder = project.addFolder({ name: 'Scenes' });
+    const entry = addScene(project, sampleScene(), { parent: folder.id });
 
     const reopened = Project.deserialize(project.serialize(), { store });
     const loaded = await loadScene(reopened, entry.id, { registry: registry() });
 
-    assert.equal(reopened.get(entry.id).path, 'scenes/');
+    assert.equal(reopened.get(entry.id).parent, folder.id);
     assert.equal(loaded.roots().length, 2);
 });
 

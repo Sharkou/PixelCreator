@@ -56,6 +56,16 @@ const PATHS = {
     graph: `<rect x="1.8" y="3" width="4.6" height="3.4" rx="0.8" ${S}/>`
         + `<rect x="9.6" y="9.6" width="4.6" height="3.4" rx="0.8" ${S}/>`
         + `<path d="M6.4 4.7h2.2a2 2 0 0 1 2 2v2.9" ${S}/>`,
+    // A SCENE RESOURCE IS NOT THE HIERARCHY WINDOW. The window's glyph says "the tree of
+    // what is in the scene"; this one says "a scene, as a thing you can open" — a frame
+    // with something standing in it, which is also how the create menu reads it.
+    scene: `<rect x="2" y="3" width="12" height="10" rx="1.2" ${S}/>`
+        + `<path d="M2 10.4h12" ${S}/>`
+        + `<circle cx="6" cy="7.2" r="1.5" ${S}/>`
+        + `<path d="M9 8.6 11.4 6.2l2.6 2.6" ${S}/>`,
+    image: `<rect x="2" y="3" width="12" height="10" rx="1.2" ${S}/>`
+        + `<path d="M2.4 11.2 6 7.7l2.4 2.2L10.4 8l3.2 3" ${S}/>`
+        + `<circle cx="5.6" cy="5.9" r="1" ${F}/>`,
 
     // Windows
     hierarchy: `<path d="M3 3.5h4M3 3.5v9h3M6 8h4" ${S}/><path d="M6 3.5v4.5" ${S}/>`
@@ -74,7 +84,20 @@ const PATHS = {
     // Actions
     chevron: `<path d="M6 4l4 4-4 4" ${S}/>`,
     plus: `<path d="M8 3.5v9M3.5 8h9" ${S}/>`,
+    // Three dots: the menu that holds what a panel can do beyond its one primary action.
+    more: `<circle cx="4" cy="8" r="1.15" ${F}/><circle cx="8" cy="8" r="1.15" ${F}/>`
+        + `<circle cx="12" cy="8" r="1.15" ${F}/>`,
+    share: `<circle cx="11.8" cy="4.2" r="2" ${S}/><circle cx="4.2" cy="8" r="2" ${S}/>`
+        + `<circle cx="11.8" cy="11.8" r="2" ${S}/>`
+        + `<path d="M6 7 10 5M6 9l4 2" ${S}/>`,
+    sound: `<path d="M3 6.2h2.2L8.4 3.6v8.8L5.2 9.8H3z" ${S}/>`
+        + `<path d="M10.8 6.2a2.6 2.6 0 0 1 0 3.6" ${S}/>`,
     minus: `<path d="M3.5 8h9" ${S}/>`,
+    // Two columns of dots: the universal "carry me" mark, and the only draggable handle
+    // in the Inspector.
+    grip: `<circle cx="6.2" cy="4.4" r="1.05" ${F}/><circle cx="9.8" cy="4.4" r="1.05" ${F}/>`
+        + `<circle cx="6.2" cy="8" r="1.05" ${F}/><circle cx="9.8" cy="8" r="1.05" ${F}/>`
+        + `<circle cx="6.2" cy="11.6" r="1.05" ${F}/><circle cx="9.8" cy="11.6" r="1.05" ${F}/>`,
     trash: `<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8" ${S}/>`,
     close: `<path d="M4 4l8 8M12 4l-8 8" ${S}/>`,
     search: `<circle cx="7.2" cy="7.2" r="4.2" ${S}/><path d="M10.4 10.4 13.5 13.5" ${S}/>`,
@@ -161,6 +184,35 @@ export function iconForComponent(component, type) {
     const declared = (typeof component === 'function' ? component : component?.constructor)?.icon;
     if (typeof declared === 'string' && declared in PATHS) return declared;
     return COMPONENT_ICONS[type] ?? 'component';
+}
+
+/**
+ * Resource kind -> icon.
+ *
+ * A RESOURCE IS NOT A WINDOW, and the two must not share a glyph: `hierarchy` means the
+ * window that lists a scene's objects, `scene` means a scene you can open. They were the
+ * same drawing, which read as "this row is the Hierarchy" (ADR-0025).
+ *
+ * An image is an asset with a picture in it, so `asset` resolves to the picture glyph;
+ * a kind with no entry falls back to the generic document, which is honest rather than
+ * arbitrary.
+ */
+const RESOURCE_ICONS = {
+    folder: 'folder',
+    scene: 'scene',
+    component: 'component',
+    graph: 'graph',
+    asset: 'image'
+};
+
+/**
+ * The icon for a resource, from its kind.
+ * @param {object|string} resource - A manifest entry, or a kind
+ * @returns {string} An icon name
+ */
+export function iconForResource(resource) {
+    const kind = typeof resource === 'string' ? resource : resource?.kind;
+    return RESOURCE_ICONS[kind] ?? 'component';
 }
 
 /**
