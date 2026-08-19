@@ -1,6 +1,6 @@
-arena/
 *.log
 dist/
 .DS_Store
 .vscode/
 .claude/
+.agents/
