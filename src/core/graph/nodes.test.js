@@ -6,6 +6,7 @@ import { PropertyType } from '../properties/types.js';
 import {
     ANY_TYPE,
     NodeRegistry,
+    OBJECT_TYPE,
     PortDirection,
     PortKind,
     compatibleTargets,
@@ -110,7 +111,10 @@ test('node types group by category, in the declared order, with nothing empty', 
 
     const groups = groupNodes(registry);
 
-    assert.deepEqual(groups.map(group => group.category).slice(0, 4), ['Events', 'Properties', 'Flow', 'Values']);
+    // `Scene` sits third, between what a Component knows about itself and what it does
+    // with it: the nodes that reach other Objects (ADR-0034 §3.3).
+    assert.deepEqual(groups.map(group => group.category).slice(0, 4),
+        ['Events', 'Properties', 'Scene', 'Flow']);
     assert.equal(groups.every(group => group.entries.length > 0), true);
     assert.equal(groups.flatMap(group => group.entries).length, STANDARD_NODES.length);
 });
@@ -209,4 +213,54 @@ test('int and number reach each other, as the compatibility rule says', () => {
 test('asking about nothing answers nothing rather than everything', () => {
     const registry = registerStandardNodes(new NodeRegistry());
     assert.equal(compatibleTargets(registry, null, PortDirection.OUTPUT).size, 0);
+});
+
+// --- the object port (ADR-0034 §3.2) ---------------------------------------------------
+
+test('an object port takes an object, and nothing else takes its place', () => {
+    // A handle is not an identifier, so no type that CARRIES an identifier may reach it.
+    // This is what keeps a scene identity out of a graph by the type system rather than by
+    // a convention: there is no wire a creator can draw that turns a string into an Object.
+    assert.equal(typesCompatible(OBJECT_TYPE, OBJECT_TYPE), true);
+
+    assert.equal(typesCompatible(PropertyType.STRING, OBJECT_TYPE), false);
+    assert.equal(typesCompatible(OBJECT_TYPE, PropertyType.STRING), false);
+    assert.equal(typesCompatible(PropertyType.RESOURCE, OBJECT_TYPE), false);
+    assert.equal(typesCompatible(OBJECT_TYPE, PropertyType.RESOURCE), false);
+    assert.equal(typesCompatible(PropertyType.NUMBER, OBJECT_TYPE), false);
+    assert.equal(typesCompatible(PropertyType.BOOLEAN, OBJECT_TYPE), false);
+
+    // `any` stays universal, as it is for every other type: no port of that type in the
+    // catalogue writes towards anything persisted.
+    assert.equal(typesCompatible(ANY_TYPE, OBJECT_TYPE), true);
+    assert.equal(typesCompatible(OBJECT_TYPE, ANY_TYPE), true);
+});
+
+test('an object port is not a PropertyType, and no component port exists', () => {
+    // `object` is a shape a value can HAVE and not one it can be SAVED as, so it is
+    // deliberately absent from the Core's list of property types (ADR-0034 §3.2).
+    assert.equal(globalThis.Object.values(PropertyType).includes(OBJECT_TYPE), false);
+
+    // And a Component is named by its type in a param, never carried as a handle: nothing
+    // in the catalogue declares a port for one.
+    const registry = registerStandardNodes(new NodeRegistry());
+    const types = registry.definitions().flatMap(definition => {
+        const sides = [definition.inputs, definition.outputs];
+        return sides.flatMap(side => (globalThis.Array.isArray(side) ? side : []).map(port => port.type));
+    });
+
+    assert.equal(types.includes('component'), false);
+});
+
+test('a wire from an object output is only offered nodes that take an object', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const port = createPort({ id: 'object', kind: PortKind.DATA, type: OBJECT_TYPE });
+
+    const found = compatibleTargets(registry, port, PortDirection.OUTPUT);
+
+    assert.ok(found.has('scene.parent'), 'Parent takes an object');
+    assert.ok(found.has('object.isValid'), 'Is Valid takes an object');
+    assert.ok(found.has('debug.log'), 'Log takes anything');
+    assert.equal(found.has('math.add'), false, 'arithmetic does not take an object');
+    assert.equal(found.has('scene.findByTag'), false, 'Find By Tag takes a tag, not an object');
 });

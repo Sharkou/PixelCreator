@@ -29,7 +29,7 @@
 // No compatibility layer with Legacy projects, and none with format 1: there are none to
 // preserve (ARCHITECTURE.md §10).
 
-import { Scene } from './scene.js';
+import { Scene, hierarchyOrder } from './scene.js';
 import { components as defaultRegistry, componentSchema } from './component.js';
 import { ownKeys } from './properties/reactive.js';
 import { rebuildObject, restoreSubtree } from './rebuild.js';
@@ -107,36 +107,12 @@ export function serializeScene(scene) {
         // The parentless objects, in the order the scene holds them. `objects` keeps the
         // flat storage; `roots` is what says which comes first at the top level.
         roots: scene.roots().map(object => object.id),
+        // WRITTEN IN CANONICAL ORDER, not in the order the objects joined: order in the
+        // format is either data or it is noise, and insertion order is noise (ADR-0018).
+        // The walk lives on the Scene, which is also what its own searches read, so there
+        // is ONE definition of that order (ADR-0034 §3.1).
         objects: hierarchyOrder(scene).map(serializeObject)
     };
-}
-
-/**
- * Every object, roots first and depth first under each of them.
- *
- * WHY NOT INSERTION ORDER. The scene's flat storage keeps objects in the order they
- * joined, which is an accident of history: delete a subtree, undo, and the same model
- * serializes differently because the restored objects joined last. Order in the format is
- * either data or it is noise, and this one is noise (ADR-0018) — so the writer derives it
- * from the structure that IS data, `roots` and `children`. Two identical models now
- * produce identical bytes however they were built, which is what makes an undo comparable
- * to what came before it.
- *
- * Every object is reached: one that has no parent is a root by definition.
- *
- * @param {Scene} scene - The scene
- * @returns {object[]} The objects, in hierarchy order
- */
-function hierarchyOrder(scene) {
-    const ordered = [];
-
-    const walk = object => {
-        ordered.push(object);
-        for (const child of object.children) walk(child);
-    };
-    for (const root of scene.roots()) walk(root);
-
-    return ordered;
 }
 
 /**

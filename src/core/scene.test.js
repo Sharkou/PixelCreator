@@ -1,9 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Scene } from './scene.js';
+import { Scene, hierarchyOrder } from './scene.js';
 import { Object } from './object.js';
 import { Transform } from './components/transform.js';
 import { Origin } from './properties/origin.js';
+import { deserializeScene, serializeObject, serializeScene } from './serialize.js';
+import { removeObjectOperation } from './operations/operation.js';
+import { invert } from './operations/invert.js';
 
 class Rotator {
     static type = 'Rotator';
@@ -311,4 +314,100 @@ test('Scene.add rejects a value without an id', () => {
     const scene = new Scene('Main');
     assert.throws(() => scene.add({}), TypeError);
     assert.throws(() => scene.add(null), TypeError);
+});
+
+// --- the canonical order of a scene (ADR-0034 §3.1) -------------------------------------
+//
+// The order the searches answer in has to be a fact about the scene's STATE, never about
+// the order its objects happened to join. These tests are the demonstration, not an
+// illustration: each one builds two scenes that hold the same thing and reached it by a
+// different road, and asks the searches to agree.
+
+/** Three objects sharing a tag, so the order a search answers in is observable. */
+function tagged() {
+    const scene = new Scene('Main');
+    const a = scene.add(new Object('A', { tag: 'enemy' }));
+    const b = scene.add(new Object('B', { tag: 'enemy' }));
+    const c = scene.add(new Object('C', { tag: 'enemy' }));
+    return { scene, a, b, c };
+}
+
+const names = objects => objects.map(object => object.name);
+
+test('the searches answer in hierarchy order, and objects() keeps insertion order', () => {
+    const { scene, a, c } = tagged();
+    scene.reparent(c, a, 0);
+
+    // The storage is untouched by a reparent; the shape of the tree is not.
+    assert.deepEqual(names(scene.objects()), ['A', 'B', 'C'], 'objects() is still insertion order');
+    assert.deepEqual(names(hierarchyOrder(scene)), ['A', 'C', 'B']);
+
+    assert.deepEqual(names(scene.findByTag('enemy')), ['A', 'C', 'B']);
+    assert.deepEqual(names(scene.findByName('B')), ['B']);
+});
+
+test('findByName and findByComponent answer in the same order as findByTag', () => {
+    const { scene, a, b, c } = tagged();
+    for (const object of [a, b, c]) object.addComponent(new Rotator());
+    scene.reparent(c, a, 0);
+
+    assert.deepEqual(names(scene.findByComponent('Rotator')), ['A', 'C', 'B']);
+    // Names are not identities, so several may match and the order still has to be stable.
+    for (const object of [a, b, c]) object.name = 'Same';
+    assert.deepEqual(scene.findByName('Same').map(object => object.id), [a.id, c.id, b.id]);
+});
+
+test('a save and a reload do not change what the searches answer', () => {
+    const { scene, a, c } = tagged();
+    scene.reparent(c, a, 0);
+
+    const reloaded = deserializeScene(serializeScene(scene));
+
+    assert.deepEqual(names(reloaded.findByTag('enemy')), names(scene.findByTag('enemy')));
+    // And the reload is exactly what makes insertion order untrustworthy: the storage of the
+    // reloaded scene is now in hierarchy order, while the original's is not.
+    assert.deepEqual(names(reloaded.objects()), ['A', 'C', 'B']);
+    assert.deepEqual(names(scene.objects()), ['A', 'B', 'C']);
+});
+
+test('a deletion and its inverse do not change what the searches answer', () => {
+    // THE CASE THAT DECIDED ADR-0034 §3.1, and it is reached through the real pipeline:
+    // REMOVE_OBJECT, then the operation `invert()` produces from it. The state is identical
+    // on both sides of the round trip; the storage order is not, because a restored object
+    // joins the scene last.
+    const { scene } = tagged();
+    const before = names(scene.findByTag('enemy'));
+
+    const target = scene.roots()[0];
+    const removal = removeObjectOperation({
+        object: serializeObject(target),
+        subtree: [],
+        parent: null,
+        index: scene.indexOf(target),
+        origin: Origin.EDITOR
+    });
+
+    assert.equal(scene.operations.submit(removal).applied, true);
+    assert.equal(scene.operations.submit(invert(removal)).applied, true);
+
+    assert.deepEqual(names(scene.objects()), ['B', 'C', 'A'], 'the storage order did change');
+    assert.deepEqual(names(scene.findByTag('enemy')), before, 'the answer did not');
+});
+
+test('the canonical order reaches every object the scene holds', () => {
+    // ADR-0034 invariant 7. Nothing falls back for an object that is neither a root nor a
+    // child of one: such an object would be a defect in whatever added it, and a fallback
+    // would hide it. So the invariant is guarded here instead.
+    const { scene, a, b, c } = tagged();
+    scene.reparent(c, a, 0);
+    const d = scene.add(new Object('D'));
+    b.addChild(d);
+    const e = scene.add(new Object('E'));
+    scene.reparent(e, d, 0);
+
+    assert.equal(hierarchyOrder(scene).length, scene.size);
+    assert.deepEqual(
+        new Set(hierarchyOrder(scene).map(object => object.id)),
+        new Set(scene.objects().map(object => object.id))
+    );
 });

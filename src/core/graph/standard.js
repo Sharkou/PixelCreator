@@ -24,7 +24,7 @@
 // error instead of a silent `undefined`.
 
 import { PropertyType } from '../properties/types.js';
-import { ANY_TYPE, PortKind, nodes as defaultNodes } from './nodes.js';
+import { ANY_TYPE, OBJECT_TYPE, PortKind, nodes as defaultNodes } from './nodes.js';
 import { GraphError, GraphIssueCode } from './errors.js';
 
 /** The param that names a Component property, so the Editor knows to offer a picker. */
@@ -157,6 +157,75 @@ export const STANDARD_NODES = [
             if (io.component) io.component[property.name] = io.input('value');
             return 'out';
         }
+    },
+
+    // --- the scene around this component ----------------------------------------------
+    //
+    // WHAT TRAVELS THESE PORTS IS A HANDLE, NEVER AN IDENTIFIER (ADR-0034 §3.2). A node here
+    // reads `io.self` and `io.ctx.scene`, both of which the interpreter already hands over,
+    // and yields the reactive Proxy the Scene holds. Nothing stores it, nothing serializes
+    // it, and nothing turns it back into an ObjectId — which is what keeps a `.px` free of
+    // any identity belonging to a scene, and therefore usable in more than one of them.
+
+    {
+        type: 'scene.self',
+        label: 'Self',
+        category: 'Scene',
+        keywords: ['this', 'me', 'owner', 'object'],
+        outputs: [data('object', OBJECT_TYPE)],
+        evaluate: io => ({ object: io.self ?? null }),
+        tooltip: 'The Object this Component is attached to'
+    },
+
+    {
+        type: 'scene.parent',
+        label: 'Parent',
+        category: 'Scene',
+        keywords: ['above', 'hierarchy', 'owner', 'object'],
+        inputs: [data('object', OBJECT_TYPE)],
+        outputs: [data('parent', OBJECT_TYPE)],
+        // A ROOT HAS NO PARENT, AND THAT IS AN ANSWER. An unconnected input is null too
+        // (ADR-0034 §3.2), so both cases reach the same place and neither is a failure: what
+        // only the running scene can answer is not a fault when it answers nothing (§3.4).
+        evaluate: io => ({ parent: io.input('object')?.parent ?? null }),
+        tooltip: 'The Object above this one in the hierarchy, or nothing'
+    },
+
+    {
+        type: 'scene.findByTag',
+        label: 'Find By Tag',
+        category: 'Scene',
+        keywords: ['search', 'lookup', 'find', 'tag', 'object'],
+        inputs: [data('tag', PropertyType.STRING, 'Tag', '')],
+        outputs: [data('object', OBJECT_TYPE)],
+        // THE FIRST IN CANONICAL ORDER, which is what `findByTag` now answers in: an order
+        // that is a function of the scene's state rather than of the order its objects
+        // happened to join (ADR-0034 §3.1). Reading insertion order would make one graph
+        // find a different object on two machines holding the very same scene.
+        //
+        // AN EMPTY TAG FINDS NOTHING, deliberately. `Object.tag` is an empty string by
+        // default, so matching on one would answer with the first object of the scene,
+        // whichever it happens to be — a silent wrong answer rather than an absent one.
+        evaluate: io => {
+            const tag = io.input('tag');
+            if (typeof tag !== 'string' || tag === '') return { object: null };
+            return { object: io.ctx?.scene?.findByTag(tag)[0] ?? null };
+        },
+        tooltip: 'The first Object carrying this tag, in hierarchy order'
+    },
+
+    {
+        type: 'object.isValid',
+        label: 'Is Valid',
+        category: 'Scene',
+        keywords: ['exists', 'null', 'empty', 'check', 'object'],
+        inputs: [data('object', OBJECT_TYPE)],
+        outputs: [data('result', PropertyType.BOOLEAN, 'Result')],
+        // WHAT A CREATOR HAS TO DEFEND THEMSELVES WITH. A target that is gone resolves to
+        // nothing rather than failing (ADR-0034 §3.4), so a graph needs a way to ASK —
+        // without it, a dead reference is indistinguishable from a graph that never worked.
+        evaluate: io => ({ result: (io.input('object') ?? null) !== null }),
+        tooltip: 'Whether there is an Object here at all'
     },
 
     // --- flow control ----------------------------------------------------------------

@@ -311,31 +311,42 @@ export class Scene {
         return target.parent ? target.parent.childIndex(target) : this.#roots.indexOf(target.id);
     }
 
+    // THE THREE SEARCHES ANSWER IN CANONICAL ORDER, NOT IN INSERTION ORDER (ADR-0034 §3.1).
+    // They used to read `objects()`, whose order is a fact about how the scene was BUILT: a
+    // reparent leaves it behind, a reload rewrites it from the payload, and a deletion undone
+    // puts the object back at the end. The same scene therefore answered `findByTag` with a
+    // different object depending on its history — which is exactly what a graph asking "the
+    // player" must not depend on, and what two machines holding the same state must never
+    // disagree about (ADR-0011).
+    //
+    // Hierarchy order is a function of the STATE: it reads `roots` and `children`, both
+    // ordered, both maintained by REPARENT alone, both replicated and both serialized.
+
     /**
      * Find objects by name. Names are not identities, so several may match (ADR-0010).
      * @param {string} name - The name to match
-     * @returns {object[]} The matching objects
+     * @returns {object[]} The matching objects, in canonical order
      */
     findByName(name) {
-        return this.objects().filter(object => object.name === name);
+        return hierarchyOrder(this).filter(object => object.name === name);
     }
 
     /**
      * Find objects by tag.
      * @param {string} tag - The tag to match
-     * @returns {object[]} The matching objects
+     * @returns {object[]} The matching objects, in canonical order
      */
     findByTag(tag) {
-        return this.objects().filter(object => object.tag === tag);
+        return hierarchyOrder(this).filter(object => object.tag === tag);
     }
 
     /**
      * Find objects carrying a component type.
      * @param {string|Function} component - Type name or class
-     * @returns {object[]} The matching objects
+     * @returns {object[]} The matching objects, in canonical order
      */
     findByComponent(component) {
-        return this.objects().filter(object => object.hasComponent(component));
+        return hierarchyOrder(this).filter(object => object.hasComponent(component));
     }
 
     #resolveObject(object) {
@@ -405,4 +416,37 @@ export class Scene {
             return this.reparent(operation.target.object, operation.parent, operation.index);
         }, { resolveTarget: false });
     }
+}
+
+/**
+ * Every object of a scene, roots first and depth first under each of them.
+ *
+ * THE CANONICAL ORDER OF A SCENE (ADR-0034 §3.1). It is the one order that is a function of
+ * the scene's STATE rather than of its history: it reads `roots` and `children`, both
+ * ordered, both maintained by REPARENT alone, both replicated and both serialized. Insertion
+ * order is the other one, and it is an accident — delete a subtree, undo, and the same model
+ * lists its objects differently.
+ *
+ * IT LIVES HERE AND NOT IN `serialize.js`, WHICH IS WHERE IT USED TO BE. The Scene needs it
+ * for its own searches and `serialize.js` already imports the Scene, so keeping it there
+ * would have closed a cycle — the same argument `rebuild.js` was split out for. There is one
+ * definition, and the writer and the searches read it.
+ *
+ * Every object is reached, because an object with no parent is a root by definition. Nothing
+ * falls back for an object that is neither: such an object would be a defect in whatever put
+ * it in the scene, and a fallback would hide it rather than surface it.
+ *
+ * @param {Scene} scene - The scene to walk
+ * @returns {object[]} The objects, in canonical order
+ */
+export function hierarchyOrder(scene) {
+    const ordered = [];
+
+    const walk = object => {
+        ordered.push(object);
+        for (const child of object.children) walk(child);
+    };
+    for (const root of scene.roots()) walk(root);
+
+    return ordered;
 }

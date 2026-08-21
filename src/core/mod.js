@@ -45,7 +45,7 @@ export { Operations } from './operations/operations.js';
 export { AllowAllAuthority, PredicateAuthority, allow, deny } from './operations/authority.js';
 
 export { Object } from './object.js';
-export { Scene } from './scene.js';
+export { Scene, hierarchyOrder } from './scene.js';
 export {
     ComponentRegistry,
     components,
@@ -65,6 +65,7 @@ export { defineComponent, componentDefinition, componentGraph } from './definiti
 export {
     ANY_TYPE,
     NODE_CATEGORIES,
+    OBJECT_TYPE,
     NodeRegistry,
     PortDirection,
     PortKind,

@@ -46,8 +46,24 @@ export const PortDirection = {
  */
 export const ANY_TYPE = 'any';
 
+/**
+ * A live Object of the running scene (ADR-0034 §3.2).
+ *
+ * Deliberately not a `PropertyType`, and for the opposite reason to `ANY_TYPE`: this is a
+ * shape a value can have, but not one a value can be SAVED as. What travels a wire of this
+ * type is the reactive Proxy the Scene holds — a handle — and a handle is never serialized,
+ * never written into a node, and never turned back into an identifier by the graph. A
+ * reference that persists is a Component property, which is a different question and a
+ * different type.
+ *
+ * It is compatible with itself and with `ANY_TYPE`, and with nothing else. That falls out of
+ * `typesCompatible()` as it already stands — a string cannot be read as an object because
+ * the two names differ and neither is numeric — so no rule is added for it.
+ */
+export const OBJECT_TYPE = 'object';
+
 /** Groups the node menu shows, in the order it shows them. */
-export const NODE_CATEGORIES = ['Events', 'Properties', 'Flow', 'Values', 'Math', 'Compare', 'Logic', 'Debug'];
+export const NODE_CATEGORIES = ['Events', 'Properties', 'Scene', 'Flow', 'Values', 'Math', 'Compare', 'Logic', 'Debug'];
 
 /**
  * A node type, as data.

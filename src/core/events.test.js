@@ -197,3 +197,37 @@ test('emitters are independent instances', () => {
 
     assert.equal(calls, 0);
 });
+
+test('the default reporter never rewrites the error a listener threw', async () => {
+    // A reporting path must leave the error it reports exactly as it was found
+    // (ADR-0012, and what `runtime/errors.js` already does for a component failure).
+    // Rewriting `error.message` also compounded: the same error object reported twice
+    // grew a second prefix, and a consumer holding it read a message it never produced.
+    const thrown = new Error('listener failure');
+    const reported = [];
+
+    const emitter = new Emitter();
+    emitter.on('change', () => { throw thrown; });
+
+    const previous = process.listeners('uncaughtException');
+    for (const listener of previous) process.off('uncaughtException', listener);
+    const capture = error => reported.push(error);
+    process.on('uncaughtException', capture);
+
+    try {
+        emitter.emit('change');
+        emitter.emit('change');
+        // The reporter defers to a microtask, so the dispatch finishes first.
+        await new Promise(resolve => setTimeout(resolve, 0));
+    } finally {
+        process.off('uncaughtException', capture);
+        for (const listener of previous) process.on('uncaughtException', listener);
+    }
+
+    assert.equal(thrown.message, 'listener failure', 'the original error is untouched');
+    assert.equal(reported.length, 2);
+    for (const error of reported) {
+        assert.match(error.message, /Emitter: listener for "change" threw: listener failure/);
+        assert.equal(error.cause, thrown, 'the untouched error travels as the cause');
+    }
+});

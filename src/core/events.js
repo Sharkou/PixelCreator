@@ -117,8 +117,16 @@ export class Emitter {
 function defaultOnError(error, event) {
     // Rethrow out of band: the current dispatch still completes, but the error stays
     // visible to whatever handles uncaught errors. Never silently dropped.
+    //
+    // WRAPPED, NEVER REWRITTEN. Rewriting `error.message` mutates the very object a listener
+    // threw, which is the one thing a reporting path must not do (ADR-0012, and the same
+    // reasoning `runtime/errors.js` states for a component failure). It also compounded: one
+    // error object reported twice grew a second prefix. The context travels in a wrapper, so
+    // `thrown.cause` is the error exactly as the listener threw it.
     queueMicrotask(() => {
-        error.message = `Emitter: listener for "${event}" threw: ${error.message}`;
-        throw error;
+        throw new Error(
+            `Emitter: listener for "${event}" threw: ${error?.message ?? error}`,
+            { cause: error }
+        );
     });
 }

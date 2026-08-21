@@ -560,3 +560,160 @@ test('clearing an instance value returns the port to the catalogue', () => {
 
     assert.deepEqual(run(), [5], '0 + 5');
 });
+
+// --- the scene around this component (ADR-0034 §3.2 and §3.3) ---------------------------
+//
+// `Log` is how these tests observe what a port carried: its input is `any`, so a handle
+// reaches it unchanged and can be compared by IDENTITY — which is the whole point of a
+// handle, and something an identifier could never be checked for.
+
+/**
+ * A `.px` run against a real scene, with one value piped into `Log`.
+ *
+ * @param {Function} build - (sheet, scene) => [node, port] to observe, or nothing
+ * @returns {object} The scene, the object, the payload, what was logged, and a step()
+ */
+function inScene(build) {
+    const scene = new Scene('Main');
+    const written = [];
+    const sheet = px();
+
+    const update = sheet.node('event.update');
+    const log = sheet.node('debug.log');
+    sheet.wire([update, 'out'], [log, 'in']);
+
+    const observed = build(sheet, scene);
+    if (observed) sheet.wire(observed, [log, 'value']);
+
+    const payload = sheet.model.serialize();
+    const Component = defineComponent(payload);
+    const object = scene.add(new SceneObject('Hero'));
+    object.addComponent(new Component());
+
+    const behavior = interpretGraph(payload.graph, {
+        registry,
+        log: value => written.push(value)
+    })(object.components[payload.type]);
+
+    return {
+        scene,
+        object,
+        written,
+        model: sheet.model,
+        step: () => behavior.update(object, { time: 0, deltaTime: 0.016, scene })
+    };
+}
+
+test('Self yields the very Object the scene holds, not a copy of it', () => {
+    const it = inScene(sheet => [sheet.node('scene.self'), 'object']);
+
+    it.step();
+
+    assert.equal(it.written[0], it.object);
+    assert.equal(it.written[0], it.scene.get(it.object.id));
+});
+
+test('Parent yields the Object above the one it is given', () => {
+    const it = inScene(sheet => {
+        const self = sheet.node('scene.self');
+        const parent = sheet.node('scene.parent');
+        sheet.wire([self, 'object'], [parent, 'object']);
+        return [parent, 'parent'];
+    });
+
+    it.step();
+    assert.equal(it.written[0], null, 'a root has nothing above it');
+
+    const above = it.scene.add(new SceneObject('Above'));
+    above.addChild(it.object);
+    it.step();
+    assert.equal(it.written[1], above);
+});
+
+test('an unconnected object input yields nothing', () => {
+    // ADR-0034 §3.2. It is not "Self", and it is not an error: a port with nothing wired to
+    // it answers with the absence of an Object, which is the one thing it can honestly say.
+    const it = inScene(sheet => [sheet.node('scene.parent'), 'parent']);
+
+    it.step();
+
+    assert.equal(it.written[0], null);
+});
+
+test('Find By Tag answers the first Object in hierarchy order, not in insertion order', () => {
+    let a, b;
+    const it = inScene((sheet, scene) => {
+        a = scene.add(new SceneObject('A', { tag: 'enemy' }));
+        b = scene.add(new SceneObject('B', { tag: 'enemy' }));
+        const find = sheet.node('scene.findByTag');
+        sheet.model.graph.setInput(find.id, 'tag', 'enemy');
+        return [find, 'object'];
+    });
+
+    it.step();
+    assert.equal(it.written[0], a);
+
+    // A goes under B. The tree changed; the storage did not — and it is the tree that
+    // decides, because it is the tree that both machines hold (ADR-0034 §3.1).
+    it.scene.reparent(a, b, 0);
+    it.step();
+
+    assert.equal(it.written[1], b, 'B is first now, because B is first in the tree');
+    assert.equal(it.scene.objects()[0], a, 'while the storage still lists A first');
+});
+
+test('Find By Tag with no tag finds nothing rather than the first object of the scene', () => {
+    // Every Object carries an empty tag by default, so matching on one would answer with
+    // whichever object happens to come first — a silent wrong answer.
+    const it = inScene((sheet, scene) => {
+        scene.add(new SceneObject('Untagged'));
+        return [sheet.node('scene.findByTag'), 'object'];
+    });
+
+    it.step();
+
+    assert.equal(it.written[0], null);
+});
+
+test('Is Valid tells a handle from nothing', () => {
+    const held = inScene(sheet => {
+        const self = sheet.node('scene.self');
+        const check = sheet.node('object.isValid');
+        sheet.wire([self, 'object'], [check, 'object']);
+        return [check, 'result'];
+    });
+    held.step();
+    assert.equal(held.written[0], true);
+
+    const empty = inScene(sheet => [sheet.node('object.isValid'), 'result']);
+    empty.step();
+    assert.equal(empty.written[0], false);
+});
+
+test('no handle, and no identity of a scene, reaches the serialized `.px`', () => {
+    // ADR-0034 invariants 1 and 3. What a `.px` carries is node types, port identifiers and
+    // positions. A handle is runtime and nothing else, and no node turns one back into an
+    // identifier — which is what lets the same `.px` be used in more than one scene.
+    const it = inScene((sheet, scene) => {
+        scene.add(new SceneObject('Target', { tag: 'enemy' }));
+
+        const self = sheet.node('scene.self');
+        const parent = sheet.node('scene.parent');
+        const find = sheet.node('scene.findByTag');
+        const check = sheet.node('object.isValid');
+        sheet.model.graph.setInput(find.id, 'tag', 'enemy');
+        sheet.wire([self, 'object'], [parent, 'object']);
+        sheet.wire([find, 'object'], [check, 'object']);
+        return [check, 'result'];
+    });
+
+    it.step();
+
+    const payload = it.model.serialize();
+    const text = JSON.stringify(payload);
+
+    for (const object of it.scene.objects()) {
+        assert.equal(text.includes(object.id), false, `${object.name}'s identity reached the payload`);
+    }
+    assert.deepEqual(JSON.parse(text), payload, 'the payload is plain JSON, so it holds no handle');
+});
