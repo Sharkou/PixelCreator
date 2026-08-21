@@ -57,7 +57,7 @@ export {
     reconcileValues
 } from './component.js';
 export { missingComponent, isMissingComponent } from './missing.js';
-export { defineComponent, componentDefinition, componentGraph } from './definition.js';
+export { defineComponent, componentDefinition, componentGraph, declaredProperties } from './definition.js';
 
 // The `.px` graph: its model, its catalogue of node types, and the rules that say whether
 // a graph is runnable (ADR-0027). All of it is Core because all of it is shared — the
@@ -72,14 +72,19 @@ export {
     createPort,
     compatibleTargets,
     groupNodes,
+    portTypeOf,
     nodes,
     portOf,
     portsOf,
     typesCompatible
 } from './graph/nodes.js';
 export {
+    COMPONENT_PROPERTY_REFERENCE,
+    COMPONENT_REFERENCE,
     PROPERTY_REFERENCE,
     STANDARD_NODES,
+    referencedComponent,
+    referencedComponentProperty,
     referencedProperty,
     registerStandardNodes
 } from './graph/standard.js';

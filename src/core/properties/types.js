@@ -30,6 +30,22 @@ export const PropertyType = {
     ENUM: 'enum',
     /** A reference to a Resource, carried as its ResourceId (ADR-0020). */
     RESOURCE: 'resource',
+    /**
+     * A reference to an Object of a scene, carried as its ObjectId (ADR-0034 §3.5).
+     *
+     * IT IS NOT THE `object` ADR-0023 §2 REMOVED. That one meant "a structure with fields",
+     * and the Core had an answer to none of the three questions it asks of a type. This one
+     * has all three — it starts at `null`, it is valid when it is null or a string, and it
+     * serializes as a string — which is the very argument ADR-0023 §1 makes for admitting a
+     * type at all. It is exactly `resource`, one scope down.
+     *
+     * WHAT MAKES IT DIFFERENT FROM `resource` IS THE SCOPE, AND THE SCOPE IS THE DANGER: a
+     * ResourceId belongs to a project, an ObjectId belongs to ONE scene. So it may live in a
+     * value an instance holds, and never in the graph of a `.px` — which is of project
+     * scope and may be used by several scenes at once (ADR-0034 §3.5). No port ever carries
+     * this type; `portTypeOf()` turns it into `object` at the boundary.
+     */
+    OBJECTREF: 'objectref',
     ARRAY: 'array'
 };
 
@@ -81,6 +97,7 @@ export function defaultForProperty(property) {
         case PropertyType.ENUM:
             return copyValue(property.values?.[0] ?? null);
         case PropertyType.RESOURCE:
+        case PropertyType.OBJECTREF:
             return null;
         case PropertyType.ARRAY:
             return [];
@@ -115,7 +132,13 @@ export function isValidValue(property, value) {
             return (property.values ?? []).includes(value);
         // A resource reference is a ResourceId or nothing. It is not resolved here: the
         // Core never reaches storage (ADR-0020).
+        //
+        // An Object reference is an ObjectId or nothing, and it is not resolved here either:
+        // resolving one needs the running scene, which the Core does not hold (ADR-0034). A
+        // reference that points at nothing is still a valid VALUE — it is the state of a
+        // scene, not a malformed field, and §3.4 is explicit that the two are different.
         case PropertyType.RESOURCE:
+        case PropertyType.OBJECTREF:
             return value === null || typeof value === 'string';
         case PropertyType.ARRAY:
             return globalThis.Array.isArray(value);

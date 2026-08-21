@@ -37,6 +37,9 @@ export const PROPERTY_TYPE_LABELS = {
     [PropertyType.COLOR]: 'Color',
     [PropertyType.ENUM]: 'Choice',
     [PropertyType.RESOURCE]: 'Resource',
+    // What a creator declaring one is actually pointing at. `objectref` is the shape the
+    // Core stores; `Object` is the thing (ADR-0034 §3.5).
+    [PropertyType.OBJECTREF]: 'Object',
     [PropertyType.ARRAY]: 'List'
 };
 

@@ -238,6 +238,27 @@ export function typesCompatible(source, target) {
 }
 
 /**
+ * The port type a declared property is read and written through.
+ *
+ * ONE TRANSLATION, IN ONE PLACE (ADR-0034 §3.5). A property's declared type is very nearly
+ * the type of the port that carries it — except for `objectref`, which is an identity when
+ * it is stored and a HANDLE when it travels. A port typed `objectref` would be a fourth
+ * name for the same idea and, worse, would not be compatible with the `object` a `Self`
+ * node produces: `typesCompatible()` compares names, so the two would refuse to be wired.
+ *
+ * So no port is ever typed `objectref`, and `typesCompatible()` needs no rule about it.
+ * Every node that builds a port out of a property calls this, rather than repeating an
+ * expression that would drift the day a fifth caller appears.
+ *
+ * @param {object|null} property - The declared property descriptor, or null
+ * @returns {string} The port type; ANY_TYPE when nothing is declared
+ */
+export function portTypeOf(property) {
+    if (property?.type === PropertyType.OBJECTREF) return OBJECT_TYPE;
+    return property?.type ?? ANY_TYPE;
+}
+
+/**
  * Group node types for a menu, in category order.
  *
  * The same shape `groupTypes()` produces for components (editor/registry.js), so the node

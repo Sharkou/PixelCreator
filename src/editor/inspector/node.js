@@ -18,7 +18,14 @@
 // the graph — and so a dynamic port list (Set Property's value takes the property's shape)
 // is legible.
 
-import { PROPERTY_REFERENCE, PropertyType, portsOf } from '../../core/mod.js';
+import {
+    COMPONENT_PROPERTY_REFERENCE,
+    COMPONENT_REFERENCE,
+    PROPERTY_REFERENCE,
+    PropertyType,
+    portsOf,
+    referencedComponent
+} from '../../core/mod.js';
 import { fieldFor } from './schema.js';
 
 /**
@@ -31,10 +38,11 @@ import { fieldFor } from './schema.js';
  * @param {object} [context] - What the panel could resolve
  * @param {object} [context.registry] - The NodeRegistry the type is resolved in
  * @param {object[]} [context.properties] - The Component's declared properties
+ * @param {object[]} [context.components] - The project's Component types, for a node naming one
  * @param {object[]} [context.issues] - Findings from validateGraph(), for this node
  * @returns {object|null} What to show
  */
-export function describeNode(node, { registry, properties = [], issues = [] } = {}) {
+export function describeNode(node, { registry, properties = [], components = [], issues = [] } = {}) {
     if (!node) return null;
 
     const definition = registry?.get(node.type) ?? null;
@@ -56,14 +64,14 @@ export function describeNode(node, { registry, properties = [], issues = [] } = 
         };
     }
 
-    const context = { properties };
+    const context = { properties, components };
 
     return {
         title: definition.label,
         type: node.type,
         category: definition.category ?? 'Other',
         known: true,
-        fields: paramFields(definition, properties),
+        fields: paramFields(definition, node, context),
         ports: portsOf(definition, node, context),
         issues: mine,
         tooltip: definition.tooltip ?? null
@@ -74,32 +82,58 @@ export function describeNode(node, { registry, properties = [], issues = [] } = 
  * The fields a node's params are edited through.
  *
  * @param {object} definition - The node type
- * @param {object[]} properties - The Component's declared properties
+ * @param {object} [node] - The node, for a reference that depends on a sibling param
+ * @param {object} [context] - `{ properties, components }`
  * @returns {object[]} Field descriptors, in declaration order
  */
-export function paramFields(definition, properties = []) {
+export function paramFields(definition, node = null, context = {}) {
     const fields = [];
 
     for (const [name, descriptor] of globalThis.Object.entries(definition.params ?? {})) {
-        fields.push(descriptor?.reference === PROPERTY_REFERENCE
-            ? propertyChoice(name, descriptor, properties)
-            : fieldFor(name, descriptor));
+        fields.push(referenceChoice(name, descriptor, node, context) ?? fieldFor(name, descriptor));
     }
 
     return fields;
 }
 
 /**
- * A param that names one of the Component's properties, as a choice.
+ * Where each kind of reference finds the things a creator may pick.
+ *
+ * ONE TABLE, AND ADDING A KIND IS A ROW. The rule is `descriptor.reference` and never the
+ * node's type, which is what kept this file free of `if (node.type === …)` when the second
+ * and third kinds arrived (ADR-0034 §3.3).
+ *
+ * The third one reads a SIBLING param: which properties may be picked depends on which
+ * Component type the node names, so it is resolved through the model's own resolver rather
+ * than by reaching into `node.params` here.
+ */
+const OPTIONS = {
+    [PROPERTY_REFERENCE]: (node, context) =>
+        (context.properties ?? []).map(property => ({ value: property.id, label: property.name })),
+    [COMPONENT_REFERENCE]: (node, context) =>
+        (context.components ?? []).map(entry => ({ value: entry.type, label: entry.label ?? entry.type })),
+    [COMPONENT_PROPERTY_REFERENCE]: (node, context) =>
+        (referencedComponent(node, context)?.properties ?? [])
+            .map(property => ({ value: property.id, label: property.name }))
+};
+
+/**
+ * A param that names something, as a choice whose values are identities.
  *
  * The values are IDENTITIES and the labels are names — which is what lets a creator pick
- * `speed` while the graph stores something a rename cannot invalidate.
+ * `speed` while the graph stores something a rename cannot invalidate. A choice with
+ * nothing in it stays read-only rather than becoming an empty dropdown (ADR-0031 §2).
+ *
+ * @returns {object|null} The descriptor, or null when this param names nothing
  */
-function propertyChoice(name, descriptor, properties) {
+function referenceChoice(name, descriptor, node, context) {
+    const options = OPTIONS[descriptor?.reference]?.(node, context);
+    if (!options) return null;
+
     return fieldFor(name, {
         ...descriptor,
         type: PropertyType.ENUM,
-        values: properties.map(property => property.id),
-        labels: properties.map(property => property.name)
+        values: options.map(option => option.value),
+        labels: options.map(option => option.label)
     });
 }

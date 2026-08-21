@@ -50,6 +50,7 @@ import { FieldKind, describeComponent, isNumeric, objectFields, rows } from '../
 import '../ui/window.js';
 import '../ui/field.js';
 import '../ui/resource-field.js';
+import '../ui/object-field.js';
 
 /**
  * A resource's payload, when reading one makes sense and costs nothing.
@@ -1718,6 +1719,16 @@ export class Inspector extends Element {
      * @returns {HTMLElement} The bound control
      */
     #control(target, descriptor, options = {}) {
+        // An Object reference is resolved in the scene rather than in the project, so it has
+        // its own control for the same reason a resource does: the value is an identity, and
+        // a text field over one is a debugger (ADR-0034 §3.5, ui/object-field.js).
+        if (descriptor.kind === FieldKind.OBJECT) {
+            return el('px-object').bind(target, descriptor, {
+                scene: this.#scene ?? null,
+                write: options.write ?? null
+            });
+        }
+
         if (descriptor.kind !== FieldKind.RESOURCE) return el('px-field').bind(target, descriptor, options);
 
         return el('px-resource').bind(target, descriptor, {

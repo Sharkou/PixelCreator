@@ -12,7 +12,10 @@ import {
     componentGraph,
     serializeComponent,
     serializeScene,
-    deserializeScene
+    deserializeScene,
+    PropertyType,
+    defaultForProperty,
+    isValidValue
 } from './mod.js';
 
 /**
@@ -319,4 +322,61 @@ test('the core defines components without knowing what a graph is', async () => 
     assert.equal(/from '\.\.\/runtime/.test(source), false);
     assert.equal(/from '\.\.\/project/.test(source), false);
     assert.equal(typeof globalThis.document, 'undefined');
+});
+
+// --- objectref: a reference that persists, one scope below a resource (ADR-0034 §3.5) ----
+
+test('an objectref starts at nothing, and only an identity or nothing is a value for it', () => {
+    const property = { type: PropertyType.OBJECTREF };
+
+    assert.equal(defaultForProperty(property), null);
+    assert.equal(isValidValue(property, null), true);
+    assert.equal(isValidValue(property, 'obj_7f3a'), true);
+
+    // The shapes that are not an identity. A number is the one worth naming: the Core's
+    // permissive fallback would have accepted it, which is why the type carries its own case.
+    assert.equal(isValidValue(property, 42), false);
+    assert.equal(isValidValue(property, true), false);
+    assert.equal(isValidValue(property, { id: 'obj_7f3a' }), false);
+    assert.equal(isValidValue(property, ['obj_7f3a']), false);
+});
+
+test('an objectref survives a save and a reload, and outlives what it points at', () => {
+    // A REFERENCE IS NEVER CLEANED UP BEHIND A CREATOR'S BACK (ADR-0034 §3.4). Deleting the
+    // target leaves the value exactly where it was: the resolution answers nothing, the
+    // Inspector shows it in red, and putting the object back makes the reference work again.
+    // Blanking it would be the engine deciding what the creator meant.
+    const Door = defineComponent({
+        type: 'res_door',
+        label: 'Door',
+        properties: { opener: { id: 'p_9', type: PropertyType.OBJECTREF, default: null } }
+    });
+
+    const registry = new ComponentRegistry();
+    registry.register(Door);
+
+    const scene = new Scene('Main', { registry });
+    const target = scene.add(new Object('Switch'));
+    const door = scene.add(new Object('Door'));
+    const component = door.addComponent(new Door());
+
+    assert.equal(component.opener, null, 'a fresh instance points at nothing');
+
+    component.setProperty('opener', target.id);
+    const payload = serializeScene(scene);
+    const reloaded = deserializeScene(payload, { registry });
+    const back = reloaded.get(door.id).getComponent('res_door');
+
+    assert.equal(back.opener, target.id, 'the identity travels as a plain string');
+    assert.equal(reloaded.get(back.opener), reloaded.get(target.id), 'and resolves to the Object');
+
+    reloaded.remove(reloaded.get(target.id));
+
+    assert.equal(back.opener, target.id, 'the value is kept');
+    assert.equal(reloaded.get(back.opener), undefined, 'and resolves to nothing');
+    assert.equal(
+        serializeScene(reloaded).objects.find(entry => entry.name === 'Door').components[0].values.opener,
+        target.id,
+        'a dead reference is still written out'
+    );
 });

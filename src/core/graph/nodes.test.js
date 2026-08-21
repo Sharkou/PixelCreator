@@ -13,6 +13,7 @@ import {
     createPort,
     groupNodes,
     portOf,
+    portTypeOf,
     portsOf,
     typesCompatible
 } from './nodes.js';
@@ -263,4 +264,42 @@ test('a wire from an object output is only offered nodes that take an object', (
     assert.ok(found.has('debug.log'), 'Log takes anything');
     assert.equal(found.has('math.add'), false, 'arithmetic does not take an object');
     assert.equal(found.has('scene.findByTag'), false, 'Find By Tag takes a tag, not an object');
+});
+
+// --- objectref never becomes a port type (ADR-0034 §3.5) --------------------------------
+
+test('a property is read through the port type it travels as, and objectref travels as object', () => {
+    // An identity when it is STORED, a handle when it TRAVELS. A port typed `objectref`
+    // would be a second name for the same idea, and `typesCompatible()` compares names — so
+    // a `Self` node could not be wired into it. The translation removes the question.
+    assert.equal(portTypeOf({ type: PropertyType.OBJECTREF }), OBJECT_TYPE);
+    assert.equal(typesCompatible(portTypeOf({ type: PropertyType.OBJECTREF }), OBJECT_TYPE), true);
+
+    // Everything else is its own port type, unchanged.
+    assert.equal(portTypeOf({ type: PropertyType.RESOURCE }), PropertyType.RESOURCE);
+    assert.equal(portTypeOf({ type: PropertyType.STRING }), PropertyType.STRING);
+    assert.equal(portTypeOf({ type: PropertyType.NUMBER }), PropertyType.NUMBER);
+    assert.equal(portTypeOf({ type: PropertyType.BOOLEAN }), PropertyType.BOOLEAN);
+
+    // Nothing declared is no constraint, which is what an unselected reference means.
+    assert.equal(portTypeOf(null), ANY_TYPE);
+    assert.equal(portTypeOf({}), ANY_TYPE);
+});
+
+test('no node in the catalogue ever exposes a port typed objectref', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const properties = [{ id: 'p_target', name: 'target', type: PropertyType.OBJECTREF, default: null }];
+    const components = [{ type: 'res_door', label: 'Door', properties }];
+
+    const shapes = [];
+    for (const definition of registry.definitions()) {
+        // Every node, resolved against a Component whose only property IS an objectref: the
+        // dynamic ports take its shape, and that is the one moment the type could leak.
+        const node = { id: 'n', type: definition.type, params: { property: 'p_target', component: 'res_door' } };
+        const ports = portsOf(definition, node, { properties, components });
+        shapes.push(...ports.inputs.map(port => port.type), ...ports.outputs.map(port => port.type));
+    }
+
+    assert.equal(shapes.includes(PropertyType.OBJECTREF), false, 'objectref is persisted, never carried');
+    assert.ok(shapes.includes(OBJECT_TYPE), 'and it is carried as an object');
 });

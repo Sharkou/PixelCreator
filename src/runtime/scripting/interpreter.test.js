@@ -717,3 +717,240 @@ test('no handle, and no identity of a scene, reaches the serialized `.px`', () =
     }
     assert.deepEqual(JSON.parse(text), payload, 'the payload is plain JSON, so it holds no handle');
 });
+
+// --- reaching another Object's Component (ADR-0034 §3.3) --------------------------------
+
+/**
+ * A scene where a `.px` reaches a tagged Object carrying a `Health` Component.
+ *
+ * The target is found by tag, which is how a graph names something it does not own: no
+ * identity of a scene enters the `.px`, only a string of project scope.
+ *
+ * @param {Function} build - (sheet, parts) => [node, port] to observe, or nothing
+ * @param {object} [options] - `{ attached }` — whether the target carries the Component
+ */
+function reaching(build, { attached = true, tag = 'enemy' } = {}) {
+    const catalogue = new ComponentRegistry();
+    const Health = defineComponent({
+        type: 'res_health',
+        label: 'Health',
+        properties: { hp: { id: 'p_hp', type: PropertyType.NUMBER, default: 3 } }
+    });
+    catalogue.register(Health);
+
+    const scene = new Scene('Main', { registry: catalogue });
+    const target = scene.add(new SceneObject('Enemy', { tag: 'enemy' }));
+    if (attached) target.addComponent(new Health());
+
+    const written = [];
+    const sheet = px();
+    const update = sheet.node('event.update');
+    const find = sheet.node('scene.findByTag');
+    sheet.model.graph.setInput(find.id, 'tag', tag);
+
+    const observed = build(sheet, { update, find, scene, target });
+
+    if (observed) {
+        const log = sheet.node('debug.log');
+        sheet.wire([update, 'out'], [log, 'in']);
+        sheet.wire(observed, [log, 'value']);
+    }
+
+    const payload = sheet.model.serialize();
+    const Behaviour = defineComponent(payload);
+    const holder = scene.add(new SceneObject('Hero'));
+    holder.addComponent(new Behaviour());
+
+    const behavior = interpretGraph(payload.graph, {
+        registry,
+        log: value => written.push(value)
+    })(holder.components[payload.type]);
+
+    return {
+        scene,
+        target,
+        holder,
+        written,
+        health: () => target.getComponent('res_health') ?? null,
+        step: () => behavior.update(holder, { time: 0, deltaTime: 0.016, scene })
+    };
+}
+
+/** A `.px` that reads `hp` off whatever the Find node produced. */
+const reads = (sheet, { find }) => {
+    const get = sheet.node('property.getOn', { component: 'res_health', property: 'p_hp' });
+    sheet.wire([find, 'object'], [get, 'object']);
+    return [get, 'value'];
+};
+
+/** A `.px` that writes a number into `hp` on whatever the Find node produced. */
+const writes = value => (sheet, { update, find }) => {
+    const set = sheet.node('property.setOn', { component: 'res_health', property: 'p_hp' });
+    const literal = sheet.node('value.number', { value });
+    sheet.wire([update, 'out'], [set, 'in']);
+    sheet.wire([find, 'object'], [set, 'object']);
+    sheet.wire([literal, 'value'], [set, 'value']);
+    return null;
+};
+
+test('Get Property On reads the property of a Component on another Object', () => {
+    const it = reaching(reads);
+    it.health().hp = 7;
+
+    it.step();
+
+    assert.equal(it.written[0], 7);
+});
+
+test('Get Property On answers the declared default when there is nothing to read', () => {
+    // A TARGET THAT IS GONE IS A STATE OF THE SCENE, NOT A FAULT (ADR-0034 §3.4). All three
+    // shapes of absence answer the same way, and none of them reports an error.
+    const missing = reaching(reads, { tag: 'nobody' });
+    missing.step();
+    assert.equal(missing.written[0], 3, 'nothing was found');
+
+    const bare = reaching(reads, { attached: false });
+    bare.step();
+    assert.equal(bare.written[0], 3, 'the Object does not carry the Component');
+
+    const removed = reaching(reads);
+    removed.health().hp = 9;
+    removed.step();
+    assert.equal(removed.written[0], 9);
+    removed.scene.remove(removed.target);
+    removed.step();
+    assert.equal(removed.written[1], 3, 'the Object was deleted between two steps');
+});
+
+test('Set Property On writes onto the Component of another Object', () => {
+    const it = reaching(writes(12));
+
+    it.step();
+
+    assert.equal(it.health().hp, 12);
+});
+
+test('Set Property On does nothing when there is nothing to write to', () => {
+    const missing = reaching(writes(12), { tag: 'nobody' });
+    assert.doesNotThrow(() => missing.step());
+    assert.equal(missing.health().hp, 3, 'the target was never found, so nothing moved');
+
+    const bare = reaching(writes(12), { attached: false });
+    assert.doesNotThrow(() => bare.step());
+    assert.equal(bare.target.getComponent('res_health'), undefined);
+
+    const removed = reaching(writes(12));
+    removed.scene.remove(removed.target);
+    assert.doesNotThrow(() => removed.step());
+    assert.equal(removed.health().hp, 3, 'a deleted target is a no-op, not a failure');
+});
+
+test('a write onto another Object is observable, and is still not an Operation', () => {
+    // ADR-0034 invariant 5, and the same rule `Set Property` lives by: a behaviour running
+    // inside `update()` is a simulation output, so it produces a Change and nothing else.
+    // An Operation per frame per instance is what a graph must never put on a network.
+    const it = reaching(writes(12));
+
+    const changes = [];
+    const operations = [];
+    observe(it.health(), 'hp', change => changes.push(change.value));
+    it.scene.operations.on('operation', operation => operations.push(operation));
+
+    it.step();
+    it.step();
+    it.step();
+
+    assert.deepEqual(changes, [12], 'written once, and then already equal');
+    assert.deepEqual(operations, [], 'three steps, no Operation');
+});
+
+test('a node naming a Component type nothing declares refuses, with the reason', () => {
+    // A reference a design-time check COULD resolve and cannot is a fault (ADR-0034 §3.4),
+    // and it is told apart from a target that simply is not there.
+    const it = reaching((sheet, { find }) => {
+        const get = sheet.node('property.getOn', { component: 'res_ghost', property: 'p_hp' });
+        sheet.wire([find, 'object'], [get, 'object']);
+        return [get, 'value'];
+    });
+
+    assert.throws(() => it.step(), error => error instanceof GraphError
+        && error.code === GraphIssueCode.MISSING_PROPERTY);
+});
+
+// --- what an object port will and will not take (ADR-0034 §3.6) -------------------------
+
+/**
+ * `Is Valid` as the observer: it answers whether an Object arrived at all, which is exactly
+ * the question the protection decides.
+ *
+ * @param {Function} [forge] - (graph, node) => void, to plant a value the Editor never would
+ */
+function reachesPort(forge, { wireSelf = false } = {}) {
+    const scene = new Scene('Main');
+    const written = [];
+    const sheet = px();
+
+    const update = sheet.node('event.update');
+    const check = sheet.node('object.isValid');
+    const log = sheet.node('debug.log');
+    sheet.wire([update, 'out'], [log, 'in']);
+    sheet.wire([check, 'result'], [log, 'value']);
+
+    if (wireSelf) sheet.wire([sheet.node('scene.self'), 'object'], [check, 'object']);
+    forge?.(sheet.model.graph, check);
+
+    const payload = sheet.model.serialize();
+    const Behaviour = defineComponent(payload);
+    const object = scene.add(new SceneObject('Hero'));
+    object.addComponent(new Behaviour());
+
+    interpretGraph(payload.graph, { registry, log: value => written.push(value) })(
+        object.components[payload.type]
+    ).update(object, { time: 0, deltaTime: 0.016, scene });
+
+    return written[0];
+}
+
+test('an object port takes a handle from a wire, and a value from nowhere else', () => {
+    assert.equal(reachesPort(null, { wireSelf: true }), true, 'a real handle travels');
+    assert.equal(reachesPort(null), false, 'an unconnected port yields nothing');
+
+    // THE THREE SHAPES A FORCED VALUE COULD TAKE, and the last is why the protection refuses
+    // the VALUE rather than inspecting it: a forged record is indistinguishable from a
+    // handle to anything that duck-types.
+    assert.equal(reachesPort(graph => graph.setInput(graph.nodes()[1].id, 'object', 'obj_7f3a91c2')), false);
+    assert.equal(reachesPort(graph => graph.setInput(graph.nodes()[1].id, 'object', 42)), false);
+    assert.equal(
+        reachesPort(graph => graph.setInput(graph.nodes()[1].id, 'object', { id: 'obj_fake', name: 'Fake' })),
+        false
+    );
+});
+
+test('a payload written by hand cannot smuggle an Object into a port either', () => {
+    // The protection lives in the interpreter's own fallback, so it holds for a `.px` that
+    // no Editor produced — which is the only way such a value could exist at all.
+    const scene = new Scene('Main');
+    const object = scene.add(new SceneObject('Hero'));
+    const written = [];
+
+    const forged = {
+        version: 1,
+        nodes: [
+            { id: 'n1', type: 'event.update', x: 0, y: 0, params: {} },
+            { id: 'n2', type: 'object.isValid', x: 0, y: 0, params: {}, inputs: { object: 'obj_7f3a91c2' } },
+            { id: 'n3', type: 'debug.log', x: 0, y: 0, params: {} }
+        ],
+        connections: [
+            { id: 'c1', from: { node: 'n1', port: 'out' }, to: { node: 'n3', port: 'in' } },
+            { id: 'c2', from: { node: 'n2', port: 'result' }, to: { node: 'n3', port: 'value' } }
+        ]
+    };
+
+    class Bare { static type = 'res_bare'; static schema = {}; }
+    object.addComponent(new Bare());
+
+    interpretGraph(forged, { registry, log: value => written.push(value) })(object.components.res_bare)
+        .update(object, { time: 0, deltaTime: 0.016, scene });
+
+    assert.deepEqual(written, [false], 'the identity in the payload never became an Object');
+});

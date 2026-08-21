@@ -26,6 +26,7 @@
 import {
     ANY_TYPE,
     GraphSeverity,
+    OBJECT_TYPE,
     PropertyType,
     compatibleTargets,
     groupNodes,
@@ -341,6 +342,7 @@ export class GraphWindow extends Element {
     `);
 
     #definition = null;
+    #components = null;
     #framed = null;
     #svg = null;
     #content = null;
@@ -363,9 +365,14 @@ export class GraphWindow extends Element {
      * Point the canvas at a `.px`.
      *
      * @param {object|null} definition - The live ComponentDefinition, or null for nothing
+     * @param {object} [options] - Options
+     * @param {Function} [options.components] - () => the project's Component types, read by
+     *   the nodes that name one (ADR-0034 §3.3). Asked on every draw rather than held, so a
+     *   `.px` installed while the canvas is open is offered without a subscription.
      * @returns {GraphWindow} This element
      */
-    bind(definition) {
+    bind(definition, { components = null } = {}) {
+        this.#components = components;
         if (this.#definition === definition) return this;
 
         this.release('graph');
@@ -519,7 +526,8 @@ export class GraphWindow extends Element {
             const controls = [
                 ...(describeNode(node, {
                     registry: this.#definition.registry,
-                    properties: this.#definition.properties()
+                    properties: this.#definition.properties(),
+                    components: this.#components?.() ?? []
                 })?.fields ?? []),
                 ...this.#inputRows(node, ports)
             ];
@@ -550,6 +558,10 @@ export class GraphWindow extends Element {
         for (const port of ports.inputs) {
             if (port.kind === 'flow') continue;
             if (!port.type || port.type === ANY_TYPE) continue;
+            // AN OBJECT IS NOT A VALUE A CREATOR TYPES (ADR-0034 §3.2). A control here would
+            // be a box that can never be filled in — and the Runtime ignores anything found
+            // in a node for such a port anyway (§3.6), so the box would also be a lie.
+            if (port.type === OBJECT_TYPE) continue;
 
             rows.push({
                 ...fieldFor(port.id, { type: port.type, label: port.label, default: port.default }),

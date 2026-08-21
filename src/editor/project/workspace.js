@@ -44,6 +44,7 @@ import {
     saveScene
 } from '../../project/mod.js';
 import { Histories } from '../history.js';
+import { componentCatalogue } from '../registry.js';
 
 /** What a kind of resource opens as, and how it is read, written and named. */
 const EDITORS = {
@@ -58,9 +59,14 @@ const EDITORS = {
         noun: 'Component',
         // A `.px` IS the Component and its graph (ADR-0026), so one payload becomes one
         // live model — properties and nodes sharing a pipeline, and therefore a stack.
-        load: async (project, id, { nodes }) => ComponentDefinition.deserialize(
+        //
+        // The Component catalogue is handed in as a FUNCTION, so a node that names another
+        // Component type sees one installed after this `.px` was opened (ADR-0034 §3.3).
+        // Absent — a headless caller passes no registry — such a node's port falls back to
+        // `any` and the validator stays silent rather than guessing.
+        load: async (project, id, { registry, nodes }) => ComponentDefinition.deserialize(
             await project.read(id) ?? { type: id },
-            { registry: nodes }
+            { registry: nodes, components: registry ? () => componentCatalogue(registry) : null }
         ),
         save: (project, id, model, options) => project.save(id, model.serialize(), options),
         exclusive: false

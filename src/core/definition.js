@@ -59,6 +59,7 @@
 // it removes the drift ADR-0007 warns about, where a schema declares `speed` and the
 // constructor forgot it.
 
+import { componentSchema } from './component.js';
 import { defaultForProperty, isPropertyType } from './properties/types.js';
 
 /**
@@ -160,6 +161,32 @@ export function defineComponent(definition) {
 export function componentDefinition(component) {
     const ctor = typeof component === 'function' ? component : component?.constructor;
     return ctor?.definition ?? null;
+}
+
+/**
+ * The properties a component type declares, as everything that addresses them reads them.
+ *
+ * A `.px` carries an `id` inside every descriptor, minted once, and that is what a graph
+ * node stores — so renaming a property leaves the graph wired (ADR-0027). A hand-written
+ * class with a `static schema` has no such ids, so its property names stand in: a graph
+ * bound to a shipped component still works, and nothing had to be added to that component.
+ *
+ * IT LIVES HERE BECAUSE TWO CALLERS NEED THE SAME ANSWER. The interpreter reads it for the
+ * component a graph belongs to; a node that reaches another Object reads it for the
+ * component it found there (ADR-0034 §3.3). Written twice, the two would eventually
+ * disagree about what a property IS.
+ *
+ * @param {Function|object} component - A component class or instance
+ * @returns {object[]} Descriptors carrying `id` and `name`, in declaration order
+ */
+export function declaredProperties(component) {
+    const declared = componentDefinition(component)?.properties ?? componentSchema(component) ?? {};
+
+    return globalThis.Object.entries(declared).map(([name, descriptor]) => ({
+        ...descriptor,
+        id: descriptor?.id ?? name,
+        name
+    }));
 }
 
 /**

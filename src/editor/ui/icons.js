@@ -336,6 +336,7 @@ export function iconForObject(object) {
  * value looks the same wherever a creator meets it.
  */
 const PROPERTY_TYPE_ICONS = {
+    objectref: 'object',
     number: 'type-number',
     int: 'type-int',
     boolean: 'type-boolean',

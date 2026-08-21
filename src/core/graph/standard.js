@@ -23,12 +23,30 @@
 // resolved at run time, which is also what lets a deleted property produce a structured
 // error instead of a silent `undefined`.
 
-import { PropertyType } from '../properties/types.js';
-import { ANY_TYPE, OBJECT_TYPE, PortKind, nodes as defaultNodes } from './nodes.js';
+import { PropertyType, defaultForProperty } from '../properties/types.js';
+import { ANY_TYPE, OBJECT_TYPE, PortKind, nodes as defaultNodes, portTypeOf } from './nodes.js';
+import { declaredProperties } from '../definition.js';
 import { GraphError, GraphIssueCode } from './errors.js';
 
 /** The param that names a Component property, so the Editor knows to offer a picker. */
 export const PROPERTY_REFERENCE = 'property';
+
+/**
+ * The param that names a Component TYPE (ADR-0034 §3.3).
+ *
+ * A type is a `ResourceId` for a `.px` and a class name for a shipped component — either
+ * way it is of PROJECT scope, which is what makes it safe to store in a graph. Nothing
+ * belonging to a scene is named here.
+ */
+export const COMPONENT_REFERENCE = 'component';
+
+/**
+ * The param that names a property OF the Component type a sibling param names.
+ *
+ * It is not `PROPERTY_REFERENCE`: that one resolves against the properties of the Component
+ * the graph belongs to, and this one against the properties of the type being reached.
+ */
+export const COMPONENT_PROPERTY_REFERENCE = 'component-property';
 
 /**
  * The property a node refers to, resolved from the context it runs in.
@@ -41,6 +59,36 @@ export function referencedProperty(node, context = {}) {
     const id = node?.params?.property ?? null;
     if (!id) return null;
     return (context.properties ?? []).find(property => property.id === id) ?? null;
+}
+
+/**
+ * The Component type a node refers to, resolved from the catalogue it runs against.
+ *
+ * `context.components` is what the Editor knows about the project's Component types; a
+ * headless check has none, and then this answers null rather than pretending.
+ *
+ * @param {object} node - The node
+ * @param {object} [context] - `{ components }`
+ * @returns {object|null} `{ type, label, properties }`, or null
+ */
+export function referencedComponent(node, context = {}) {
+    const type = node?.params?.component ?? null;
+    if (!type) return null;
+    return (context.components ?? []).find(entry => entry.type === type) ?? null;
+}
+
+/**
+ * The property of that Component type a node refers to.
+ *
+ * @param {object} node - The node
+ * @param {object} [context] - `{ components }`
+ * @returns {object|null} The descriptor, or null
+ */
+export function referencedComponentProperty(node, context = {}) {
+    const id = node?.params?.property ?? null;
+    if (!id) return null;
+    return (referencedComponent(node, context)?.properties ?? [])
+        .find(property => property.id === id) ?? null;
 }
 
 const flow = (id, label) => ({ id, kind: PortKind.FLOW, label: label ?? '' });
@@ -63,6 +111,79 @@ const propertyParam = {
         tooltip: 'The Component property this node reads or writes, by identity'
     }
 };
+
+/** The param naming the Component type a node reaches for. */
+const componentParam = {
+    component: {
+        type: PropertyType.STRING,
+        default: null,
+        label: 'Component',
+        reference: COMPONENT_REFERENCE,
+        tooltip: 'The Component type this node reads or writes, by identity'
+    }
+};
+
+/** The param naming a property of that type, kept apart from the one above (ADR-0027 §4). */
+const componentPropertyParam = {
+    property: {
+        type: PropertyType.STRING,
+        default: null,
+        label: 'Property',
+        reference: COMPONENT_PROPERTY_REFERENCE,
+        tooltip: 'The property of that Component this node reads or writes, by identity'
+    }
+};
+
+/**
+ * The property a node aims at on another Object, read off the TYPE it names.
+ *
+ * THE DECLARATION COMES FROM THE REGISTRY, THE VALUE FROM THE INSTANCE. Reading the schema
+ * off whatever component happens to be attached would leave the node with nothing to say
+ * when the target does not carry one — and `.px` types live in the Scene's own registry,
+ * which is exactly where a type is looked up everywhere else (core/scene.js).
+ *
+ * A reference that cannot be resolved AT ALL is a design-time fault and refuses loudly; a
+ * target that simply is not there is a state of the running scene and does not (ADR-0034
+ * §3.4). That is the whole of the asymmetry, and it lives here.
+ */
+function requireTargetProperty(io) {
+    const type = io.node?.params?.component ?? null;
+    const id = io.node?.params?.property ?? null;
+
+    if (!type || !id) {
+        throw new GraphError(
+            GraphIssueCode.MISSING_REFERENCE,
+            'This node has no Component and property selected.',
+            { node: io.node?.id, property: id }
+        );
+    }
+
+    const Component = io.ctx?.scene?.registry?.get?.(type) ?? null;
+    if (!Component) {
+        throw new GraphError(
+            GraphIssueCode.MISSING_PROPERTY,
+            'This node names a Component type this project does not declare.',
+            { node: io.node?.id }
+        );
+    }
+
+    const property = declaredProperties(Component).find(entry => entry.id === id) ?? null;
+    if (!property) {
+        throw new GraphError(
+            GraphIssueCode.MISSING_PROPERTY,
+            'This node names a property that Component no longer declares.',
+            { node: io.node?.id, property: id }
+        );
+    }
+
+    return property;
+}
+
+/** The Component on the Object a node was handed, or null when there is neither. */
+function targetComponent(io) {
+    const target = io.input('object');
+    return target?.getComponent?.(io.node?.params?.component) ?? null;
+}
 
 /**
  * Resolve a referenced property or refuse, with the reason in the code.
@@ -131,7 +252,7 @@ export const STANDARD_NODES = [
         // input is refused at the moment of the gesture rather than discovered at run time.
         outputs: (node, context) => {
             const property = referencedProperty(node, context);
-            return [data('value', property?.type ?? ANY_TYPE, property?.name ?? 'Value')];
+            return [data('value', portTypeOf(property), property?.name ?? 'Value')];
         },
         evaluate: io => ({ value: io.component?.[requireProperty(io).name] })
     },
@@ -146,7 +267,7 @@ export const STANDARD_NODES = [
             const property = referencedProperty(node, context);
             return [
                 flow('in'),
-                data('value', property?.type ?? ANY_TYPE, property?.name ?? 'Value', property?.default)
+                data('value', portTypeOf(property), property?.name ?? 'Value', property?.default)
             ];
         },
         outputs: [flow('out')],
@@ -226,6 +347,69 @@ export const STANDARD_NODES = [
         // without it, a dead reference is indistinguishable from a graph that never worked.
         evaluate: io => ({ result: (io.input('object') ?? null) !== null }),
         tooltip: 'Whether there is an Object here at all'
+    },
+
+    // --- the properties of ANOTHER Object's Component ------------------------------------
+    //
+    // THE SAME SEMANTICS AS `Get Property` AND `Set Property`, AIMED SOMEWHERE ELSE
+    // (ADR-0034 §3.3). A property is named by identity, a write is a plain write, and
+    // nothing here produces an Operation. What is added is an Object port saying WHOSE
+    // component to look at, and a param saying WHICH component — a type, which is of project
+    // scope, so nothing belonging to a scene enters the graph.
+    //
+    // THE TWO PARAMS SIT ON ONE NODE RATHER THAN ON TWO. A `Get Component` handing a handle
+    // to a `Get Property` would not know what TYPE of component it was holding: its output
+    // port would fall back to `any` and its property picker would have nothing to offer.
+    // Carrying both, the node resolves the declaration itself, so the port is typed exactly
+    // and a bad wire is refused at the moment of the gesture rather than at run time.
+
+    {
+        type: 'property.getOn',
+        label: 'Get Property On',
+        category: 'Scene',
+        keywords: ['read', 'other', 'remote', 'foreign', 'component', 'field'],
+        params: { ...componentParam, ...componentPropertyParam },
+        inputs: [data('object', OBJECT_TYPE)],
+        outputs: (node, context) => {
+            const property = referencedComponentProperty(node, context);
+            return [data('value', portTypeOf(property), property?.name ?? 'Value')];
+        },
+        evaluate: io => {
+            const property = requireTargetProperty(io);
+            const component = targetComponent(io);
+            // A TARGET THAT IS GONE IS A STATE OF THE SCENE, NOT A FAULT (ADR-0034 §3.4).
+            // The node answers with what a fresh instance of that Component would hold, so a
+            // graph reading the health of an enemy that just died reads its declared value
+            // rather than failing every frame for the rest of the game.
+            return { value: component ? component[property.name] : defaultForProperty(property) };
+        }
+    },
+
+    {
+        type: 'property.setOn',
+        label: 'Set Property On',
+        category: 'Scene',
+        keywords: ['write', 'assign', 'other', 'remote', 'foreign', 'component'],
+        params: { ...componentParam, ...componentPropertyParam },
+        inputs: (node, context) => {
+            const property = referencedComponentProperty(node, context);
+            return [
+                flow('in'),
+                data('object', OBJECT_TYPE),
+                data('value', portTypeOf(property), property?.name ?? 'Value', property?.default)
+            ];
+        },
+        outputs: [flow('out')],
+        execute: io => {
+            const property = requireTargetProperty(io);
+            const component = targetComponent(io);
+            // A PLAIN WRITE, exactly as `Set Property` does: a behaviour running inside
+            // `update()` is a simulation output and not an authored intent, so it produces a
+            // Change and no Operation (ADR-0003, ADR-0027 §6). Writing on a target that is
+            // gone does nothing, and says nothing — §3.4 again.
+            if (component) component[property.name] = io.input('value');
+            return 'out';
+        }
     },
 
     // --- flow control ----------------------------------------------------------------

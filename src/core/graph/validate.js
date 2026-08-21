@@ -24,7 +24,44 @@
 import { GraphIssueCode, GraphSeverity, graphIssue } from './errors.js';
 import { GRAPH_VERSION } from './graph.js';
 import { PortDirection, PortKind, nodes as defaultNodes, portsOf, typesCompatible } from './nodes.js';
-import { PROPERTY_REFERENCE } from './standard.js';
+import {
+    COMPONENT_PROPERTY_REFERENCE,
+    COMPONENT_REFERENCE,
+    PROPERTY_REFERENCE,
+    referencedComponent,
+    referencedComponentProperty
+} from './standard.js';
+
+/**
+ * What each kind of reference resolves against, and what to say when it resolves to nothing.
+ *
+ * ONE TABLE RATHER THAN A CHAIN OF `if`. A node type declares WHICH kind of thing a param
+ * names (ADR-0027 §4, extended by ADR-0034 §3.3), and adding a kind is a row here — the same
+ * shape the drag rules and the node catalogue already have.
+ *
+ * `resolve` answers a falsy value for "this names something that is not there", and `true`
+ * for "there is nothing to check it against". The second is not a pass by charity: a
+ * headless check has no catalogue of Component types, and a reference that cannot be checked
+ * is not a reference that is wrong.
+ */
+const REFERENCES = {
+    [PROPERTY_REFERENCE]: {
+        empty: 'No property is selected on this node.',
+        missing: 'This node refers to a property the Component no longer declares.',
+        resolve: (node, context) =>
+            (context.properties ?? []).some(property => property.id === node.params?.property)
+    },
+    [COMPONENT_REFERENCE]: {
+        empty: 'No Component is selected on this node.',
+        missing: 'This node names a Component type this project does not declare.',
+        resolve: (node, context) => (context.components ? referencedComponent(node, context) : true)
+    },
+    [COMPONENT_PROPERTY_REFERENCE]: {
+        empty: 'No property is selected on this node.',
+        missing: 'This node names a property that Component does not declare.',
+        resolve: (node, context) => (context.components ? referencedComponentProperty(node, context) : true)
+    }
+};
 
 /**
  * Check a graph payload.
@@ -33,9 +70,10 @@ import { PROPERTY_REFERENCE } from './standard.js';
  * @param {object} [options] - Options
  * @param {object} [options.registry] - The NodeRegistry node types are resolved in
  * @param {object[]} [options.properties] - The Component's declared properties
+ * @param {object[]} [options.components] - The project's Component types, when they are known
  * @returns {object[]} Findings, in the order they were discovered
  */
-export function validateGraph(graph, { registry = defaultNodes, properties = [] } = {}) {
+export function validateGraph(graph, { registry = defaultNodes, properties = [], components = null } = {}) {
     const issues = [];
 
     if (!graph || typeof graph !== 'object') {
@@ -54,7 +92,7 @@ export function validateGraph(graph, { registry = defaultNodes, properties = [] 
         })];
     }
 
-    const context = { properties };
+    const context = { properties, components };
     const byId = new Map();
 
     for (const node of graph.nodes ?? []) {
@@ -113,23 +151,24 @@ function checkReferences(node, definition, context) {
     const issues = [];
 
     for (const [name, descriptor] of globalThis.Object.entries(definition.params ?? {})) {
-        if (descriptor?.reference !== PROPERTY_REFERENCE) continue;
+        const kind = REFERENCES[descriptor?.reference];
+        if (!kind) continue;
 
         const id = node.params?.[name] ?? null;
         if (!id) {
             issues.push(graphIssue({
                 code: GraphIssueCode.MISSING_REFERENCE,
                 severity: GraphSeverity.WARNING,
-                message: 'No property is selected on this node.',
+                message: kind.empty,
                 node: node.id
             }));
             continue;
         }
 
-        if (!(context.properties ?? []).some(property => property.id === id)) {
+        if (!kind.resolve(node, context)) {
             issues.push(graphIssue({
                 code: GraphIssueCode.MISSING_PROPERTY,
-                message: 'This node refers to a property the Component no longer declares.',
+                message: kind.missing,
                 node: node.id,
                 property: id
             }));

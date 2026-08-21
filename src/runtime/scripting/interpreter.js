@@ -35,10 +35,12 @@ import {
     GRAPH_VERSION,
     GraphError,
     GraphIssueCode,
+    OBJECT_TYPE,
+    PortDirection,
     PortKind,
-    componentDefinition,
-    componentSchema,
+    declaredProperties,
     nodes as defaultNodes,
+    portOf,
     portsOf
 } from '../../core/mod.js';
 
@@ -96,7 +98,7 @@ export function interpretGraph(graph, { registry = defaultNodes, budget = DEFAUL
                     self,
                     ctx,
                     component,
-                    properties: propertiesOf(component),
+                    properties: declaredProperties(component),
                     log
                 };
 
@@ -332,28 +334,28 @@ function evaluate(compiled, nodeId, portId, state, frame, visiting) {
  * @returns {any} The value the port yields
  */
 function defaultOf(compiled, node, portId, state) {
+    const port = portOf(
+        compiled.definitions.get(node.id),
+        node,
+        PortDirection.INPUT,
+        portId,
+        { properties: state.properties }
+    );
+
+    // A HANDLE IS NOT A VALUE A GRAPH CAN HOLD (ADR-0034 §3.6). `node.inputs` is data of the
+    // `.px`, so anything sitting there for an `object` port would be an identity belonging
+    // to a scene, stored inside a resource of PROJECT scope — the one thing ADR-0034 exists
+    // to prevent, arriving through a payload nobody drew.
+    //
+    // THE VALUE IS REFUSED, NOT INSPECTED, and that is what makes it airtight: a forged
+    // record carrying an `id` and a `name` is indistinguishable from a real handle to a node
+    // that duck-types. There is nothing worth checking, so nothing is checked — an
+    // unconnected `object` port yields nothing, always, whatever the payload says.
+    if (port?.type === OBJECT_TYPE) return null;
+
     if (node.inputs && portId in node.inputs) return node.inputs[portId];
 
-    const ports = portsOf(compiled.definitions.get(node.id), node, { properties: state.properties });
-    return ports.inputs.find(port => port.id === portId)?.default ?? null;
-}
-
-/**
- * The properties a component's type declares, as the graph addresses them.
- *
- * A `.px` carries an `id` inside every descriptor, minted once, and that is what a node
- * stores — so renaming a property leaves the graph wired (ADR-0027). A hand-written class
- * with a `static schema` has no such ids, so its property names stand in: a graph bound to
- * a shipped component still works, and nothing had to be added to that component.
- */
-function propertiesOf(component) {
-    const declared = componentDefinition(component)?.properties ?? componentSchema(component) ?? {};
-
-    return globalThis.Object.entries(declared).map(([name, descriptor]) => ({
-        ...descriptor,
-        id: descriptor?.id ?? name,
-        name
-    }));
+    return port?.default ?? null;
 }
 
 function portKey(nodeId, portId) {

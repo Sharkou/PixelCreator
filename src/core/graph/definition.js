@@ -53,6 +53,7 @@ export class ComponentDefinition {
     #graph;
     #operations;
     #registry;
+    #components;
 
     /** Property id -> the reactive descriptor, in declaration order. */
     #properties = new Map();
@@ -64,10 +65,14 @@ export class ComponentDefinition {
      * @param {object} [options] - Options
      * @param {object} [options.registry] - The NodeRegistry the graph's ports are read from
      * @param {object} [options.authority] - Object exposing check(operation) => decision
+     * @param {Function} [options.components] - () => the project's Component types, for the
+     *   nodes that name one (ADR-0034 §3.3). Absent headlessly, and then such a node's port
+     *   falls back to `any` and the validator says nothing rather than guessing.
      */
-    constructor(payload = {}, { registry = defaultNodes, authority } = {}) {
+    constructor(payload = {}, { registry = defaultNodes, authority, components = null } = {}) {
         this.#type = payload.type ?? createId();
         this.#registry = registry;
+        this.#components = components;
 
         // ONE `resolve` FOR THREE KINDS OF TARGET, because there is one pipeline. A node, a
         // property descriptor and the definition's own record are all reactive records with
@@ -91,7 +96,7 @@ export class ComponentDefinition {
         this.#graph = Graph.deserialize(payload.graph ?? null, {
             registry,
             operations: this.#operations,
-            context: () => ({ properties: this.properties() })
+            context: () => ({ properties: this.properties(), components: this.#components?.() ?? null })
         });
 
         this.#registerHandlers();
@@ -423,7 +428,8 @@ export class ComponentDefinition {
     validate() {
         return validateGraph(this.#graph.serialize(), {
             registry: this.#registry,
-            properties: this.properties()
+            properties: this.properties(),
+            components: this.#components?.() ?? null
         });
     }
 

@@ -49,6 +49,7 @@ export const FieldKind = {
     COLOR: 'color',
     ENUM: 'enum',
     RESOURCE: 'resource',
+    OBJECT: 'object',
     READONLY: 'readonly'
 };
 
@@ -80,6 +81,10 @@ const KIND_BY_PROPERTY_TYPE = {
     [PropertyType.COLOR]: FieldKind.COLOR,
     [PropertyType.ENUM]: FieldKind.ENUM,
     [PropertyType.RESOURCE]: FieldKind.RESOURCE,
+    // An Object reference gets its own control for the reason a resource one does: the value
+    // is an opaque identity, and a text field over one invites a creator to type across a
+    // reference they cannot read back (ADR-0030 §1, one scope down — ui/object-field.js).
+    [PropertyType.OBJECTREF]: FieldKind.OBJECT,
     [PropertyType.ARRAY]: FieldKind.READONLY
 };
 

@@ -365,3 +365,17 @@ test('only a resource property carries an accepts clause', () => {
     const descriptor = fieldFor('speed', { type: PropertyType.NUMBER });
     assert.equal(descriptor.accepts, null);
 });
+
+test('an Object reference is edited with its own control, never with a text field', () => {
+    // ADR-0034 §3.5, which is ADR-0030 §1 one scope down: the value is an opaque identity,
+    // and a text field over one invites a creator to type across a reference they cannot
+    // read back. `readonly` would have been the silent dead end ADR-0023 §3 refuses.
+    assert.equal(fieldKindFor(PropertyType.OBJECTREF), FieldKind.OBJECT);
+
+    const descriptor = fieldFor('target', { type: PropertyType.OBJECTREF, default: null });
+
+    assert.equal(descriptor.kind, FieldKind.OBJECT);
+    assert.equal(descriptor.default, null);
+    assert.equal(descriptor.label, 'Target');
+    assert.notEqual(descriptor.kind, FieldKind.READONLY);
+});

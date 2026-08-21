@@ -18,7 +18,7 @@ import { Camera } from '../runtime/mod.js';
 import { Selection } from './selection.js';
 import { Subject } from './subject.js';
 import { Layout } from './layout.js';
-import { registerBuiltIns } from './registry.js';
+import { componentCatalogue, registerBuiltIns } from './registry.js';
 import { addComponent, deleteObject } from './commands.js';
 import { Workspace } from './project/workspace.js';
 import { createDefinitions } from './project/definitions.js';
@@ -1118,7 +1118,8 @@ function stageTabs({ workspace, viewport, graph }) {
 
         viewport.hidden = isGraph;
         graph.hidden = !isGraph;
-        graph.bind(isGraph ? workspace.attached(showing.id) : null);
+        graph.bind(isGraph ? workspace.attached(showing.id) : null,
+            { components: () => componentCatalogue(components) });
 
 
     };
