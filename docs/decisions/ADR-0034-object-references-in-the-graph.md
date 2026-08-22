@@ -272,6 +272,18 @@ Pour un **Object**, deux raisons de plus, chacune suffisante :
 Ce n'est pas un « non » permanent : c'est « pas avant qu'un geste non ambigu soit conçu ».
 Rien ne régresse en attendant — il n'existe aujourd'hui aucune zone de dépôt sur la toile.
 
+> **Amendé par ADR-0037 (2026-08-22) — le dépôt d'un Object est autorisé.** Le raisonnement
+> ci-dessus supposait que la référence s'encoderait comme un **tag**, donc par une écriture
+> dans la Scene ; la seconde raison en découlait entièrement. ADR-0037 encode le geste
+> autrement : le dépôt déclare sur le `.px` une **propriété `objectref`** nommée d'après
+> l'Object, et un nœud qui la lit. **Une seule ressource est écrite**, sous un seul batch de
+> sa propre pile — la question inter-ressources ne se pose plus, et la première raison est
+> respectée telle quelle : le nom nomme une propriété, dont le lien reste porté par son `id`.
+> Aucune identité de scène n'entre dans le `.px` : l'invariant 1 est tenu à la lettre.
+>
+> Les refus de Component, Property, Resource, Scene et `.px` **sur toile nue** deviennent des
+> gestes explicites au point du dépôt (ADR-0037 §2.4) ou restent refusés avec leur phrase.
+
 ---
 
 ## 4. Contrats observables
@@ -351,7 +363,7 @@ Rien ne régresse en attendant — il n'existe aujourd'hui aucune zone de dépô
 | **L'ordre d'exécution de `Runtime.step()`** | Décision moteur indépendante : **ADR-0035** |
 | Un type de port `component` | Additif le jour où quelque chose en consomme un |
 | `Find All By Tag`, un tableau d'Objects | Aucun nœud de boucle n'existe, et un tableau de handles n'est pas persistable |
-| Le dépôt d'un Object préremplissant un nœud | Attend un geste non ambigu **et** la portée d'undo inter-ressources |
+| ~~Le dépôt d'un Object préremplissant un nœud~~ | **Décidé par ADR-0037** : le dépôt déclare une propriété `objectref`, n'écrit qu'une ressource, et n'attend donc plus ADR-0024 |
 | L'ordre de dessin à `layer` égal | Même cause que §3.1, autre consommateur : ADR-0035 |
 | La divergence de « premier pas » d'un client qui rejoint | Préexistant, assumé par ADR-0029 §3 |
 | Le prefab | Reste reporté (ADR-0026 §7) ; les refus de §3.7 ne le préjugent pas |

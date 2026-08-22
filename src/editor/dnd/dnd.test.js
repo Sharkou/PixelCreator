@@ -21,6 +21,7 @@ import {
     DropZone,
     componentPayload,
     filesPayload,
+    propertyPayload,
     objectPayload,
     resourcePayload
 } from './payload.js';
@@ -530,19 +531,32 @@ test('what is written is the project-scope TYPE, never the Object it was read of
     assert.equal(written[0].includes(it.hero.id), false, 'no scene identity travelled');
 });
 
-test('a Component dropped beside a node, or on one that names none, is refused with its reason', () => {
+test('a Component dropped on a node that names none is refused with its reason', () => {
     const it = linked();
     const payload = componentPayload(it.hero, 'res_link', 'Link');
+    const target = nodeTarget(registerStandardNodes(new NodeRegistry()).get('value.number').params);
 
-    for (const target of [
-        { zone: DropZone.GRAPH },
-        nodeTarget(registerStandardNodes(new NodeRegistry()).get('value.number').params)
-    ]) {
-        const verdict = canDrop(payload, target);
-        assert.equal(verdict.allowed, false);
-        assert.match(verdict.reason, /Get or Set Property On|cannot be dropped/);
-        assert.equal(performDrop(payload, target, {}), null);
-    }
+    const verdict = canDrop(payload, target);
+    assert.equal(verdict.allowed, false);
+    assert.match(verdict.reason, /does not name a Component/);
+    assert.equal(performDrop(payload, target, {}), null);
+});
+
+test('on bare canvas a Component creates nothing until the creator has chosen', () => {
+    // ADR-0027 §11 as amended by ADR-0037: the choice is explicit and local to the gesture.
+    // Until the menu has answered, `create` is absent and the rule performs nothing.
+    const it = linked();
+    const payload = componentPayload(it.hero, 'res_link', 'Link');
+    const at = { x: 12, y: 8 };
+    const made = [];
+    const context = { createNode: (type, params, where) => made.push([type, params, where]) };
+
+    assert.equal(canDrop(payload, { zone: DropZone.GRAPH, at }).allowed, true);
+    assert.equal(performDrop(payload, { zone: DropZone.GRAPH, at }, context), null);
+    assert.deepEqual(made, [], 'nothing was guessed');
+
+    performDrop(payload, { zone: DropZone.GRAPH, at, create: 'property.setOn' }, context);
+    assert.deepEqual(made, [['property.setOn', { component: 'res_link' }, at]]);
 });
 
 test('a canvas with no writer takes nothing, whatever the rule would have done', () => {
@@ -556,14 +570,32 @@ test('a canvas with no writer takes nothing, whatever the rule would have done',
     );
 });
 
-test('an Object dropped on a node is still refused — a scene identity has no place in a .px', () => {
-    // ADR-0034 §3.7 parks this until a gesture exists that neither guesses nor writes into
-    // two resources at once. Landing on a node changes neither of those.
+test('an Object dropped on the canvas declares a socket, and carries no identity into it', () => {
+    // ADR-0037: the drop declares an `objectref` property and a node that reads it. What
+    // reaches the rule is a NAME; the identity stays a value each instance carries.
     const it = linked();
-    const verdict = canDrop(objectPayload(it.player), nodeTarget(GET_ON_PARAMS));
+    const declared = [];
+    const target = { zone: DropZone.GRAPH, at: { x: 40, y: 10 } };
 
-    assert.equal(verdict.allowed, false);
-    assert.match(verdict.reason, /belongs to one scene/);
+    const verdict = canDrop(objectPayload(it.player), target);
+    assert.equal(verdict.allowed, true);
+    assert.match(verdict.reason, /Player/);
+
+    performDrop(objectPayload(it.player), target, {
+        declareReference: payload => declared.push(payload) && payload
+    });
+
+    assert.equal(declared.length, 1);
+    assert.equal(declared[0].name, 'Player', 'the socket is named after the Object');
+    assert.equal(declared[0].id, it.player.id, 'the identity travels the drag');
+    // …and the rule hands it on rather than writing it: what the `.px` gains is decided by
+    // the canvas, and asserted where that is testable (windows/graph.js).
+});
+
+test('an Object dropped where nothing declares sockets does nothing', () => {
+    const it = linked();
+
+    assert.equal(performDrop(objectPayload(it.player), { zone: DropZone.GRAPH }, {}), null);
 });
 
 // --- the graph canvas answers, and its answer is no (ADR-0034 §3.7) ----------------------
@@ -574,7 +606,26 @@ test('the graph canvas is a drop zone of the vocabulary, like every other surfac
         globalThis.Object.values(DropZone).length, 'no two zones share a name');
 });
 
-test('every kind of drag is refused on the canvas, each with its own reason', () => {
+test('the drags a canvas has a meaning for are taken; the others are refused with a reason', () => {
+    // ADR-0037 lifted three of the five refusals. The two that remain are the ones nothing
+    // has decided a meaning for, and each still answers with its own sentence.
+    const it = linked();
+    const asset = imageIn(it.project);
+    const target = { zone: DropZone.GRAPH, at: { x: 0, y: 0 } };
+
+    assert.equal(canDrop(objectPayload(it.player), target).allowed, true, 'an Object declares a socket');
+    assert.equal(canDrop(componentPayload(it.hero, 'res_link', 'Link'), target).allowed, true);
+    assert.equal(canDrop(propertyPayload('res_link', 'p_target', 'target'), target).allowed, true);
+
+    for (const payload of [resourcePayload(asset), filesPayload([file('hero.png')])]) {
+        const verdict = canDrop(payload, target);
+        assert.equal(verdict.allowed, false);
+        assert.equal(ruleFor(payload, target).id, 'drop-on-graph');
+        assert.ok(verdict.reason.length > 0);
+    }
+});
+
+test('each family a canvas refuses says something different', () => {
     // THE POINT OF THE TRANCHE: not that these are refused — they already were, by no rule
     // matching — but that each refusal is now a sentence a creator can read. A target no
     // rule mentions answers `null`, and a silent refusal is the worst answer to a gesture
@@ -584,8 +635,6 @@ test('every kind of drag is refused on the canvas, each with its own reason', ()
     const target = { zone: DropZone.GRAPH };
 
     const carried = {
-        [DragKind.OBJECT]: objectPayload(it.player),
-        [DragKind.COMPONENT]: componentPayload(it.hero, 'res_link'),
         [DragKind.RESOURCE]: resourcePayload(asset),
         [DragKind.FILES]: filesPayload([file('hero.png')])
     };

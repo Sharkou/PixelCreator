@@ -73,7 +73,11 @@ export function describeNode(node, { registry, properties = [], components = [],
     const context = { properties, components };
 
     return {
-        title: definition.label,
+        // WHAT A CONFIGURED NODE READS AS. The type's label says what a node IS; once it
+        // names something, what it DOES is more useful — and the node type is the only thing
+        // that knows how to say it, so it declares it rather than being branched on here
+        // (ADR-0037). Absent or unresolved, the label stands.
+        title: definition.title?.(node, context) || definition.label,
         type: node.type,
         category: definition.category ?? 'Other',
         known: true,

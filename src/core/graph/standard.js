@@ -28,6 +28,25 @@ import { ANY_TYPE, OBJECT_TYPE, PortKind, nodes as defaultNodes, portTypeOf } fr
 import { declaredProperties } from '../definition.js';
 import { GraphError, GraphIssueCode } from './errors.js';
 
+/**
+ * `Get Health.hp`, once a node naming another Object's property knows what it names.
+ *
+ * Null until BOTH halves are chosen: half a name is less readable than the node type's own,
+ * because it says a thing is settled when it is not.
+ *
+ * @param {string} verb - `Get` or `Set`
+ * @param {object} node - The node
+ * @param {object} context - `{ components }`
+ * @returns {string|null} What a creator reads, or null to keep the type's label
+ */
+function titleOfTarget(verb, node, context) {
+    const component = referencedComponent(node, context);
+    const property = referencedComponentProperty(node, context);
+    if (!component || !property) return null;
+
+    return `${verb} ${component.label ?? component.type}.${property.name}`;
+}
+
 /** The param that names a Component property, so the Editor knows to offer a picker. */
 export const PROPERTY_REFERENCE = 'property';
 
@@ -308,8 +327,18 @@ export const STANDARD_NODES = [
         category: 'Properties',
         keywords: ['read', 'variable', 'field'],
         params: propertyParam,
-        // The output takes the SHAPE OF THE PROPERTY, so wiring a `string` into a number
-        // input is refused at the moment of the gesture rather than discovered at run time.
+        // WHAT A CREATOR READS ONCE IT NAMES SOMETHING. `Get Property` says what the node
+        // type is; a node that has been pointed at `speed` should say what THIS one does.
+        //
+        // AN OBJECT REFERENCE IS TITLED BY ITS NAME ALONE, and that is not a flourish: a
+        // property of any other shape is a value this node READS, so `Get speed` is what it
+        // does — while an `objectref` property IS the reference (ADR-0037), so the node is
+        // `Player` and reads as the thing itself.
+        title: (node, context) => {
+            const property = referencedProperty(node, context);
+            if (!property) return null;
+            return property.type === PropertyType.OBJECTREF ? property.name : `Get ${property.name}`;
+        },
         outputs: (node, context) => {
             const property = referencedProperty(node, context);
             return [data('value', portTypeOf(property), property?.name ?? 'Value')];
@@ -329,6 +358,10 @@ export const STANDARD_NODES = [
         category: 'Properties',
         keywords: ['write', 'assign', 'variable', 'field'],
         params: propertyParam,
+        title: (node, context) => {
+            const property = referencedProperty(node, context);
+            return property ? `Set ${property.name}` : null;
+        },
         inputs: (node, context) => {
             const property = referencedProperty(node, context);
             return [
@@ -441,6 +474,7 @@ export const STANDARD_NODES = [
         category: 'Scene',
         keywords: ['read', 'other', 'remote', 'foreign', 'component', 'field'],
         tooltip: 'Reads a property of a Component on another Object',
+        title: (node, context) => titleOfTarget('Get', node, context),
         params: { ...componentParam, ...componentPropertyParam },
         inputs: [data('object', OBJECT_TYPE)],
         outputs: (node, context) => {
@@ -469,6 +503,7 @@ export const STANDARD_NODES = [
         category: 'Scene',
         keywords: ['write', 'assign', 'other', 'remote', 'foreign', 'component'],
         tooltip: 'Writes a property of a Component on another Object',
+        title: (node, context) => titleOfTarget('Set', node, context),
         params: { ...componentParam, ...componentPropertyParam },
         inputs: (node, context) => {
             const property = referencedComponentProperty(node, context);

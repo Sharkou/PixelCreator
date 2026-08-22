@@ -29,6 +29,7 @@ import {
     OBJECT_TYPE,
     PropertyType,
     compatibleTargets,
+    createId,
     groupNodes,
     makeReactive,
     observe
@@ -63,6 +64,9 @@ import {
 } from '../graph/view.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** The drags whose meaning on bare canvas is a choice only the creator can make. */
+const CREATES_ON_CANVAS = new globalThis.Set(['component', 'property']);
 
 /** How far a pointer travels before a press on a node becomes a drag. */
 const DRAG_THRESHOLD = 3;
@@ -418,12 +422,15 @@ export class GraphWindow extends Element {
      * @returns {object} A GRAPH target, carrying `node` and its type's params when over one
      */
     zoneAt(clientX, clientY) {
-        const zone = { zone: DropZone.GRAPH };
-        if (!this.#definition) return zone;
+        if (!this.#definition) return { zone: DropZone.GRAPH };
 
         const box = this.#svg.getBoundingClientRect();
-        const hit = hitTest(this.#layout(), toGraph(
-            { x: clientX - box.left, y: clientY - box.top }, this.#view));
+        const at = toGraph({ x: clientX - box.left, y: clientY - box.top }, this.#view);
+        // WHERE IT LANDS TRAVELS WITH THE TARGET, so a node a drop creates appears under
+        // the pointer rather than at a corner the creator was not looking at.
+        const zone = { zone: DropZone.GRAPH, at };
+
+        const hit = hitTest(this.#layout(), at);
         if (hit.kind !== 'node') return zone;
 
         const definition = this.#definition.registry.get(hit.node.type);
@@ -446,7 +453,23 @@ export class GraphWindow extends Element {
      * @returns {object|null} What the rule did, or null when it was refused
      */
     drop(payload, clientX, clientY) {
-        return performDrop(payload, this.zoneAt(clientX, clientY), this.#dropContext());
+        const zone = this.zoneAt(clientX, clientY);
+
+        // THE ONE GESTURE THAT NEEDS A CHOICE ASKS FOR IT, WHERE IT HAPPENED. Reading and
+        // writing are two intents and a drop cannot tell them apart, so the creator says
+        // which — in the menu every other creation in this Editor opens (ADR-0026 §10,
+        // ADR-0027 §11 as amended by ADR-0037). Landing on a node needs no menu: placing
+        // that node WAS the choice.
+        if (!zone.node && CREATES_ON_CANVAS.has(payload?.kind)) {
+            openMenu(pointAnchor(clientX, clientY), [
+                { id: 'property.getOn', label: 'Get', icon: iconForNode('Scene') },
+                { id: 'property.setOn', label: 'Set', icon: iconForNode('Scene') }
+            ], create => performDrop(payload, { ...zone, create }, this.#dropContext()),
+            { label: 'operations' });
+            return null;
+        }
+
+        return performDrop(payload, zone, this.#dropContext());
     }
 
     /**
@@ -470,8 +493,84 @@ export class GraphWindow extends Element {
      */
     #dropContext() {
         return {
-            setNodeParam: (node, name, value) => this.#writeParam(node, name, value)
+            setNodeParam: (node, name, value) => this.#writeParam(node, name, value),
+            setNodeParams: (node, params) => this.#writeParams(node, params),
+            createNode: (type, params, at) => this.#createNode(type, params, at),
+            declareReference: (payload, target) => this.#declareReference(payload, target)
         };
+    }
+
+    /**
+     * Declare an Object input on this `.px`, and a node that reads it (ADR-0037).
+     *
+     * ONE BATCH, ON ONE STACK. The property, the node and the wire all travel this `.px`'s
+     * single pipeline (ADR-0027 §5), so the whole gesture is one `Ctrl Z` — and nothing
+     * outside the resource is touched, which is what makes the drop legal at all.
+     *
+     * THE NAME IS THE OBJECT'S, THE IDENTITY IS NOT. What enters the `.px` is a property
+     * called `Player`, uniquified against the ones already declared. The `ObjectId` stays
+     * where ADR-0034 §3.5 puts it: in a value each attached Object carries.
+     *
+     * @param {object} payload - The OBJECT payload, carrying a name
+     * @param {object} target - The GRAPH target, carrying where it landed
+     * @returns {object|null} The property and node that were declared
+     */
+    #declareReference(payload, target) {
+        const definition = this.#definition;
+        if (!definition) return null;
+
+        const batch = createId();
+        const property = definition.addProperty(
+            { name: payload.name || 'Object', type: PropertyType.OBJECTREF },
+            { batch }
+        );
+        if (!property) return null;
+
+        const at = target.at ?? { x: 0, y: 0 };
+        const node = definition.graph.addNode({
+            type: 'property.get',
+            params: { property: property.id },
+            x: snap(at.x - NODE_WIDTH / 2),
+            y: snap(at.y - HEADER_HEIGHT)
+        }, { batch });
+
+        if (node) this.#select(node.id);
+        return { property, node };
+    }
+
+    /**
+     * Add a node already configured, where the drop landed.
+     *
+     * @param {string} type - The node type to add
+     * @param {object} params - The params it arrives with
+     * @param {{x: number, y: number}} [at] - Where it landed, in graph space
+     * @returns {object|null} The node
+     */
+    #createNode(type, params, at = { x: 0, y: 0 }) {
+        const node = this.#definition?.graph.addNode({
+            type,
+            params,
+            x: snap(at.x - NODE_WIDTH / 2),
+            y: snap(at.y - HEADER_HEIGHT)
+        });
+
+        if (node) this.#select(node.id);
+        return node;
+    }
+
+    /**
+     * Write several params of one node as one gesture.
+     *
+     * @param {object} node - The node record
+     * @param {object} params - Name to value
+     * @returns {object} The node
+     */
+    #writeParams(node, params) {
+        const batch = createId();
+        for (const [name, value] of globalThis.Object.entries(params)) {
+            this.#writeParam(node, name, value, { batch });
+        }
+        return node;
     }
 
     /** The node the creator has selected, or null. */
@@ -757,7 +856,9 @@ export class GraphWindow extends Element {
             issue => issue.node === node.id && issue.severity === GraphSeverity.ERROR
         );
         const definition = this.#definition.registry.get(node.type);
-        const label = definition?.label ?? node.type;
+        // WHAT THIS NODE READS AS, which is what it NAMES once it names something — declared
+        // by the node type itself (core/graph/standard.js), never decided here.
+        const label = definition?.title?.(node, this.#nodeContext()) || definition?.label || node.type;
         const category = definition?.category ?? 'Other';
         const hue = nodeHue(definition, this.#definition.graph.portsOf(node));
 

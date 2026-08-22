@@ -8,10 +8,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    ComponentDefinition,
     ComponentRegistry,
+    NodeRegistry,
     Object,
+    PropertyType,
     Scene,
     Transform,
+    createId,
+    registerStandardNodes,
     serializeScene
 } from '../core/mod.js';
 import { registerBuiltIns } from './registry.js';
@@ -298,4 +303,93 @@ test('closing an editor drops its stack', () => {
     assert.equal(histories.close(scene.id), true);
     assert.equal(histories.get(scene.id), null);
     assert.equal(histories.close(scene.id), false);
+});
+
+// --- declaring an Object input, as a drop does (ADR-0037) --------------------------------
+//
+// THE PROPERTY THESE TESTS EXIST TO PROTECT: a drop of an Object onto a graph declares a
+// socket in the `.px` and a node that reads it, as ONE thing a creator did — and it writes
+// nothing anywhere else. Both halves are what make the gesture legal at all.
+
+/** A `.px` and a history watching its single pipeline. */
+function sheet() {
+    const model = new ComponentDefinition(
+        { type: 'res_c3', label: 'Door' },
+        { registry: registerStandardNodes(new NodeRegistry()) }
+    );
+    return { model, history: new History(model.operations) };
+}
+
+test('declaring an Object input and its node is one thing a creator did', () => {
+    const { model, history } = sheet();
+    const batch = createId();
+
+    // Exactly what the canvas performs on a drop (windows/graph.js #declareReference).
+    const property = model.addProperty({ name: 'Player', type: PropertyType.OBJECTREF }, { batch });
+    const node = model.graph.addNode(
+        { type: 'property.get', params: { property: property.id }, x: 0, y: 0 },
+        { batch }
+    );
+
+    assert.equal(model.properties().length, 1);
+    assert.equal(model.graph.nodes().length, 1);
+
+    // ONE PIPELINE, ONE STACK (ADR-0027 §5) — so one Ctrl Z takes the whole gesture back.
+    history.undo();
+
+    assert.deepEqual(model.properties(), [], 'the socket went with it');
+    assert.deepEqual(model.graph.nodes(), [], 'and so did the node');
+
+    history.redo();
+    assert.equal(model.properties().length, 1);
+    assert.equal(model.graph.nodes()[0].id, node.id);
+});
+
+test('a declared socket is named after the Object, and never overwrites another', () => {
+    const { model } = sheet();
+
+    const first = model.addProperty({ name: 'Player', type: PropertyType.OBJECTREF });
+    const second = model.addProperty({ name: 'Player', type: PropertyType.OBJECTREF });
+
+    assert.equal(first.name, 'Player');
+    assert.equal(second.name, 'Player 2', 'a second drop of the same Object declares its own');
+    assert.notEqual(first.id, second.id);
+    assert.equal(model.properties().length, 2);
+});
+
+test('no identity of a scene ever reaches the .px', () => {
+    // THE INVARIANT THE WHOLE MODEL RESTS ON (ADR-0034 invariant 1, ADR-0037). The Object
+    // being dropped is real and has an id; what the file gains is a NAME and a type.
+    const scene = new Scene('Main', { registry: registerBuiltIns(new ComponentRegistry()) });
+    const player = scene.add(new Object('Player'));
+
+    const { model } = sheet();
+    const batch = createId();
+    const property = model.addProperty({ name: player.name, type: PropertyType.OBJECTREF }, { batch });
+    model.graph.addNode(
+        { type: 'property.get', params: { property: property.id }, x: 0, y: 0 },
+        { batch }
+    );
+
+    const payload = JSON.stringify(model.serialize());
+
+    assert.equal(payload.includes(player.id), false, 'an ObjectId reached the payload');
+    assert.equal(payload.includes('"Player"'), true, 'the name did, which is a label and not an identity');
+    assert.equal(JSON.parse(payload).properties.Player.type, PropertyType.OBJECTREF);
+    assert.equal(JSON.parse(payload).properties.Player.default, null, 'the value belongs to an instance');
+});
+
+test('declaring a socket leaves the scene alone', () => {
+    const scene = new Scene('Main', { registry: registerBuiltIns(new ComponentRegistry()) });
+    const player = scene.add(new Object('Player'));
+    const before = serializeScene(scene);
+
+    const seen = [];
+    scene.operations.on('operation', operation => seen.push(operation));
+
+    const { model } = sheet();
+    model.addProperty({ name: player.name, type: PropertyType.OBJECTREF });
+
+    assert.deepEqual(seen, [], 'the drop produced no Operation on the scene');
+    assert.deepEqual(serializeScene(scene), before, 'and the scene is byte-identical');
 });

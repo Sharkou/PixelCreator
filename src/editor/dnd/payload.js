@@ -24,7 +24,9 @@ export const DragKind = {
     FILES: 'files',
     RESOURCE: 'resource',
     OBJECT: 'object',
-    COMPONENT: 'component'
+    COMPONENT: 'component',
+    /** One declared property of a component, carried out of the Inspector. */
+    PROPERTY: 'property'
 };
 
 /**
@@ -91,6 +93,24 @@ export function componentPayload(object, type, label) {
 }
 
 /**
+ * A drag of one declared property out of the Inspector.
+ *
+ * TWO IDENTITIES OF PROJECT SCOPE, AND NOTHING ELSE. A property is named by the Component
+ * TYPE that declares it and by its own stable id (ADR-0021, ADR-0027 §4) — both belong to
+ * the project, which is what lets them enter a `.px` where an `ObjectId` may not
+ * (ADR-0034 invariant 1). The Object the Inspector happened to be showing is of SCENE scope
+ * and is deliberately absent: nothing downstream needs it, so nothing carries it.
+ *
+ * @param {string} component - The Component type declaring the property
+ * @param {string} property - The property's stable id
+ * @param {string} [label] - What a creator reads; a `ResourceId` is not one
+ * @returns {object} The payload
+ */
+export function propertyPayload(component, property, label) {
+    return { kind: DragKind.PROPERTY, component, property, label: label ?? null };
+}
+
+/**
  * What a drag is carrying, in words a creator can read.
  *
  * The ghost that follows the pointer has to name the thing being carried, and that name
@@ -119,6 +139,8 @@ export function describePayload(payload) {
             return { label: payload.name || 'Object', icon: 'object' };
         case DragKind.COMPONENT:
             return { label: payload.label || payload.type || 'Component', icon: 'component' };
+        case DragKind.PROPERTY:
+            return { label: payload.label || payload.property || 'Property', icon: 'properties' };
         default:
             return { label: 'Item', icon: 'object' };
     }

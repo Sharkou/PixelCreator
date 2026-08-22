@@ -287,3 +287,44 @@ test('the Scene nodes all declare a sentence saying what they do', () => {
         assert.ok(describeNode(node(type), { registry, components }).tooltip, `${type} explains itself nowhere`);
     }
 });
+
+// --- what a configured node reads as (ADR-0037) ------------------------------------------
+
+test('a node that names nothing reads as its type; one that names something says what it does', () => {
+    const bare = describeNode(node('property.getOn'), { registry, components });
+    assert.equal(bare.title, 'Get Property On', 'half a name is less readable than the type');
+
+    const half = describeNode(node('property.getOn', { component: 'Transform' }), { registry, components });
+    assert.equal(half.title, 'Get Property On', 'and so is the other half');
+
+    const named = describeNode(node('property.getOn', { component: 'Transform', property: 't1' }),
+        { registry, components });
+    assert.equal(named.title, 'Get Transform.x');
+
+    const written = describeNode(node('property.setOn', { component: 'Health', property: 'h1' }),
+        { registry, components });
+    assert.equal(written.title, 'Set Health.hp', 'Get and Set stay told apart by the node type');
+});
+
+test('a node reading the Component own property is titled by what it reads', () => {
+    assert.equal(describeNode(node('property.get', { property: 'p1' }), { registry, properties }).title,
+        'Get speed');
+    assert.equal(describeNode(node('property.set', { property: 'p1' }), { registry, properties }).title,
+        'Set speed');
+});
+
+test('an Object socket reads as the thing itself, because that is what it is', () => {
+    // ADR-0037: an `objectref` property IS the reference, so the node a drop declares reads
+    // `Player` rather than `Get Player`. Every other shape is a value the node READS.
+    const sockets = [{ id: 'p9', name: 'Player', type: PropertyType.OBJECTREF, default: null }];
+
+    assert.equal(describeNode(node('property.get', { property: 'p9' }), { registry, properties: sockets }).title,
+        'Player');
+});
+
+test('a node whose reference cannot be resolved keeps its type label', () => {
+    assert.equal(describeNode(node('property.get', { property: 'gone' }), { registry, properties }).title,
+        'Get Property');
+    assert.equal(describeNode(node('property.getOn', { component: 'Nope', property: 'x' }),
+        { registry, components }).title, 'Get Property On');
+});

@@ -249,6 +249,13 @@ catégorie `Properties`, et le nœud choisi propose les propriétés du Componen
 La règle pourra être ajoutée le jour où un geste non ambigu sera conçu — c'est une ligne dans
 `dnd/rules.js`.
 
+> **Amendé par ADR-0037 (2026-08-22) — le geste a été conçu, et le refus est levé.** Le geste
+> non ambigu que cette section appelait est un **menu ouvert à l'endroit où le pointeur a
+> lâché** : le créateur choisit `Get` ou `Set` explicitement, localement, et rien n'est
+> deviné. Le raisonnement de §11 n'est pas renversé, il est **satisfait**. Un dépôt sur un
+> nœud **existant** n'ouvre aucun menu : poser ce nœud était déjà le choix, et le dépôt ne
+> fait que remplir ses params.
+
 ---
 
 ## Ce que cet ADR ne décide pas

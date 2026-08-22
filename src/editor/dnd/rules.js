@@ -19,6 +19,7 @@
 // general ones. Adding a kind of drop is adding a row.
 
 import {
+    COMPONENT_PROPERTY_REFERENCE,
     COMPONENT_REFERENCE,
     Object as SceneObject,
     PropertyType,
@@ -62,7 +63,7 @@ const INSTANTIABLE = [
 ];
 
 /**
- * Why each kind of drag is refused on the graph canvas, in its own words.
+ * Why a drag that reached the canvas and found no meaning there is refused, in its own words.
  *
  * ONE SENTENCE PER KIND, because the reasons are genuinely different and a creator carrying
  * a Component has not made the same mistake as one carrying a PNG. They are the reasons
@@ -74,16 +75,14 @@ const INSTANTIABLE = [
  * doing something wrong or something the product has not designed.
  */
 const REFUSED_ON_GRAPH = {
-    // ADR-0034 §3.7: a fallback on the name would write a freely editable display name into
-    // a type of PROJECT scope, and tagging the object instead would make one gesture write
-    // into two resources with two undo stacks (ADR-0010, ADR-0024).
-    [DragKind.OBJECT]: 'An Object belongs to one scene and a graph to the whole project — '
-        + 'reach it with a Scene node, or an Object property on this Component.',
-    // ADR-0027 §11, which refused the same gesture for a property: dropping it could mean
-    // Get or Set, and choosing between them for the creator is the magic this Editor avoids.
-    [DragKind.COMPONENT]: 'A Component dropped on bare canvas could mean reading it or '
-        + 'writing it, and that is not a choice to make for you — drop it on a Get or Set '
-        + 'Property On node, or add one from the menu first.',
+    // Only reachable now for a drop ONTO a node that names neither: ADR-0037 gave both a
+    // meaning on bare canvas, so what is left is a node this means nothing to.
+    [DragKind.COMPONENT]: 'This node does not name a Component. Drop it on a Get or Set '
+        + 'Property On, or on bare canvas to add one.',
+    [DragKind.PROPERTY]: 'This node does not name a Component property. Drop it on a Get or '
+        + 'Set Property On, or on bare canvas to add one.',
+    // An Object with no identity at all — a drag that carried nothing.
+    [DragKind.OBJECT]: 'There is no Object in this drag.',
     [DragKind.RESOURCE]: 'A resource is not a node. Add one from the canvas menu instead.',
     [DragKind.FILES]: 'Files are imported into the Project panel, never onto a graph.'
 };
@@ -286,6 +285,89 @@ export const RULES = [
     // --- refusals that are worth stating -------------------------------------------
 
     {
+        // THE DROP DECLARES A SOCKET, NOT A TARGET — and that sentence is the whole model
+        // (ADR-0037).
+        //
+        // A `.px` is a Component TYPE, of PROJECT scope, and there is no instance to write
+        // to while one is being edited: it may be attached to no Object of the open scene,
+        // or to fifty. So the identity of the Object being dropped cannot go anywhere — not
+        // into the graph, which ADR-0034 invariant 1 forbids, and not onto an instance,
+        // which does not exist.
+        //
+        // What the gesture CAN mean is the thing ADR-0034 §3.5 already designed: the `.px`
+        // gains an `objectref` PROPERTY named after the Object, and a node that reads it.
+        // The creator sees `[Player]`; the file holds "a socket called Player"; each Object
+        // carrying the Component says in the Inspector where its own socket points.
+        //
+        // NOTHING OUTSIDE THE `.px` IS TOUCHED, so the inter-resource undo question
+        // ADR-0034 §3.7 parked does not arise — the property, the node and the wire travel
+        // one pipeline and one stack (ADR-0027 §5), under one batch.
+        id: 'object-to-graph',
+        accepts: (payload, target) => payload.kind === DragKind.OBJECT
+            && target.zone === DropZone.GRAPH
+            && Boolean(payload.id),
+        describe: payload => `Declare ${payload.name || 'this Object'} as an input of this Component`,
+        perform: (payload, target, context) => context.declareReference?.(payload, target) ?? null
+    },
+
+    {
+        // A PROPERTY IS TWO IDENTITIES OF PROJECT SCOPE, so it may be named inside a `.px`
+        // outright (ADR-0027 §4, ADR-0034 §3.3). Dropped on a node that names one, it fills
+        // both params at once — and the port takes its real type on the spot, because the
+        // type comes from the pair and never from the Object (ADR-0036).
+        id: 'property-to-node',
+        accepts: (payload, target) => payload.kind === DragKind.PROPERTY
+            && target.zone === DropZone.GRAPH
+            && acceptsComponentProperty(target),
+        describe: (payload, target) =>
+            `Point ${target.label ?? 'this node'} at ${payload.label || payload.property}`,
+        perform: (payload, target, context) => context.setNodeParams?.(target.node, {
+            component: payload.component,
+            property: payload.property
+        }) ?? null
+    },
+
+    {
+        // ON BARE CANVAS THE CREATOR CHOOSES, AT THE POINT OF THE DROP. ADR-0027 §11 refused
+        // this gesture because reading and writing are two different intents and picking one
+        // is magic — and it said the refusal would lift "le jour où un geste non ambigu sera
+        // conçu". A menu opened where the pointer let go is that gesture: explicit, local,
+        // and made by the creator rather than for them.
+        //
+        // `create` is what the menu answered. The window never performs without it, and
+        // without it nothing happens here — no node, no guess.
+        id: 'property-to-canvas',
+        // BARE CANVAS MEANS NO NODE. Without this the rule would also match a drop ONTO
+        // one and shadow the rule that configures it — first match wins, so "anywhere on
+        // the canvas" is never what a rule beside a more specific one should say.
+        accepts: (payload, target) => payload.kind === DragKind.PROPERTY
+            && target.zone === DropZone.GRAPH
+            && !target.node,
+        describe: payload => `Add a node for ${payload.label || payload.property}`,
+        perform: (payload, target, context) => (target.create
+            ? context.createNode?.(target.create, {
+                component: payload.component,
+                property: payload.property
+            }, target.at) ?? null
+            : null)
+    },
+
+    {
+        // The same offer for a Component, whose property is left for the picker on the node.
+        id: 'component-to-canvas',
+        // BARE CANVAS MEANS NO NODE. Without this the rule would also match a drop ONTO
+        // one and shadow the rule that configures it — first match wins, so "anywhere on
+        // the canvas" is never what a rule beside a more specific one should say.
+        accepts: (payload, target) => payload.kind === DragKind.COMPONENT
+            && target.zone === DropZone.GRAPH
+            && !target.node,
+        describe: payload => `Add a node for ${payload.label || payload.type}`,
+        perform: (payload, target, context) => (target.create
+            ? context.createNode?.(target.create, { component: payload.type }, target.at) ?? null
+            : null)
+    },
+
+    {
         // A DROP CONFIGURES; IT NEVER CREATES. That one sentence is what makes this gesture
         // legal where every other drop onto a canvas is not.
         //
@@ -462,6 +544,22 @@ export function acceptsObject(target) {
 export function acceptsComponent(target) {
     if (!target?.node) return false;
     return target.params?.component?.reference === COMPONENT_REFERENCE;
+}
+
+/**
+ * Whether a node names both a Component type and a property OF that type.
+ *
+ * The pair is what makes a property droppable on it: filling only one half would leave the
+ * node in the state the picker already lets a creator reach, and filling a property whose
+ * Component the node does not name would be a reference to nothing.
+ *
+ * @param {object} target - A GRAPH target carrying `node` and its type's `params`
+ * @returns {boolean} True when the node names a Component property
+ */
+export function acceptsComponentProperty(target) {
+    if (!target?.node) return false;
+    return target.params?.component?.reference === COMPONENT_REFERENCE
+        && target.params?.property?.reference === COMPONENT_PROPERTY_REFERENCE;
 }
 
 /**
