@@ -123,7 +123,7 @@ export const RULES = [
             && acceptsResource(target, payload.resource),
         describe: (payload, target) => `Assign to ${target.label ?? target.prop}`,
         perform: (payload, target) => {
-            assignResource(target, payload.resource.id);
+            assignReference(target, payload.resource.id);
             return { assigned: payload.resource.id };
         }
     },
@@ -150,8 +150,40 @@ export const RULES = [
             const resource = created[0];
             if (!resource) return null;
 
-            assignResource(target, resource.id);
+            assignReference(target, resource.id);
             return { imported: created, assigned: resource.id };
+        }
+    },
+
+    {
+        // AN OBJECT DROPPED ON A REFERENCE IS THE GESTURE `objectref` EXISTS FOR (ADR-0034
+        // §3.5). Both sides of it are of SCENE scope — the Object being carried and the
+        // Component holding the property — so there is no scope to cross and nothing to
+        // decide beyond what the schema already declares. It is `resource-to-property` one
+        // scope down, and it writes through the same `setProperty()`, so it is one
+        // Operation and one undo like every other property change (ADR-0024).
+        //
+        // WHAT IS STORED IS THE IDENTITY. The payload carries the Object because a drag is
+        // transient UI state — the ghost reads its name, and nothing serializes a payload —
+        // but what reaches the model is `object.id`, which is what ADR-0036 fixed the graph
+        // boundary to agree with.
+        id: 'object-to-property',
+        accepts: (payload, target) => payload.kind === DragKind.OBJECT
+            && target.zone === DropZone.PROPERTY,
+        // A REFUSAL WITH ITS REASON, rather than a rule that quietly does not match: a
+        // creator carrying an Object over a `width` field has aimed at something, and
+        // "nothing happened" is the worst possible answer (ADR-0026 §6).
+        refuses: (payload, target) => (acceptsObject(target)
+            ? null
+            : `${target.label ?? target.prop} does not hold an Object reference.`),
+        describe: (payload, target) =>
+            `Assign ${payload.object?.name || 'this Object'} to ${target.label ?? target.prop}`,
+        perform: (payload, target) => {
+            const id = payload.object?.id ?? null;
+            if (!id) return null;
+
+            assignReference(target, id);
+            return { assigned: id };
         }
     },
 
@@ -307,6 +339,27 @@ export function acceptsResource(target, resource) {
 }
 
 /**
+ * Whether a property would accept an Object reference.
+ *
+ * DECLARED, NEVER GUESSED, exactly as `acceptsResource()` is: the one type that holds an
+ * Object identity is `objectref` (ADR-0034 §3.5). A `string` that happens to hold one is
+ * not a reference, and taking it would be the Editor deciding what a schema meant — the
+ * failure `acceptsResource()` was written against, one scope down.
+ *
+ * There is no `target.accepts` clause to honour here, and that is not an omission: a
+ * `resource` narrows itself by kind and mime, while an Object reference has nothing to
+ * narrow — ADR-0034 §3.2 refused a constraint like "this one carries a Transform" because
+ * it cannot be checked at the moment of the gesture.
+ *
+ * @param {object} target - A PROPERTY target: `{ component, prop }`
+ * @returns {boolean} True when the property holds an Object reference
+ */
+export function acceptsObject(target) {
+    if (!target?.component || !target.prop) return false;
+    return componentSchema(target.component)?.[target.prop]?.type === PropertyType.OBJECTREF;
+}
+
+/**
  * What a component's own schema says about one of its properties.
  *
  * TWO SHAPES OF TARGET, ONE QUESTION. A component instance carries its declaration in
@@ -330,16 +383,21 @@ function componentClause(target) {
 }
 
 /**
- * Write a resource into whatever the target points at.
+ * Write an identity into whatever the target points at.
  *
  * A component property is written through `setProperty()`; anything else hands in its own
  * `assign`, because the operation belongs to a pipeline this module must not have to know
  * about — a `.px` property's default travels the definition's, not a scene's (ADR-0027).
  *
+ * NAMED FOR WHAT IT WRITES, which is an identity: a ResourceId of project scope, or an
+ * ObjectId of scene scope. Both are opaque strings a property holds, both go through the
+ * one controlled path, and a second writer for the second kind would be a second answer to
+ * "how does the Editor change a value" (CONVENTIONS.md).
+ *
  * @param {object} target - A PROPERTY target
- * @param {string|null} id - The ResourceId to store
+ * @param {string|null} id - The identity to store
  */
-function assignResource(target, id) {
+function assignReference(target, id) {
     if (target.assign) target.assign(id);
     else target.component.setProperty(target.prop, id);
 }

@@ -2,13 +2,20 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ComponentRegistry, Object as SceneObject, Scene, Transform } from '../../core/mod.js';
+import {
+    ComponentRegistry,
+    Object as SceneObject,
+    PropertyType,
+    Scene,
+    Transform,
+    defineComponent
+} from '../../core/mod.js';
 import { Project, ResourceKind } from '../../project/mod.js';
 import { Sprite, RectangleRenderer } from '../../runtime/mod.js';
 import { Workspace } from '../project/workspace.js';
 import { registerBuiltIns } from '../registry.js';
 import { DropZone, filesPayload, objectPayload, resourcePayload } from './payload.js';
-import { acceptsResource, canDrop, instantiator, performDrop, ruleFor } from './rules.js';
+import { acceptsObject, acceptsResource, canDrop, instantiator, performDrop, ruleFor } from './rules.js';
 
 const PNG = 'data:image/png;base64,AAAA';
 
@@ -266,6 +273,140 @@ test('a drop between two rows carries the rank it landed at', () => {
         ctx.project.children().map(entry => entry.name).filter(name => name.endsWith('.png')),
         ['b.png', 'a.png']
     );
+});
+
+// --- an Object dropped on a property (ADR-0034 §3.5) --------------------------------------
+
+/**
+ * A Component holding one reference and one of every other shape, so what a property
+ * DECLARES is the only thing that can decide whether it takes an Object.
+ */
+const Link = defineComponent({
+    type: 'res_link',
+    label: 'Link',
+    properties: {
+        target: { id: 'p_target', type: PropertyType.OBJECTREF, default: null },
+        count: { id: 'p_count', type: PropertyType.NUMBER, default: 0 },
+        label: { id: 'p_label', type: PropertyType.STRING, default: '' },
+        armed: { id: 'p_armed', type: PropertyType.BOOLEAN, default: false }
+    }
+});
+
+/** A scene holding a Hero carrying a Link, and a Player to point it at. */
+function linked() {
+    const ctx = context();
+    ctx.scene.registry.register(Link);
+    const hero = ctx.scene.add(new SceneObject('Hero'));
+    const player = ctx.scene.add(new SceneObject('Player'));
+    return { ...ctx, hero, player, link: hero.addComponent(new Link()) };
+}
+
+const propertyTarget = (link, prop) => ({
+    zone: DropZone.PROPERTY,
+    component: link,
+    prop,
+    label: prop
+});
+
+test('an Object carried out of the Hierarchy is a payload of its own kind', () => {
+    const it = linked();
+    const payload = objectPayload(it.player);
+
+    assert.equal(payload.kind, 'object');
+    assert.equal(payload.object.id, it.player.id, 'the identity the drop will store');
+});
+
+test('an Object dropped on an objectref property assigns its identity', () => {
+    const it = linked();
+    const target = propertyTarget(it.link, 'target');
+
+    assert.equal(acceptsObject(target), true);
+    assert.equal(canDrop(objectPayload(it.player), target).allowed, true);
+
+    const result = performDrop(objectPayload(it.player), target, it);
+
+    assert.equal(result.assigned, it.player.id);
+    assert.equal(it.link.target, it.player.id);
+});
+
+test('what is stored is the identity, and never the Object', () => {
+    // The same contract ADR-0036 closed at the graph boundary, met at the other end: a
+    // scene value holds an ObjectId, so a Proxy must not be able to arrive here either.
+    const it = linked();
+    performDrop(objectPayload(it.player), propertyTarget(it.link, 'target'), it);
+
+    assert.equal(typeof it.link.target, 'string');
+    assert.notEqual(it.link.target, it.player, 'the Object itself is not a value');
+    assert.equal(it.scene.get(it.link.target), it.player, 'and the identity resolves back to it');
+});
+
+test('assigning an Object to a property is an Operation, so it undoes', () => {
+    // THE POINT OF THE RULE WRITING THROUGH `setProperty()`. A drop is an authored intent,
+    // so it takes the controlled path and produces an Operation like every other change the
+    // Inspector makes (ADR-0024, CONVENTIONS.md).
+    const it = linked();
+    const seen = [];
+    it.scene.operations.on('operation', operation => seen.push(operation));
+
+    performDrop(objectPayload(it.player), propertyTarget(it.link, 'target'), it);
+
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].type, 'SET_PROPERTY');
+    assert.equal(seen[0].prop, 'target');
+    assert.equal(seen[0].value, it.player.id);
+    assert.equal(seen[0].previous, null);
+});
+
+test('a property that does not declare a reference refuses the Object, and says so', () => {
+    // THE DECLARED TYPE IS THE AUTHORITY. None of these holds an Object, whatever a string
+    // could technically store — accepting one would be the Editor deciding what a schema
+    // meant (ADR-0030 §1, one scope down).
+    const it = linked();
+
+    for (const prop of ['count', 'label', 'armed']) {
+        const target = propertyTarget(it.link, prop);
+        const before = it.link[prop];
+
+        assert.equal(acceptsObject(target), false, `${prop} claims to hold a reference`);
+
+        const verdict = canDrop(objectPayload(it.player), target);
+        assert.equal(verdict.allowed, false, `${prop} accepted an Object`);
+        assert.match(verdict.reason, /does not hold an Object reference/, `${prop} refused silently`);
+
+        assert.equal(performDrop(objectPayload(it.player), target, it), null);
+        assert.equal(it.link[prop], before, `${prop} was written anyway`);
+    }
+});
+
+test('a property with nothing declared about it takes no Object', () => {
+    const it = linked();
+
+    assert.equal(acceptsObject({ zone: DropZone.PROPERTY, component: it.link, prop: 'nope' }), false);
+    assert.equal(acceptsObject({ zone: DropZone.PROPERTY }), false);
+});
+
+test('the two kinds of reference do not accept each other', () => {
+    // A resource property and an Object property are both references and neither is the
+    // other: `acceptsResource` reads `resource`, `acceptsObject` reads `objectref`.
+    const it = linked();
+    const asset = imageIn(it.project);
+    const sprite = it.hero.addComponent(new Sprite());
+
+    assert.equal(canDrop(resourcePayload(asset), propertyTarget(it.link, 'target')).allowed, false,
+        'a resource is not an Object');
+    assert.equal(canDrop(objectPayload(it.player), propertyTarget(sprite, 'source')).allowed, false,
+        'an Object is not a resource');
+    assert.equal(it.link.target, null);
+    assert.equal(sprite.source, null);
+});
+
+test('an Object dropped where no rule looks for one is refused without a sentence', () => {
+    // The Hierarchy and the scene surface have no rule for an Object, so the gesture ends
+    // as nothing rather than as a refusal about a property.
+    const it = linked();
+
+    assert.equal(canDrop(objectPayload(it.player), { zone: DropZone.HIERARCHY }).allowed, false);
+    assert.equal(canDrop(objectPayload(it.player), { zone: DropZone.SCENE, x: 0, y: 0 }).allowed, false);
 });
 
 // --- what is refused, and says so --------------------------------------------------------

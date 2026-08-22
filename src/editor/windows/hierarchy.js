@@ -60,7 +60,7 @@ import { icon, iconForObject } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import { searchField } from '../ui/search-field.js';
 import { createMenuItems, createObject, deleteObject, reparentObject } from '../commands.js';
-import { DropZone } from '../dnd/payload.js';
+import { DropZone, objectPayload } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
 import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
 // `canDropRow` is the geometry of a row drop; `canDrop` next door is the Editor-wide
@@ -81,6 +81,9 @@ const RENAME_DELAY = 400;
 
 /** How far a pointer travels before a press on a row becomes a drag, in CSS pixels. */
 const DRAG_THRESHOLD = 4;
+
+/** Where a gesture the platform cancelled ended: outside every window, so nothing takes it. */
+const NOWHERE = { clientX: -1, clientY: -1 };
 
 export class Hierarchy extends Element {
 
@@ -765,10 +768,20 @@ export class Hierarchy extends Element {
 
     // --- dragging a row -----------------------------------------------------------
     //
-    // A drop is `REPARENT { parent, index }` and nothing else: reordering, nesting and
-    // unnesting are the same mutation, so they are the same operation (ADR-0019). The
-    // geometry — which row, which third of it, what rank that is — lives in drop.js and is
-    // tested there; what is left here is the pointer, the indicator, and the submit.
+    // ONE GESTURE, TWO ENDINGS, AND THE POINTER DECIDES WHICH. Released inside this panel
+    // it is a REPARENT — reordering, nesting and unnesting are the same mutation, so they
+    // are the same operation (ADR-0019). Released anywhere else it is a drag of an Object
+    // across the Editor, and the shell asks the rule table what it means, exactly as it
+    // does for a resource carried out of the Project panel (ADR-0026 §8).
+    //
+    // The two are mutually exclusive by the bounds check alone: this panel reparents only
+    // what was released over it, and the shell's own route for a payload landing here has
+    // no rule to match, so exactly one thing happens. Before, a row released over the
+    // Inspector still reparented — the drop was resolved from `clientY` alone, so a
+    // gesture that had visibly left the tree still moved something in it.
+    //
+    // The geometry — which row, which third of it, what rank that is — lives in drop.js and
+    // is tested there; what is left here is the pointer, the indicator, and the submit.
     //
     // Pointer events with capture, like the toolbar's drag and the splitter's: the row
     // keeps receiving moves even when the pointer leaves it, which is the whole point,
@@ -805,16 +818,52 @@ export class Hierarchy extends Element {
 
         // Selecting text while carrying a row is never what was meant.
         event.preventDefault();
-        this.#markDrop(this.#resolveDrop(event.clientY));
+
+        // THE GESTURE BECOMES THE EDITOR'S WHEN IT LEAVES THIS PANEL, and not before. Over
+        // the tree it is a reorder and the insertion line is its whole affordance; carried
+        // out, it is an Object the rest of the Editor may take, and the shell picks it up.
+        //
+        // Announcing from the first pixel would make the shell mark this very panel as
+        // refusing the drop — no rule takes an Object here, because a reparent is not a
+        // rule — so an ordinary reorder would run under a red outline contradicting the
+        // line drawn under the pointer (ADR-0028 §3).
+        const here = this.#within(event.clientX, event.clientY);
+        this.#markDrop(here ? this.#resolveDrop(event.clientY) : null);
+
+        if (here) {
+            // Back home: the Editor-wide drag is over, and the line speaks for the gesture
+            // again. Ended NOWHERE so nothing performs it; re-leaving starts a fresh one.
+            if (drag.announced) {
+                drag.announced = false;
+                this.#announceDrag('px-drag-end', drag.object, NOWHERE);
+            }
+            return;
+        }
+
+        if (!drag.announced) {
+            // One payload, one vocabulary — the same the Project panel speaks (ADR-0026 §8).
+            drag.announced = true;
+            this.#announceDrag('px-drag-start', drag.object, event);
+            return;
+        }
+
+        this.#announceDrag('px-drag-move', null, event);
     }
 
     #dragDrop(event) {
         const drag = this.#drag;
         if (!drag || event.pointerId !== drag.pointerId) return;
 
-        const drop = drag.started ? this.#resolveDrop(event.clientY) : null;
+        const here = this.#within(event.clientX, event.clientY);
+        const drop = drag.started && here ? this.#resolveDrop(event.clientY) : null;
         const object = drag.object;
+        // Outside, the shell is holding this gesture and has to be told where it landed;
+        // inside, it was never told about it at all. `#cancelDrag()` reports neither.
+        const announced = drag.announced;
+        drag.announced = false;
         this.#cancelDrag();
+
+        if (announced) this.#announceDrag('px-drag-end', object, event);
 
         if (!drop) return;
 
@@ -836,6 +885,46 @@ export class Hierarchy extends Element {
             drag.row.classList.remove('dragging');
         }
         this.#markDrop(null);
+
+        // A GESTURE THE PLATFORM TOOK AWAY STILL HAS TO END. Capture is lost — and
+        // `pointercancel` raised — whenever the captured row leaves the DOM, which this
+        // panel does on any re-render; without this the shell would keep a ghost following
+        // a drag nobody is making any more. It ends NOWHERE, at a point no window contains,
+        // so the shell clears its marks and finds nothing to perform.
+        if (drag.announced) this.#announceDrag('px-drag-end', drag.object, NOWHERE);
+    }
+
+    /**
+     * Tell the shell where the gesture is, in the vocabulary every drag in the Editor uses.
+     *
+     * The shell cannot read this window's pointer events — it is a shadow root — so a drag
+     * says where it is, the same way the Project panel's does (windows/project.js).
+     *
+     * NAMED APART FROM `#announce()`, which says what the creator is now working on
+     * (ADR-0032). Two different things are announced by this window, to two different
+     * listeners, and one verb for both would be one word meaning two things.
+     *
+     * @param {string} name - `px-drag-start`, `px-drag-move` or `px-drag-end`
+     * @param {object|null} object - The Object being carried; only the ends need it
+     * @param {{clientX: number, clientY: number}} at - Where the pointer is
+     */
+    #announceDrag(name, object, at) {
+        this.dispatchEvent(new CustomEvent(name, {
+            detail: {
+                ...(object ? { payload: objectPayload(object) } : {}),
+                clientX: at.clientX,
+                clientY: at.clientY
+            },
+            bubbles: true,
+            composed: true
+        }));
+    }
+
+    /** Whether a point is inside this window. */
+    #within(clientX, clientY) {
+        const box = this.getBoundingClientRect();
+        return clientX >= box.left && clientX < box.right
+            && clientY >= box.top && clientY < box.bottom;
     }
 
     /**

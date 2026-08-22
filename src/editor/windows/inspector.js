@@ -1230,9 +1230,16 @@ export class Inspector extends Element {
         return panel ? { node: this, zone: panel.zone, verdict: panel.verdict } : null;
     }
 
-    /** The field under a point, when one of them declared a drop zone. */
+    /**
+     * The field under a point, when one of them declared a drop zone.
+     *
+     * EVERY CONTROL THAT CAN BE A TARGET IS LISTED, and the list is what decides: a control
+     * absent from it is invisible to a drag however droppable `#makeDroppable()` made it.
+     * `px-object` was missing, so an `objectref` row — the one row an Object can be dropped
+     * on — could not be found (ADR-0034 §3.5).
+     */
     #rowZoneAt(clientX, clientY) {
-        for (const node of this.shadowRoot.querySelectorAll('px-field, px-resource, .preview, .none, .add')) {
+        for (const node of this.shadowRoot.querySelectorAll('px-field, px-resource, px-object, .preview, .none, .add')) {
             if (!node.pxDropZone) continue;
 
             const box = node.getBoundingClientRect();
