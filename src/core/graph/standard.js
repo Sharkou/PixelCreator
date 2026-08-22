@@ -41,10 +41,16 @@ import { GraphError, GraphIssueCode } from './errors.js';
  */
 function titleOfTarget(verb, node, context) {
     const component = referencedComponent(node, context);
-    const property = referencedComponentProperty(node, context);
-    if (!component || !property) return null;
+    if (!component) return null;
 
-    return `${verb} ${component.label ?? component.type}.${property.name}`;
+    // A LADDER, SO WHAT IS MISSING IS WHAT IS ABSENT FROM THE TITLE. `Get Health.hp` is
+    // settled; `Get Health` says the Component is chosen and the property is not — which a
+    // creator reads without being told, because the half that would follow the dot is the
+    // half that is not there. Nothing at all falls back to the type's own label.
+    const property = referencedComponentProperty(node, context);
+    const named = `${verb} ${component.label ?? component.type}`;
+
+    return property ? `${named}.${property.name}` : named;
 }
 
 /** The param that names a Component property, so the Editor knows to offer a picker. */

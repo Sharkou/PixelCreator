@@ -294,8 +294,10 @@ test('a node that names nothing reads as its type; one that names something says
     const bare = describeNode(node('property.getOn'), { registry, components });
     assert.equal(bare.title, 'Get Property On', 'half a name is less readable than the type');
 
+    // A COMPONENT CHOSEN AND NO PROPERTY IS ITS OWN STATE, and the title says exactly that:
+    // the half that would follow the dot is the half that is missing.
     const half = describeNode(node('property.getOn', { component: 'Transform' }), { registry, components });
-    assert.equal(half.title, 'Get Property On', 'and so is the other half');
+    assert.equal(half.title, 'Get Transform');
 
     const named = describeNode(node('property.getOn', { component: 'Transform', property: 't1' }),
         { registry, components });
@@ -325,6 +327,9 @@ test('an Object socket reads as the thing itself, because that is what it is', (
 test('a node whose reference cannot be resolved keeps its type label', () => {
     assert.equal(describeNode(node('property.get', { property: 'gone' }), { registry, properties }).title,
         'Get Property');
+    // A Component this project does not declare resolves to nothing, so nothing is claimed.
     assert.equal(describeNode(node('property.getOn', { component: 'Nope', property: 'x' }),
         { registry, components }).title, 'Get Property On');
+    assert.equal(describeNode(node('property.setOn', {}), { registry, components }).title,
+        'Set Property On');
 });

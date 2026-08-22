@@ -200,8 +200,11 @@ export class Project extends Element {
            paints its own ground, and these two rules keep it doing that in both states. */
         .tile:hover .thumb, .tile.selected .thumb { background-color: var(--px-surface-sunken); }
 
-        /* The checkerboard says "this is where a picture goes" even when the picture is a
-           glyph — it is the one place in the Editor that draws transparency. */
+        /* THE CHECKERBOARD IS FOR TRANSPARENCY, AND ONLY FOR IT. It is the one place in the
+           Editor that draws what is see-through, so it belongs under a picture and nowhere
+           else — a folder, a scene or a .px file has no transparency to report, and squares
+           behind their glyph said something untrue about them while making the glyph itself
+           harder to read. The .picture class is what carries it now. */
         .thumb {
             position: relative;
             aspect-ratio: 1;
@@ -212,12 +215,26 @@ export class Project extends Element {
             overflow: hidden;
             color: var(--px-text-dim);
             background-color: var(--px-surface-sunken);
+        }
+
+        .thumb.picture {
             background-image:
                 linear-gradient(45deg, var(--px-surface-raised) 25%, transparent 25%, transparent 75%, var(--px-surface-raised) 75%),
                 linear-gradient(45deg, var(--px-surface-raised) 25%, transparent 25%, transparent 75%, var(--px-surface-raised) 75%);
             background-size: 8px 8px;
             background-position: 0 0, 4px 4px;
         }
+
+        /* A GLYPH IS THE SUBJECT OF ITS TILE, not a placeholder in the corner of one. On a
+           ground with nothing behind it, it can be drawn at the size the tile deserves. */
+        .thumb > .glyph {
+            display: flex;
+            transform: scale(1.7);
+            color: var(--px-text-dim);
+        }
+
+        .tile:hover .thumb > .glyph { color: var(--px-text); }
+        .tile.selected .thumb > .glyph { color: var(--px-accent); }
 
         .tile.selected .thumb { color: var(--px-accent); }
 
@@ -649,9 +666,15 @@ export class Project extends Element {
         const drawable = typeof payload === 'string'
             && payload.startsWith('data:image/');
 
-        return el('div', { class: 'thumb' }, drawable
-            ? el('img', { src: payload, alt: resource.name || 'Preview', draggable: false })
-            : icon(iconForResource(resource), IconSize.MD));
+        // THE CHECKERBOARD ONLY UNDER A PICTURE (see the sheet): it reports transparency,
+        // and a folder has none to report. Everything else shows its own glyph, larger,
+        // on the plain ground — the same glyph the rest of the Editor gives that kind
+        // (`iconForResource`), never a second set.
+        return drawable
+            ? el('div', { class: 'thumb picture' },
+                el('img', { src: payload, alt: resource.name || 'Preview', draggable: false }))
+            : el('div', { class: 'thumb' },
+                el('span', { class: 'glyph' }, icon(iconForResource(resource), IconSize.MD)));
     }
 
     #tile(resource) {
@@ -770,7 +793,14 @@ export class Project extends Element {
     }
 
     #syncTile(entry) {
-        entry.name.textContent = entry.resource.name || 'Untitled';
+        // NEVER OVERWRITE WHAT IS BEING TYPED INTO. A rename writes on every keystroke, and
+        // every write is an Operation that redraws this panel — so setting `textContent`
+        // here put the caret back at the start of the box after each character. The rule is
+        // the one the Hierarchy and `px-field` already live by: the view that has the edit
+        // owns its own text until the edit ends.
+        if (!entry.name.classList.contains('editing')) {
+            entry.name.textContent = entry.resource.name || 'Untitled';
+        }
         entry.tile.title = entry.resource.name || 'Untitled';
     }
 
@@ -943,6 +973,13 @@ export class Project extends Element {
         if (target?.position === DropPosition.INTO) this.#clearPreview({ keepCarried: true });
         else this.#preview(event.clientX, event.clientY);
 
+        // THREE THINGS, AND THEY ARE NOT THE SAME THING. `#markDrop` says what is under the
+        // pointer, `#preview` reflows the grid behind it, and this moves what the creator is
+        // HOLDING. They used to be two: the follow lived at the end of `#preview`, so over a
+        // folder — where the grid deliberately holds still — the carried tile stopped
+        // following and hung at the position it had when the pointer arrived.
+        this.#carry(event.clientX, event.clientY);
+
         // The shell follows the pointer with the ghost and asks the rules what a drop
         // here would mean. It cannot read this window pointer events, so the drag says
         // where it is — the same way it said that it started.
@@ -1004,6 +1041,21 @@ export class Project extends Element {
                     : `translate(${offsets[i].dx}px, ${offsets[i].dy}px)`;
             });
         }
+
+    }
+
+    /**
+     * Move the tile the creator is holding to where the pointer is.
+     *
+     * Apart from the grid's own reflow, because the two answer different questions and only
+     * one of them ever stops: what is carried follows the pointer for the whole gesture.
+     *
+     * @param {number} clientX - Pointer position
+     * @param {number} clientY - Pointer position
+     */
+    #carry(clientX, clientY) {
+        const drag = this.#drag;
+        if (!drag?.tile) return;
 
         drag.tile.style.transform =
             `translate(${clientX - drag.from.x}px, ${clientY - drag.from.y}px)`;

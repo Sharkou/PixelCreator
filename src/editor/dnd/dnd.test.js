@@ -487,8 +487,12 @@ test('an Object dropped where no rule looks for one is refused without a sentenc
 /** The params a `Get Property On` declares, as the canvas hands them to a rule. */
 const GET_ON_PARAMS = registerStandardNodes(new NodeRegistry()).get('property.getOn').params;
 
+/**
+ * A GRAPH target over a node, exactly as `zoneAt()` builds one — `bound` included: a node
+ * can only be under the pointer when a `.px` is open on the canvas.
+ */
 const nodeTarget = (params, node = { id: 'n1', type: 'property.getOn', params: {} }) =>
-    ({ zone: DropZone.GRAPH, node, params, label: 'Get Property On' });
+    ({ zone: DropZone.GRAPH, node, params, label: 'Get Property On', bound: true, at: { x: 0, y: 0 } });
 
 test('a node that names a Component type is a target; one that does not is not', () => {
     // Declared by the node type, never derived from its name.
@@ -616,6 +620,97 @@ test('a canvas with no Component open takes nothing, and says which', () => {
         assert.match(verdict.reason, /no Component open/);
         assert.equal(ruleFor(payload, empty).id, 'drop-on-graph');
     }
+});
+
+// --- a Property carried out of the Inspector (ADR-0037) ----------------------------------
+
+/** The params of a node that names a Component AND one of its properties. */
+const GET_ON = registerStandardNodes(new NodeRegistry()).get('property.getOn').params;
+
+test('a Property travels as two identities of project scope, and nothing of a scene', () => {
+    const payload = propertyPayload('res_health', 'p_hp', 'hp');
+
+    assert.equal(payload.kind, 'property');
+    assert.equal(payload.component, 'res_health');
+    assert.equal(payload.property, 'p_hp');
+    assert.equal(payload.label, 'hp');
+
+    // Nothing of the Object the Inspector happened to be showing travels with it.
+    for (const value of globalThis.Object.values(payload)) {
+        assert.equal(typeof value === 'object' && value !== null, false);
+    }
+});
+
+test('a Property dropped on a compatible node configures both halves at once', () => {
+    const target = nodeTarget(GET_ON);
+    const written = [];
+
+    assert.equal(canDrop(propertyPayload('res_health', 'p_hp', 'hp'), target).allowed, true);
+
+    const result = performDrop(propertyPayload('res_health', 'p_hp', 'hp'), target, {
+        setNodeParams: (node, params) => written.push([node.id, params])
+    });
+
+    assert.deepEqual(written, [['n1', { component: 'res_health', property: 'p_hp' }]]);
+    assert.ok(result);
+});
+
+test('a Property dropped on a node that names no property is refused, with its reason', () => {
+    const literal = registerStandardNodes(new NodeRegistry()).get('value.number').params;
+    const target = nodeTarget(literal);
+    const payload = propertyPayload('res_health', 'p_hp', 'hp');
+
+    const verdict = canDrop(payload, target);
+    assert.equal(verdict.allowed, false);
+    assert.match(verdict.reason, /does not name a Component property/);
+    assert.equal(performDrop(payload, target, {}), null);
+});
+
+test('a Property dropped on a node naming only a Component is refused too', () => {
+    // Half the pair is not the pair: `property.get` names a property of its OWN Component,
+    // which is a different reference (ADR-0027 §4).
+    const own = registerStandardNodes(new NodeRegistry()).get('property.get').params;
+
+    assert.equal(canDrop(propertyPayload('res_health', 'p_hp', 'hp'), nodeTarget(own)).allowed, false);
+});
+
+test('a Property on bare canvas creates nothing until the creator has chosen', () => {
+    const at = { x: 30, y: 12 };
+    const made = [];
+    const context = { createNode: (type, params, where) => made.push([type, params, where]) };
+    const payload = propertyPayload('res_health', 'p_hp', 'hp');
+
+    assert.equal(canDrop(payload, { zone: DropZone.GRAPH, at, bound: true }).allowed, true);
+    assert.equal(performDrop(payload, { zone: DropZone.GRAPH, at, bound: true }, context), null);
+    assert.deepEqual(made, [], 'nothing was guessed');
+
+    performDrop(payload, { zone: DropZone.GRAPH, at, bound: true, create: 'property.getOn' }, context);
+    assert.deepEqual(made, [['property.getOn',
+        { component: 'res_health', property: 'p_hp' }, at]]);
+});
+
+test('a Property dropped on a canvas with no Component open is refused', () => {
+    const payload = propertyPayload('res_health', 'p_hp', 'hp');
+    const verdict = canDrop(payload, { zone: DropZone.GRAPH, bound: false });
+
+    assert.equal(verdict.allowed, false);
+    assert.match(verdict.reason, /no Component open/);
+});
+
+test('the three drags a canvas takes never answer for one another', () => {
+    // One payload, one rule: no drag can be mistaken for another now that three of them
+    // are accepted on the same zone.
+    const it = linked();
+    const bare = { zone: DropZone.GRAPH, at: { x: 0, y: 0 }, bound: true };
+    const onNode = nodeTarget(GET_ON);
+
+    assert.equal(ruleFor(objectPayload(it.player), bare).id, 'object-to-graph');
+    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), bare).id, 'component-to-canvas');
+    assert.equal(ruleFor(propertyPayload('res_link', 'p_target', 't'), bare).id, 'property-to-canvas');
+    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), onNode).id, 'component-to-node');
+    assert.equal(ruleFor(propertyPayload('res_link', 'p_target', 't'), onNode).id, 'property-to-node');
+    // An Object means the same wherever it lands on the canvas: it declares a socket.
+    assert.equal(ruleFor(objectPayload(it.player), onNode).id, 'object-to-graph');
 });
 
 // --- the graph canvas answers, and its answer is no (ADR-0034 §3.7) ----------------------

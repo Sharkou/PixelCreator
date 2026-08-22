@@ -138,6 +138,12 @@ const shellStyles = sheet(`
        the chrome would read as an alarm rather than as a control. */
     .titlebar .transport .ghost:hover { background: var(--px-surface-hover); }
 
+    /* PRESSED, AND IT HAD NO WAY TO SHOW. The shared ghost active rule exists (ui/styles.js)
+       and was being outranked by the hover rule above — a pointer is still hovering while it
+       presses, and at equal specificity the later rule wins. So the press is stated here,
+       after it, with the token the rest of the Editor already presses with. */
+    .titlebar .transport .ghost:active:not([disabled]) { background: var(--px-surface-active); }
+
     .titlebar .transport .play:hover:not([disabled]) { color: var(--px-success); }
     .titlebar .transport .play.on { color: var(--px-success); background: transparent; }
 

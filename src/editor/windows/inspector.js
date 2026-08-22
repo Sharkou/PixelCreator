@@ -30,10 +30,10 @@
 // value and twice the panel to read. The object's id is not shown at all — a creator does
 // not need it, and a panel that opens with a random string looks like a debugger.
 
-import { isMissingComponent, makeReactive, observe } from '../../core/mod.js';
+import { declaredProperties, isMissingComponent, makeReactive, observe } from '../../core/mod.js';
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
-import { icon, iconForComponent, iconForObject, iconForResource } from '../ui/icons.js';
+import { icon, iconForComponent, iconForObject, iconForPropertyType, iconForResource } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import { searchField } from '../ui/search-field.js';
 import { addComponent, availableComponents, moveComponent, removeComponent } from '../commands.js';
@@ -42,7 +42,7 @@ import { describeResource } from '../inspector/resource.js';
 import { PROPERTY_TYPE_LABELS, describeDefinition } from '../inspector/definition.js';
 import { ResourceKind, baseNameOf, extensionOf, hasPayload, withExtension } from '../../project/mod.js';
 import { pickFile, readAsDataUrl } from '../ui/file.js';
-import { DropZone, componentPayload } from '../dnd/payload.js';
+import { DropZone, componentPayload, propertyPayload } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
 import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
 import { describeType, groupTypes } from '../registry.js';
@@ -251,14 +251,38 @@ export class Inspector extends Element {
 
         .row {
             display: grid;
-            /* 62px is this panel's label column, and only this panel's: it stopped being
+            /* 60px is this panel's label column, and only this panel's: it stopped being
                a design token the moment px-field gave up drawing its own row, because a
-               token with one consumer is a constant with extra steps. */
-            grid-template-columns: 62px minmax(0, 1fr);
+               token with one consumer is a constant with extra steps.
+
+               THE FIRST COLUMN IS THE SHAPE OF THE VALUE. It is on every row, filled or
+               empty, because a column that appears on some rows and not others is a column
+               that makes the panel look broken. Where it is filled it says what a property
+               holds — the same glyph the Type dropdown and a node's ports wear — and it is
+               what a creator drags to carry that property somewhere else. */
+            grid-template-columns: 18px 60px minmax(0, 1fr);
             align-items: center;
-            gap: var(--px-space-2);
+            gap: var(--px-space-1);
             min-height: calc(var(--px-control) + var(--px-space-1) + 2px);
         }
+
+        /* The value column keeps the breathing room the label used to give it. */
+        .row > .fields { margin-left: var(--px-space-1); }
+
+        /* THE SHAPE, AND THE HANDLE. Dim like the label it sits beside — it is information
+           first — and it lifts on hover because it is also the one thing on this row a
+           creator can pick up. The property label cannot be: it is already the scrub
+           handle of every number (ui/scrub.js), and one element cannot mean two gestures. */
+        .row > .shape {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--px-text-dim);
+        }
+
+        .row > .shape.draggable { cursor: grab; }
+        .row > .shape.draggable:hover { color: var(--px-text); }
+        .row > .shape.dragging { cursor: grabbing; color: var(--px-accent); }
 
         /* A property label is quieter than its value — that contrast is what makes a
            column of numbers legible at a glance. Still 4.6:1 on the panel surface. */
@@ -512,6 +536,9 @@ export class Inspector extends Element {
 
     /** The press on a section header that may become a reorder. */
     #drag = null;
+
+    /** The press on a property's shape that may become a drag out of this panel. */
+    #source = null;
     /** Set for exactly one click: the one that ends a drag and must not also fold. */
     #dragged = false;
     /** The field currently marked as the one a drop would land in. */
@@ -974,6 +1001,9 @@ export class Inspector extends Element {
     #renderPropertyRow(property, descriptor, { write, extra = null }) {
         const field = this.#control(property, descriptor, { write });
         const label = el('span', { class: 'label', textContent: descriptor.label });
+        // These edit a DECLARATION rather than a value, so there is no property to carry —
+        // the slot is empty and only holds the column open.
+        const shape = el('span', { class: 'shape', 'aria-hidden': 'true' });
         field.bindLabel?.(label);
 
         // A DEFAULT THAT HOLDS A REFERENCE TAKES A DROP, like the property it is the
@@ -990,6 +1020,7 @@ export class Inspector extends Element {
         }
 
         return el('div', { class: 'row' },
+            shape,
             label,
             el('div', { class: 'fields' }, field, extra)
         );
@@ -1379,7 +1410,7 @@ export class Inspector extends Element {
                 const fields = describeComponent(component);
                 return fields.length === 0
                     ? [el('div', { class: 'none', textContent: 'No properties' })]
-                    : this.#renderRows(component, fields);
+                    : this.#renderRows(component, fields, type);
             })()
         });
 
@@ -1567,14 +1598,14 @@ export class Inspector extends Element {
         if (here) {
             if (drag.announced) {
                 drag.announced = false;
-                this.#announceDrag('px-drag-end', drag, NOWHERE);
+                this.#announceDrag('px-drag-end', drag.list.payload(), NOWHERE);
             }
             return;
         }
 
         if (!drag.announced) {
             drag.announced = true;
-            this.#announceDrag('px-drag-start', drag, event);
+            this.#announceDrag('px-drag-start', drag.list.payload(), event);
             return;
         }
         this.#announceDrag('px-drag-move', null, event);
@@ -1587,16 +1618,99 @@ export class Inspector extends Element {
      * @param {object|null} drag - The gesture, when its payload is needed
      * @param {{clientX: number, clientY: number}} at - Where the pointer is
      */
-    #announceDrag(name, drag, at) {
+    #announceDrag(name, payload, at) {
         this.dispatchEvent(new CustomEvent(name, {
             detail: {
-                ...(drag ? { payload: drag.list.payload() } : {}),
+                ...(payload ? { payload } : {}),
                 clientX: at.clientX,
                 clientY: at.clientY
             },
             bubbles: true,
             composed: true
         }));
+    }
+
+    /**
+     * Make an element carry something out of this panel, and nothing inside it.
+     *
+     * THE SAME SHAPE AS THE TWO GESTURES ABOVE: a press arms, travel starts it, and leaving
+     * the panel is what makes it the Editor's (windows/hierarchy.js). What differs is that
+     * this one has no meaning at home — a property's shape is not reorderable — so inside
+     * the panel it simply does nothing, and the drag begins the moment the pointer is out.
+     *
+     * IT CLAIMS THE POINTER SO NOTHING ELSE DOES. The label beside it is the scrub handle of
+     * every number (ui/scrub.js) and the section around it folds on a click; stopping the
+     * event here is what keeps those two gestures exactly as they were.
+     *
+     * @param {HTMLElement} handle - The element to press
+     * @param {Function} payloadOf - () => the payload this handle carries
+     */
+    #makeDragSource(handle, payloadOf) {
+        handle.addEventListener('pointerdown', event => {
+            if (event.button > 0) return;
+            event.stopPropagation();
+            this.#source = {
+                handle,
+                payloadOf,
+                pointerId: event.pointerId,
+                from: { x: event.clientX, y: event.clientY },
+                started: false,
+                announced: false
+            };
+            capture(handle, event.pointerId);
+        });
+
+        handle.addEventListener('pointermove', event => this.#sourceMove(event));
+        handle.addEventListener('pointerup', event => this.#sourceEnd(event, event));
+        handle.addEventListener('pointercancel', () => this.#sourceEnd(null, NOWHERE));
+        // A press that never travelled is a click on a decoration, and must not fold the
+        // section it happens to sit in.
+        handle.addEventListener('click', event => event.stopPropagation());
+    }
+
+    #sourceMove(event) {
+        const source = this.#source;
+        if (!source || event.pointerId !== source.pointerId) return;
+
+        if (!source.started) {
+            const travelled = Math.hypot(event.clientX - source.from.x, event.clientY - source.from.y);
+            if (travelled < DRAG_THRESHOLD) return;
+            source.started = true;
+            source.handle.classList.add('dragging');
+        }
+
+        event.preventDefault();
+
+        // Out of the panel is what makes it a drag the Editor answers; inside, there is
+        // nothing here to drop on and the shell would mark this panel as refusing.
+        const here = this.#within(event.clientX, event.clientY);
+        if (here) {
+            if (source.announced) {
+                source.announced = false;
+                this.#announceDrag('px-drag-end', source.payloadOf(), NOWHERE);
+            }
+            return;
+        }
+
+        if (!source.announced) {
+            source.announced = true;
+            this.#announceDrag('px-drag-start', source.payloadOf(), event);
+            return;
+        }
+        this.#announceDrag('px-drag-move', null, event);
+    }
+
+    #sourceEnd(event, at) {
+        const source = this.#source;
+        if (event && event.pointerId !== source?.pointerId) return;
+        if (!source) return;
+
+        this.#source = null;
+        if (source.started) {
+            release(source.handle, source.pointerId);
+            source.handle.classList.remove('dragging');
+        }
+        if (source.announced) this.#announceDrag('px-drag-end', source.payloadOf(), at);
     }
 
     #dragDrop(event) {
@@ -1614,7 +1728,7 @@ export class Inspector extends Element {
         const announced = drag.announced;
         drag.announced = false;
         this.#cancelDrag();
-        if (announced) this.#announceDrag('px-drag-end', { list }, event);
+        if (announced) this.#announceDrag('px-drag-end', list.payload(), event);
 
         // NO insertionIndex() HERE, and that is the subtle part. That helper converts a
         // rank counted in the list WITH the carried item still in it. The preview counts
@@ -1638,7 +1752,7 @@ export class Inspector extends Element {
 
         // A GESTURE THE PLATFORM TOOK AWAY STILL HAS TO END, or the shell keeps a ghost
         // following a drag nobody is making. It ends NOWHERE, at a point no window holds.
-        if (drag.announced) this.#announceDrag('px-drag-end', drag, NOWHERE);
+        if (drag.announced) this.#announceDrag('px-drag-end', drag.list.payload(), NOWHERE);
     }
 
     /** The component sections that take part in a reorder, in model order. */
@@ -1824,13 +1938,49 @@ export class Inspector extends Element {
         });
     }
 
-    #renderRows(target, fields) {
+    /**
+     * @param {object} target - The reactive record the rows edit
+     * @param {object[]} fields - Field descriptors
+     * @param {string|null} [component] - The Component type, when these are its properties:
+     *   what a row needs to name itself to the rest of the Editor (ADR-0037)
+     */
+    #renderRows(target, fields, component = null) {
         return rows(fields).map(row => (row.fields.length === 1
-            ? this.#renderRow(target, row.fields[0])
-            : this.#renderPair(target, row)));
+            ? this.#renderRow(target, row.fields[0], component)
+            : this.#renderPair(target, row, component)));
     }
 
-    #renderRow(target, descriptor) {
+    /**
+     * The shape of a property, as the glyph that says it — and, on a Component's own
+     * properties, as the handle that carries it out of this panel.
+     *
+     * DECLARED, RESOLVED ONCE, NEVER GUESSED. The type comes from `declaredProperties()`,
+     * the single answer to "what does this Component declare" that the interpreter and the
+     * graph nodes already read (core/definition.js); the glyph comes from the one table that
+     * maps a type to a drawing (`iconForPropertyType`). No second mapping is introduced.
+     *
+     * @param {object} target - The component the property belongs to
+     * @param {object} descriptor - The field descriptor
+     * @param {string|null} component - The Component type, or null for rows that are not one
+     * @returns {HTMLElement} The cell that goes in the row's first column
+     */
+    #renderShape(target, descriptor, component) {
+        const declared = component
+            ? declaredProperties(target).find(entry => entry.name === descriptor.name) ?? null
+            : null;
+
+        const cell = el('span', { class: 'shape', 'aria-hidden': 'true' });
+        if (!declared) return cell;
+
+        fill(cell, icon(iconForPropertyType(declared.type), 14));
+        cell.classList.add('draggable');
+        cell.title = `${descriptor.label} — drag onto a graph`;
+        this.#makeDragSource(cell, () => propertyPayload(component, declared.id, descriptor.label));
+
+        return cell;
+    }
+
+    #renderRow(target, descriptor, component = null) {
         const field = this.#control(target, descriptor);
         const label = el('span', { class: 'label', textContent: descriptor.label });
         this.#makeDroppable(field, {
@@ -1849,15 +1999,20 @@ export class Inspector extends Element {
         const single = isNumeric(descriptor) && descriptor.kind !== FieldKind.RANGE;
 
         return el('div', { class: 'row' },
+            this.#renderShape(target, descriptor, component),
             label,
             el('div', { class: `fields${single ? ' single' : ''}` }, field, single ? el('span') : null)
         );
     }
 
-    #renderPair(target, row) {
+    #renderPair(target, row, component = null) {
         const prefixes = PAIR_PREFIXES[row.fields[0].name] ?? ['', ''];
 
         return el('div', { class: 'row' },
+            // A PAIR IS ONE IDEA WITH TWO HALVES (`Position` is `x` and `y`), so the row
+            // names the pair and carries no single property to hand over. The slot stays,
+            // empty, so the column does not break.
+            el('span', { class: 'shape', 'aria-hidden': 'true' }),
             el('span', { class: 'label', textContent: row.label }),
             el('div', { class: 'fields pair' },
                 row.fields.map((descriptor, index) =>

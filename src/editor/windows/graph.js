@@ -155,8 +155,33 @@ export class GraphWindow extends Element {
 
         .param-row px-field { flex: 1; min-width: 0; }
 
-        /* Masked by a wire: still readable, visibly not what is running. */
+        /* A FIELD BELONGS TO ITS NODE, SO IT ANSWERS IN ITS NODE'S COLOUR. The hue is the
+           one the node already wears — computed once by nodeHue() from the six-hue table
+           (ADR-0030 §4) and stamped on the row — so nothing about the palette is repeated
+           here. The controls inside px-field live in their own shadow root and reach it the
+           only way anything crosses that boundary: a custom property. Rebinding the accent
+           tokens locally is what makes a hover border and a focus ring follow the node
+           without px-field knowing a graph exists.
+
+           THE STATES ARE THREE, AND THEY DIFFER. At rest the field is the same well every
+           value in this Editor sits in; hovered it is outlined in the node's hue; focused it
+           is ringed in it. A field that shows a value it is not producing — one masked by a
+           wire — stays legible and visibly inert, and a read-only one never lights at all. */
+        .param-row {
+            --px-accent: var(--px-node-hue, var(--px-accent));
+            --px-accent-border: var(--px-node-hue, var(--px-accent-border));
+        }
+
+        .param-row:focus-within .param-label { color: var(--px-node-hue, var(--px-text)); }
+
+        /* Masked by a wire: still readable, visibly not what is running — and never lit,
+           because what it shows is not what runs. */
         .param-row.masked { opacity: 0.45; }
+        .param-row.masked,
+        .param-row:has(px-field[disabled]) {
+            --px-accent: var(--px-border-subtle);
+            --px-accent-border: var(--px-border-subtle);
+        }
 
         .node .title {
             fill: var(--px-text-strong);
@@ -946,7 +971,7 @@ export class GraphWindow extends Element {
         }
 
         for (const box of controlBoxes(node, rows)) {
-            group.append(this.#drawControl(node, box.control, box));
+            group.append(this.#drawControl(node, box.control, box, hue));
         }
 
         return group;
@@ -969,9 +994,10 @@ export class GraphWindow extends Element {
      * @param {object} node - The node record
      * @param {object} descriptor - A field descriptor from inspector/node.js
      * @param {object} box - Where it goes, from `controlBoxes()` (graph/view.js)
+     * @param {string} hue - The colour its node wears, so the field answers in it
      * @returns {SVGElement} The wrapper
      */
-    #drawControl(node, descriptor, box) {
+    #drawControl(node, descriptor, box, hue) {
         const holder = svg('foreignObject', {
             class: 'param',
             x: box.x - node.x,
@@ -1007,7 +1033,10 @@ export class GraphWindow extends Element {
         // would run without it, and hiding it would make unwiring a surprise.
         // AN EMPTY LABEL DRAWS NOTHING, not an empty box that still takes its gap. It is
         // how a `Number` node gets down to one field and one socket.
-        const row = el('div', { class: `param-row${descriptor.connected ? ' masked' : ''}` },
+        const row = el('div', {
+            class: `param-row${descriptor.connected ? ' masked' : ''}`,
+            style: `--px-node-hue: ${hue}`
+        },
             descriptor.label ? el('span', { class: 'param-label', textContent: descriptor.label }) : null,
             field
         );
