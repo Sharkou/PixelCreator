@@ -132,3 +132,24 @@ test('every offered type has a name a creator can read', () => {
 test('the spelling is American, because the API is', () => {
     assert.equal(PROPERTY_TYPE_LABELS[PropertyType.COLOR], 'Color');
 });
+
+test('an Object reference is declarable, and is named for the thing rather than for the shape', () => {
+    assert.ok(authorableTypes().includes(PropertyType.OBJECTREF));
+    assert.equal(PROPERTY_TYPE_LABELS[PropertyType.OBJECTREF], 'Object');
+});
+
+test('an Object reference has no default a creator may author', () => {
+    // A `.px` is of PROJECT scope and an ObjectId belongs to ONE scene (ADR-0034 §3.5), so
+    // a picker here would write the open scene's identity into a file other scenes may use.
+    const descriptor = defaultField({ id: 'p1', name: 'target', type: PropertyType.OBJECTREF, default: null });
+
+    assert.equal(descriptor.kind, FieldKind.READONLY);
+    assert.equal(descriptor.readonly, true);
+    assert.notEqual(descriptor.kind, FieldKind.OBJECT, 'the scene must not be offered here');
+    assert.ok(descriptor.placeholder, 'and it says where the reference IS set');
+});
+
+test('every other reference type still authors its default', () => {
+    assert.equal(defaultField({ type: PropertyType.STRING }).readonly, false);
+    assert.equal(defaultField({ type: PropertyType.NUMBER }).kind, FieldKind.NUMBER);
+});

@@ -37,8 +37,7 @@ import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { ICON_GRID, icon, iconForNode, iconPaths } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
-import { describeNode } from '../inspector/node.js';
-import { fieldFor } from '../inspector/schema.js';
+import { describeNode, inputFields, paramWrites } from '../inspector/node.js';
 import '../ui/field.js';
 import {
     GRID,
@@ -524,11 +523,7 @@ export class GraphWindow extends Element {
             // is what puts a value and the socket it travels through on one line
             // (graph/view.js, ADR-0033).
             const controls = [
-                ...(describeNode(node, {
-                    registry: this.#definition.registry,
-                    properties: this.#definition.properties(),
-                    components: this.#components?.() ?? []
-                })?.fields ?? []),
+                ...(describeNode(node, this.#nodeContext())?.fields ?? []),
                 ...this.#inputRows(node, ports)
             ];
 
@@ -537,43 +532,42 @@ export class GraphWindow extends Element {
     }
 
     /**
-     * The input ports a creator can type a value into, as field descriptors.
+     * What a node's params and its reference pickers are resolved against.
      *
-     * WHICH PORTS, AND WHY NOT ALL OF THEM. A FLOW port carries execution, not a value —
-     * there is nothing to type. An `any` port has no shape, so there is no control to draw.
-     * Everything else gets a row, whether or not something is wired to it: a connected port
-     * shows the value it would fall back to, greyed, because unwiring is meant to be an
-     * experiment a creator can undo by hand (ADR-0031 §1).
+     * Asked for on every draw and never held: the Component catalogue is a function so a
+     * `.px` installed while this canvas is open is offered without a subscription, and the
+     * `.px`'s own properties change under a `Set Property` as they are declared
+     * (ADR-0034 §3.3).
      *
-     * The descriptor is built by the same `fieldFor()` every other value in the Editor goes
-     * through, so the control, the parsing and the bounds are not decided here.
+     * @returns {object} `{ registry, properties, components }`
+     */
+    #nodeContext() {
+        return {
+            registry: this.#definition.registry,
+            properties: this.#definition.properties(),
+            components: this.#components?.() ?? []
+        };
+    }
+
+    /**
+     * The input ports a creator can type a value into, with the wire each one already has.
+     *
+     * WHICH PORTS GET A CONTROL is the Editor's rule and it is written down once, next to
+     * the rest of what a node shows (`inputFields`, inspector/node.js) — a canvas that
+     * decided it here would be a second opinion about whether an object port is typeable.
+     * What this adds is the one fact only the graph knows: a connected port still shows the
+     * value it would fall back to, greyed, because unwiring is meant to be an experiment a
+     * creator can undo by hand (ADR-0031 §1).
      *
      * @param {object} node - The node record
      * @param {{inputs: object[], outputs: object[]}} ports - Its ports right now
      * @returns {object[]} Field descriptors, each carrying the port it edits
      */
     #inputRows(node, ports) {
-        const rows = [];
-
-        for (const port of ports.inputs) {
-            if (port.kind === 'flow') continue;
-            if (!port.type || port.type === ANY_TYPE) continue;
-            // AN OBJECT IS NOT A VALUE A CREATOR TYPES (ADR-0034 §3.2). A control here would
-            // be a box that can never be filled in — and the Runtime ignores anything found
-            // in a node for such a port anyway (§3.6), so the box would also be a lie.
-            if (port.type === OBJECT_TYPE) continue;
-
-            rows.push({
-                ...fieldFor(port.id, { type: port.type, label: port.label, default: port.default }),
-                // Marked so `#drawControl()` writes through `setInput` rather than
-                // `setParam`, and so the row model knows which port this belongs beside:
-                // two namespaces, two writers (ADR-0031 1).
-                port: port.id,
-                connected: Boolean(this.#definition.graph.incoming(node.id, port.id))
-            });
-        }
-
-        return rows;
+        return inputFields(ports).map(field => ({
+            ...field,
+            connected: Boolean(this.#definition.graph.incoming(node.id, field.port))
+        }));
     }
 
     #draw() {
@@ -737,6 +731,14 @@ export class GraphWindow extends Element {
             svg('text', { class: 'title', x: 27, y: 18 }, document.createTextNode(label))
         );
 
+        // WHAT THE NODE DOES, WHERE THE NODE IS. The catalogue already carries the sentence
+        // and the picker already shows it — but a creator reads it once, while choosing, and
+        // then meets the node again on a canvas with no way to ask. A `<title>` is the whole
+        // of the fix, and the ports' own titles still win where they overlap.
+        if (definition?.tooltip) {
+            group.prepend(svg('title', {}, document.createTextNode(definition.tooltip)));
+        }
+
         // WHICH LABELS THE CONTROLS SPEAK FOR — asked of the geometry, which also uses the
         // answer to decide how much room to leave (graph/view.js). Deciding it here as well
         // would be two opinions, and the day they differed a label would be drawn through
@@ -803,7 +805,7 @@ export class GraphWindow extends Element {
         const field = el('px-field').bind(view, { ...descriptor, label: descriptor.label }, {
             write: (value, options) => (descriptor.port
                 ? this.#definition.graph.setInput(node.id, descriptor.port, value, options)
-                : this.#definition.graph.setParam(node.id, descriptor.name, value, options))
+                : this.#writeParam(node, descriptor.name, value, options))
         });
 
         // A CONNECTED PORT SHOWS ITS FALLBACK, GREYED. The wire is what runs; this is what
@@ -824,6 +826,33 @@ export class GraphWindow extends Element {
 
         holder.append(row);
         return holder;
+    }
+
+    /**
+     * Change one param, and drop any sibling the change has made meaningless.
+     *
+     * ONE BATCH, because it is one thing the creator did: choosing a different Component on
+     * a `Get Property On` also abandons the property they had picked out of the old one, and
+     * a single `Ctrl Z` has to put both back (ADR-0024 §4). WHICH siblings go is the model's
+     * question, answered by `paramWrites()` from the references a node type declares — this
+     * only submits the answer.
+     *
+     * The field mints the batch on the gesture, so the fallback below is a guard rather than
+     * a path: it is what keeps "one gesture, one undo entry" true of the pair even if a
+     * caller ever writes without one, which a single `setParam` never had to care about.
+     *
+     * @param {object} node - The node record
+     * @param {string} name - The param the creator changed
+     * @param {any} value - What they changed it to
+     * @param {object} [options] - `{ batch }` from the field's typing session
+     */
+    #writeParam(node, name, value, options = {}) {
+        const definition = this.#definition.registry.get(node.type);
+        const batch = options.batch ?? `${node.id}:${name}`;
+
+        for (const write of paramWrites(definition, node, name, value, this.#nodeContext())) {
+            this.#definition.graph.setParam(node.id, write.name, write.value, { ...options, batch });
+        }
     }
 
     #drawPort(node, placed, { silent = false } = {}) {
@@ -1476,6 +1505,12 @@ const CATEGORY_HUES = {
     Events: 'var(--px-accent)',
     Flow: 'var(--px-hue-flow)',
     Properties: 'var(--px-hue-reference)',
+    // THE SAME VIOLET, AND THAT IS THE STATEMENT. A Scene node deals in references to other
+    // Objects the way a Properties node deals in references to properties — one idea, and
+    // the palette is six hues rather than one per category for exactly this reason. It is
+    // also the colour its own `object` ports wear below, so a `Self` node and the socket it
+    // feeds are visibly the same kind of thing (ADR-0030 §4, ADR-0034 §3.2).
+    Scene: 'var(--px-hue-reference)',
     Math: 'var(--px-hue-number)',
     Compare: 'var(--px-hue-number)',
     Logic: 'var(--px-hue-boolean)',
@@ -1501,6 +1536,11 @@ const TYPE_HUES = {
     [PropertyType.ENUM]: 'var(--px-hue-reference)',
     [PropertyType.RESOURCE]: 'var(--px-hue-reference)',
     [PropertyType.ARRAY]: 'var(--px-hue-any)',
+    // A HANDLE TO AN OBJECT IS A POINTER, so it wears what every other pointer wears. It
+    // used to fall through to `any` — the absence of a type — which said the opposite of
+    // what an `object` port is: the most constrained data port on the canvas, compatible
+    // with itself and with nothing else (ADR-0034 §3.2).
+    [OBJECT_TYPE]: 'var(--px-hue-reference)',
     [ANY_TYPE]: 'var(--px-hue-any)'
 };
 

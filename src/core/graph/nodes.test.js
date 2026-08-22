@@ -303,3 +303,16 @@ test('no node in the catalogue ever exposes a port typed objectref', () => {
     assert.equal(shapes.includes(PropertyType.OBJECTREF), false, 'objectref is persisted, never carried');
     assert.ok(shapes.includes(OBJECT_TYPE), 'and it is carried as an object');
 });
+
+test('a port may say what an empty control means, and says nothing by default', () => {
+    // Presentation the Editor reads, like `label`: the interpreter never sees it. An empty
+    // `Find By Tag` finds NOTHING rather than anything, which a blank box cannot say.
+    assert.equal(createPort({ id: 'value', type: PropertyType.STRING }).placeholder, null);
+    assert.equal(createPort({ id: 'tag', type: PropertyType.STRING, placeholder: 'None' }).placeholder, 'None');
+
+    const findByTag = registerStandardNodes(new NodeRegistry()).get('scene.findByTag');
+    const tag = portsOf(findByTag, { id: 'n', type: 'scene.findByTag', params: {} }).inputs[0];
+
+    assert.equal(tag.id, 'tag');
+    assert.ok(tag.placeholder, 'the one port whose empty state means something says so');
+});

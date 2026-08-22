@@ -89,6 +89,9 @@ export const NODE_CATEGORIES = ['Events', 'Properties', 'Scene', 'Flow', 'Values
  * @property {string} [type] - One of PropertyType, or ANY_TYPE; data ports only
  * @property {string} [label] - What a creator reads; the id humanised when absent
  * @property {any} [default] - What an unconnected data input yields
+ * @property {string} [placeholder] - What an EMPTY control reads, when empty means something
+ *   a creator has to know. Presentation, like `label`: the interpreter never sees it, and a
+ *   port that leaves it out simply shows an empty box.
  */
 
 export class NodeRegistry {
@@ -177,7 +180,8 @@ export function createPort(port) {
         kind,
         type: kind === PortKind.FLOW ? null : port.type ?? ANY_TYPE,
         label: port.label ?? humanisePort(port.id),
-        default: port.default ?? null
+        default: port.default ?? null,
+        placeholder: port.placeholder ?? null
     });
 }
 

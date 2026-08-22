@@ -137,6 +137,24 @@ export function defaultField(property) {
         tooltip: 'What a fresh instance of this Component starts at'
     });
 
+    // AN OBJECT REFERENCE HAS NO DEFAULT TO AUTHOR, AND THIS IS WHERE THE SCOPES MEET.
+    // A `.px` is of PROJECT scope; an ObjectId belongs to ONE scene (ADR-0034 §3.5). The
+    // ordinary mapping gives `objectref` the Object picker — right on a Component attached
+    // to an Object, and wrong here, where it would list the scene that happens to be open
+    // and write that scene's identity into a file several scenes may use. §3.5 shows the
+    // declaration with `"default": null` for exactly this reason, and `defaultForProperty()`
+    // answers null whatever is stored, so nothing is lost by refusing to author it: the
+    // reference is set on each Object the Component is attached to.
+    if (property?.type === PropertyType.OBJECTREF) {
+        return {
+            ...descriptor,
+            kind: FieldKind.READONLY,
+            readonly: true,
+            placeholder: 'Set on each Object',
+            tooltip: 'An Object reference belongs to a scene, so it starts empty on every Object this Component is attached to'
+        };
+    }
+
     // WHATEVER FALLS BACK TO READ-ONLY IS ALSO DISABLED. `fieldKindFor()` answers with a
     // control, not with a permission, so a `resource`, a list, or a choice with nothing
     // declared to choose from arrives here as READONLY with the flag still unset — and a

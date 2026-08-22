@@ -379,3 +379,8 @@ test('an Object reference is edited with its own control, never with a text fiel
     assert.equal(descriptor.label, 'Target');
     assert.notEqual(descriptor.kind, FieldKind.READONLY);
 });
+
+test('a descriptor carries what an empty control should read, and nothing carries one by default', () => {
+    assert.equal(fieldFor('speed', { type: PropertyType.NUMBER }).placeholder, null);
+    assert.equal(fieldFor('tag', { type: PropertyType.STRING, placeholder: 'None' }).placeholder, 'None');
+});

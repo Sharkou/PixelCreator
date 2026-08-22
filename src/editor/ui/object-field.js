@@ -175,6 +175,20 @@ export class ObjectField extends Element {
         // the Hierarchy retitles this control on the keystroke, with no redraw.
         this.track(observe(this.#target, descriptor.name, () => this.#render()), 'binding');
         if (object) this.track(observe(object, 'name', () => this.#render()), 'binding');
+
+        // AND THE SCENE, because the interesting change is the one the reference cannot
+        // announce: deleting the Object leaves the value untouched and the record it names
+        // gone, so nothing this control observes fires and it goes on showing the name of
+        // something that is no longer there. A reference dies out from under it, and the
+        // whole point of drawing a dead one in red is that it is drawn at the moment it dies
+        // (ADR-0034 §3.4). The undo that brings the Object back is the same event, the other
+        // way round.
+        for (const event of ['added', 'removed']) {
+            const stop = this.#scene?.on?.(event, changed => {
+                if (changed?.id === (this.#target?.[descriptor.name] ?? null)) this.#render();
+            });
+            if (stop) this.track(stop, 'binding');
+        }
     }
 
     /** The objects a creator may choose, in the order the Hierarchy shows them. */

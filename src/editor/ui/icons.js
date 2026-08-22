@@ -157,6 +157,11 @@ const PATHS = {
     'node-flow': `<path d="M2.6 8h6.6" ${S}/><path d="M8.4 4.8 12.4 8l-4 3.2z" ${S}/>`,
     'node-property': `<path d="M8.6 2.4H13v4.4l-6.2 6.2a1.2 1.2 0 0 1-1.7 0L2.4 10.3a1.2 1.2 0 0 1 0-1.7z" ${S}/>`
         + `<circle cx="10.7" cy="5.3" r="1" ${F}/>`,
+    // Scene: reaching ANOTHER Object — so it is an object framed and aimed at, rather than
+    // the corner brackets `object` uses for the thing itself (ADR-0034 §3.2).
+    'node-scene': `<rect x="3.4" y="3.4" width="9.2" height="9.2" rx="1.4" ${S}/>`
+        + `<circle cx="8" cy="8" r="1.7" ${S}/>`
+        + `<path d="M8 3.4v1.3M8 11.3v1.3M3.4 8h1.3M11.3 8h1.3" ${S}/>`,
     'node-value': `<path d="M5.6 3.2H4.4a1.2 1.2 0 0 0-1.2 1.2v2.4L2 8l1.2 1.2v2.4a1.2 1.2 0 0 0 1.2 1.2h1.2" ${S}/>`
         + `<path d="M10.4 3.2h1.2a1.2 1.2 0 0 1 1.2 1.2v2.4L14 8l-1.2 1.2v2.4a1.2 1.2 0 0 1-1.2 1.2h-1.2" ${S}/>`,
     'node-math': `<path d="M3 5.2h4M5 3.2v4" ${S}/><path d="M9 5.2h4" ${S}/>`
@@ -367,6 +372,7 @@ const NODE_CATEGORY_ICONS = {
     Events: 'node-event',
     Flow: 'node-flow',
     Properties: 'node-property',
+    Scene: 'node-scene',
     Values: 'node-value',
     Math: 'node-math',
     Compare: 'node-compare',

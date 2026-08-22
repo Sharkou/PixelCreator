@@ -92,12 +92,13 @@ export function referencedComponentProperty(node, context = {}) {
 }
 
 const flow = (id, label) => ({ id, kind: PortKind.FLOW, label: label ?? '' });
-const data = (id, type, label, fallback) => ({
+const data = (id, type, label, fallback, placeholder) => ({
     id,
     kind: PortKind.DATA,
     type,
     label: label ?? null,
-    default: fallback ?? null
+    default: fallback ?? null,
+    placeholder: placeholder ?? null
 });
 
 /** The reference param every property node carries. */
@@ -317,7 +318,10 @@ export const STANDARD_NODES = [
         label: 'Find By Tag',
         category: 'Scene',
         keywords: ['search', 'lookup', 'find', 'tag', 'object'],
-        inputs: [data('tag', PropertyType.STRING, 'Tag', '')],
+        // THE EMPTY BOX SAYS SO, because what it means is not what a creator would guess.
+        // An empty tag finds NOTHING rather than anything, for the reason stated below the
+        // evaluator, and a blank field that reads as "not filled in yet" would hide it.
+        inputs: [data('tag', PropertyType.STRING, 'Tag', '', 'None')],
         outputs: [data('object', OBJECT_TYPE)],
         // THE FIRST IN CANONICAL ORDER, which is what `findByTag` now answers in: an order
         // that is a function of the scene's state rather than of the order its objects
@@ -368,6 +372,7 @@ export const STANDARD_NODES = [
         label: 'Get Property On',
         category: 'Scene',
         keywords: ['read', 'other', 'remote', 'foreign', 'component', 'field'],
+        tooltip: 'Reads a property of a Component on another Object',
         params: { ...componentParam, ...componentPropertyParam },
         inputs: [data('object', OBJECT_TYPE)],
         outputs: (node, context) => {
@@ -390,6 +395,7 @@ export const STANDARD_NODES = [
         label: 'Set Property On',
         category: 'Scene',
         keywords: ['write', 'assign', 'other', 'remote', 'foreign', 'component'],
+        tooltip: 'Writes a property of a Component on another Object',
         params: { ...componentParam, ...componentPropertyParam },
         inputs: (node, context) => {
             const property = referencedComponentProperty(node, context);

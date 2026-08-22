@@ -54,6 +54,19 @@ test('a node is drawn by its category, never by the canvas it sits on', () => {
     }
 });
 
+test('two node categories never share a glyph', () => {
+    // A category exists to say what KIND of node this is, so two of them drawn the same way
+    // answer the question with a lie. The Scene nodes wore the `Values` brackets, which put
+    // `Self` and `Number` under one drawing.
+    const seen = new globalThis.Map();
+
+    for (const category of NODE_CATEGORIES) {
+        const glyph = iconForNode(category);
+        assert.equal(seen.has(glyph), false, `${category} shares a glyph with ${seen.get(glyph)}`);
+        seen.set(glyph, category);
+    }
+});
+
 test('a node definition may declare its own glyph, and an unknown one still draws', () => {
     assert.equal(iconForNode({ category: 'Math' }), iconForNode('Math'));
     assert.equal(iconForNode({ category: 'Math', icon: 'sprite' }), 'sprite');

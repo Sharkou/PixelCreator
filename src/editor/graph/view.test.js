@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { NodeRegistry, PortKind, registerStandardNodes, portsOf } from '../../core/mod.js';
+import { NodeRegistry, OBJECT_TYPE, PortKind, registerStandardNodes, portsOf } from '../../core/mod.js';
 import {
     GRID,
     MAJOR_EVERY,
@@ -363,6 +363,45 @@ test('a param speaks for both ports on its row, and takes the room back', () => 
     assert.ok(silenced.has('out:value'));
     // The socket still needs its own width; the LABEL does not, because the field is it.
     assert.ok(box.x + box.width > node.x + NODE_WIDTH - 40);
+});
+
+// THE ROW A PARAM LANDS ON IS NOT NECESSARILY A ROW IT IS ABOUT. `Get Property On` puts its
+// Component picker on the row carrying the Object socket it reads FROM, and silencing that
+// socket left an unnamed dot on a line reading "Component" (ADR-0034 3.2).
+test('a param never speaks for an object socket sharing its row', () => {
+    const ports = {
+        inputs: [{ id: 'object', kind: 'data', type: OBJECT_TYPE, label: 'Object' }],
+        outputs: [{ id: 'value', kind: 'data', type: 'number', label: 'Value' }]
+    };
+    const silenced = silencedPorts(nodeRows(ports, [{ name: 'component' }]));
+
+    assert.ok(!silenced.has('in:object'), 'the only thing naming an object port is its name');
+    assert.ok(silenced.has('out:value'), 'a port a creator could type into is another matter');
+});
+
+test('an object socket keeps its room even when a param shares the row', () => {
+    const node = { x: 0, y: 0 };
+    const ports = {
+        inputs: [{ id: 'object', kind: 'data', type: OBJECT_TYPE, label: 'Object' }],
+        outputs: []
+    };
+    const [box] = controlBoxes(node, nodeRows(ports, [{ name: 'component' }]));
+
+    assert.ok(box.x > node.x + 40, 'the field starts after the socket and the word beside it');
+});
+
+test('the Scene nodes draw their object sockets with their names on', () => {
+    for (const type of ['scene.parent', 'object.isValid', 'property.getOn', 'property.setOn']) {
+        const { ports } = place(type, 0, 0);
+        const params = globalThis.Object.keys(registry.get(type).params ?? {})
+            .map(name => ({ name }));
+        const silenced = silencedPorts(nodeRows(ports, params));
+
+        const object = ports.inputs.find(port => port.type === OBJECT_TYPE);
+        assert.ok(object, `${type} has no object input`);
+        assert.ok(object.label, `${type}'s object port has no name to show`);
+        assert.ok(!silenced.has(`in:${object.id}`), `${type} hides what its object socket takes`);
+    }
 });
 
 test('a port with no label of its own needs no room kept for one', () => {

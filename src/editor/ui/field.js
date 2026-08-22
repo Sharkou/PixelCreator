@@ -147,6 +147,11 @@ export class Field extends Element {
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+
+        /* NOTHING IN IT, AND SAYING SO. The same marking ui/object-field.js gives an empty
+           reference — dimmed and italic — so "there is no value here" looks the same
+           wherever a creator meets it, and never like a value that happens to read oddly. */
+        .empty { color: var(--px-text-dim); font-style: italic; }
     `);
 
     #target = null;
@@ -265,7 +270,9 @@ export class Field extends Element {
 
     #createControl(descriptor, value) {
         if (descriptor.kind === FieldKind.READONLY) {
-            return el('span', { class: 'readonly', textContent: formatValue(descriptor, value) });
+            const span = el('span', { class: 'readonly' });
+            setTextOrPlaceholder(span, formatValue(descriptor, value), descriptor.placeholder);
+            return span;
         }
 
         if (descriptor.kind === FieldKind.BOOLEAN) {
@@ -333,6 +340,7 @@ export class Field extends Element {
             type: 'text',
             spellcheck: false,
             value: formatValue(descriptor, value),
+            placeholder: descriptor.placeholder,
             readOnly: descriptor.readonly,
             onfocus: () => {
                 entry = this.#target[descriptor.name];
@@ -417,8 +425,17 @@ export class Field extends Element {
         // the same way a click does. `#pull()` calls this back through `value`.
         button.pxSetValue = next => {
             const option = globalThis.String(next ?? '');
-            text.textContent = labelOf(option);
-            const name = iconOf(option);
+            // A DROPDOWN HOLDING NOTHING SAYS WHAT NOTHING MEANS. An unset reference used to
+            // draw a button with a caret and no words at all — and the two cases a creator
+            // has to tell apart, "you have not chosen yet" and "there is nothing here to
+            // choose", look identical when both are blank (ADR-0031 §2).
+            //
+            // GATED ON THE HINT, NOT ON THE VALUE, so this is a no-op for every choice that
+            // declares none: a component is free to offer '' as a real option with a label
+            // of its own, and reading that as "nothing chosen" would take the label away.
+            const missing = option === '' && Boolean(descriptor.placeholder);
+            setTextOrPlaceholder(text, missing ? '' : labelOf(option), descriptor.placeholder);
+            const name = missing ? null : iconOf(option);
             fill(glyph, name ? icon(name, 16) : null);
             glyph.hidden = !name;
         };
@@ -461,10 +478,25 @@ export class Field extends Element {
         if (descriptor.kind === FieldKind.ENUM) control.pxSetValue?.(value);
         else if (descriptor.kind === FieldKind.BOOLEAN) control.checked = Boolean(value);
         else if (descriptor.kind === FieldKind.COLOR) control.value = colorOrBlack(value);
-        else if (descriptor.kind === FieldKind.READONLY) control.textContent = formatValue(descriptor, value);
+        else if (descriptor.kind === FieldKind.READONLY) {
+            setTextOrPlaceholder(control, formatValue(descriptor, value), descriptor.placeholder);
+        }
         else if (isNumeric(descriptor)) control.value = toDisplay(descriptor, value) ?? '';
         else control.value = formatValue(descriptor, value);
     }
+}
+
+/**
+ * Put text in an element, falling back to what it should read when there is none.
+ *
+ * @param {HTMLElement} element - The element to fill
+ * @param {string} text - What the model has to say, possibly nothing
+ * @param {string|null} placeholder - What to read instead when it says nothing
+ */
+function setTextOrPlaceholder(element, text, placeholder) {
+    const empty = text === '' || text === null || text === undefined;
+    element.textContent = empty ? placeholder ?? '' : text;
+    element.classList.toggle('empty', empty && Boolean(placeholder));
 }
 
 function sliderStep(descriptor) {

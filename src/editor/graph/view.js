@@ -22,6 +22,7 @@
 // never rewritten by a zoom, which is the mistake that makes a graph editor lose its
 // layout.
 
+import { OBJECT_TYPE } from '../../core/mod.js';
 import { MAJOR_EVERY, adaptiveSpacing } from '../grid.js';
 
 /** A node's box, in graph units. Wide enough for two port labels, a control and a title. */
@@ -176,6 +177,14 @@ export function nodeSize(ports, controls = []) {
  *   row, because the param IS what the row is about. A `Number` node is a field and the
  *   socket its content leaves by; "Value" printed beside both is noise.
  *
+ * ONE PORT IS NEVER SPOKEN FOR BY A PARAM, AND IT IS THE ONE THAT CARRIES AN OBJECT. A param
+ * takes the first row that has no control yet, so the row it lands on is not necessarily a
+ * row it is about: `Get Property On` puts its Component picker beside the Object socket it
+ * reads FROM, and silencing that socket left a creator with an unnamed dot on a line that
+ * says "Component". Every other port has a control on its row a creator can read instead; an
+ * object port has none and can have none — there is nothing to type into it (ADR-0034 §3.2) —
+ * so its name is the only thing that says what it takes.
+ *
  * IT LIVES HERE, WITH THE GEOMETRY, because the answer decides two things that must agree:
  * whether the renderer draws a label, and how much room `controlBoxes()` leaves for one. A
  * renderer that decided on its own would eventually print a label into a field.
@@ -194,8 +203,8 @@ export function silencedPorts(rows) {
             continue;
         }
 
-        if (row.input) silenced.add(`in:${row.input.id}`);
-        if (row.output) silenced.add(`out:${row.output.id}`);
+        if (row.input && row.input.type !== OBJECT_TYPE) silenced.add(`in:${row.input.id}`);
+        if (row.output && row.output.type !== OBJECT_TYPE) silenced.add(`out:${row.output.id}`);
     }
 
     return silenced;

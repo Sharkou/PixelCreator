@@ -379,6 +379,12 @@ function field(name, property = {}) {
         // `Number` node drawn from an empty `params` had a blank box while the runtime was
         // quietly using 0 — the box and the simulation disagreeing about the same value.
         default: property.default ?? null,
+        // WHAT AN EMPTY CONTROL SAYS. A blank box and a blank dropdown both read as "not
+        // filled in yet", which is the right message exactly when it is true — and the wrong
+        // one when empty MEANS something: a property picker with nothing to offer until a
+        // Component is chosen, a tag that finds nothing when it is left blank. It is
+        // presentation and never a value: nothing is written when it is shown.
+        placeholder: property.placeholder ?? null,
         accepts: declared === PropertyType.RESOURCE
             ? { kind: property.kind ?? null, mime: property.mime ?? null }
             : null,
