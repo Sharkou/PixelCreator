@@ -72,13 +72,22 @@ export function objectPayload(object) {
 }
 
 /**
- * A drag of a component inside the Inspector.
+ * A drag of a component out of the Inspector.
+ *
+ * THE TYPE IS THE IDENTITY, and it is of PROJECT scope — a class name for a shipped
+ * component, a `ResourceId` for a `.px` (ADR-0021). That is what a rule stores, and it is
+ * why a Component may be named inside a graph where an Object may not (ADR-0034 §3.2).
+ *
+ * The label travels beside it because a `ResourceId` is unreadable, and the ghost has to
+ * say what is being carried. It is presentation: nothing resolves it and nothing stores it.
+ *
  * @param {object} object - The object carrying it
  * @param {string} type - The component type
+ * @param {string} [label] - What a creator reads; the type itself when absent
  * @returns {object} The payload
  */
-export function componentPayload(object, type) {
-    return { kind: DragKind.COMPONENT, object, type };
+export function componentPayload(object, type, label) {
+    return { kind: DragKind.COMPONENT, object, type, label: label ?? null };
 }
 
 /**
@@ -109,7 +118,7 @@ export function describePayload(payload) {
         case DragKind.OBJECT:
             return { label: payload.name || 'Object', icon: 'object' };
         case DragKind.COMPONENT:
-            return { label: payload.type || 'Component', icon: 'component' };
+            return { label: payload.label || payload.type || 'Component', icon: 'component' };
         default:
             return { label: 'Item', icon: 'object' };
     }

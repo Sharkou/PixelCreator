@@ -18,7 +18,13 @@
 // ORDER MATTERS: the first rule that accepts wins, so the specific ones come before the
 // general ones. Adding a kind of drop is adding a row.
 
-import { Object as SceneObject, Transform, PropertyType, componentSchema } from '../../core/mod.js';
+import {
+    COMPONENT_REFERENCE,
+    Object as SceneObject,
+    PropertyType,
+    Transform,
+    componentSchema
+} from '../../core/mod.js';
 import { ResourceKind, isFolder, canMove } from '../../project/mod.js';
 import { Sprite } from '../../runtime/mod.js';
 import { DragKind, DropZone } from './payload.js';
@@ -75,8 +81,9 @@ const REFUSED_ON_GRAPH = {
         + 'reach it with a Scene node, or an Object property on this Component.',
     // ADR-0027 §11, which refused the same gesture for a property: dropping it could mean
     // Get or Set, and choosing between them for the creator is the magic this Editor avoids.
-    [DragKind.COMPONENT]: 'A Component dropped here could mean reading it or writing it, '
-        + 'and that is not a choice to make for you — add the node you want from the menu.',
+    [DragKind.COMPONENT]: 'A Component dropped on bare canvas could mean reading it or '
+        + 'writing it, and that is not a choice to make for you — drop it on a Get or Set '
+        + 'Property On node, or add one from the menu first.',
     [DragKind.RESOURCE]: 'A resource is not a node. Add one from the canvas menu instead.',
     [DragKind.FILES]: 'Files are imported into the Project panel, never onto a graph.'
 };
@@ -279,6 +286,42 @@ export const RULES = [
     // --- refusals that are worth stating -------------------------------------------
 
     {
+        // A DROP CONFIGURES; IT NEVER CREATES. That one sentence is what makes this gesture
+        // legal where every other drop onto a canvas is not.
+        //
+        // ADR-0027 §11 refuses a drop that would have to CHOOSE for the creator — a property
+        // let go on bare canvas could mean Get or Set, and picking one is the magic this
+        // Editor avoids. Landing on a node that already exists carries no such choice: the
+        // creator made it when they placed the node. So nothing is created, and nothing is
+        // guessed.
+        //
+        // ADR-0034 §3.2 is satisfied for the same reason it was written: a Component is
+        // named by its TYPE, "identité de portée projet, dans un paramètre". That is exactly
+        // what is written here — no port carries a Component, nothing circulates, and the
+        // value that lands in the `.px` belongs to the project like the `.px` itself.
+        //
+        // ONE RESOURCE, ONE OPERATION, ONE UNDO. The write is a `setParam` on the graph's own
+        // pipeline (ADR-0024): the inter-resource undo question ADR-0034 §3.7 parks for an
+        // Object simply does not arise, because nothing outside this `.px` is touched.
+        id: 'component-to-node',
+        accepts: (payload, target) => payload.kind === DragKind.COMPONENT
+            && target.zone === DropZone.GRAPH
+            && acceptsComponent(target),
+        describe: (payload, target) =>
+            `Point ${target.label ?? 'this node'} at ${payload.label || payload.type}`,
+        perform: (payload, target, context) => {
+            if (!context.setNodeParam) return null;
+
+            // WHICH SIBLINGS THE CHANGE TAKES WITH IT IS NOT DECIDED HERE. A property picked
+            // out of the old Component may not exist on the new one; the canvas already
+            // answers that, under one batch, for the picker and for this drop alike
+            // (`paramWrites`, editor/inspector/node.js).
+            context.setNodeParam(target.node, 'component', payload.type);
+            return { node: target.node, component: payload.type };
+        }
+    },
+
+    {
         // THE FLOOR OF THE CANVAS. It matches the ZONE and not any particular kind of drag,
         // so it answers for everything that reaches a graph — which is the whole point, a
         // target no rule mentions being answered by silence. Nothing is accepted on a canvas
@@ -403,6 +446,22 @@ export function acceptsResource(target, resource) {
 export function acceptsObject(target) {
     if (!target?.component || !target.prop) return false;
     return componentSchema(target.component)?.[target.prop]?.type === PropertyType.OBJECTREF;
+}
+
+/**
+ * Whether a node would take a Component type in one of its params.
+ *
+ * DECLARED, NEVER GUESSED, like `acceptsResource()` and `acceptsObject()` before it — and
+ * here the declaration is the node type's own: a param says it REFERENCES a Component
+ * (ADR-0027 §4, ADR-0034 §3.3), and that is the only thing that makes a node a target. A
+ * node with no such param is not "not yet supported", it is a node this means nothing to.
+ *
+ * @param {object} target - A GRAPH target carrying `node` and its type's `params`
+ * @returns {boolean} True when the node names a Component type
+ */
+export function acceptsComponent(target) {
+    if (!target?.node) return false;
+    return target.params?.component?.reference === COMPONENT_REFERENCE;
 }
 
 /**

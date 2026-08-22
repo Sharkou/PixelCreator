@@ -517,11 +517,20 @@ export const STANDARD_NODES = [
     },
 
     // --- literals ---------------------------------------------------------------------
+    //
+    // A LITERAL WEARS ITS TYPE'S GLYPH, not the category's. ADR-0033 §4 already made these
+    // three the one place where a node takes the COLOUR of what it holds rather than of the
+    // family it belongs to — because for a literal, what it is IS its type. The drawing had
+    // been left behind: all three showed the generic `Values` brackets, so a `Number` node
+    // and a `Text` node were one picture in the picker, and neither matched the badge the
+    // same type wears on a property. Declared per node, through the mechanism the catalogue
+    // already has for it (`NodeDefinition.icon`, editor/ui/icons.js).
 
     {
         type: 'value.number',
         label: 'Number',
         category: 'Values',
+        icon: 'type-number',
         keywords: ['float', 'int', 'literal', 'constant'],
         params: { value: { type: PropertyType.NUMBER, default: 0, label: 'Value' } },
         outputs: [data('value', PropertyType.NUMBER)],
@@ -532,6 +541,7 @@ export const STANDARD_NODES = [
         type: 'value.boolean',
         label: 'Boolean',
         category: 'Values',
+        icon: 'type-boolean',
         keywords: ['bool', 'true', 'false', 'flag', 'literal'],
         params: { value: { type: PropertyType.BOOLEAN, default: false, label: 'Value' } },
         outputs: [data('value', PropertyType.BOOLEAN)],
@@ -542,6 +552,7 @@ export const STANDARD_NODES = [
         type: 'value.string',
         label: 'Text',
         category: 'Values',
+        icon: 'type-text',
         keywords: ['string', 'literal', 'constant'],
         params: { value: { type: PropertyType.STRING, default: '', label: 'Value' } },
         outputs: [data('value', PropertyType.STRING)],

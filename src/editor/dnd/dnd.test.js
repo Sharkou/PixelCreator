@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     ComponentRegistry,
+    NodeRegistry,
+    registerStandardNodes,
     Object as SceneObject,
     PropertyType,
     Scene,
@@ -14,8 +16,24 @@ import { Project, ResourceKind } from '../../project/mod.js';
 import { Sprite, RectangleRenderer } from '../../runtime/mod.js';
 import { Workspace } from '../project/workspace.js';
 import { registerBuiltIns } from '../registry.js';
-import { DragKind, DropZone, componentPayload, filesPayload, objectPayload, resourcePayload } from './payload.js';
-import { RULES, acceptsObject, acceptsResource, canDrop, instantiator, performDrop, ruleFor } from './rules.js';
+import {
+    DragKind,
+    DropZone,
+    componentPayload,
+    filesPayload,
+    objectPayload,
+    resourcePayload
+} from './payload.js';
+import {
+    RULES,
+    acceptsComponent,
+    acceptsObject,
+    acceptsResource,
+    canDrop,
+    instantiator,
+    performDrop,
+    ruleFor
+} from './rules.js';
 
 const PNG = 'data:image/png;base64,AAAA';
 
@@ -456,6 +474,96 @@ test('an Object dropped where no rule looks for one is refused without a sentenc
 
     assert.equal(canDrop(objectPayload(it.player), { zone: DropZone.HIERARCHY }).allowed, false);
     assert.equal(canDrop(objectPayload(it.player), { zone: DropZone.SCENE, x: 0, y: 0 }).allowed, false);
+});
+
+// --- a Component dropped on a node configures it (ADR-0034 §3.2) -------------------------
+//
+// A DROP CONFIGURES; IT NEVER CREATES. What ADR-0027 §11 refuses is a drop that would have
+// to choose Get or Set for the creator; landing on a node they already placed carries no
+// such choice. What ADR-0034 §3.2 allows is naming a Component by its TYPE in a param —
+// project scope, in a `.px` of project scope — which is exactly what is written.
+
+/** The params a `Get Property On` declares, as the canvas hands them to a rule. */
+const GET_ON_PARAMS = registerStandardNodes(new NodeRegistry()).get('property.getOn').params;
+
+const nodeTarget = (params, node = { id: 'n1', type: 'property.getOn', params: {} }) =>
+    ({ zone: DropZone.GRAPH, node, params, label: 'Get Property On' });
+
+test('a node that names a Component type is a target; one that does not is not', () => {
+    // Declared by the node type, never derived from its name.
+    assert.equal(acceptsComponent(nodeTarget(GET_ON_PARAMS)), true);
+    assert.equal(acceptsComponent(nodeTarget(registerStandardNodes(new NodeRegistry())
+        .get('value.number').params)), false, 'a literal names no Component');
+    assert.equal(acceptsComponent(nodeTarget(null)), false, 'a node type nobody declares');
+    assert.equal(acceptsComponent({ zone: DropZone.GRAPH, params: GET_ON_PARAMS }), false,
+        'the canvas beside a node is not a node');
+});
+
+test('a Component dropped on a Get Property On node sets its Component param', () => {
+    const it = linked();
+    const written = [];
+    const target = nodeTarget(GET_ON_PARAMS);
+
+    const verdict = canDrop(componentPayload(it.hero, 'res_link', 'Link'), target);
+    assert.equal(verdict.allowed, true);
+    assert.match(verdict.reason, /Link/, 'the ghost says what it would do');
+
+    const result = performDrop(componentPayload(it.hero, 'res_link', 'Link'), target, {
+        setNodeParam: (node, name, value) => written.push([node.id, name, value])
+    });
+
+    assert.deepEqual(written, [['n1', 'component', 'res_link']]);
+    assert.equal(result.component, 'res_link');
+});
+
+test('what is written is the project-scope TYPE, never the Object it was read off', () => {
+    // ADR-0034 §3.2: a Component is named by its type. The Object the Inspector was showing
+    // is of SCENE scope and must not reach a `.px` — the rule never looks at it.
+    const it = linked();
+    const written = [];
+
+    performDrop(componentPayload(it.hero, 'res_link', 'Link'), nodeTarget(GET_ON_PARAMS), {
+        setNodeParam: (node, name, value) => written.push(value)
+    });
+
+    assert.deepEqual(written, ['res_link']);
+    assert.equal(written[0].includes(it.hero.id), false, 'no scene identity travelled');
+});
+
+test('a Component dropped beside a node, or on one that names none, is refused with its reason', () => {
+    const it = linked();
+    const payload = componentPayload(it.hero, 'res_link', 'Link');
+
+    for (const target of [
+        { zone: DropZone.GRAPH },
+        nodeTarget(registerStandardNodes(new NodeRegistry()).get('value.number').params)
+    ]) {
+        const verdict = canDrop(payload, target);
+        assert.equal(verdict.allowed, false);
+        assert.match(verdict.reason, /Get or Set Property On|cannot be dropped/);
+        assert.equal(performDrop(payload, target, {}), null);
+    }
+});
+
+test('a canvas with no writer takes nothing, whatever the rule would have done', () => {
+    // The rule acts through the window; handed no seam, it performs nothing rather than
+    // reaching for a model of its own.
+    const it = linked();
+
+    assert.equal(
+        performDrop(componentPayload(it.hero, 'res_link', 'Link'), nodeTarget(GET_ON_PARAMS), {}),
+        null
+    );
+});
+
+test('an Object dropped on a node is still refused — a scene identity has no place in a .px', () => {
+    // ADR-0034 §3.7 parks this until a gesture exists that neither guesses nor writes into
+    // two resources at once. Landing on a node changes neither of those.
+    const it = linked();
+    const verdict = canDrop(objectPayload(it.player), nodeTarget(GET_ON_PARAMS));
+
+    assert.equal(verdict.allowed, false);
+    assert.match(verdict.reason, /belongs to one scene/);
 });
 
 // --- the graph canvas answers, and its answer is no (ADR-0034 §3.7) ----------------------

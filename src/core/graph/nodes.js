@@ -73,6 +73,7 @@ export const NODE_CATEGORIES = ['Events', 'Properties', 'Scene', 'Flow', 'Values
  * @property {string} label - What a creator reads
  * @property {string} [category] - Menu group; `Other` when absent
  * @property {string[]} [keywords] - What else a creator might type when looking for it
+ * @property {string} [icon] - Glyph name, honoured by the Editor over its category's
  * @property {Array|Function} [inputs] - Input ports, or (node, context) => ports
  * @property {Array|Function} [outputs] - Output ports, or (node, context) => ports
  * @property {object} [params] - Param descriptors, in the ADR-0007 property shape

@@ -38,6 +38,8 @@ import { sheet } from '../ui/styles.js';
 import { ICON_GRID, icon, iconForNode, iconPaths } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
 import { describeNode, inputFields, paramWrites } from '../inspector/node.js';
+import { DropZone } from '../dnd/payload.js';
+import { canDrop, performDrop } from '../dnd/rules.js';
 import '../ui/field.js';
 import {
     GRID,
@@ -75,14 +77,6 @@ export class GraphWindow extends Element {
             min-height: 0;
             /* The same ground the scene is drawn on: two surfaces, one plane. */
             background: var(--px-grid-background);
-        }
-
-        .axes {
-            fill: none;
-            stroke: var(--px-grid-axis);
-            stroke-width: 1;
-            pointer-events: none;
-            vector-effect: non-scaling-stroke;
         }
 
         :host([hidden]) { display: none; }
@@ -352,7 +346,6 @@ export class GraphWindow extends Element {
     #empty = null;
     #grid = null;
     #gridMinor = null;
-    #axes = null;
     #controls = null;
 
     #view = { x: 0, y: 0, zoom: 1 };
@@ -383,7 +376,17 @@ export class GraphWindow extends Element {
             // ONE SUBSCRIPTION, NOT ONE PER NODE. Every edit of this `.px` — a node moving,
             // a wire appearing, a property being renamed under a Set Property — travels the
             // one pipeline it owns, so one listener is the whole of the reactivity here.
-            this.track(definition.operations.on('operation', () => this.#draw()), 'graph');
+            //
+            // EXCEPT A VALUE TYPED INTO A NODE, WHICH CHANGES NO SHAPE. `node.inputs` feeds
+            // no port list — every dynamic port in the catalogue reads `params`, never
+            // `inputs` — and the field bound to it already follows the model on its own
+            // (`#drawControl`). Redrawing rebuilt the very box being typed into and took the
+            // caret with it, so a creator got one character per click. `params` still
+            // redraws, because a property picked there DOES retype the ports.
+            this.track(definition.operations.on('operation', operation => {
+                if (operation.type === 'SET_PROPERTY' && operation.prop === 'inputs') return;
+                this.#draw();
+            }), 'graph');
         }
 
         if (this.isConnected) {
@@ -396,6 +399,79 @@ export class GraphWindow extends Element {
     /** The `.px` this canvas is showing, or null. */
     get definition() {
         return this.#definition;
+    }
+
+    /**
+     * The drop zone under a point, and the node it names when there is one.
+     *
+     * THE SAME SHAPE THE INSPECTOR ANSWERS IN (`zoneAt`), and for the same reason: the shell
+     * resolves WHERE the pointer is, the rule table says what that MEANS, and neither one
+     * has an opinion about the other (ADR-0026 §6). The canvas is always a zone — that is
+     * what tranche 3 settled, so a drop here can never be met with silence — and the node
+     * is what makes a drop onto one CONFIGURE rather than create.
+     *
+     * The hit test is the canvas's own (`graph/view.js`), so a node is found here by exactly
+     * the arithmetic that selects it under a click.
+     *
+     * @param {number} clientX - Pointer position
+     * @param {number} clientY - Pointer position
+     * @returns {object} A GRAPH target, carrying `node` and its type's params when over one
+     */
+    zoneAt(clientX, clientY) {
+        const zone = { zone: DropZone.GRAPH };
+        if (!this.#definition) return zone;
+
+        const box = this.#svg.getBoundingClientRect();
+        const hit = hitTest(this.#layout(), toGraph(
+            { x: clientX - box.left, y: clientY - box.top }, this.#view));
+        if (hit.kind !== 'node') return zone;
+
+        const definition = this.#definition.registry.get(hit.node.type);
+        return {
+            ...zone,
+            node: hit.node,
+            // WHAT THE RULE READS TO DECIDE, declared by the node type rather than derived
+            // from its name: a param that says it references a Component (ADR-0027 §4).
+            params: definition?.params ?? null,
+            label: definition?.label ?? hit.node.type
+        };
+    }
+
+    /**
+     * Perform a drop that landed on this canvas.
+     *
+     * @param {object} payload - What is being dragged
+     * @param {number} clientX - Pointer position
+     * @param {number} clientY - Pointer position
+     * @returns {object|null} What the rule did, or null when it was refused
+     */
+    drop(payload, clientX, clientY) {
+        return performDrop(payload, this.zoneAt(clientX, clientY), this.#dropContext());
+    }
+
+    /**
+     * Whether a drop would be taken here, and what it would do.
+     * @param {object} payload - What is being dragged
+     * @param {number} clientX - Pointer position
+     * @param {number} clientY - Pointer position
+     * @returns {object} The verdict
+     */
+    accepts(payload, clientX, clientY) {
+        return canDrop(payload, this.zoneAt(clientX, clientY));
+    }
+
+    /**
+     * What a rule acting on this canvas is handed.
+     *
+     * A RULE ACTS THROUGH THE WINDOW, NEVER ON THE MODEL DIRECTLY — the seam every other
+     * zone already uses (`addObject`, `addComponent`, `install`). Here it matters twice
+     * over: `#writeParam` is where a param change drops the siblings it invalidates, under
+     * one batch, so a drop and the picker beside it undo the same way (ADR-0024 §4).
+     */
+    #dropContext() {
+        return {
+            setNodeParam: (node, name, value) => this.#writeParam(node, name, value)
+        };
     }
 
     /** The node the creator has selected, or null. */
@@ -457,11 +533,11 @@ export class GraphWindow extends Element {
             svg('rect', { width: '100%', height: '100%', fill: 'url(#px-graph-grid)' })
         );
 
-        // The origin, drawn once rather than tiled: a graph has a zero and a creator who
-        // has panned a long way needs to be able to find it. Inside the content group, so
-        // it travels with the nodes instead of needing a transform of its own.
-        this.#axes = svg('path', { class: 'axes', d: `M -4000 0 H 4000 M 0 -4000 V 4000` });
-        this.#content.prepend(this.#axes);
+        // NO AXES AT THE ORIGIN. They were drawn once rather than tiled, so a creator who
+        // had panned a long way could find zero — but a graph has no meaningful origin the
+        // way a scene does: nothing is placed relative to it, and two heavy lines crossing
+        // the canvas read as structure where there is none. The grid is uniform, and Frame
+        // all is what finds the work.
 
         this.#svg = svg('svg', {},
             svg('defs', {}, this.#gridMinor, this.#grid), background, this.#content);

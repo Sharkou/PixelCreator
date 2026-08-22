@@ -779,7 +779,9 @@ function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hi
         // rule mentions produces silence, and the rule table now answers for this one with
         // a sentence per kind of drag (dnd/rules.js, ADR-0034 §3.7).
         if (within(graph, clientX, clientY)) {
-            return { target: { zone: DropZone.GRAPH }, element: graph };
+            // The canvas answers which NODE is under the pointer, because a drop onto one
+            // configures it while a drop beside it is refused. Always a zone either way.
+            return { target: graph.zoneAt(clientX, clientY), element: graph };
         }
 
         if (within(hierarchy, clientX, clientY)) {
@@ -814,8 +816,13 @@ function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hi
         element?.classList.toggle('dnd-over', verdict?.allowed === true);
         element?.classList.toggle('dnd-refused', verdict?.allowed === false);
 
+        // THREE STATES, AND THE THIRD ONE HAD NO WAY TO SHOW. `ui/cursors.js` draws carry,
+        // accept and refuse — "nothing under it answers", "this lands here", "not here" —
+        // and `!== true` collapsed the first into the last: a drag over empty space wore the
+        // struck-through circle, which says the creator did something wrong when they have
+        // merely not arrived yet. `=== false` is the verdict; no verdict is not a refusal.
         shell.classList.toggle('dragging-copy', verdict?.allowed === true);
-        shell.classList.toggle('dragging-refused', verdict?.allowed !== true);
+        shell.classList.toggle('dragging-refused', verdict?.allowed === false);
     }
 
     /** Take every mark off, whatever state the gesture ended in. */
@@ -868,6 +875,12 @@ function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hi
         }
         if (found.element === hierarchy) {
             hierarchy.drop(payload);
+            return;
+        }
+        // The canvas performs its own, for the reason the Inspector does: the rule acts
+        // through the window, which owns the batch the change travels under.
+        if (found.element === graph) {
+            graph.drop(payload, clientX, clientY);
             return;
         }
         if (canDrop(payload, found.target).allowed) performDrop(payload, found.target, context());

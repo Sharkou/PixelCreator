@@ -2,7 +2,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PropertyType } from '../properties/types.js';
+import { PropertyType, propertyTypes } from '../properties/types.js';
+import { ComponentRegistry } from '../component.js';
+import { declaredProperties, defineComponent } from '../definition.js';
+import { Object as SceneObject } from '../object.js';
+import { Scene } from '../scene.js';
 import {
     ANY_TYPE,
     NodeRegistry,
@@ -366,4 +370,125 @@ test('a property that is not a reference crosses the boundary untouched', () => 
     assert.equal(storedValueOf(plain, 12), 12);
     assert.equal(storedValueOf(plain, false), false);
     assert.equal(storedValueOf(null, 'anything'), 'anything');
+});
+
+// --- Object → Component → Property → PropertyType ----------------------------------------
+//
+// THE ONE RESOLUTION PATH, ASSERTED END TO END. It is not a new API: the declaration comes
+// from the registry and the value from the instance (ADR-0034 §3.3), and `portTypeOf()` is
+// the single translation from a declared type to the type a port carries (§3.5). These
+// pin that chain so a second one cannot quietly appear beside it.
+
+test('a declared property resolves to its type through the registry, not through the instance', () => {
+    const registry = new ComponentRegistry();
+    const Health = defineComponent({
+        type: 'res_health',
+        label: 'Health',
+        properties: {
+            hp: { id: 'p_hp', type: PropertyType.INT, default: 3 },
+            mood: { id: 'p_mood', type: PropertyType.ENUM, values: ['calm', 'angry'], default: 'calm' },
+            tags: { id: 'p_tags', type: PropertyType.ARRAY, default: [] },
+            target: { id: 'p_target', type: PropertyType.OBJECTREF, default: null }
+        }
+    });
+    registry.register(Health);
+
+    const scene = new Scene('Main', { registry });
+    const object = scene.add(new SceneObject('Enemy'));
+    object.addComponent(new Health());
+
+    // Object → Component: the TYPE, resolved where every type is resolved.
+    const Component = scene.registry.get(object.componentTypes()[0]);
+    assert.equal(Component, Health);
+
+    // Component → Property → type, by identity rather than by name.
+    const byId = new globalThis.Map(declaredProperties(Component).map(entry => [entry.id, entry]));
+    assert.equal(byId.get('p_hp').type, PropertyType.INT);
+    assert.equal(byId.get('p_mood').type, PropertyType.ENUM);
+    assert.equal(byId.get('p_tags').type, PropertyType.ARRAY);
+    assert.equal(byId.get('p_target').type, PropertyType.OBJECTREF);
+
+    // A Choice keeps what it may hold, so nothing downstream has to guess it.
+    assert.deepEqual(byId.get('p_mood').values, ['calm', 'angry']);
+});
+
+test('the type a port carries is the declared type, translated in exactly one place', () => {
+    // ONE TABLE, NOT TWO. Every declared type reaches a port through `portTypeOf()`, and
+    // `objectref` is the single case where the two names differ — an identity where it is
+    // stored, a handle where it travels (ADR-0034 §3.5, ADR-0036).
+    for (const type of propertyTypes()) {
+        const carried = portTypeOf({ type });
+
+        if (type === PropertyType.OBJECTREF) {
+            assert.equal(carried, OBJECT_TYPE, 'objectref is carried as an object handle');
+            continue;
+        }
+        assert.equal(carried, type, `${type} is carried under another name`);
+    }
+
+    // Nothing declared at all is honestly unconstrained rather than wrongly typed.
+    assert.equal(portTypeOf(null), ANY_TYPE);
+    assert.equal(portTypeOf({}), ANY_TYPE);
+});
+
+test('Get Property On and Set Property On take the shape of the property they name', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const components = [{
+        type: 'res_health',
+        label: 'Health',
+        properties: [
+            { id: 'p_hp', name: 'hp', type: PropertyType.INT, default: 3 },
+            { id: 'p_mood', name: 'mood', type: PropertyType.ENUM, values: ['calm'], default: 'calm' },
+            { id: 'p_tags', name: 'tags', type: PropertyType.ARRAY, default: [] },
+            { id: 'p_target', name: 'target', type: PropertyType.OBJECTREF, default: null }
+        ]
+    }];
+
+    const shapes = {
+        p_hp: PropertyType.INT,
+        p_mood: PropertyType.ENUM,
+        p_tags: PropertyType.ARRAY,
+        p_target: OBJECT_TYPE
+    };
+
+    for (const [property, expected] of globalThis.Object.entries(shapes)) {
+        const params = { component: 'res_health', property };
+
+        const read = portsOf(registry.get('property.getOn'), { id: 'g', type: 'property.getOn', params },
+            { components }).outputs.find(port => port.id === 'value');
+        const write = portsOf(registry.get('property.setOn'), { id: 's', type: 'property.setOn', params },
+            { components }).inputs.find(port => port.id === 'value');
+
+        assert.equal(read.type, expected, `Get Property On mistypes ${property}`);
+        assert.equal(write.type, expected, `Set Property On mistypes ${property}`);
+        // READ AND WRITE AGREE, which is what lets a creator wire one into the other.
+        assert.equal(read.type, write.type);
+    }
+});
+
+test('a property nobody has named yet is honestly untyped, and says so on both nodes', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const bare = { id: 'n', type: 'property.getOn', params: {} };
+
+    assert.equal(portsOf(registry.get('property.getOn'), bare, { components: [] })
+        .outputs.find(port => port.id === 'value').type, ANY_TYPE);
+    assert.equal(portsOf(registry.get('property.setOn'), { ...bare, type: 'property.setOn' }, { components: [] })
+        .inputs.find(port => port.id === 'value').type, ANY_TYPE);
+});
+
+test('a literal node is drawn as the type it holds, like the property that holds one', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    for (const [type, expected] of [
+        ['value.number', PropertyType.NUMBER],
+        ['value.boolean', PropertyType.BOOLEAN],
+        ['value.string', PropertyType.STRING]
+    ]) {
+        const definition = registry.get(type);
+        const produced = portsOf(definition, { id: 'n', type, params: {} }).outputs[0];
+
+        assert.equal(produced.type, expected, `${type} produces another shape`);
+        // The glyph is DECLARED, so the Editor draws the same one the property badge does.
+        assert.ok(definition.icon, `${type} falls back to its category's glyph`);
+    }
 });

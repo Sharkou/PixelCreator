@@ -42,7 +42,7 @@ import { describeResource } from '../inspector/resource.js';
 import { PROPERTY_TYPE_LABELS, describeDefinition } from '../inspector/definition.js';
 import { ResourceKind, baseNameOf, extensionOf, hasPayload, withExtension } from '../../project/mod.js';
 import { pickFile, readAsDataUrl } from '../ui/file.js';
-import { DropZone } from '../dnd/payload.js';
+import { DropZone, componentPayload } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
 import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
 import { describeType, groupTypes } from '../registry.js';
@@ -73,6 +73,9 @@ function readable(project, resource) {
 
 /** How far a pointer travels before a press on a section header becomes a reorder. */
 const DRAG_THRESHOLD = 4;
+
+/** Where a gesture the platform cancelled ended: outside every window, so nothing takes it. */
+const NOWHERE = { clientX: -1, clientY: -1 };
 
 /** Prefix letters for a paired row, by the property the pair starts on. */
 const PAIR_PREFIXES = {
@@ -1455,7 +1458,13 @@ export class Inspector extends Element {
             // added or removed in between must not leave this holding a stale list.
             siblings: () => this.#orderedSections(),
             rank: () => object.componentTypes().indexOf(type),
-            commit: rank => moveComponent(object, type, rank)
+            commit: rank => moveComponent(object, type, rank),
+            // AND IT MAY LEAVE THE PANEL. Inside, the gesture ranks a component among its
+            // siblings; carried out, it is a Component type the rest of the Editor may
+            // name — which is the one thing a graph is allowed to store about one
+            // (ADR-0034 §3.2). A list without this stays a reorder and nothing else, which
+            // is what the declared properties below still are.
+            payload: () => componentPayload(object, type, this.#titleOf(type))
         });
     }
 
@@ -1531,18 +1540,81 @@ export class Inspector extends Element {
         }
 
         event.preventDefault();
-        this.#preview(event.clientY);
+
+        // THE GESTURE BECOMES THE EDITOR'S WHEN IT LEAVES THIS PANEL, and not before — the
+        // rule the Hierarchy already lives by (windows/hierarchy.js). Inside, the sliding
+        // rows are the whole affordance; announcing from the first pixel would make the
+        // shell mark this very panel as refusing a drop it is not being offered.
+        // A gesture with no payload never leaves: a declared property ranks and nothing else.
+        if (!drag.list.payload) {
+            this.#preview(event.clientY);
+            return;
+        }
+
+        const here = this.#within(event.clientX, event.clientY);
+        // OVER THIS PANEL, THE SLIDING ROWS; OUTSIDE IT, NONE. A rank previewed while the
+        // pointer is over the canvas would promise a reorder that releasing there will not
+        // perform.
+        if (here) {
+            this.#preview(event.clientY);
+        } else {
+            this.#clearPreview(drag);
+            // The rank the preview was showing goes with it. Without this, coming back to
+            // the same rank finds `shown` unchanged and leaves every row flat.
+            drag.shown = null;
+        }
+
+        if (here) {
+            if (drag.announced) {
+                drag.announced = false;
+                this.#announceDrag('px-drag-end', drag, NOWHERE);
+            }
+            return;
+        }
+
+        if (!drag.announced) {
+            drag.announced = true;
+            this.#announceDrag('px-drag-start', drag, event);
+            return;
+        }
+        this.#announceDrag('px-drag-move', null, event);
+    }
+
+    /**
+     * Tell the shell where a gesture that has left this panel is.
+     *
+     * @param {string} name - `px-drag-start`, `px-drag-move` or `px-drag-end`
+     * @param {object|null} drag - The gesture, when its payload is needed
+     * @param {{clientX: number, clientY: number}} at - Where the pointer is
+     */
+    #announceDrag(name, drag, at) {
+        this.dispatchEvent(new CustomEvent(name, {
+            detail: {
+                ...(drag ? { payload: drag.list.payload() } : {}),
+                clientX: at.clientX,
+                clientY: at.clientY
+            },
+            bubbles: true,
+            composed: true
+        }));
     }
 
     #dragDrop(event) {
         const drag = this.#drag;
         if (!drag || event.pointerId !== drag.pointerId) return;
 
-        const rank = drag.started ? this.#rankUnder(event.clientY) : null;
+        const here = !drag.list.payload || this.#within(event.clientX, event.clientY);
+        const rank = drag.started && here ? this.#rankUnder(event.clientY) : null;
         const list = drag.list;
         const current = list.rank();
         this.#dragged = drag.started;
+
+        // Outside, the shell is holding this gesture and has to be told where it landed;
+        // inside, it was never told about it. `#cancelDrag()` reports neither.
+        const announced = drag.announced;
+        drag.announced = false;
         this.#cancelDrag();
+        if (announced) this.#announceDrag('px-drag-end', { list }, event);
 
         // NO insertionIndex() HERE, and that is the subtle part. That helper converts a
         // rank counted in the list WITH the carried item still in it. The preview counts
@@ -1563,6 +1635,10 @@ export class Inspector extends Element {
             drag.element.classList.remove('dragging');
         }
         this.#clearPreview(drag);
+
+        // A GESTURE THE PLATFORM TOOK AWAY STILL HAS TO END, or the shell keeps a ghost
+        // following a drag nobody is making. It ends NOWHERE, at a point no window holds.
+        if (drag.announced) this.#announceDrag('px-drag-end', drag, NOWHERE);
     }
 
     /** The component sections that take part in a reorder, in model order. */
