@@ -14,8 +14,10 @@ import {
     Transform,
     ComponentRegistry,
     defineComponent,
+    deserializeScene,
     observe,
-    registerStandardNodes
+    registerStandardNodes,
+    serializeScene
 } from '../../core/mod.js';
 import { Behaviors } from './behaviors.js';
 import { createGraphInterpreter, interpretGraph } from './interpreter.js';
@@ -953,4 +955,329 @@ test('a payload written by hand cannot smuggle an Object into a port either', ()
         .update(object, { time: 0, deltaTime: 0.016, scene });
 
     assert.deepEqual(written, [false], 'the identity in the payload never became an Object');
+});
+
+// --- the objectref boundary (ADR-0034 §3.5, ADR-0036) -----------------------------------
+//
+// A property declared `objectref` is an IDENTITY where it is stored and a HANDLE where it
+// travels. `portTypeOf()` has always translated the type; these cover the translation of
+// the VALUE, in both directions, through a running graph.
+
+/**
+ * A scene where a `.px` reads and writes references — its own, and another Object's.
+ *
+ * `Link` carries nothing but a reference, declared exactly as §3.5 declares one, so both
+ * `Get Property` (the graph's own Component) and `Get Property On` (someone else's) can be
+ * aimed at the same shape of value.
+ *
+ * @param {Function} build - (sheet, parts) => [node, port] to observe, or nothing
+ * @param {object} [options] - `{ own, linked }` — what each reference starts at, given the
+ *   scene's objects; `remove` names an object to delete before the step
+ */
+function referencing(build, { own, linked, remove = null } = {}) {
+    const catalogue = new ComponentRegistry();
+    const Link = defineComponent({
+        type: 'res_link',
+        label: 'Link',
+        properties: { target: { id: 'p_target', type: PropertyType.OBJECTREF, default: null } }
+    });
+    catalogue.register(Link);
+
+    const scene = new Scene('Main', { registry: catalogue });
+    const root = scene.add(new SceneObject('Root'));
+    const player = scene.add(new SceneObject('Player'));
+    root.addChild(player);
+    const enemy = scene.add(new SceneObject('Enemy', { tag: 'enemy' }));
+    enemy.addComponent(new Link());
+
+    const written = [];
+    const sheet = px();
+    const mine = sheet.property({ name: 'target', type: PropertyType.OBJECTREF });
+    const update = sheet.node('event.update');
+
+    const observed = build(sheet, { update, scene, root, player, enemy, mine });
+    if (observed) {
+        const log = sheet.node('debug.log');
+        sheet.wire([update, 'out'], [log, 'in']);
+        sheet.wire(observed, [log, 'value']);
+    }
+
+    const payload = sheet.model.serialize();
+    catalogue.register(defineComponent(payload));
+    const holder = scene.add(new SceneObject('Hero'));
+    holder.addComponent(new (catalogue.get(payload.type))());
+    const component = holder.components[payload.type];
+
+    if (own !== undefined) component.target = own({ root, player, enemy, holder });
+    if (linked !== undefined) enemy.getComponent('res_link').target = linked({ root, player, enemy, holder });
+    if (remove) scene.remove(remove({ root, player, enemy, holder }));
+
+    const behavior = interpretGraph(payload.graph, { registry, log: value => written.push(value) })(component);
+
+    return {
+        scene,
+        holder,
+        player,
+        enemy,
+        component,
+        catalogue,
+        payload,
+        written,
+        link: () => enemy.getComponent('res_link') ?? null,
+        step: () => behavior.update(holder, { time: 0, deltaTime: 0.016, scene })
+    };
+}
+
+/** Reads the graph's OWN reference, and reports whether an Object arrived. */
+const ownIsValid = (sheet, { mine }) => {
+    const get = sheet.node('property.get', { property: mine.id });
+    const check = sheet.node('object.isValid');
+    sheet.wire([get, 'value'], [check, 'object']);
+    return [check, 'result'];
+};
+
+/** Reads the graph's OWN reference, and reports the parent of whatever it points at. */
+const ownParent = (sheet, { mine }) => {
+    const get = sheet.node('property.get', { property: mine.id });
+    const parent = sheet.node('scene.parent');
+    sheet.wire([get, 'value'], [parent, 'object']);
+    return [parent, 'parent'];
+};
+
+/** Reads ANOTHER Object's reference, found by tag, and reports what arrived. */
+const foreignRead = observer => (sheet, parts) => {
+    const find = sheet.node('scene.findByTag');
+    sheet.model.graph.setInput(find.id, 'tag', 'enemy');
+    const get = sheet.node('property.getOn', { component: 'res_link', property: 'p_target' });
+    sheet.wire([find, 'object'], [get, 'object']);
+
+    const node = sheet.node(observer);
+    sheet.wire([get, 'value'], [node, 'object']);
+    return [node, observer === 'scene.parent' ? 'parent' : 'result'];
+};
+
+test('a live reference of this Component is read as a handle, not as an identity', () => {
+    const valid = referencing(ownIsValid, { own: ({ player }) => player.id });
+    valid.step();
+    assert.equal(valid.written[0], true, 'an Object arrived');
+
+    // THE TEST THAT SAYS IT IS REALLY A HANDLE. `Is Valid` only proves the value is not
+    // null — an ObjectId string would have passed it. Reading the hierarchy through it
+    // cannot be faked by a string.
+    const parent = referencing(ownParent, { own: ({ player }) => player.id });
+    parent.step();
+    assert.equal(parent.written[0], parent.scene.get(parent.player.parent.id));
+    assert.equal(parent.written[0].name, 'Root');
+});
+
+test('a live reference of ANOTHER Object\'s Component is read as a handle too', () => {
+    const valid = referencing(foreignRead('object.isValid'), { linked: ({ player }) => player.id });
+    valid.step();
+    assert.equal(valid.written[0], true);
+
+    const parent = referencing(foreignRead('scene.parent'), { linked: ({ player }) => player.id });
+    parent.step();
+    assert.equal(parent.written[0]?.name, 'Root', 'Get Property On crosses the same boundary');
+});
+
+test('a reference whose target was deleted is nothing, and never the old identity', () => {
+    // THE DEFECT THIS CLOSES. The stored ObjectId survives the deletion on purpose (§3.4);
+    // what must not survive is its passage onto a port typed `object`, or `Is Valid` — the
+    // one thing a creator has to defend themselves with — answers `true` on a dead target.
+    const valid = referencing(ownIsValid, {
+        own: ({ player }) => player.id,
+        remove: ({ player }) => player
+    });
+    valid.step();
+
+    assert.equal(valid.written[0], false, 'nothing arrived');
+    assert.equal(typeof valid.component.target, 'string', 'and the stored identity was kept');
+
+    const parent = referencing(ownParent, {
+        own: ({ player }) => player.id,
+        remove: ({ player }) => player
+    });
+    parent.step();
+    assert.equal(parent.written[0], null, 'a deleted target has no parent');
+
+    const foreign = referencing(foreignRead('object.isValid'), {
+        linked: ({ player }) => player.id,
+        remove: ({ player }) => player
+    });
+    foreign.step();
+    assert.equal(foreign.written[0], false, 'and the same holds through Get Property On');
+});
+
+test('an empty reference is nothing', () => {
+    const valid = referencing(ownIsValid, { own: () => null });
+    valid.step();
+    assert.equal(valid.written[0], false);
+
+    const parent = referencing(ownParent, { own: () => null });
+    parent.step();
+    assert.equal(parent.written[0], null);
+});
+
+/** Writes whatever `Self` produces into the graph's own reference. */
+const writeSelf = (sheet, { update, mine }) => {
+    const self = sheet.node('scene.self');
+    const set = sheet.node('property.set', { property: mine.id });
+    sheet.wire([update, 'out'], [set, 'in']);
+    sheet.wire([self, 'object'], [set, 'value']);
+    return null;
+};
+
+/** Writes whatever `Self` produces into ANOTHER Object's reference. */
+const writeSelfOn = (sheet, { update }) => {
+    const self = sheet.node('scene.self');
+    const find = sheet.node('scene.findByTag');
+    sheet.model.graph.setInput(find.id, 'tag', 'enemy');
+    const set = sheet.node('property.setOn', { component: 'res_link', property: 'p_target' });
+    sheet.wire([update, 'out'], [set, 'in']);
+    sheet.wire([find, 'object'], [set, 'object']);
+    sheet.wire([self, 'object'], [set, 'value']);
+    return null;
+};
+
+test('writing a handle into a reference stores the identity, never the handle', () => {
+    const it = referencing(writeSelf);
+    it.step();
+
+    assert.equal(it.component.target, it.holder.id);
+    assert.equal(typeof it.component.target, 'string', 'a handle is never a stored value');
+});
+
+test('writing a handle onto ANOTHER Object\'s reference stores the identity too', () => {
+    const it = referencing(writeSelfOn);
+    it.step();
+
+    assert.equal(it.link().target, it.holder.id);
+    assert.equal(typeof it.link().target, 'string');
+});
+
+test('a scene carrying a written reference serializes it as an identity', () => {
+    // INVARIANT 3: a handle is never persisted, nor serialized. Before the boundary was
+    // closed this wrote the whole Object record — name, tag, layer, owner — into the scene.
+    const it = referencing(writeSelf);
+    it.step();
+
+    const payload = serializeScene(it.scene);
+    const hero = payload.objects.find(entry => entry.name === 'Hero');
+    const values = hero.components.find(entry => entry.type === it.payload.type).values;
+
+    assert.equal(values.target, it.holder.id);
+    assert.equal(typeof values.target, 'string');
+
+    // Stated as the invariant rather than as a shape: NO component value anywhere in the
+    // payload is a record. A handle serializes as one, so this catches the defect wherever
+    // it could reappear rather than only where it appeared.
+    for (const entry of payload.objects) {
+        for (const component of entry.components) {
+            for (const [key, value] of globalThis.Object.entries(component.values)) {
+                assert.ok(value === null || typeof value !== 'object',
+                    `${entry.name}.${component.type}.${key} holds a record rather than a value`);
+            }
+        }
+    }
+});
+
+test('a reference survives the round trip and is read back as a handle', () => {
+    const it = referencing(writeSelf);
+    it.step();
+
+    const restored = deserializeScene(serializeScene(it.scene), { registry: it.catalogue });
+    const hero = restored.objects().find(object => object.name === 'Hero');
+
+    assert.equal(hero.components[it.payload.type].target, it.holder.id, 'the identity came back');
+
+    // And it resolves, in the restored scene, to the Object it names — which is the whole
+    // point of storing an identity rather than a handle.
+    const behavior = interpretGraph(it.payload.graph, { registry })(hero.components[it.payload.type]);
+    assert.doesNotThrow(() => behavior.update(hero, { time: 0, deltaTime: 0.016, scene: restored }));
+    assert.equal(restored.get(hero.components[it.payload.type].target), hero);
+});
+
+test('a reference to a deleted Object survives serialization and still resolves to nothing', () => {
+    const it = referencing(ownIsValid, { own: ({ player }) => player.id });
+    it.scene.remove(it.player);
+
+    const restored = deserializeScene(serializeScene(it.scene), { registry: it.catalogue });
+    const hero = restored.objects().find(object => object.name === 'Hero');
+    const component = hero.components[it.payload.type];
+
+    assert.equal(component.target, it.player.id, 'the value is kept, as §3.4 requires');
+    assert.equal(restored.get(component.target), undefined, 'and it resolves to nothing');
+
+    const written = [];
+    interpretGraph(it.payload.graph, { registry, log: value => written.push(value) })(component)
+        .update(hero, { time: 0, deltaTime: 0.016, scene: restored });
+
+    assert.deepEqual(written, [false], 'a dead reference reads as nothing after a reload too');
+});
+
+test('closing the boundary opened no path from a graph value to an Object', () => {
+    // ADR-0034 §3.6 stands untouched: what is resolved is an instance value whose type is
+    // DECLARED, and a value forged into `node.inputs` is still refused without inspection.
+    // A record shaped like a stored reference is the sharpest case, because it is exactly
+    // what the read path now accepts — from the other side of the boundary.
+    assert.equal(reachesPort(graph => graph.setInput(graph.nodes()[1].id, 'object', 'obj_7f3a91c2')), false);
+
+    // THE TWO PROVENANCES, ON ONE GRAPH, THROUGH ONE NODE TYPE. The forged record sits on an
+    // UNCONNECTED port, which is the only place `defaultOf()` is consulted and therefore the
+    // only place the refusal can be observed — a wired port never reaches it.
+    const it = referencing((sheet, { update, mine }) => {
+        const get = sheet.node('property.get', { property: mine.id });
+        const declared = sheet.node('object.isValid');
+        sheet.wire([get, 'value'], [declared, 'object']);
+
+        const forged = sheet.node('object.isValid');
+        sheet.model.graph.setInput(forged.id, 'object', { id: 'obj_fake', name: 'Fake' });
+
+        const first = sheet.node('debug.log');
+        const second = sheet.node('debug.log');
+        sheet.wire([update, 'out'], [first, 'in']);
+        sheet.wire([first, 'out'], [second, 'in']);
+        sheet.wire([declared, 'result'], [first, 'value']);
+        sheet.wire([forged, 'result'], [second, 'value']);
+        return null;
+    }, { own: ({ player }) => player.id });
+
+    it.step();
+    assert.deepEqual(it.written, [true, false],
+        'the declared reference resolved, and the forged record did not');
+});
+
+test('a property that is not a reference is unchanged by the boundary', () => {
+    // Every other shape of value crosses the same four nodes and must be handed over as it
+    // is — including the falsy ones, which a nullish translation would have replaced.
+    const sheet = px();
+    const count = sheet.property({ name: 'count', type: PropertyType.NUMBER, default: 0 });
+    const flag = sheet.property({ name: 'flag', type: PropertyType.BOOLEAN, default: false });
+    const label = sheet.property({ name: 'label', type: PropertyType.STRING, default: '' });
+
+    const update = sheet.node('event.update');
+    const log = sheet.node('debug.log');
+    const get = sheet.node('property.get', { property: count.id });
+    const set = sheet.node('property.set', { property: flag.id });
+    const text = sheet.node('property.set', { property: label.id });
+    const literal = sheet.node('value.string', { value: 'named' });
+
+    sheet.wire([update, 'out'], [set, 'in']);
+    sheet.wire([set, 'out'], [text, 'in']);
+    sheet.wire([text, 'out'], [log, 'in']);
+    sheet.wire([get, 'value'], [log, 'value']);
+    sheet.wire([literal, 'value'], [text, 'value']);
+    sheet.model.graph.setInput(set.id, 'value', false);
+
+    const written = [];
+    const { object, component, behavior } = behaviourFor(sheet.model, { log: value => written.push(value) });
+    component.count = 0;
+    // Started at the opposite value, so `false` landing here proves the write happened AND
+    // that it was not turned into a null on the way.
+    component.flag = true;
+    behavior.update(object, { time: 0, deltaTime: 0.016, scene: new Scene('Main') });
+
+    assert.deepEqual(written, [0], 'a zero is a value, not an absence');
+    assert.equal(component.flag, false, 'and so is a false');
+    assert.equal(component.label, 'named');
 });

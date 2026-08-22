@@ -180,6 +180,65 @@ function requireTargetProperty(io) {
     return property;
 }
 
+/**
+ * The value a stored property becomes on the port that carries it.
+ *
+ * THE TWIN OF `portTypeOf()`, AND IT HAD BEEN MISSING. That one translates the TYPE at the
+ * boundary ADR-0034 §3.5 draws — `objectref` is an identity when it is stored and a HANDLE
+ * when it travels — and every port that carries a property already goes through it. The
+ * translation of the VALUE was never written, so a port typed `object` was handed the raw
+ * `ObjectId`: `Is Valid` answered `true` on a reference whose target had been deleted, and
+ * `Parent` read `"obj_7f3a".parent` and answered nothing. The type said handle and the
+ * value was a string.
+ *
+ * IT IS NOT THE STRING RESOLUTION §3.6 REFUSES, and the difference is the provenance rather
+ * than the operation. §3.6 forbids a node turning a GRAPH VALUE into an Object, because a
+ * `.px` is of project scope and a forged record in `node.inputs` is indistinguishable from a
+ * handle to a node that duck-types — which is why `defaultOf()` refuses that path outright
+ * and inspects nothing. What is resolved here is an INSTANCE VALUE whose type is DECLARED
+ * `objectref` in the Component's own schema: the declaration is the authorisation, it lives
+ * in the scene where the identity is already legal, and nothing in a graph payload can forge
+ * it. The two rules are the same rule seen from each side of the same boundary.
+ *
+ * ANYTHING THAT DOES NOT RESOLVE BECOMES `null`, never itself. A deleted target, an empty
+ * reference and a value of the wrong shape all answer nothing — which is what a port typed
+ * `object` promises, and what lets `Is Valid` mean something.
+ *
+ * @param {object|null} property - The declared property descriptor
+ * @param {any} value - What the Component holds
+ * @param {object} [scene] - The scene the reference is resolved in
+ * @returns {any} The value the port carries
+ */
+export function portValueOf(property, value, scene) {
+    if (property?.type !== PropertyType.OBJECTREF) return value;
+    // `Map.get` on anything that is not a stored identity answers nothing, which is the
+    // honest reading of a reference that points at no object of this scene.
+    return scene?.get?.(value) ?? null;
+}
+
+/**
+ * The value a port's value becomes when it is stored in a property.
+ *
+ * THE IDENTITY IS WHAT IS STORED (ADR-0034 §3.5), and without this the handle itself was:
+ * `Self` wired into a `Set Property` naming an `objectref` property wrote the reactive Proxy
+ * into an instance value, and `serializeScene()` then wrote the whole Object record — name,
+ * tag, layer, owner — into the scene payload. That is invariant 3 ("un handle n'est jamais
+ * persisté, ni sérialisé") broken by a wire the type system allowed, because the port and
+ * the property agreed on the type and disagreed on the shape.
+ *
+ * A VALUE THAT IS NOT A HANDLE STORES NOTHING. `value?.id` reads the identity off an Object
+ * and answers `undefined` for a string — so nothing here can promote an arbitrary string
+ * into a stored reference, which is the other half of §3.6.
+ *
+ * @param {object|null} property - The declared property descriptor
+ * @param {any} value - What arrived on the port
+ * @returns {any} The value to store
+ */
+export function storedValueOf(property, value) {
+    if (property?.type !== PropertyType.OBJECTREF) return value;
+    return value?.id ?? null;
+}
+
 /** The Component on the Object a node was handed, or null when there is neither. */
 function targetComponent(io) {
     const target = io.input('object');
@@ -255,7 +314,13 @@ export const STANDARD_NODES = [
             const property = referencedProperty(node, context);
             return [data('value', portTypeOf(property), property?.name ?? 'Value')];
         },
-        evaluate: io => ({ value: io.component?.[requireProperty(io).name] })
+        // THE VALUE CROSSES THE SAME BOUNDARY ITS TYPE DOES. The port was typed by
+        // `portTypeOf()`, so an `objectref` property leaves this node as a HANDLE and not as
+        // the identity it is stored as (ADR-0034 §3.5).
+        evaluate: io => {
+            const property = requireProperty(io);
+            return { value: portValueOf(property, io.component?.[property.name], io.ctx?.scene) };
+        }
     },
 
     {
@@ -276,7 +341,10 @@ export const STANDARD_NODES = [
             const property = requireProperty(io);
             // A PLAIN WRITE, deliberately: this is a simulation output, not an authored
             // intent, so it produces a Change and no Operation (ADR-0003, CONVENTIONS.md).
-            if (io.component) io.component[property.name] = io.input('value');
+            // What is written is the IDENTITY, never the handle that arrived (§3.5).
+            if (io.component) {
+                io.component[property.name] = storedValueOf(property, io.input('value'));
+            }
             return 'out';
         }
     },
@@ -385,8 +453,13 @@ export const STANDARD_NODES = [
             // A TARGET THAT IS GONE IS A STATE OF THE SCENE, NOT A FAULT (ADR-0034 §3.4).
             // The node answers with what a fresh instance of that Component would hold, so a
             // graph reading the health of an enemy that just died reads its declared value
-            // rather than failing every frame for the rest of the game.
-            return { value: component ? component[property.name] : defaultForProperty(property) };
+            // rather than failing every frame for the rest of the game. That default is
+            // already `null` for an `objectref`, which is what a handle's absence looks like.
+            return {
+                value: component
+                    ? portValueOf(property, component[property.name], io.ctx?.scene)
+                    : defaultForProperty(property)
+            };
         }
     },
 
@@ -412,8 +485,9 @@ export const STANDARD_NODES = [
             // A PLAIN WRITE, exactly as `Set Property` does: a behaviour running inside
             // `update()` is a simulation output and not an authored intent, so it produces a
             // Change and no Operation (ADR-0003, ADR-0027 §6). Writing on a target that is
-            // gone does nothing, and says nothing — §3.4 again.
-            if (component) component[property.name] = io.input('value');
+            // gone does nothing, and says nothing — §3.4 again. And what is written is the
+            // IDENTITY, never the handle that arrived (§3.5).
+            if (component) component[property.name] = storedValueOf(property, io.input('value'));
             return 'out';
         }
     },

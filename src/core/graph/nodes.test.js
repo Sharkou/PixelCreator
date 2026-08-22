@@ -17,7 +17,13 @@ import {
     portsOf,
     typesCompatible
 } from './nodes.js';
-import { STANDARD_NODES, referencedProperty, registerStandardNodes } from './standard.js';
+import {
+    STANDARD_NODES,
+    portValueOf,
+    referencedProperty,
+    registerStandardNodes,
+    storedValueOf
+} from './standard.js';
 
 // --- the registry ---------------------------------------------------------------------------
 
@@ -315,4 +321,49 @@ test('a port may say what an empty control means, and says nothing by default', 
 
     assert.equal(tag.id, 'tag');
     assert.ok(tag.placeholder, 'the one port whose empty state means something says so');
+});
+
+// --- the objectref boundary, as a pair of pure translations (ADR-0034 §3.5) --------------
+
+const reference = { id: 'p_t', name: 'target', type: PropertyType.OBJECTREF, default: null };
+const plain = { id: 'p_n', name: 'speed', type: PropertyType.NUMBER, default: 0 };
+
+test('a stored reference becomes a handle on the port that carries it', () => {
+    const player = { id: 'obj_1', name: 'Player' };
+    const scene = { get: id => (id === 'obj_1' ? player : undefined) };
+
+    assert.equal(portValueOf(reference, 'obj_1', scene), player, 'the identity resolved to the Object');
+});
+
+test('a reference that resolves to nothing becomes null, never the identity', () => {
+    const scene = { get: () => undefined };
+
+    // The three shapes of absence, and the one that matters: a port typed `object` must
+    // never hand an ObjectId downstream, or `Is Valid` answers true on a dead reference.
+    assert.equal(portValueOf(reference, 'obj_gone', scene), null, 'the target is gone');
+    assert.equal(portValueOf(reference, null, scene), null, 'the reference is empty');
+    assert.equal(portValueOf(reference, 'obj_1', undefined), null, 'there is no scene to resolve in');
+});
+
+test('a handle becomes the identity it is stored as, and a handle is never stored', () => {
+    assert.equal(storedValueOf(reference, { id: 'obj_1', name: 'Player' }), 'obj_1');
+    assert.equal(storedValueOf(reference, null), null);
+});
+
+test('nothing promotes an arbitrary value into a stored reference', () => {
+    // The other half of §3.6: reading an identity off an Object is not the same as taking
+    // a string at its word, and only the first one is done here.
+    assert.equal(storedValueOf(reference, 'obj_7f3a91c2'), null);
+    assert.equal(storedValueOf(reference, 42), null);
+});
+
+test('a property that is not a reference crosses the boundary untouched', () => {
+    const scene = { get: () => { throw new Error('a plain value must not be resolved'); } };
+
+    assert.equal(portValueOf(plain, 12, scene), 12);
+    assert.equal(portValueOf(plain, 0, scene), 0);
+    assert.equal(portValueOf(null, 'anything', scene), 'anything');
+    assert.equal(storedValueOf(plain, 12), 12);
+    assert.equal(storedValueOf(plain, false), false);
+    assert.equal(storedValueOf(null, 'anything'), 'anything');
 });
