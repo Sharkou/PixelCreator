@@ -52,11 +52,23 @@ export function resourcePayload(resource) {
 
 /**
  * A drag of an object out of the Hierarchy.
+ *
+ * IT CARRIES THE IDENTITY, NOT THE OBJECT, and that is a difference from
+ * `resourcePayload()` rather than an inconsistency with it. A resource's rules decide from
+ * what the entry IS — its kind, its mime — so the entry has to travel. An Object is decided
+ * on by the PROPERTY it is dropped on, so the only thing a rule needs is the `ObjectId` it
+ * will store; carrying nothing else is what makes it impossible for a rule to write a live
+ * Object into a scene value, which is the invariant ADR-0034 §3.5 states and ADR-0036
+ * closed at the other end of the same boundary.
+ *
+ * The name travels beside it because the ghost has to say what is being carried. It is a
+ * label and never an identity: nothing resolves it and nothing stores it (ADR-0010).
+ *
  * @param {object} object - The scene object
  * @returns {object} The payload
  */
 export function objectPayload(object) {
-    return { kind: DragKind.OBJECT, object };
+    return { kind: DragKind.OBJECT, id: object?.id ?? null, name: object?.name ?? '' };
 }
 
 /**
@@ -95,7 +107,7 @@ export function describePayload(payload) {
             // carrying an image should see an image (ADR-0026 §11).
             return { label: payload.resource?.name || 'Resource', icon: iconForResource(payload.resource) };
         case DragKind.OBJECT:
-            return { label: payload.object?.name || 'Object', icon: 'object' };
+            return { label: payload.name || 'Object', icon: 'object' };
         case DragKind.COMPONENT:
             return { label: payload.type || 'Component', icon: 'component' };
         default:

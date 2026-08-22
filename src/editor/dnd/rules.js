@@ -163,12 +163,15 @@ export const RULES = [
         // scope down, and it writes through the same `setProperty()`, so it is one
         // Operation and one undo like every other property change (ADR-0024).
         //
-        // WHAT IS STORED IS THE IDENTITY. The payload carries the Object because a drag is
-        // transient UI state — the ghost reads its name, and nothing serializes a payload —
-        // but what reaches the model is `object.id`, which is what ADR-0036 fixed the graph
-        // boundary to agree with.
+        // WHAT IS STORED IS THE IDENTITY, and it is the only thing the payload carries: a
+        // rule here has no Object to write even if it wanted to (dnd/payload.js). That is
+        // the same contract ADR-0036 closed at the graph boundary, met from the other side.
+        //
+        // A PAYLOAD WITH NO IDENTITY MATCHES NO RULE, rather than matching and then doing
+        // nothing: "allowed" followed by silence is the one answer worse than a refusal.
         id: 'object-to-property',
         accepts: (payload, target) => payload.kind === DragKind.OBJECT
+            && Boolean(payload.id)
             && target.zone === DropZone.PROPERTY,
         // A REFUSAL WITH ITS REASON, rather than a rule that quietly does not match: a
         // creator carrying an Object over a `width` field has aimed at something, and
@@ -177,13 +180,14 @@ export const RULES = [
             ? null
             : `${target.label ?? target.prop} does not hold an Object reference.`),
         describe: (payload, target) =>
-            `Assign ${payload.object?.name || 'this Object'} to ${target.label ?? target.prop}`,
+            `Assign ${payload.name || 'this Object'} to ${target.label ?? target.prop}`,
+        // A TARGET THAT HAS SINCE BEEN DELETED IS NOT CHECKED, deliberately. A reference to
+        // an Object that is gone is a state of the scene and not a malformed value: it is
+        // kept, it resolves to nothing, and it is shown in red where a human sees it
+        // (ADR-0034 §3.4). Refusing it here would be a second opinion about that.
         perform: (payload, target) => {
-            const id = payload.object?.id ?? null;
-            if (!id) return null;
-
-            assignReference(target, id);
-            return { assigned: id };
+            assignReference(target, payload.id);
+            return { assigned: payload.id };
         }
     },
 

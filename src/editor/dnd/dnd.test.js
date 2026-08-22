@@ -308,12 +308,47 @@ const propertyTarget = (link, prop) => ({
     label: prop
 });
 
-test('an Object carried out of the Hierarchy is a payload of its own kind', () => {
+test('an Object carried out of the Hierarchy travels as an identity, never as a handle', () => {
     const it = linked();
     const payload = objectPayload(it.player);
 
     assert.equal(payload.kind, 'object');
-    assert.equal(payload.object.id, it.player.id, 'the identity the drop will store');
+    assert.equal(payload.id, it.player.id, 'the identity the drop will store');
+    assert.equal(payload.name, 'Player', 'and a label, for the ghost to show');
+
+    // THE POINT OF THE SHAPE: there is no Object in here, so no rule can write one into a
+    // scene value however it is written (ADR-0034 §3.5, ADR-0036).
+    for (const value of globalThis.Object.values(payload)) {
+        assert.equal(typeof value === 'object' && value !== null, false,
+            'the payload holds only plain values');
+    }
+});
+
+test('a payload carrying no identity matches no rule at all', () => {
+    const it = linked();
+    const target = propertyTarget(it.link, 'target');
+
+    // Not "allowed, then nothing happened": a drag with nothing in it is a drag no rule
+    // knows, which is how the table already answers anything it has no row for.
+    assert.equal(canDrop(objectPayload(null), target).allowed, false);
+    assert.equal(ruleFor(objectPayload(null), target), null);
+    assert.equal(performDrop(objectPayload(null), target, it), null);
+    assert.equal(it.link.target, null, 'and nothing was written');
+});
+
+test('an Object deleted before the drop still assigns, and the reference reads as dead', () => {
+    // A REFERENCE TO SOMETHING GONE IS A STATE OF THE SCENE, NOT A MALFORMED VALUE
+    // (ADR-0034 §3.4). The value is kept and resolves to nothing; the Inspector shows that
+    // in red. Refusing the drop here would be the D&D inventing a second opinion about it.
+    const it = linked();
+    const payload = objectPayload(it.player);
+    it.scene.remove(it.player);
+
+    const result = performDrop(payload, propertyTarget(it.link, 'target'), it);
+
+    assert.equal(result.assigned, payload.id);
+    assert.equal(it.link.target, payload.id, 'the identity was stored as it stands');
+    assert.equal(it.scene.get(it.link.target), undefined, 'and it resolves to nothing');
 });
 
 test('an Object dropped on an objectref property assigns its identity', () => {
@@ -383,6 +418,20 @@ test('a property with nothing declared about it takes no Object', () => {
 
     assert.equal(acceptsObject({ zone: DropZone.PROPERTY, component: it.link, prop: 'nope' }), false);
     assert.equal(acceptsObject({ zone: DropZone.PROPERTY }), false);
+});
+
+test('a file dropped on a resource property still imports and assigns it', () => {
+    // FILES → PROPERTY shares `assignReference()` with the two rules above, so it is worth
+    // asserting here that renaming that writer changed nothing about it.
+    const it = linked();
+    const sprite = it.hero.addComponent(new Sprite());
+    const target = { zone: DropZone.PROPERTY, component: sprite, prop: 'source', label: 'Source' };
+
+    assert.equal(canDrop(filesPayload([file('hero.png')]), target).allowed, true);
+    const result = performDrop(filesPayload([file('hero.png')]), target, it);
+
+    assert.equal(sprite.source, result.assigned);
+    assert.equal(it.project.get(sprite.source).name, 'hero.png');
 });
 
 test('the two kinds of reference do not accept each other', () => {
