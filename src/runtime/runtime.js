@@ -14,6 +14,7 @@
 // A component that throws is isolated so the frame survives, and reported through
 // `onError` — never disabled, never repaired, never written to (ADR-0012).
 
+import { hierarchyOrder } from '../core/scene.js';
 import { Clock } from './clock/clock.js';
 import { SceneRenderer } from './rendering/scene-renderer.js';
 import { componentFailure, rethrowLater } from './errors.js';
@@ -109,11 +110,25 @@ export class Runtime {
     /**
      * Run exactly one simulation step.
      *
-     * Every component's `update(self, ctx)` runs with the same fixed delta, in scene
-     * insertion order, followed by the `.px` graph bound to its type when it has one
-     * (ADR-0015). Update is fully separated from draw: the whole scene is
-     * simulated, then the whole scene is drawn. Legacy interleaved them per object, so
-     * what a component observed depended on the draw order of the objects around it.
+     * Every component's `update(self, ctx)` runs with the same fixed delta, in the scene's
+     * CANONICAL ORDER — the roots in their order, and depth first under each of them —
+     * followed by the `.px` graph bound to its type when it has one (ADR-0015).
+     *
+     * THE ORDER IS A FUNCTION OF THE STATE, NEVER OF THE HISTORY (ADR-0035). It used to be
+     * insertion order, which is a fact about how a scene was BUILT rather than about what it
+     * IS: a reparent leaves it behind, a reload rewrites it from the payload, and a deletion
+     * undone puts the object back at the end. Two machines holding the very same scene
+     * therefore simulated it in two different orders. That is unobservable while a graph can
+     * only reach its own Component, and it is the first thing to diverge the moment one can
+     * reach a neighbour (ADR-0034 §3.3) — so the order became data before the feature that
+     * reads it did. `roots` and `children` are both ordered, both replicated, both
+     * serialized; insertion order is none of those.
+     *
+     * A PARENT RUNS BEFORE ITS CHILDREN, which is what a hierarchy of transforms means.
+     *
+     * Update is fully separated from draw: the whole scene is simulated, then the whole
+     * scene is drawn. Legacy interleaved them per object, so what a component observed
+     * depended on the draw order of the objects around it.
      *
      * Input is an argument, not a global. Give the same scene the same inputs and it
      * reaches the same state, whether it runs in a browser or on a server replaying what
@@ -132,7 +147,7 @@ export class Runtime {
             input: stepInput
         };
 
-        for (const object of this.#scene.objects()) {
+        for (const object of hierarchyOrder(this.#scene)) {
             if (!object.active) continue;
 
             const components = object.components;

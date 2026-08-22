@@ -460,3 +460,54 @@ test('resizing updates the surface', () => {
 test('the backend requires a context', () => {
     assert.throws(() => new Canvas2DRenderer(null), TypeError);
 });
+
+test('objects sharing a layer draw in canonical order, not in the order they joined', () => {
+    // ADR-0035 §3. "What covers what" used to be a fact about a scene's history: the child
+    // joined first, so it drew first, and a save-and-reload silently swapped the pair.
+    const renderer = recordingRenderer();
+    const parent = new Object('Parent');
+    const child = new Object('Child');
+    for (const object of [parent, child]) {
+        object.addComponent(new Transform());
+        object.addComponent(new RectangleRenderer());
+    }
+    parent.getComponent('Transform').x = 10;
+    child.getComponent('Transform').x = 5;
+
+    // The child joins FIRST, so the storage disagrees with the tree.
+    const scene = sceneWith(child, parent);
+    parent.addChild(child);
+
+    new SceneRenderer(renderer).render(scene);
+
+    assert.deepEqual(
+        renderer.of('setTransform').map(call => call.args[0].e),
+        [10, 15],
+        'the parent drew, then the child on top of it at its composed position'
+    );
+});
+
+test('layer still decides, whatever the tree says', () => {
+    // The canonical order is only the tie-break: a child on a lower layer still draws under
+    // the parent it hangs from.
+    const renderer = recordingRenderer();
+    const parent = new Object('Parent', { layer: 10 });
+    const child = new Object('Child', { layer: 0 });
+    for (const object of [parent, child]) {
+        object.addComponent(new Transform());
+        object.addComponent(new RectangleRenderer());
+    }
+    parent.getComponent('Transform').x = 10;
+    child.getComponent('Transform').x = 5;
+
+    const scene = sceneWith(parent, child);
+    parent.addChild(child);
+
+    new SceneRenderer(renderer).render(scene);
+
+    assert.deepEqual(
+        renderer.of('setTransform').map(call => call.args[0].e),
+        [15, 10],
+        'the child is on layer 0, so it draws first however the tree is shaped'
+    );
+});

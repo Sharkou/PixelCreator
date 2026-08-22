@@ -10,6 +10,7 @@
 // disagreed with the caller, so attaching the component threw an error that the
 // per-component try/catch then swallowed forever.
 
+import { hierarchyOrder } from '../../core/scene.js';
 import { worldMatrix } from '../../core/components/transform.js';
 import { Matrix } from '../../core/math/matrix.js';
 import { assertRenderer, BlendMode } from './renderer.js';
@@ -108,6 +109,13 @@ export class SceneRenderer {
         // invalidated on every `layer` write would be a speculative optimisation, and
         // one more piece of state to keep correct; it goes in when a measurement asks
         // for it and not before.
-        return scene.objects().sort((first, second) => first.layer - second.layer);
+        //
+        // FROM THE CANONICAL ORDER, AND THE SORT IS STABLE — so `layer` decides, and two
+        // objects sharing one are drawn in the order the scene's SHAPE gives them rather
+        // than in the order they happened to join it (ADR-0035). Starting from insertion
+        // order made "what covers what" a fact about a scene's history: the same scene,
+        // saved and reloaded, could draw the pair the other way round. The Runtime
+        // simulates in this order too, so there is one order here and not two.
+        return hierarchyOrder(scene).sort((first, second) => first.layer - second.layer);
     }
 }

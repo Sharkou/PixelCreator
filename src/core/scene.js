@@ -170,7 +170,17 @@ export class Scene {
         if (existing) throw new Error(`Scene.add: id ${object.id} is already used by another object`);
 
         this.#objects.set(object.id, object);
-        if (!object.parent) this.#insertRoot(object.id, index);
+        // A ROOT IS AN OBJECT WITH NO PARENT **IN THIS SCENE**, and the second half is not a
+        // pedantry: an object joining while its parent is somewhere else was neither a root
+        // nor the child of anything the scene could reach, so it fell out of the canonical
+        // walk — out of what `serializeScene()` writes, and now out of what the Runtime
+        // simulates (ADR-0035). The scene held it, `objects()` listed it, and nothing else
+        // ever saw it again.
+        //
+        // The ordinary case is untouched: attaching a child to a parent that IS here, and
+        // then adding it, still gives a child rather than a root.
+        const parent = object.parent;
+        if (!parent || !this.#objects.has(parent.id)) this.#insertRoot(object.id, index);
 
         attachToScene(object, this, this.#notify);
         this.#emitter.emit('added', object);

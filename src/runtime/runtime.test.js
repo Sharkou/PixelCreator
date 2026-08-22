@@ -1,6 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Object, Scene, Transform, observe } from '../core/mod.js';
+import {
+    ComponentRegistry,
+    Object,
+    Origin,
+    Scene,
+    Transform,
+    deserializeScene,
+    hierarchyOrder,
+    invert,
+    observe,
+    removeObjectOperation,
+    serializeObject,
+    serializeScene
+} from '../core/mod.js';
 import { Runtime } from './runtime.js';
 import { Clock } from './clock/clock.js';
 import { RectangleRenderer } from './rendering/components/rectangle-renderer.js';
@@ -559,4 +572,177 @@ test('rendering forwards its options', () => {
     new Runtime(scene, { renderer }).render({ clear: '#123456' });
 
     assert.equal(renderer.of('clear')[0].args[0], '#123456');
+});
+
+// --- the canonical order of execution (ADR-0035) ----------------------------------------
+//
+// The order components run in is now a function of the scene's SHAPE rather than of the
+// order its objects happened to join. Each test below builds a scene whose storage order
+// deliberately disagrees with its tree, and asks the Runtime which one it obeys.
+
+/** A component that writes down when it ran, so an order can be asserted rather than read. */
+function tracing() {
+    const order = [];
+    class Trace {
+        static type = 'Trace';
+        constructor(label = '') { this.label = label; }
+        update() { order.push(this.label); }
+    }
+    return { order, Trace };
+}
+
+/** Three roots called A, B and C, each tracing itself, in that insertion order. */
+function abc(Trace, registry) {
+    const scene = new Scene('Main', registry ? { registry } : undefined);
+    const objects = ['A', 'B', 'C'].map(name => {
+        const object = scene.add(new Object(name));
+        object.addComponent(new Trace(name));
+        return object;
+    });
+    return { scene, objects };
+}
+
+test('a parent runs before its children, whatever order they joined in', () => {
+    const { order, Trace } = tracing();
+    const scene = new Scene('Main');
+
+    // The child joins FIRST, so the storage and the tree disagree from the very start.
+    const child = scene.add(new Object('Child'));
+    const parent = scene.add(new Object('Parent'));
+    parent.addChild(child);
+
+    child.addComponent(new Trace('child'));
+    parent.addComponent(new Trace('parent'));
+
+    new Runtime(scene).step();
+
+    assert.deepEqual(scene.objects().map(object => object.name), ['Child', 'Parent'],
+        'the storage still lists the child first');
+    assert.deepEqual(order, ['parent', 'child']);
+});
+
+test('a reparent decides what runs when, and the storage order does not', () => {
+    const { order, Trace } = tracing();
+    const { scene, objects } = abc(Trace);
+    const [a, , c] = objects;
+
+    scene.reparent(c, a, 0);
+    new Runtime(scene).step();
+
+    assert.deepEqual(order, ['A', 'C', 'B']);
+    assert.deepEqual(scene.objects().map(object => object.name), ['A', 'B', 'C'],
+        'while the storage is exactly as it was');
+});
+
+test('a save and a reload do not change the order of execution', () => {
+    const { order, Trace } = tracing();
+    const registry = new ComponentRegistry();
+    registry.register(Trace);
+
+    const { scene, objects } = abc(Trace, registry);
+    scene.reparent(objects[2], objects[0], 0);
+
+    const runtime = new Runtime(scene);
+    for (let step = 0; step < 3; step++) runtime.step();
+    const before = [...order];
+    order.length = 0;
+
+    // Reloading rewrites the storage into canonical order — which is precisely why the
+    // storage could never have been the contract.
+    const reloaded = deserializeScene(serializeScene(scene), { registry });
+    const after = new Runtime(reloaded);
+    for (let step = 0; step < 3; step++) after.step();
+
+    assert.deepEqual(order, before);
+    assert.deepEqual(reloaded.objects().map(object => object.name), ['A', 'C', 'B']);
+});
+
+test('a deletion and its inverse do not change the order of execution', () => {
+    // Through the real pipeline: REMOVE_OBJECT, then the operation `invert()` makes of it.
+    // A restored object joins the scene last, so the storage comes back in a different
+    // order than it left in — and the simulation does not notice.
+    const { order, Trace } = tracing();
+    const registry = new ComponentRegistry();
+    registry.register(Trace);
+
+    const { scene, objects } = abc(Trace, registry);
+    scene.reparent(objects[2], objects[0], 0);
+
+    const runtime = new Runtime(scene);
+    runtime.step();
+    const before = [...order];
+    order.length = 0;
+
+    const target = scene.findByName('A')[0];
+    const removal = removeObjectOperation({
+        object: serializeObject(target),
+        subtree: [serializeObject(target.children[0])],
+        parent: null,
+        index: scene.indexOf(target),
+        origin: Origin.EDITOR
+    });
+
+    assert.equal(scene.operations.submit(removal).applied, true);
+    assert.equal(scene.operations.submit(invert(removal)).applied, true);
+
+    runtime.step();
+
+    assert.deepEqual(scene.objects().map(object => object.name), ['B', 'A', 'C'],
+        'the storage order did change');
+    assert.deepEqual(order, before, 'the order of execution did not');
+});
+
+test('two roads to the same scene simulate it in the same order', () => {
+    // One machine replayed the operations; another joined from a snapshot. They hold the
+    // same scene by different roads, and they must run it identically — which is the whole
+    // reason the order had to stop being a property of the road.
+    const built = tracing();
+    const builtRegistry = new ComponentRegistry();
+    builtRegistry.register(built.Trace);
+
+    const { scene, objects } = abc(built.Trace, builtRegistry);
+    scene.reparent(objects[2], objects[0], 0);
+
+    const joined = tracing();
+    const joinedRegistry = new ComponentRegistry();
+    joinedRegistry.register(joined.Trace);
+    const fromSnapshot = deserializeScene(serializeScene(scene), { registry: joinedRegistry });
+
+    const here = new Runtime(scene);
+    const there = new Runtime(fromSnapshot);
+    for (let step = 0; step < 3; step++) {
+        here.step();
+        there.step();
+    }
+
+    assert.deepEqual(joined.order, built.order);
+    assert.notDeepEqual(
+        scene.objects().map(object => object.name),
+        fromSnapshot.objects().map(object => object.name),
+        'and they still store their objects in different orders'
+    );
+});
+
+test('every object the scene holds is simulated', () => {
+    // ADR-0035's one real hazard: the Runtime now walks from the roots, so an object the
+    // walk cannot reach would silently stop running — and would already have been dropped
+    // from what `serializeScene()` writes. The invariant is held in `Scene.add()`, where an
+    // object whose parent is not in this scene is a root, and this is what it buys.
+    const { order, Trace } = tracing();
+    const scene = new Scene('Main');
+
+    const elsewhere = new Object('Elsewhere');
+    const orphan = new Object('Orphan');
+    elsewhere.addChild(orphan);
+    orphan.addComponent(new Trace('orphan'));
+    scene.add(orphan);
+
+    const plain = scene.add(new Object('Plain'));
+    plain.addComponent(new Trace('plain'));
+
+    new Runtime(scene).step();
+
+    assert.equal(hierarchyOrder(scene).length, scene.size, 'the walk reaches everything');
+    assert.deepEqual([...order].sort(), ['orphan', 'plain']);
+    assert.equal(serializeScene(scene).objects.length, scene.size, 'and so does the writer');
 });
