@@ -14,8 +14,8 @@ import { Project, ResourceKind } from '../../project/mod.js';
 import { Sprite, RectangleRenderer } from '../../runtime/mod.js';
 import { Workspace } from '../project/workspace.js';
 import { registerBuiltIns } from '../registry.js';
-import { DropZone, filesPayload, objectPayload, resourcePayload } from './payload.js';
-import { acceptsObject, acceptsResource, canDrop, instantiator, performDrop, ruleFor } from './rules.js';
+import { DragKind, DropZone, componentPayload, filesPayload, objectPayload, resourcePayload } from './payload.js';
+import { RULES, acceptsObject, acceptsResource, canDrop, instantiator, performDrop, ruleFor } from './rules.js';
 
 const PNG = 'data:image/png;base64,AAAA';
 
@@ -456,6 +456,101 @@ test('an Object dropped where no rule looks for one is refused without a sentenc
 
     assert.equal(canDrop(objectPayload(it.player), { zone: DropZone.HIERARCHY }).allowed, false);
     assert.equal(canDrop(objectPayload(it.player), { zone: DropZone.SCENE, x: 0, y: 0 }).allowed, false);
+});
+
+// --- the graph canvas answers, and its answer is no (ADR-0034 §3.7) ----------------------
+
+test('the graph canvas is a drop zone of the vocabulary, like every other surface', () => {
+    assert.equal(typeof DropZone.GRAPH, 'string');
+    assert.equal(new globalThis.Set(globalThis.Object.values(DropZone)).size,
+        globalThis.Object.values(DropZone).length, 'no two zones share a name');
+});
+
+test('every kind of drag is refused on the canvas, each with its own reason', () => {
+    // THE POINT OF THE TRANCHE: not that these are refused — they already were, by no rule
+    // matching — but that each refusal is now a sentence a creator can read. A target no
+    // rule mentions answers `null`, and a silent refusal is the worst answer to a gesture
+    // (ADR-0026 §6).
+    const it = linked();
+    const asset = imageIn(it.project);
+    const target = { zone: DropZone.GRAPH };
+
+    const carried = {
+        [DragKind.OBJECT]: objectPayload(it.player),
+        [DragKind.COMPONENT]: componentPayload(it.hero, 'res_link'),
+        [DragKind.RESOURCE]: resourcePayload(asset),
+        [DragKind.FILES]: filesPayload([file('hero.png')])
+    };
+
+    const seen = new globalThis.Set();
+    for (const [kind, payload] of globalThis.Object.entries(carried)) {
+        const verdict = canDrop(payload, target);
+
+        assert.equal(verdict.allowed, false, `${kind} was accepted on the canvas`);
+        assert.equal(typeof verdict.reason, 'string', `${kind} was refused in silence`);
+        assert.ok(verdict.reason.length > 0, `${kind} was refused with an empty sentence`);
+        assert.equal(ruleFor(payload, target).id, 'drop-on-graph', `${kind} met another rule`);
+
+        assert.equal(seen.has(verdict.reason), false, `${kind} reuses another kind's reason`);
+        seen.add(verdict.reason);
+    }
+});
+
+test('a drag the vocabulary does not know is still answered on the canvas', () => {
+    const verdict = canDrop({ kind: 'something-new' }, { zone: DropZone.GRAPH });
+
+    assert.equal(verdict.allowed, false);
+    assert.match(verdict.reason, /cannot be dropped on a graph/);
+});
+
+test('a refused canvas drop mutates nothing', () => {
+    const it = linked();
+    const asset = imageIn(it.project);
+    const before = {
+        objects: it.scene.objects().length,
+        resources: it.project.resources().length,
+        target: it.link.target
+    };
+
+    for (const payload of [
+        objectPayload(it.player),
+        componentPayload(it.hero, 'res_link'),
+        resourcePayload(asset),
+        filesPayload([file('hero.png')])
+    ]) {
+        assert.equal(performDrop(payload, { zone: DropZone.GRAPH }, it), null);
+    }
+
+    assert.equal(it.scene.objects().length, before.objects, 'the scene gained an object');
+    assert.equal(it.project.resources().length, before.resources, 'the project gained a resource');
+    assert.equal(it.link.target, before.target, 'a property was written');
+});
+
+test('one rule answers for the canvas, and it is the last word on it', () => {
+    // A gesture accepted on the canvas later is declared ABOVE this one; what must be true
+    // today is that exactly one rule speaks for the zone, so the answer cannot depend on
+    // which of two happened to be written first.
+    const forGraph = RULES.filter(rule => rule.accepts({ kind: 'anything' }, { zone: DropZone.GRAPH }));
+
+    assert.deepEqual(forGraph.map(rule => rule.id), ['drop-on-graph']);
+});
+
+test('declaring the canvas zone left every other zone answering as it did', () => {
+    // The zones a payload could reach on its way to the canvas, each still answered by its
+    // own rule rather than by the new floor.
+    const it = linked();
+    const asset = imageIn(it.project);
+    const sprite = it.hero.addComponent(new Sprite());
+
+    assert.equal(ruleFor(resourcePayload(asset), { zone: DropZone.PROPERTY, component: sprite, prop: 'source' }).id,
+        'resource-to-property');
+    assert.equal(ruleFor(objectPayload(it.player), { zone: DropZone.PROPERTY, component: it.link, prop: 'target' }).id,
+        'object-to-property');
+    assert.equal(ruleFor(filesPayload([file()]), { zone: DropZone.PROPERTY, component: sprite, prop: 'source' }).id,
+        'files-to-property');
+    assert.equal(ruleFor(resourcePayload(asset), { zone: DropZone.SCENE }).id, 'resource-to-scene');
+    assert.equal(ruleFor(objectPayload(it.player), { zone: DropZone.PROJECT, parent: null, project: it.project }).id,
+        'object-to-project');
 });
 
 // --- what is refused, and says so --------------------------------------------------------

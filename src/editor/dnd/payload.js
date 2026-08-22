@@ -128,5 +128,14 @@ export const DropZone = {
     /** The component list of an object, in the Inspector: what a `.px` attaches to. */
     COMPONENTS: 'components',
     /** The Content section of a resource being inspected. */
-    CONTENT: 'content'
+    CONTENT: 'content',
+    /**
+     * The canvas a `.px` is wired on.
+     *
+     * IT IS A ZONE SO THAT IT CAN REFUSE. Nothing is dropped on a graph yet — every gesture
+     * ADR-0034 §3.7 lists is still refused, each for its own reason — and a target that no
+     * rule mentions produces silence, which ADR-0026 §6 names the worst possible answer to a
+     * gesture. Declaring the zone is what turns that silence into a sentence.
+     */
+    GRAPH: 'graph'
 };

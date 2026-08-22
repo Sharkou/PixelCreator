@@ -175,11 +175,16 @@ const shellStyles = sheet(`
 
     /* The window the shell has decided a drop would land in (ADR-0028 §3). The viewport
        lives in the document, so its mark is written here; the windows in shadow roots
-       style the same two classes on their own host. The graph canvas has no rule that
-       accepts anything yet, so it has no mark — a highlight for a drop that cannot happen
-       would be the lie this Editor keeps refusing. */
+       style the same two classes on their own host.
+
+       THE CANVAS WEARS ONE OF THE TWO MARKS AND NOT THE OTHER, and that is the same rule
+       stated more precisely than before. Nothing is dropped on a graph yet, so an accent
+       outline promising a drop would be the lie this Editor keeps refusing — it has no
+       dnd-over mark. A refusal is the opposite statement: the gesture arrived, it was
+       answered, and the answer is no. That one it wears. */
     px-viewport.dnd-over { outline: 2px dashed var(--px-accent); outline-offset: -3px; }
-    px-viewport.dnd-refused { outline: 2px dashed var(--px-danger); outline-offset: -3px; }
+    px-viewport.dnd-refused,
+    px-graph.dnd-refused { outline: 2px dashed var(--px-danger); outline-offset: -3px; }
     .titlebar .spacer { flex: 1; }
     .titlebar .toggles { display: flex; gap: var(--px-space-0); }
 
@@ -507,7 +512,7 @@ export function start(mount = document.body) {
         if (!model) reportUnopenable(resource);
     });
 
-    bindDragAndDrop({ shell, scene, subject, viewport, workspace, hierarchy, inspector, project });
+    bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hierarchy, inspector, project });
     bindShortcuts({ scene, selection, subject, viewport, history, workspace });
 
     return { scene, camera, selection, subject, layout, viewport, history, histories, workspace, transport, definitions };
@@ -700,7 +705,7 @@ function transportControls(transport) {
  *
  * @param {object} context - The windows, and the model they act on
  */
-function bindDragAndDrop({ shell, scene, subject, viewport, workspace, hierarchy, inspector, project }) {
+function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hierarchy, inspector, project }) {
     const context = () => ({
         scene,
         project: workspace.project,
@@ -762,6 +767,19 @@ function bindDragAndDrop({ shell, scene, subject, viewport, workspace, hierarchy
         if (viewport.containsClient(clientX, clientY)) {
             const point = viewport.worldAt(clientX, clientY);
             return { target: { zone: DropZone.SCENE, x: point.x, y: point.y }, element: viewport };
+        }
+
+        // THE OTHER SURFACE OF THE STAGE. The canvas and the scene share the slot and are
+        // mutually exclusive — the hidden one has no box, so only one of these two can
+        // answer. It is asked like every other window, by its own bounds, rather than being
+        // whatever is left when nothing else matched: a zone reached by elimination is a
+        // zone that silently grows every time a panel is added.
+        //
+        // NOTHING LANDS HERE YET, and that is exactly why it has to be asked: a target no
+        // rule mentions produces silence, and the rule table now answers for this one with
+        // a sentence per kind of drag (dnd/rules.js, ADR-0034 §3.7).
+        if (within(graph, clientX, clientY)) {
+            return { target: { zone: DropZone.GRAPH }, element: graph };
         }
 
         if (within(hierarchy, clientX, clientY)) {

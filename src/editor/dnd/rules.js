@@ -55,6 +55,32 @@ const INSTANTIABLE = [
     }
 ];
 
+/**
+ * Why each kind of drag is refused on the graph canvas, in its own words.
+ *
+ * ONE SENTENCE PER KIND, because the reasons are genuinely different and a creator carrying
+ * a Component has not made the same mistake as one carrying a PNG. They are the reasons
+ * ADR-0034 §3.7 and ADR-0027 §11 already state; this is where they become something a
+ * creator reads rather than something an ADR records.
+ *
+ * NONE OF THEM IS "NOT YET IMPLEMENTED". Each names what would have to be decided first —
+ * which is what makes them true a year from now, and what tells a creator whether they are
+ * doing something wrong or something the product has not designed.
+ */
+const REFUSED_ON_GRAPH = {
+    // ADR-0034 §3.7: a fallback on the name would write a freely editable display name into
+    // a type of PROJECT scope, and tagging the object instead would make one gesture write
+    // into two resources with two undo stacks (ADR-0010, ADR-0024).
+    [DragKind.OBJECT]: 'An Object belongs to one scene and a graph to the whole project — '
+        + 'reach it with a Scene node, or an Object property on this Component.',
+    // ADR-0027 §11, which refused the same gesture for a property: dropping it could mean
+    // Get or Set, and choosing between them for the creator is the magic this Editor avoids.
+    [DragKind.COMPONENT]: 'A Component dropped here could mean reading it or writing it, '
+        + 'and that is not a choice to make for you — add the node you want from the menu.',
+    [DragKind.RESOURCE]: 'A resource is not a node. Add one from the canvas menu instead.',
+    [DragKind.FILES]: 'Files are imported into the Project panel, never onto a graph.'
+};
+
 /** The rules, first match wins. */
 export const RULES = [
     // --- files from outside the browser -------------------------------------------
@@ -251,6 +277,22 @@ export const RULES = [
     },
 
     // --- refusals that are worth stating -------------------------------------------
+
+    {
+        // THE FLOOR OF THE CANVAS. It matches the ZONE and not any particular kind of drag,
+        // so it answers for everything that reaches a graph — which is the whole point, a
+        // target no rule mentions being answered by silence. Nothing is accepted on a canvas
+        // yet; the day one gesture is, it is declared ABOVE this one and this goes on
+        // answering for the rest. That is what first-match-wins is for.
+        //
+        // It sits among the refusals rather than at the very end because order against the
+        // rules below it cannot matter: none of them mentions this zone.
+        id: 'drop-on-graph',
+        accepts: (payload, target) => target.zone === DropZone.GRAPH,
+        // No `describe`: this rule never allows anything, and `canDrop()` reads the refusal
+        // instead. A sentence for a branch that cannot be reached is a sentence that drifts.
+        refuses: payload => REFUSED_ON_GRAPH[payload.kind] ?? 'This cannot be dropped on a graph.'
+    },
 
     {
         id: 'object-to-project',
