@@ -30,7 +30,7 @@
 // value and twice the panel to read. The object's id is not shown at all — a creator does
 // not need it, and a panel that opens with a random string looks like a debugger.
 
-import { declaredProperties, isMissingComponent, makeReactive, observe } from '../../core/mod.js';
+import { isMissingComponent, makeReactive, observe } from '../../core/mod.js';
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { icon, iconForComponent, iconForObject, iconForPropertyType, iconForResource } from '../ui/icons.js';
@@ -251,38 +251,21 @@ export class Inspector extends Element {
 
         .row {
             display: grid;
-            /* 60px is this panel's label column, and only this panel's: it stopped being
+            /* 62px is this panel's label column, and only this panel's: it stopped being
                a design token the moment px-field gave up drawing its own row, because a
                token with one consumer is a constant with extra steps.
 
-               THE FIRST COLUMN IS THE SHAPE OF THE VALUE. It is on every row, filled or
-               empty, because a column that appears on some rows and not others is a column
-               that makes the panel look broken. Where it is filled it says what a property
-               holds — the same glyph the Type dropdown and a node's ports wear — and it is
-               what a creator drags to carry that property somewhere else. */
-            grid-template-columns: 18px 60px minmax(0, 1fr);
+               TWO COLUMNS, AND THAT IS A CONSTRAINT RATHER THAN A PREFERENCE. Eight places
+               in this file build a row, and several of them carry a label and a value
+               and nothing else. A third column added for one of them put every one of those
+               labels into an 18 px slot — Color became a single letter. A grid every producer has to
+               remember is a grid that will be got wrong; two columns is what they all
+               already agree on. */
+            grid-template-columns: 62px minmax(0, 1fr);
             align-items: center;
-            gap: var(--px-space-1);
+            gap: var(--px-space-2);
             min-height: calc(var(--px-control) + var(--px-space-1) + 2px);
         }
-
-        /* The value column keeps the breathing room the label used to give it. */
-        .row > .fields { margin-left: var(--px-space-1); }
-
-        /* THE SHAPE, AND THE HANDLE. Dim like the label it sits beside — it is information
-           first — and it lifts on hover because it is also the one thing on this row a
-           creator can pick up. The property label cannot be: it is already the scrub
-           handle of every number (ui/scrub.js), and one element cannot mean two gestures. */
-        .row > .shape {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--px-text-dim);
-        }
-
-        .row > .shape.draggable { cursor: grab; }
-        .row > .shape.draggable:hover { color: var(--px-text); }
-        .row > .shape.dragging { cursor: grabbing; color: var(--px-accent); }
 
         /* A property label is quieter than its value — that contrast is what makes a
            column of numbers legible at a glance. Still 4.6:1 on the panel surface. */
@@ -375,6 +358,9 @@ export class Inspector extends Element {
         /* The type, as a quiet badge rather than as a word in a row: it is what tells two
            properties apart at a glance, and it must not read as a value. */
         .property .ptype {
+            display: flex;
+            align-items: center;
+            gap: 3px;
             flex: 0 0 auto;
             padding: 0 var(--px-space-1);
             border-radius: 2px;
@@ -384,6 +370,14 @@ export class Inspector extends Element {
             letter-spacing: var(--px-tracking-caps);
             text-transform: uppercase;
         }
+
+        .property .ptype > .glyph { display: flex; }
+
+        /* It is information first and a handle second, so it says so on hover rather than
+           at rest — the card is already dense with a grip, a caret, a name and a trash. */
+        .property .ptype.draggable { cursor: grab; }
+        .property .ptype.draggable:hover { color: var(--px-text); background: var(--px-surface-hover); }
+        .property .ptype.dragging { cursor: grabbing; color: var(--px-accent); }
 
         .property .pbody { padding: var(--px-space-0) var(--px-space-1) var(--px-space-1); }
         .property:not(.open) .pbody { display: none; }
@@ -537,7 +531,7 @@ export class Inspector extends Element {
     /** The press on a section header that may become a reorder. */
     #drag = null;
 
-    /** The press on a property's shape that may become a drag out of this panel. */
+    /** The press on a type badge that may become a drag out of this panel. */
     #source = null;
     /** Set for exactly one click: the one that ends a drag and must not also fold. */
     #dragged = false;
@@ -934,7 +928,22 @@ export class Inspector extends Element {
             icon('chevron', 16));
 
         const title = el('span', { class: 'pname', textContent: property.name || 'property' });
-        const badge = el('span', { class: 'ptype', textContent: typeLabel(property.type) });
+        // THE BADGE IS THE HANDLE, and it costs no column: it already sits on this card and
+        // already says what the property holds. A `.px` property is TWO identities of
+        // project scope — the Component type this file declares, and the property's own id
+        // (ADR-0037 §2.3) — which is exactly what a graph may name, so this is the one row
+        // in the Inspector where carrying a property somewhere else means something.
+        //
+        // NOT THE LABEL, and not the grip: the label is the scrub handle of every number
+        // (ui/scrub.js) and the grip already means reorder on this very card. One element,
+        // one gesture.
+        const badge = el('span', { class: 'ptype draggable' },
+            el('span', { class: 'glyph' }, icon(iconForPropertyType(property.type), 12)),
+            el('span', { textContent: typeLabel(property.type) })
+        );
+        badge.title = `${property.name || 'This property'} — drag onto a graph`;
+        this.#makeDragSource(badge, () =>
+            propertyPayload(definition.type, entry.id, property.name || entry.name));
 
         // The header follows the model, so renaming a property in the field below —
         // or from an undo, or from a collaborator — retitles it on the keystroke.
@@ -942,7 +951,10 @@ export class Inspector extends Element {
             title.textContent = change.value || 'property';
         }), 'panel');
         this.track(observe(property, 'type', change => {
-            badge.textContent = typeLabel(change.value);
+            fill(badge,
+                el('span', { class: 'glyph' }, icon(iconForPropertyType(change.value), 12)),
+                el('span', { textContent: typeLabel(change.value) })
+            );
         }), 'panel');
 
         const block = el('div', {
@@ -1001,9 +1013,6 @@ export class Inspector extends Element {
     #renderPropertyRow(property, descriptor, { write, extra = null }) {
         const field = this.#control(property, descriptor, { write });
         const label = el('span', { class: 'label', textContent: descriptor.label });
-        // These edit a DECLARATION rather than a value, so there is no property to carry —
-        // the slot is empty and only holds the column open.
-        const shape = el('span', { class: 'shape', 'aria-hidden': 'true' });
         field.bindLabel?.(label);
 
         // A DEFAULT THAT HOLDS A REFERENCE TAKES A DROP, like the property it is the
@@ -1020,7 +1029,6 @@ export class Inspector extends Element {
         }
 
         return el('div', { class: 'row' },
-            shape,
             label,
             el('div', { class: 'fields' }, field, extra)
         );
@@ -1410,7 +1418,7 @@ export class Inspector extends Element {
                 const fields = describeComponent(component);
                 return fields.length === 0
                     ? [el('div', { class: 'none', textContent: 'No properties' })]
-                    : this.#renderRows(component, fields, type);
+                    : this.#renderRows(component, fields);
             })()
         });
 
@@ -1635,12 +1643,12 @@ export class Inspector extends Element {
      *
      * THE SAME SHAPE AS THE TWO GESTURES ABOVE: a press arms, travel starts it, and leaving
      * the panel is what makes it the Editor's (windows/hierarchy.js). What differs is that
-     * this one has no meaning at home — a property's shape is not reorderable — so inside
+     * this one has no meaning at home — a type badge is not reorderable — so inside
      * the panel it simply does nothing, and the drag begins the moment the pointer is out.
      *
-     * IT CLAIMS THE POINTER SO NOTHING ELSE DOES. The label beside it is the scrub handle of
-     * every number (ui/scrub.js) and the section around it folds on a click; stopping the
-     * event here is what keeps those two gestures exactly as they were.
+     * IT CLAIMS THE POINTER SO NOTHING ELSE DOES. The grip beside it already means reorder
+     * and the card around it folds on a click; stopping the event here is what keeps those
+     * two gestures exactly as they were.
      *
      * @param {HTMLElement} handle - The element to press
      * @param {Function} payloadOf - () => the payload this handle carries
@@ -1938,49 +1946,13 @@ export class Inspector extends Element {
         });
     }
 
-    /**
-     * @param {object} target - The reactive record the rows edit
-     * @param {object[]} fields - Field descriptors
-     * @param {string|null} [component] - The Component type, when these are its properties:
-     *   what a row needs to name itself to the rest of the Editor (ADR-0037)
-     */
-    #renderRows(target, fields, component = null) {
+    #renderRows(target, fields) {
         return rows(fields).map(row => (row.fields.length === 1
-            ? this.#renderRow(target, row.fields[0], component)
-            : this.#renderPair(target, row, component)));
+            ? this.#renderRow(target, row.fields[0])
+            : this.#renderPair(target, row)));
     }
 
-    /**
-     * The shape of a property, as the glyph that says it — and, on a Component's own
-     * properties, as the handle that carries it out of this panel.
-     *
-     * DECLARED, RESOLVED ONCE, NEVER GUESSED. The type comes from `declaredProperties()`,
-     * the single answer to "what does this Component declare" that the interpreter and the
-     * graph nodes already read (core/definition.js); the glyph comes from the one table that
-     * maps a type to a drawing (`iconForPropertyType`). No second mapping is introduced.
-     *
-     * @param {object} target - The component the property belongs to
-     * @param {object} descriptor - The field descriptor
-     * @param {string|null} component - The Component type, or null for rows that are not one
-     * @returns {HTMLElement} The cell that goes in the row's first column
-     */
-    #renderShape(target, descriptor, component) {
-        const declared = component
-            ? declaredProperties(target).find(entry => entry.name === descriptor.name) ?? null
-            : null;
-
-        const cell = el('span', { class: 'shape', 'aria-hidden': 'true' });
-        if (!declared) return cell;
-
-        fill(cell, icon(iconForPropertyType(declared.type), 14));
-        cell.classList.add('draggable');
-        cell.title = `${descriptor.label} — drag onto a graph`;
-        this.#makeDragSource(cell, () => propertyPayload(component, declared.id, descriptor.label));
-
-        return cell;
-    }
-
-    #renderRow(target, descriptor, component = null) {
+    #renderRow(target, descriptor) {
         const field = this.#control(target, descriptor);
         const label = el('span', { class: 'label', textContent: descriptor.label });
         this.#makeDroppable(field, {
@@ -1999,20 +1971,15 @@ export class Inspector extends Element {
         const single = isNumeric(descriptor) && descriptor.kind !== FieldKind.RANGE;
 
         return el('div', { class: 'row' },
-            this.#renderShape(target, descriptor, component),
             label,
             el('div', { class: `fields${single ? ' single' : ''}` }, field, single ? el('span') : null)
         );
     }
 
-    #renderPair(target, row, component = null) {
+    #renderPair(target, row) {
         const prefixes = PAIR_PREFIXES[row.fields[0].name] ?? ['', ''];
 
         return el('div', { class: 'row' },
-            // A PAIR IS ONE IDEA WITH TWO HALVES (`Position` is `x` and `y`), so the row
-            // names the pair and carries no single property to hand over. The slot stays,
-            // empty, so the column does not break.
-            el('span', { class: 'shape', 'aria-hidden': 'true' }),
             el('span', { class: 'label', textContent: row.label }),
             el('div', { class: 'fields pair' },
                 row.fields.map((descriptor, index) =>

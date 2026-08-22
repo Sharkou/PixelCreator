@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
     ComponentRegistry,
     NodeRegistry,
+    portsOf,
     registerStandardNodes,
     Object as SceneObject,
     PropertyType,
@@ -639,6 +640,29 @@ test('a Property travels as two identities of project scope, and nothing of a sc
     for (const value of globalThis.Object.values(payload)) {
         assert.equal(typeof value === 'object' && value !== null, false);
     }
+});
+
+test('a Property carried off a .px card names that .px, and the port takes its type', () => {
+    // WHERE THE HANDLE LIVES, AND WHY IT LIVES THERE. A `.px` property is two identities of
+    // PROJECT scope — the file's own type and the property's id — which is exactly what a
+    // graph may name (ADR-0037 §2.3). Dropped on a node, the port takes the declared type
+    // through the one resolution path, with no Object involved.
+    const catalogue = [{
+        type: 'res_health',
+        label: 'Health',
+        properties: [{ id: 'p_hp', name: 'hp', type: PropertyType.INT, default: 3 }]
+    }];
+
+    const payload = propertyPayload('res_health', 'p_hp', 'hp');
+    const configured = {
+        id: 'n', type: 'property.getOn',
+        params: { component: payload.component, property: payload.property }
+    };
+
+    const port = portsOf(registerStandardNodes(new NodeRegistry()).get('property.getOn'),
+        configured, { components: catalogue }).outputs.find(entry => entry.id === 'value');
+
+    assert.equal(port.type, PropertyType.INT, 'the port takes the declared type at once');
 });
 
 test('a Property dropped on a compatible node configures both halves at once', () => {
