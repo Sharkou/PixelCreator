@@ -422,13 +422,16 @@ export class GraphWindow extends Element {
      * @returns {object} A GRAPH target, carrying `node` and its type's params when over one
      */
     zoneAt(clientX, clientY) {
-        if (!this.#definition) return { zone: DropZone.GRAPH };
+        // NOTHING IS BOUND, SO NOTHING CAN BE DECLARED — and a rule has to be able to say so
+        // rather than accept and then do nothing. The canvas is still a zone, because a drop
+        // must never meet silence (ADR-0026 §6); it is simply a zone that takes nothing.
+        if (!this.#definition) return { zone: DropZone.GRAPH, bound: false };
 
         const box = this.#svg.getBoundingClientRect();
         const at = toGraph({ x: clientX - box.left, y: clientY - box.top }, this.#view);
         // WHERE IT LANDS TRAVELS WITH THE TARGET, so a node a drop creates appears under
         // the pointer rather than at a corner the creator was not looking at.
-        const zone = { zone: DropZone.GRAPH, at };
+        const zone = { zone: DropZone.GRAPH, at, bound: true };
 
         const hit = hitTest(this.#layout(), at);
         if (hit.kind !== 'node') return zone;
@@ -460,10 +463,24 @@ export class GraphWindow extends Element {
         // which — in the menu every other creation in this Editor opens (ADR-0026 §10,
         // ADR-0027 §11 as amended by ADR-0037). Landing on a node needs no menu: placing
         // that node WAS the choice.
-        if (!zone.node && CREATES_ON_CANVAS.has(payload?.kind)) {
+        //
+        // ASKED ONLY WHEN THE ANSWER CAN BE HONOURED. The rule table decides whether the
+        // drop is taken at all; opening a menu over a gesture it refuses would put a
+        // question to the creator whose every answer is no.
+        if (!zone.node && CREATES_ON_CANVAS.has(payload?.kind) && canDrop(payload, zone).allowed) {
             openMenu(pointAnchor(clientX, clientY), [
-                { id: 'property.getOn', label: 'Get', icon: iconForNode('Scene') },
-                { id: 'property.setOn', label: 'Set', icon: iconForNode('Scene') }
+                {
+                    id: 'property.getOn',
+                    label: 'Get',
+                    icon: iconForNode('Scene'),
+                    tooltip: 'Read this Component\u2019s property'
+                },
+                {
+                    id: 'property.setOn',
+                    label: 'Set',
+                    icon: iconForNode('Scene'),
+                    tooltip: 'Change this Component\u2019s property'
+                }
             ], create => performDrop(payload, { ...zone, create }, this.#dropContext()),
             { label: 'operations' });
             return null;
@@ -526,12 +543,15 @@ export class GraphWindow extends Element {
         );
         if (!property) return null;
 
-        const at = target.at ?? { x: 0, y: 0 };
+        // WHERE THE POINTER LET GO, NUDGED UNTIL IT IS FREE — the same `#freeSpot()` the
+        // create menu uses: two nodes at one place look like one, and a creator who dropped
+        // twice would think the second drop did nothing.
+        const spot = this.#freeSpot(target.at ?? { x: 0, y: 0 });
         const node = definition.graph.addNode({
             type: 'property.get',
             params: { property: property.id },
-            x: snap(at.x - NODE_WIDTH / 2),
-            y: snap(at.y - HEADER_HEIGHT)
+            x: spot.x,
+            y: spot.y
         }, { batch });
 
         if (node) this.#select(node.id);
@@ -547,12 +567,10 @@ export class GraphWindow extends Element {
      * @returns {object|null} The node
      */
     #createNode(type, params, at = { x: 0, y: 0 }) {
-        const node = this.#definition?.graph.addNode({
-            type,
-            params,
-            x: snap(at.x - NODE_WIDTH / 2),
-            y: snap(at.y - HEADER_HEIGHT)
-        });
+        if (!this.#definition) return null;
+
+        const spot = this.#freeSpot(at);
+        const node = this.#definition.graph.addNode({ type, params, x: spot.x, y: spot.y });
 
         if (node) this.#select(node.id);
         return node;

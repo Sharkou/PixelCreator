@@ -551,11 +551,11 @@ test('on bare canvas a Component creates nothing until the creator has chosen', 
     const made = [];
     const context = { createNode: (type, params, where) => made.push([type, params, where]) };
 
-    assert.equal(canDrop(payload, { zone: DropZone.GRAPH, at }).allowed, true);
-    assert.equal(performDrop(payload, { zone: DropZone.GRAPH, at }, context), null);
+    assert.equal(canDrop(payload, { zone: DropZone.GRAPH, at, bound: true }).allowed, true);
+    assert.equal(performDrop(payload, { zone: DropZone.GRAPH, at, bound: true }, context), null);
     assert.deepEqual(made, [], 'nothing was guessed');
 
-    performDrop(payload, { zone: DropZone.GRAPH, at, create: 'property.setOn' }, context);
+    performDrop(payload, { zone: DropZone.GRAPH, at, bound: true, create: 'property.setOn' }, context);
     assert.deepEqual(made, [['property.setOn', { component: 'res_link' }, at]]);
 });
 
@@ -575,7 +575,7 @@ test('an Object dropped on the canvas declares a socket, and carries no identity
     // reaches the rule is a NAME; the identity stays a value each instance carries.
     const it = linked();
     const declared = [];
-    const target = { zone: DropZone.GRAPH, at: { x: 40, y: 10 } };
+    const target = { zone: DropZone.GRAPH, at: { x: 40, y: 10 }, bound: true };
 
     const verdict = canDrop(objectPayload(it.player), target);
     assert.equal(verdict.allowed, true);
@@ -595,7 +595,27 @@ test('an Object dropped on the canvas declares a socket, and carries no identity
 test('an Object dropped where nothing declares sockets does nothing', () => {
     const it = linked();
 
-    assert.equal(performDrop(objectPayload(it.player), { zone: DropZone.GRAPH }, {}), null);
+    assert.equal(performDrop(objectPayload(it.player), { zone: DropZone.GRAPH, bound: true }, {}), null);
+});
+
+test('a canvas with no Component open takes nothing, and says which', () => {
+    // NOT "allowed, then nothing happened". Every rule that would write into a `.px` asks
+    // for one to be open; without it the canvas is still a zone — a drop is never met with
+    // silence — but a zone that refuses, with the reason being about the canvas.
+    const it = linked();
+    const empty = { zone: DropZone.GRAPH, bound: false };
+
+    for (const payload of [
+        objectPayload(it.player),
+        componentPayload(it.hero, 'res_link', 'Link'),
+        propertyPayload('res_link', 'p_target', 'target')
+    ]) {
+        const verdict = canDrop(payload, empty);
+
+        assert.equal(verdict.allowed, false);
+        assert.match(verdict.reason, /no Component open/);
+        assert.equal(ruleFor(payload, empty).id, 'drop-on-graph');
+    }
 });
 
 // --- the graph canvas answers, and its answer is no (ADR-0034 §3.7) ----------------------
@@ -611,7 +631,7 @@ test('the drags a canvas has a meaning for are taken; the others are refused wit
     // has decided a meaning for, and each still answers with its own sentence.
     const it = linked();
     const asset = imageIn(it.project);
-    const target = { zone: DropZone.GRAPH, at: { x: 0, y: 0 } };
+    const target = { zone: DropZone.GRAPH, at: { x: 0, y: 0 }, bound: true };
 
     assert.equal(canDrop(objectPayload(it.player), target).allowed, true, 'an Object declares a socket');
     assert.equal(canDrop(componentPayload(it.hero, 'res_link', 'Link'), target).allowed, true);

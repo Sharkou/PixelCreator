@@ -74,6 +74,14 @@ const INSTANTIABLE = [
  * which is what makes them true a year from now, and what tells a creator whether they are
  * doing something wrong or something the product has not designed.
  */
+/**
+ * What a canvas with no Component open answers — the one refusal that is about the CANVAS
+ * rather than about what is being carried. Every rule that would write into a `.px` asks
+ * for `bound`, so an unbound canvas takes nothing and says why, instead of accepting a
+ * gesture it cannot honour.
+ */
+const NOTHING_OPEN = 'There is no Component open on this canvas to declare anything in.';
+
 const REFUSED_ON_GRAPH = {
     // Only reachable now for a drop ONTO a node that names neither: ADR-0037 gave both a
     // meaning on bare canvas, so what is left is a node this means nothing to.
@@ -305,6 +313,7 @@ export const RULES = [
         id: 'object-to-graph',
         accepts: (payload, target) => payload.kind === DragKind.OBJECT
             && target.zone === DropZone.GRAPH
+            && target.bound === true
             && Boolean(payload.id),
         describe: payload => `Declare ${payload.name || 'this Object'} as an input of this Component`,
         perform: (payload, target, context) => context.declareReference?.(payload, target) ?? null
@@ -342,6 +351,7 @@ export const RULES = [
         // the canvas" is never what a rule beside a more specific one should say.
         accepts: (payload, target) => payload.kind === DragKind.PROPERTY
             && target.zone === DropZone.GRAPH
+            && target.bound === true
             && !target.node,
         describe: payload => `Add a node for ${payload.label || payload.property}`,
         perform: (payload, target, context) => (target.create
@@ -360,6 +370,7 @@ export const RULES = [
         // the canvas" is never what a rule beside a more specific one should say.
         accepts: (payload, target) => payload.kind === DragKind.COMPONENT
             && target.zone === DropZone.GRAPH
+            && target.bound === true
             && !target.node,
         describe: payload => `Add a node for ${payload.label || payload.type}`,
         perform: (payload, target, context) => (target.create
@@ -416,7 +427,9 @@ export const RULES = [
         accepts: (payload, target) => target.zone === DropZone.GRAPH,
         // No `describe`: this rule never allows anything, and `canDrop()` reads the refusal
         // instead. A sentence for a branch that cannot be reached is a sentence that drifts.
-        refuses: payload => REFUSED_ON_GRAPH[payload.kind] ?? 'This cannot be dropped on a graph.'
+        refuses: (payload, target) => (target.bound === false
+            ? NOTHING_OPEN
+            : REFUSED_ON_GRAPH[payload.kind] ?? 'This cannot be dropped on a graph.')
     },
 
     {
