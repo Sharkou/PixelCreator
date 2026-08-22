@@ -23,7 +23,7 @@
 // parseInt, colours guessed from whether a string happens to start with '#', a hard-coded
 // blacklist of field names, and four dead `TODO Range` style branches.
 
-import { PropertyType, componentSchema } from '../../core/mod.js';
+import { PropertyType, componentSchema, isPropertyType } from '../../core/mod.js';
 
 /**
  * Field kinds the Inspector knows how to render.
@@ -388,6 +388,14 @@ function field(name, property = {}) {
         accepts: declared === PropertyType.RESOURCE
             ? { kind: property.kind ?? null, mime: property.mime ?? null }
             : null,
+        // WHAT ONE ELEMENT OF A LIST IS, declared where everything else about a property is
+        // declared. A list of numbers bounded at both ends and a list of choices need more
+        // than a type name — the bounds, the unit, the options — so what is carried is a
+        // property declaration in the ADR-0007 shape, nested. That is the same move
+        // `accepts` above makes for a resource: a per-type nested clause, normalised here,
+        // null for every other type. It is not a second vocabulary; it is the first one,
+        // one level down.
+        element: declared === PropertyType.ARRAY ? elementOf(property.element) : null,
         min,
         max,
         step: numeric(property.step) ?? display.step ?? (kind === FieldKind.INT ? 1 : null),
@@ -408,6 +416,27 @@ function field(name, property = {}) {
         readonly: Boolean(property.readonly),
         tooltip: property.tooltip ?? null
     };
+}
+
+/**
+ * The declaration of one element of a list, or null when there is none to honour.
+ *
+ * DECLARED, NEVER GUESSED — the rule ADR-0023 §7 states for the reflective fallback, applied
+ * here: a list whose elements are not declared, or are declared as something the Core has no
+ * type for, has no element shape at all. It stays read-only, which is what it already was,
+ * rather than being edited through a control chosen by guesswork.
+ *
+ * Copied rather than referenced, so the descriptor a control holds and the schema a
+ * component declares cannot be written through one another.
+ *
+ * @param {any} element - What the property declared for its elements
+ * @returns {object|null} The element's declaration, copied
+ */
+function elementOf(element) {
+    if (!element || typeof element !== 'object' || globalThis.Array.isArray(element)) return null;
+    if (!isPropertyType(element.type)) return null;
+
+    return { ...element };
 }
 
 function numeric(value) {

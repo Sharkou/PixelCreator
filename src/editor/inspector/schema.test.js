@@ -384,3 +384,44 @@ test('a descriptor carries what an empty control should read, and nothing carrie
     assert.equal(fieldFor('speed', { type: PropertyType.NUMBER }).placeholder, null);
     assert.equal(fieldFor('tag', { type: PropertyType.STRING, placeholder: 'None' }).placeholder, 'None');
 });
+
+// --- what one element of a list is (ADR-0007's shape, one level down) --------------------
+
+test('a list carries the declaration of its elements, and nothing else does', () => {
+    // THE SAME MOVE `accepts` MAKES FOR A RESOURCE: a per-type nested clause, normalised
+    // here, null for every other type. It is not a second vocabulary — it is a property
+    // declaration one level down.
+    const list = fieldFor('tiles', {
+        type: PropertyType.ARRAY,
+        element: { type: PropertyType.INT, min: 0 }
+    });
+
+    assert.deepEqual(list.element, { type: PropertyType.INT, min: 0 });
+    assert.equal(fieldFor('speed', { type: PropertyType.NUMBER, element: { type: 'int' } }).element, null,
+        'only a list has elements');
+});
+
+test('a list that declares no elements has no element shape', () => {
+    // `Tilemap.tiles` and `palette` are exactly this today, and they must stay exactly what
+    // they were: read-only, with nothing guessed about what they hold.
+    assert.equal(fieldFor('tiles', { type: PropertyType.ARRAY }).element, null);
+    assert.equal(fieldFor('tiles', { type: PropertyType.ARRAY, default: [] }).kind, FieldKind.READONLY);
+});
+
+test('an element declared as something the Core has no type for is not a declaration', () => {
+    // DECLARED, NEVER GUESSED (ADR-0023 §7). Half a declaration would choose a control by
+    // guesswork; nothing is worse than a field that edits a value it has misread.
+    for (const element of [{ type: 'nonsense' }, { type: null }, {}, 'int', 42, [], null]) {
+        assert.equal(fieldFor('tiles', { type: PropertyType.ARRAY, element }).element, null,
+            `${JSON.stringify(element)} was taken as a declaration`);
+    }
+});
+
+test('an element declaration is copied, so a schema cannot be written through a descriptor', () => {
+    const schema = { type: PropertyType.ARRAY, element: { type: PropertyType.INT } };
+    const descriptor = fieldFor('tiles', schema);
+
+    descriptor.element.min = 5;
+
+    assert.equal(schema.element.min, undefined, 'the component schema was written through');
+});
