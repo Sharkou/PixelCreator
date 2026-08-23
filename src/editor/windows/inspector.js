@@ -50,6 +50,7 @@ import { FieldKind, describeComponent, isNumeric, objectFields, rows } from '../
 import '../ui/window.js';
 import '../ui/field.js';
 import '../ui/resource-field.js';
+import '../ui/list-field.js';
 import '../ui/object-field.js';
 
 /**
@@ -1933,6 +1934,12 @@ export class Inspector extends Element {
                 write: options.write ?? null
             });
         }
+
+        // A list is drawn by a control of its own for the reason the two above are: what it
+        // edits is not one value. It needs nothing from this panel, though — every row is
+        // drawn from its own value, which is what `field()` checks before it lets a list be
+        // one at all (inspector/schema.js).
+        if (descriptor.kind === FieldKind.LIST) return el('px-list').bind(target, descriptor, options);
 
         if (descriptor.kind !== FieldKind.RESOURCE) return el('px-field').bind(target, descriptor, options);
 

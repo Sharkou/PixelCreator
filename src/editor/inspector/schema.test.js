@@ -309,9 +309,11 @@ test('every Core property type maps to a control, explicitly', () => {
     assert.equal(fieldKindFor(PropertyType.ENUM), FieldKind.ENUM);
     // A reference is picked, dropped or cleared — never typed (ui/resource-field.js).
     assert.equal(fieldKindFor(PropertyType.RESOURCE), FieldKind.RESOURCE);
-    // A list is still shown read-only: it is a real type at the Core, and what it lacks
-    // is a control, which is a visible piece of work rather than a silent dead end.
-    assert.equal(fieldKindFor(PropertyType.ARRAY), FieldKind.READONLY);
+    // A list HAS its control now (ui/list-field.js) — the visible piece of work ADR-0023 §4
+    // named. Whether a particular list earns it depends on what it says its elements are,
+    // which is a declaration and not a type, so this table no longer answers that question:
+    // `field()` does, and the tests at the end of this file assert it.
+    assert.equal(fieldKindFor(PropertyType.ARRAY), FieldKind.LIST);
 });
 
 test('range and readonly are Editor vocabulary, absent from the Core', () => {
@@ -425,3 +427,93 @@ test('an element declaration is copied, so a schema cannot be written through a 
 
     assert.equal(schema.element.min, undefined, 'the component schema was written through');
 });
+
+// --- when a list earns a control, and when it keeps the read-only row it had -------------
+//
+// Asserted through `describeComponent()` — the path the panel actually builds its controls
+// from — rather than through `fieldKindFor()`, which cannot see a declaration and so cannot
+// answer this question at all.
+
+/** A component declaring one property, described exactly as the Inspector describes it. */
+function described(property) {
+    class Subject {
+        static type = 'Subject';
+        static schema = { subject: property };
+        constructor() { this.subject = property.default ?? null; }
+    }
+    return describeComponent(new Subject()).find(entry => entry.name === 'subject');
+}
+
+test('a list whose elements are declared is a list, and its declaration reaches the control', () => {
+    const descriptor = described({
+        type: PropertyType.ARRAY,
+        element: { type: PropertyType.INT, min: 0 },
+        default: []
+    });
+
+    assert.equal(descriptor.kind, FieldKind.LIST);
+    assert.deepEqual(descriptor.element, { type: PropertyType.INT, min: 0 });
+});
+
+test('a list that says nothing about its elements keeps the row it already had', () => {
+    // `Tilemap.tiles` and `palette` are exactly this, and must not change.
+    assert.equal(described({ type: PropertyType.ARRAY, default: [] }).kind, FieldKind.READONLY);
+});
+
+test('a list whose element declaration is not one keeps the read-only row too', () => {
+    for (const element of [{ type: 'nonsense' }, {}, 'int', 42, null, []]) {
+        assert.equal(described({ type: PropertyType.ARRAY, element, default: [] }).kind,
+            FieldKind.READONLY, `${JSON.stringify(element)} was taken as a declaration`);
+    }
+});
+
+test('a list of lists is expressible and deliberately not drawn', () => {
+    const nested = described({
+        type: PropertyType.ARRAY,
+        element: { type: PropertyType.ARRAY, element: { type: PropertyType.INT } },
+        default: []
+    });
+
+    assert.equal(nested.kind, FieldKind.READONLY, 'nobody has designed how a list of lists reads');
+});
+
+test('a list of references keeps the read-only row, because a row cannot resolve one', () => {
+    // A resource is resolved against the project and a reference against the scene; their
+    // controls are handed those by the panel, and a row inside a list has neither. Drawing
+    // them with the value control would put a text box over an opaque identity
+    // (ADR-0030 §1, ADR-0034 §3.5).
+    for (const type of [PropertyType.RESOURCE, PropertyType.OBJECTREF]) {
+        assert.equal(described({ type: PropertyType.ARRAY, element: { type }, default: [] }).kind,
+            FieldKind.READONLY, `a list of ${type} was made editable`);
+    }
+});
+
+test('a list of choices earns a control only once there is something to choose', () => {
+    const empty = described({
+        type: PropertyType.ARRAY,
+        element: { type: PropertyType.ENUM, values: [] },
+        default: []
+    });
+    const offered = described({
+        type: PropertyType.ARRAY,
+        element: { type: PropertyType.ENUM, values: ['up', 'down'] },
+        default: []
+    });
+
+    // ONE RULE, ASKED ONCE. The element's kind is the kind it would really get, so a choice
+    // with nothing to choose from is read-only here for the same reason it is anywhere.
+    assert.equal(empty.kind, FieldKind.READONLY);
+    assert.equal(offered.kind, FieldKind.LIST);
+});
+
+test('a list declared read-only stays read-only, whatever its elements say', () => {
+    const descriptor = described({
+        type: PropertyType.ARRAY,
+        element: { type: PropertyType.INT },
+        readonly: true,
+        default: []
+    });
+
+    assert.equal(descriptor.readonly, true, 'the flag survives');
+});
+

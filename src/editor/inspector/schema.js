@@ -50,8 +50,41 @@ export const FieldKind = {
     ENUM: 'enum',
     RESOURCE: 'resource',
     OBJECT: 'object',
+    /**
+     * A list of values, each edited by the control ITS OWN type asks for.
+     *
+     * `array` fell back to READONLY until now, and ADR-0023 §4 said why in as many words:
+     * it is a real type at the Core — a starting value, a validation, a serialization —
+     * and "what it lacks is a control, and that is a visible piece of work rather than a
+     * silent dead end". This is that work landing; the ADR is honoured, not amended.
+     */
+    LIST: 'list',
     READONLY: 'readonly'
 };
+
+/**
+ * The kinds a control draws from the VALUE ALONE.
+ *
+ * It is the question a list has to ask about its elements, and it has exactly one honest
+ * answer per kind. A `resource` is resolved against the project and a reference against the
+ * scene, so their controls are handed a project and a scene by the panel that builds them
+ * (windows/inspector.js) — a row inside a list has neither, and drawing them with the value
+ * control instead would put a text box over an opaque identity, which is the one thing
+ * ADR-0030 §1 and ADR-0034 §3.5 both refuse. A nested list is a rendering nobody has
+ * designed. A read-only element has nothing to edit.
+ *
+ * So a list of those is not "unsupported": it is a list whose elements this Editor cannot
+ * yet edit, and it stays read-only — showing what it holds, as it already did.
+ */
+const SELF_CONTAINED = new globalThis.Set([
+    FieldKind.NUMBER,
+    FieldKind.INT,
+    FieldKind.RANGE,
+    FieldKind.BOOLEAN,
+    FieldKind.STRING,
+    FieldKind.COLOR,
+    FieldKind.ENUM
+]);
 
 /**
  * The control each Core property type is edited with.
@@ -85,7 +118,11 @@ const KIND_BY_PROPERTY_TYPE = {
     // is an opaque identity, and a text field over one invites a creator to type across a
     // reference they cannot read back (ADR-0030 §1, one scope down — ui/object-field.js).
     [PropertyType.OBJECTREF]: FieldKind.OBJECT,
-    [PropertyType.ARRAY]: FieldKind.READONLY
+    // A list HAS a control now (ui/list-field.js). Whether it earns one depends on what it
+    // says its elements are, which is a declaration and not a type — so the decision is
+    // made in `field()`, beside the one that turns a choice with nothing to choose from
+    // back into a read-only row.
+    [PropertyType.ARRAY]: FieldKind.LIST
 };
 
 /**
@@ -358,8 +395,14 @@ function field(name, property = {}) {
     const max = numeric(property.max);
     const display = DISPLAY_UNITS[property.unit] ?? { scale: 1, unit: property.unit ?? null, step: null };
 
+    const element = declared === PropertyType.ARRAY ? elementOf(property.element) : null;
+
     let kind = fieldKindFor(declared);
     if (kind === FieldKind.ENUM && values.length === 0) kind = FieldKind.READONLY;
+    // A LIST WITH NOTHING SAID ABOUT ITS ELEMENTS IS THE SAME SENTENCE AS A CHOICE WITH
+    // NOTHING TO CHOOSE FROM: a declaration that does not earn its control keeps the
+    // read-only row it already had, rather than becoming a control that guesses.
+    if (kind === FieldKind.LIST && !editableElement(element)) kind = FieldKind.READONLY;
     // A number bounded at both ends is a proportion, and a proportion deserves a slider.
     // ADR-0007 lists `range` as a type; this is the same conclusion reached from the
     // constraints a component already declares, so no component has to be rewritten.
@@ -395,7 +438,7 @@ function field(name, property = {}) {
         // `accepts` above makes for a resource: a per-type nested clause, normalised here,
         // null for every other type. It is not a second vocabulary; it is the first one,
         // one level down.
-        element: declared === PropertyType.ARRAY ? elementOf(property.element) : null,
+        element,
         min,
         max,
         step: numeric(property.step) ?? display.step ?? (kind === FieldKind.INT ? 1 : null),
@@ -416,6 +459,23 @@ function field(name, property = {}) {
         readonly: Boolean(property.readonly),
         tooltip: property.tooltip ?? null
     };
+}
+
+/**
+ * Whether a list's elements can be edited with the controls this Editor has.
+ *
+ * ASKED THROUGH `field()` ITSELF, so the answer is the kind an element would ACTUALLY get —
+ * a choice with no options is read-only there too, and stating that rule a second time here
+ * is how two rules that were one start to disagree. The recursion is one level deep and no
+ * deeper: a nested list is refused above it, which is also the honest answer while nobody
+ * has designed how a list of lists is drawn.
+ *
+ * @param {object|null} element - The element's declaration, already normalised
+ * @returns {boolean} True when every row can be drawn from its value alone
+ */
+function editableElement(element) {
+    if (!element || element.type === PropertyType.ARRAY) return false;
+    return SELF_CONTAINED.has(field('', element).kind);
 }
 
 /**
