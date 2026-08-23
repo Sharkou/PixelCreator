@@ -2,7 +2,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PropertyType } from '../../core/mod.js';
+import { Object as SceneObject, PropertyType, Scene } from '../../core/mod.js';
+import { Tilemap } from '../../runtime/mod.js';
+import { describeComponent } from './schema.js';
 import { FieldKind } from './schema.js';
 import { ITEM_KEY, addItem, itemFieldFor, listOf, moveItem, removeItem, setItem } from './list.js';
 
@@ -193,4 +195,138 @@ test('an element declaration is never written through by the descriptor built fr
     descriptor.values.push('down');
 
     assert.deepEqual(declared.values, ['up'], 'the declaration was written through');
+});
+
+// --- the whole chain, on the first property that declares an element ---------------------
+//
+//   Tilemap.palette → describeComponent → FieldKind.LIST → the list operations →
+//   setProperty → the value the component now holds
+//
+// `<px-list>` is the one link asserted by inspection rather than by test: it needs a DOM,
+// and this repository has no harness for one. Everything on either side of it is here.
+
+/** A Tilemap attached to an object, so writes travel the pipeline they really travel. */
+function painted(palette = []) {
+    const scene = new Scene('Main');
+    const object = scene.add(new SceneObject('Ground'));
+    const tilemap = object.addComponent(new Tilemap(16, 2, 1, [1, 2], palette));
+
+    return {
+        scene,
+        tilemap,
+        descriptor: describeComponent(tilemap).find(entry => entry.name === 'palette'),
+        /** What `<px-list>` does on every gesture: one new array, through the one writer. */
+        commit: next => tilemap.setProperty('palette', next)
+    };
+}
+
+test('the palette of a Tilemap is a list, and its elements are colours', () => {
+    // THE FIRST REAL CONSUMER. `tiles` is a grid flattened into an array and stays read-only;
+    // a palette has always been a short ordered list of colours, and now says so.
+    const it = painted(['#000000', '#ff0000']);
+
+    assert.equal(it.descriptor.kind, FieldKind.LIST);
+    assert.equal(it.descriptor.element.type, PropertyType.COLOR);
+    assert.equal(itemFieldFor(it.descriptor.element).kind, FieldKind.COLOR,
+        'every row is drawn with the swatch a colour is drawn with');
+});
+
+test('a list that holds something shows what it holds', () => {
+    const it = painted(['#000000', '#ff0000', '#00ff00']);
+
+    assert.deepEqual(listOf(it.tilemap.palette), ['#000000', '#ff0000', '#00ff00']);
+});
+
+test('adding a colour lands at the end, and starts where its swatch already reads', () => {
+    const it = painted(['#000000']);
+
+    it.commit(addItem(it.tilemap.palette, itemFieldFor(it.descriptor.element).default));
+
+    assert.deepEqual(it.tilemap.palette, ['#000000', '#000000']);
+});
+
+test('removing a colour drops that one, and the rest keep their indices in order', () => {
+    // A palette is indexed BY TILE VALUE, so the order is the meaning: removing entry 1
+    // shifts what every later tile draws, and that is the creator's business, not a bug.
+    const it = painted(['#000000', '#ff0000', '#00ff00']);
+
+    it.commit(removeItem(it.tilemap.palette, 1));
+
+    assert.deepEqual(it.tilemap.palette, ['#000000', '#00ff00']);
+});
+
+test('moving a colour reorders the palette, and moving it back restores it', () => {
+    const it = painted(['#000000', '#ff0000', '#00ff00']);
+
+    it.commit(moveItem(it.tilemap.palette, 2, 1));
+    assert.deepEqual(it.tilemap.palette, ['#000000', '#00ff00', '#ff0000']);
+
+    it.commit(moveItem(it.tilemap.palette, 1, 2));
+    assert.deepEqual(it.tilemap.palette, ['#000000', '#ff0000', '#00ff00']);
+});
+
+test('editing one colour changes that one and leaves the others untouched', () => {
+    const it = painted(['#000000', '#ff0000', '#00ff00']);
+
+    it.commit(setItem(it.tilemap.palette, 1, '#0000ff'));
+
+    assert.deepEqual(it.tilemap.palette, ['#000000', '#0000ff', '#00ff00']);
+});
+
+test('two entries holding one colour stay two entries', () => {
+    // The case a value-keyed list gets wrong. A palette may legitimately repeat a colour.
+    const it = painted(['#ff0000', '#ff0000', '#00ff00']);
+
+    it.commit(setItem(it.tilemap.palette, 0, '#0000ff'));
+    assert.deepEqual(it.tilemap.palette, ['#0000ff', '#ff0000', '#00ff00']);
+
+    it.commit(removeItem(it.tilemap.palette, 1));
+    assert.deepEqual(it.tilemap.palette, ['#0000ff', '#00ff00']);
+});
+
+test('every edit is an Operation, so the palette undoes like any other property', () => {
+    // The list writes a NEW array through `setProperty()` — the controlled path — so it
+    // produces a Change and an Operation without a second mechanism (ADR-0008, ADR-0024).
+    const it = painted(['#000000']);
+    const seen = [];
+    it.scene.operations.on('operation', operation => seen.push(operation));
+
+    it.commit(addItem(it.tilemap.palette, '#ff0000'));
+
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].type, 'SET_PROPERTY');
+    assert.equal(seen[0].prop, 'palette');
+    assert.deepEqual(seen[0].value, ['#000000', '#ff0000']);
+    assert.deepEqual(seen[0].previous, ['#000000'], 'and it carries what to go back to');
+});
+
+test('the stored palette is never the array a control is holding', () => {
+    const it = painted(['#000000']);
+    const held = listOf(it.tilemap.palette);
+
+    held.push('#ff0000');
+
+    assert.deepEqual(it.tilemap.palette, ['#000000'], 'the component was written through');
+});
+
+test('the grid beside it is untouched, and still read-only', () => {
+    const it = painted();
+    const tiles = describeComponent(it.tilemap).find(entry => entry.name === 'tiles');
+
+    assert.equal(tiles.kind, FieldKind.READONLY);
+    assert.equal(tiles.element, null);
+    assert.deepEqual(it.tilemap.tiles, [1, 2], 'and it still holds what it held');
+});
+
+test('a list declared read-only keeps its flag, whatever its elements say', () => {
+    class Locked {
+        static type = 'Locked';
+        static schema = {
+            swatches: { type: PropertyType.ARRAY, element: { type: PropertyType.COLOR }, readonly: true, default: [] }
+        };
+        constructor() { this.swatches = []; }
+    }
+
+    const descriptor = describeComponent(new Locked()).find(entry => entry.name === 'swatches');
+    assert.equal(descriptor.readonly, true);
 });

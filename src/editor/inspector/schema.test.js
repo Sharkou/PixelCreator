@@ -456,7 +456,8 @@ test('a list whose elements are declared is a list, and its declaration reaches 
 });
 
 test('a list that says nothing about its elements keeps the row it already had', () => {
-    // `Tilemap.tiles` and `palette` are exactly this, and must not change.
+    // `Tilemap.tiles` is exactly this — a grid flattened into an array, which a column of
+    // rows is not how anyone edits — and it must not change.
     assert.equal(described({ type: PropertyType.ARRAY, default: [] }).kind, FieldKind.READONLY);
 });
 

@@ -18,8 +18,18 @@ export class Tilemap {
         tileSize: { type: 'number', default: 16, min: 1 },
         columns: { type: 'number', default: 0, min: 0 },
         rows: { type: 'number', default: 0, min: 0 },
+        // A GRID, NOT A LIST. `tiles` is `row * columns + column` flattened, so a modest map
+        // is hundreds of cells; it declares no element shape because a list of hundreds of
+        // rows is not how a grid is edited, and saying nothing keeps it read-only.
         tiles: { type: 'array', default: [] },
-        palette: { type: 'array', default: [] }
+        // A LIST OF COLOURS, WHICH IS WHAT IT HAS ALWAYS BEEN. Declaring the shape of an
+        // element is what lets the Inspector edit it (inspector/schema.js); nothing about
+        // the value changes, and `draw()` still reads `palette[tile]` exactly as before.
+        //
+        // An entry starts BLACK rather than empty: `draw()` skips a falsy colour, so an
+        // entry added and not yet chosen would be a row that draws nothing while its swatch
+        // shows black anyway. Starting where the swatch already reads is the honest state.
+        palette: { type: 'array', element: { type: 'color', default: '#000000' }, default: [] }
     };
 
     /**
