@@ -8,7 +8,7 @@ import { observe } from '../properties/reactive.js';
 import { invert } from '../operations/invert.js';
 import { defineComponent } from '../definition.js';
 import { ComponentDefinition } from './definition.js';
-import { NodeRegistry } from './nodes.js';
+import { NodeRegistry, PortDirection } from './nodes.js';
 import { registerStandardNodes } from './standard.js';
 import { GraphIssueCode } from './errors.js';
 
@@ -338,4 +338,222 @@ test('a reordered schema serializes in its new order', () => {
 
     model.moveProperty(a.id, 1);
     assert.deepEqual(globalThis.Object.keys(model.serialize().properties), ['jump', 'speed']);
+});
+
+// --- declaring a Choice and a List (ADR-0031 §2, §3) -------------------------------------
+//
+// Both types take a PARAMETER — the options a Choice offers, the type a List is a list of —
+// and until this tranche neither had anywhere to put one: the Type dropdown offered them and
+// nothing could say what they held. Both live in the descriptor, so declaring one is an
+// ordinary SET_PROPERTY that replicates, inverts and lands in the history like every other.
+
+test('a Choice declares its options on its own descriptor', () => {
+    const model = definition();
+    const property = model.addProperty({ name: 'mood', type: PropertyType.ENUM });
+
+    assert.equal(model.setPropertyOptions(property.id, ['calm', 'angry']), true);
+
+    assert.deepEqual(property.values, ['calm', 'angry']);
+    assert.equal(property.default, 'calm', 'the first option is what a fresh instance starts at');
+});
+
+test('a Choice keeps a default that is still an option, and follows one that is not', () => {
+    const model = definition();
+    const property = model.addProperty({ name: 'mood', type: PropertyType.ENUM });
+    model.setPropertyOptions(property.id, ['calm', 'angry', 'sad']);
+    model.setPropertyDefault(property.id, 'angry');
+
+    // Adding and reordering leave a legal default exactly where it is: editing the rest of
+    // the list is free.
+    model.setPropertyOptions(property.id, ['sad', 'angry', 'calm', 'bored']);
+    assert.equal(property.default, 'angry');
+
+    // Removing the one it defaulted to has to carry the default with it: a Choice whose
+    // default is not among its options holds a value `isValidValue()` refuses (ADR-0031 §2).
+    model.setPropertyOptions(property.id, ['sad', 'calm']);
+    assert.equal(property.default, 'sad', 'the first option is the only candidate');
+});
+
+test('renaming an option is changing the value, and the default follows', () => {
+    // An option has no identity of its own — it IS its value (ADR-0031 §2) — so there is no
+    // rename to track, and the model says so by treating it as a removal and an addition.
+    const model = definition();
+    const property = model.addProperty({ name: 'mood', type: PropertyType.ENUM });
+    model.setPropertyOptions(property.id, ['calm', 'angry']);
+
+    model.setPropertyOptions(property.id, ['serene', 'angry']);
+
+    assert.equal(property.default, 'serene');
+});
+
+test('editing the options of a Choice is one history entry', () => {
+    const model = definition();
+    const property = model.addProperty({ name: 'mood', type: PropertyType.ENUM });
+    model.setPropertyOptions(property.id, ['calm']);
+
+    const seen = record(model);
+    model.setPropertyOptions(property.id, ['angry']);
+
+    assert.equal(seen.length, 2, 'the options and the default it invalidated');
+    assert.equal(seen[0].batch, seen[1].batch, 'one intent, one batch, one Ctrl Z (ADR-0024 §4)');
+});
+
+test('a List declares the type of its elements', () => {
+    const model = definition();
+    const property = model.addProperty({ name: 'waypoints', type: PropertyType.ARRAY });
+
+    assert.equal(model.setPropertyElement(property.id, PropertyType.NUMBER), true);
+
+    assert.equal(property.of, PropertyType.NUMBER);
+    assert.deepEqual(property.default, [], 'a fresh list is empty, never null');
+});
+
+test('changing what a List holds empties its default, in one entry', () => {
+    const model = definition();
+    const property = model.addProperty({ name: 'waypoints', type: PropertyType.ARRAY });
+    model.setPropertyElement(property.id, PropertyType.NUMBER);
+    model.setPropertyDefault(property.id, [1, 2, 3]);
+
+    const seen = record(model);
+    model.setPropertyElement(property.id, PropertyType.COLOR);
+
+    assert.deepEqual(property.default, [], 'numbers are not colours, and no control could draw them');
+    assert.equal(seen[0].batch, seen[1].batch);
+});
+
+test('a List of Lists is refused where a creator would declare it', () => {
+    // ADR-0031 §3 admits every PropertyType as an element except `array`.
+    const model = definition();
+    const property = model.addProperty({ name: 'grid', type: PropertyType.ARRAY });
+
+    model.setPropertyElement(property.id, PropertyType.ARRAY);
+
+    assert.equal(property.of, null, 'a structure is the question ADR-0023 leaves open');
+});
+
+test('only a List has an element type', () => {
+    const model = definition();
+    const property = model.addProperty({ name: 'speed', type: PropertyType.NUMBER });
+
+    assert.equal(model.setPropertyElement(property.id, PropertyType.INT), false);
+    assert.equal(property.of, undefined);
+});
+
+test('changing the type drops the configuration that belonged to the old one', () => {
+    const model = definition();
+    const property = model.addProperty({ name: 'mood', type: PropertyType.ENUM });
+    model.setPropertyOptions(property.id, ['calm', 'angry']);
+
+    model.setPropertyType(property.id, PropertyType.ARRAY);
+
+    assert.equal(property.values, undefined, 'a List does not offer options');
+    model.setPropertyElement(property.id, PropertyType.NUMBER);
+
+    model.setPropertyType(property.id, PropertyType.NUMBER);
+    assert.equal(property.of, undefined, 'a Number is not a list of anything');
+
+    // And the clause disappears from the payload rather than lingering as an empty one.
+    const written = model.serialize().properties.mood;
+    assert.equal('values' in written, false);
+    assert.equal('of' in written, false);
+});
+
+// --- a Choice and a List survive the payload ---------------------------------------------
+
+test('a declared Choice and List round trip through the `.px` payload', () => {
+    const model = definition({ label: 'Controller' });
+    const mood = model.addProperty({ name: 'mood', type: PropertyType.ENUM });
+    model.setPropertyOptions(mood.id, ['calm', 'angry']);
+    const waypoints = model.addProperty({ name: 'waypoints', type: PropertyType.ARRAY });
+    model.setPropertyElement(waypoints.id, PropertyType.NUMBER);
+    model.setPropertyDefault(waypoints.id, [1, 2]);
+
+    const payload = model.serialize();
+    const reopened = ComponentDefinition.deserialize(payload, {
+        registry: registerStandardNodes(new NodeRegistry())
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(payload)), payload, 'the payload is already JSON');
+    assert.deepEqual(reopened.propertyNamed('mood').values, ['calm', 'angry']);
+    assert.equal(reopened.propertyNamed('mood').default, 'calm');
+    assert.equal(reopened.propertyNamed('waypoints').of, PropertyType.NUMBER);
+    assert.deepEqual(reopened.propertyNamed('waypoints').default, [1, 2]);
+
+    // The identity survives too, which is what keeps every node that reads them wired.
+    assert.equal(reopened.propertyNamed('mood').id, mood.id);
+});
+
+test('a component built from the payload starts every instance at the declared default', () => {
+    const model = definition({ label: 'Controller' });
+    const mood = model.addProperty({ name: 'mood', type: PropertyType.ENUM });
+    model.setPropertyOptions(mood.id, ['calm', 'angry']);
+    const tags = model.addProperty({ name: 'tags', type: PropertyType.ARRAY });
+    model.setPropertyElement(tags.id, PropertyType.STRING);
+
+    const Component = defineComponent(model.serialize());
+    const first = new Component();
+    const second = new Component();
+
+    assert.equal(first.mood, 'calm');
+    assert.deepEqual(first.tags, []);
+
+    first.tags.push('a');
+    assert.deepEqual(second.tags, [], 'two instances never share one container');
+});
+
+test('what a removed property carries is a copy, so editing it after cannot rewrite the undo', () => {
+    // A descriptor can hold a container now, and a shallow snapshot would leave the very
+    // array the live descriptor holds inside the operation payload.
+    const model = definition();
+    const property = model.addProperty({ name: 'mood', type: PropertyType.ENUM });
+    model.setPropertyOptions(property.id, ['calm', 'angry']);
+
+    const seen = record(model);
+    model.removeProperty(property.id);
+
+    const carried = seen[0].property;
+    assert.deepEqual(carried.values, ['calm', 'angry']);
+
+    // Re-adding from the inverse puts back exactly what was taken away.
+    const back = invert(seen[0]);
+    model.operations.submit(back);
+    assert.deepEqual(model.property(property.id).values, ['calm', 'angry']);
+});
+
+// --- Property → Graph, with a Choice and a List -------------------------------------------
+
+test('a node pointed at a property is typed by that property, parameter included', () => {
+    // This is what dropping a property onto the canvas produces: a `property.get` carrying
+    // the property's IDENTITY and nothing else (ADR-0027, editor/dnd/rules.js). Everything
+    // the port knows is derived from the declaration, so a Choice and a List need no case
+    // of their own anywhere along that path.
+    const model = definition();
+    const mood = model.addProperty({ name: 'mood', type: PropertyType.ENUM });
+    model.setPropertyOptions(mood.id, ['calm', 'angry']);
+    const tags = model.addProperty({ name: 'tags', type: PropertyType.ARRAY });
+    model.setPropertyElement(tags.id, PropertyType.STRING);
+
+    const readMood = model.graph.addNode({ type: 'property.get', params: { property: mood.id } });
+    const readTags = model.graph.addNode({ type: 'property.get', params: { property: tags.id } });
+    const writeMood = model.graph.addNode({ type: 'property.set', params: { property: mood.id } });
+
+    assert.equal(model.graph.portOf(readMood, PortDirection.OUTPUT, 'value').type, 'enum<angry|calm>');
+    assert.equal(model.graph.portOf(readTags, PortDirection.OUTPUT, 'value').type, 'array<string>');
+    assert.equal(model.graph.portOf(writeMood, PortDirection.INPUT, 'value').type, 'enum<angry|calm>',
+        'read and write agree, which is what lets a creator wire one into the other');
+});
+
+test('a node follows the property it names when the parameter changes under it', () => {
+    // The declaration is the source; the port is derived on every read, so nothing caches a
+    // type across an edit (core/graph/nodes.js).
+    const model = definition();
+    const mood = model.addProperty({ name: 'mood', type: PropertyType.ENUM });
+    model.setPropertyOptions(mood.id, ['calm']);
+    const read = model.graph.addNode({ type: 'property.get', params: { property: mood.id } });
+
+    assert.equal(model.graph.portOf(read, PortDirection.OUTPUT, 'value').type, 'enum<calm>');
+
+    model.setPropertyOptions(mood.id, ['calm', 'angry']);
+
+    assert.equal(model.graph.portOf(read, PortDirection.OUTPUT, 'value').type, 'enum<angry|calm>');
 });

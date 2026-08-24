@@ -27,8 +27,10 @@ import { makeReactive, observe } from '../../core/mod.js';
 import { Element, el, fill } from './element.js';
 import { sheet } from './styles.js';
 import { icon } from './icons.js';
+import { FieldKind } from '../inspector/schema.js';
 import { ITEM_KEY, addItem, itemFieldFor, listOf, moveItem, removeItem, setItem } from '../inspector/list.js';
 import './field.js';
+import './object-field.js';
 
 export class ListField extends Element {
 
@@ -51,7 +53,8 @@ export class ListField extends Element {
             min-width: 0;
         }
 
-        .item px-field { flex: 1; min-width: 0; }
+        .item px-field,
+        .item px-object { flex: 1; min-width: 0; }
 
         .item .handles {
             display: flex;
@@ -122,6 +125,9 @@ export class ListField extends Element {
     /** One reactive record per row, in row order: what each element's control is bound to. */
     #views = [];
 
+    /** The scene a reference element resolves in; null when this list holds no references. */
+    #scene = null;
+
     /**
      * Point the control at a property holding a list.
      *
@@ -131,16 +137,24 @@ export class ListField extends Element {
      * A list whose elements are not declared has no shape to edit and stays read-only,
      * which is what it already was.
      *
+     * A LIST OF REFERENCES IS THE ONE THAT NEEDS MORE THAN THE PROPERTY. An Object is
+     * resolved against the scene, so a row that draws one is handed the scene the panel
+     * already hands `<px-object>` — nothing else about this control knows what a reference
+     * is (ADR-0034 §3.5). A list given no scene simply has no Object to show, exactly as a
+     * lone reference field does.
+     *
      * @param {object} target - The reactive record holding the list
      * @param {object} descriptor - A descriptor from inspector/schema.js, carrying `element`
      * @param {object} [options] - Options
      * @param {Function} [options.write] - (value, { batch }) => void; `setProperty` by default
+     * @param {object} [options.scene] - The scene a reference element is resolved in
      * @returns {ListField} This element
      */
-    bind(target, descriptor, { write = null } = {}) {
+    bind(target, descriptor, { write = null, scene = null } = {}) {
         this.#target = target;
         this.#descriptor = descriptor;
         this.#write = write;
+        this.#scene = scene;
 
         this.toggleAttribute('disabled', Boolean(descriptor?.readonly) || !descriptor?.element);
         if (this.isConnected) this.#render();
@@ -228,12 +242,17 @@ export class ListField extends Element {
         const view = makeReactive({ [ITEM_KEY]: item });
         this.#views.push(view);
 
-        const field = el('px-field').bind(view, descriptor, {
-            // THE BATCH TRAVELS. `px-field` mints one for a typing session, so eleven
-            // keystrokes on one element are eleven writes of the list and ONE undo entry —
-            // the mechanism the panel already uses, not a second one (ADR-0026 §3).
-            write: (value, options) => this.#commit(setItem(this.items, index, value), options)
-        });
+        // THE BATCH TRAVELS. `px-field` mints one for a typing session, so eleven keystrokes
+        // on one element are eleven writes of the list and ONE undo entry — the mechanism the
+        // panel already uses, not a second one (ADR-0026 §3).
+        const write = (value, options) => this.#commit(setItem(this.items, index, value), options);
+
+        // THE SAME RULE THE PANEL USES, AND FOR THE SAME REASON (windows/inspector.js): the
+        // value is an identity, and a text field over one is a debugger. Which kinds may be a
+        // row at all is decided once, where the list's own control is (inspector/schema.js).
+        const field = descriptor.kind === FieldKind.OBJECT
+            ? el('px-object').bind(view, descriptor, { scene: this.#scene, write })
+            : el('px-field').bind(view, descriptor, { write });
 
         const step = (to, glyph, title) => el('button', {
             class: `ghost ${title.toLowerCase()}`,

@@ -14,7 +14,9 @@ export {
     PropertyType,
     isPropertyType,
     propertyTypes,
+    copyValue,
     defaultForProperty,
+    elementOf,
     isValidValue
 } from './properties/types.js';
 
@@ -69,6 +71,7 @@ export {
     NodeRegistry,
     PortDirection,
     PortKind,
+    baseTypeOf,
     createPort,
     compatibleTargets,
     groupNodes,

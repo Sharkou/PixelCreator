@@ -478,15 +478,27 @@ test('a list of lists is expressible and deliberately not drawn', () => {
     assert.equal(nested.kind, FieldKind.READONLY, 'nobody has designed how a list of lists reads');
 });
 
-test('a list of references keeps the read-only row, because a row cannot resolve one', () => {
-    // A resource is resolved against the project and a reference against the scene; their
-    // controls are handed those by the panel, and a row inside a list has neither. Drawing
-    // them with the value control would put a text box over an opaque identity
-    // (ADR-0030 §1, ADR-0034 §3.5).
-    for (const type of [PropertyType.RESOURCE, PropertyType.OBJECTREF]) {
-        assert.equal(described({ type: PropertyType.ARRAY, element: { type }, default: [] }).kind,
-            FieldKind.READONLY, `a list of ${type} was made editable`);
-    }
+test('a list of Objects is editable, because the panel hands the list its scene', () => {
+    // The reason a row could not resolve a reference was that it had nothing to resolve it
+    // AGAINST. `<px-list>` is now handed the scene the panel already hands `<px-object>`, so
+    // a row shows the Object it points at and offers the same picker — never a text box over
+    // an opaque identity, which is what ADR-0034 §3.5 refuses.
+    assert.equal(described({
+        type: PropertyType.ARRAY,
+        element: { type: PropertyType.OBJECTREF },
+        default: []
+    }).kind, FieldKind.LIST);
+});
+
+test('a list of resources keeps the read-only row, because a row cannot resolve one', () => {
+    // A resource is resolved against the PROJECT, which a list is not given — the same move
+    // as the scene, the day a list of resources is asked for. Until then, showing what it
+    // holds is more honest than a control that would resolve nothing (ADR-0030 §1).
+    assert.equal(described({
+        type: PropertyType.ARRAY,
+        element: { type: PropertyType.RESOURCE },
+        default: []
+    }).kind, FieldKind.READONLY);
 });
 
 test('a list of choices earns a control only once there is something to choose', () => {

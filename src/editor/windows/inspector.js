@@ -39,7 +39,7 @@ import { searchField } from '../ui/search-field.js';
 import { addComponent, availableComponents, moveComponent, removeComponent } from '../commands.js';
 import { previewOffsets, rankAt } from '../dnd/reflow.js';
 import { describeResource } from '../inspector/resource.js';
-import { PROPERTY_TYPE_LABELS, describeDefinition } from '../inspector/definition.js';
+import { PROPERTY_TYPE_LABELS, defaultField, describeDefinition } from '../inspector/definition.js';
 import { ResourceKind, baseNameOf, extensionOf, hasPayload, withExtension } from '../../project/mod.js';
 import { pickFile, readAsDataUrl } from '../ui/file.js';
 import { DropZone, componentPayload, propertyPayload } from '../dnd/payload.js';
@@ -912,7 +912,6 @@ export class Inspector extends Element {
         const property = definition.property(entry.id);
         if (!property) return null;
 
-        const [name, type, fallback] = entry.fields;
         const key = `property:${entry.id}`;
         const open = !this.#folded.has(key);
 
@@ -988,23 +987,44 @@ export class Inspector extends Element {
             }
         }, grip, caret, title, badge, remove);
 
-        const body = el('div', { class: 'pbody' },
-            // Letter by letter, like every other field in this panel: a rename is one
-            // history entry because the field mints a batch for the typing session, not
-            // because it waits for Enter (ADR-0026 §3).
-            this.#renderPropertyRow(property, name, {
-                write: (value, options) => definition.renameProperty(entry.id, value, options)
-            }),
-            // Changing the type changes the control the default is edited with, so the
-            // section is redrawn — by the pipeline listener, which also catches the redraw
-            // an undo or a collaborator would otherwise not trigger.
-            this.#renderPropertyRow(property, type, {
-                write: value => definition.setPropertyType(entry.id, value)
-            }),
-            this.#renderPropertyRow(property, fallback, {
-                write: (value, options) => definition.setPropertyDefault(entry.id, value, options)
-            })
-        );
+        // ONE WRITER PER FIELD, NAMED BY THE FIELD. A property card is no longer three fixed
+        // rows: a Choice declares its options and a List the type of its elements
+        // (ADR-0031 §2, §3), and each of those is a field of the same reactive descriptor
+        // with a method of the model behind it. The card draws whatever `describeProperty()`
+        // says the type needs, and learns nothing about which types those are.
+        //
+        // Letter by letter, like every other field in this panel: a rename is one history
+        // entry because the field mints a batch for the typing session, not because it waits
+        // for Enter (ADR-0026 §3). Changing the type redraws the whole section — through the
+        // pipeline listener, which also catches the redraw an undo or a collaborator would
+        // otherwise not trigger.
+        const writers = {
+            name: (value, options) => definition.renameProperty(entry.id, value, options),
+            type: (value, options) => definition.setPropertyType(entry.id, value, options),
+            values: (value, options) => definition.setPropertyOptions(entry.id, value, options),
+            of: (value, options) => definition.setPropertyElement(entry.id, value, options),
+            default: (value, options) => definition.setPropertyDefault(entry.id, value, options)
+        };
+
+        const rowFor = descriptor => this.#renderPropertyRow(property, descriptor, {
+            write: (value, options) => writers[descriptor.name]?.(value, options)
+        });
+
+        const body = el('div', { class: 'pbody' }, entry.fields.map(rowFor));
+
+        // THE DEFAULT'S CONTROL IS DERIVED FROM THE PARAMETER DECLARED ABOVE IT: a Choice's
+        // default is a dropdown over its options, a List's is a list of its element type. So
+        // writing either has to rebuild that one control — and ONLY that one. Redrawing the
+        // section instead would destroy the box being typed into and take the caret with it,
+        // which is the defect this Editor has already met three times.
+        let fallback = body.lastElementChild;
+        const reconfigure = () => {
+            const fresh = rowFor(defaultField(property));
+            fallback.replaceWith(fresh);
+            fallback = fresh;
+        };
+        this.track(observe(property, 'values', reconfigure), 'panel');
+        this.track(observe(property, 'of', reconfigure), 'panel');
 
         block.append(header, body);
 
@@ -1944,10 +1964,13 @@ export class Inspector extends Element {
         }
 
         // A list is drawn by a control of its own for the reason the two above are: what it
-        // edits is not one value. It needs nothing from this panel, though — every row is
-        // drawn from its own value, which is what `field()` checks before it lets a list be
-        // one at all (inspector/schema.js).
-        if (descriptor.kind === FieldKind.LIST) return el('px-list').bind(target, descriptor, options);
+        // edits is not one value. It takes the scene for the one element kind that cannot be
+        // drawn without it — a reference resolves against the scene, above and inside a list
+        // alike — and nothing else: every other row is drawn from its own value, which is
+        // what `field()` checks before it lets a list be one at all (inspector/schema.js).
+        if (descriptor.kind === FieldKind.LIST) {
+            return el('px-list').bind(target, descriptor, { ...options, scene: this.#scene ?? null });
+        }
 
         if (descriptor.kind !== FieldKind.RESOURCE) return el('px-field').bind(target, descriptor, options);
 

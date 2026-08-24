@@ -22,7 +22,7 @@
 // holds, so `inputs` may be a function of the node and of the context it lives in. That is
 // why nothing may cache a port list across a param change.
 
-import { PropertyType } from '../properties/types.js';
+import { PropertyType, elementOf } from '../properties/types.js';
 
 /** What travels along a connection. */
 export const PortKind = {
@@ -232,6 +232,36 @@ export function portOf(definition, node, direction, portId, context = {}) {
  * shape with a different promise about decimals, and refusing the pair would make a
  * creator insert a conversion node to add 1 to a counter. Everything else must match.
  *
+ * IT IS DIRECTIONAL, AND TWO OF THE FOUR RULES BELOW USE THAT. `source` is what an output
+ * produces and `target` is what an input accepts, which is how `Graph.connect()` and
+ * `validateGraph()` both ask it — so a shape that may be READ as another without being
+ * WRITABLE from it is expressible, and is not the same relation as equality.
+ *
+ * THE THREE RULES A PARAMETERISED TYPE ADDS, and why each is the only honest one:
+ *
+ *   `array<X>` -> `array<Y>`   when X may travel into Y. The rule for a list IS the rule
+ *                              for what it holds, asked one level down — so a
+ *                              `List<Integer>` feeds a `List<Number>` exactly as an
+ *                              `Integer` feeds a `Number`, and `List<Text>` refuses a
+ *                              `List<Number>` exactly as `Text` refuses `Number`. A second
+ *                              rule about lists would be a second opinion about `int`.
+ *
+ *   `enum<…>` -> `enum<…>`     equality, which the identical-names line above already
+ *                              gives: two Choices ARE the same type when they offer the
+ *                              same options, because an option IS its value (ADR-0031 §2)
+ *                              and nothing else about a Choice is a promise. Two Choices
+ *                              offering different options are therefore different types,
+ *                              and a wire between them would carry a value the target
+ *                              cannot hold — invalid the moment it arrives (ADR-0023 §1).
+ *
+ *   `enum<…>` -> `string`      A CHOICE READS AS TEXT AND IS NEVER WRITTEN FROM ONE. Every
+ *                              value a Choice can hold is one of its options, and an option
+ *                              is a string in a `.px` payload (ADR-0031 §2) — so reading one
+ *                              as text loses nothing. The reverse is where a Choice would
+ *                              stop being a Choice: an arbitrary string is not one of the
+ *                              options, and `isValidValue()` says so. That asymmetry is the
+ *                              whole reason a Choice is not a Text with extra rendering.
+ *
  * @param {string} source - The output port's type
  * @param {string} target - The input port's type
  * @returns {boolean} True when the connection carries a usable value
@@ -240,8 +270,17 @@ export function typesCompatible(source, target) {
     if (source === ANY_TYPE || target === ANY_TYPE) return true;
     if (source === target) return true;
 
+    const from = baseTypeOf(source);
+    const to = baseTypeOf(target);
+
+    if (from === PropertyType.ARRAY && to === PropertyType.ARRAY) {
+        return typesCompatible(typeParameterOf(source), typeParameterOf(target));
+    }
+
+    if (from === PropertyType.ENUM && to === PropertyType.STRING) return true;
+
     const numeric = new Set([PropertyType.NUMBER, PropertyType.INT]);
-    return numeric.has(source) && numeric.has(target);
+    return numeric.has(from) && numeric.has(to);
 }
 
 /**
@@ -257,12 +296,89 @@ export function typesCompatible(source, target) {
  * Every node that builds a port out of a property calls this, rather than repeating an
  * expression that would drift the day a fifth caller appears.
  *
+ * A TYPE THAT TAKES A PARAMETER CARRIES IT IN ITS NAME, and that is what makes a list and
+ * a choice real types on a wire rather than labels on one. `typesCompatible()` compares
+ * names; a `List<Number>` and a `List<Text>` whose ports were both called `array` would be
+ * one type, and a creator would be allowed to wire text into a list of numbers because the
+ * type system had lost the only thing that distinguished them.
+ *
+ * The parameter is read off the DECLARATION and nothing else — an element's type, a
+ * choice's options — so a port's type is known from the schema alone, with no instance, no
+ * scene and no running graph. That is what lets the Editor colour a socket and refuse a
+ * wire before anything has been run, and what lets `validateGraph()` answer headlessly.
+ *
+ * `array<any>` IS WHAT AN UNDECLARED LIST IS, not a special case: ADR-0031 §3 says a list
+ * that declares no element type is `any` and read-only, and `any` is already the absence of
+ * a constraint. `Tilemap.tiles` therefore keeps taking and giving whatever it did.
+ *
  * @param {object|null} property - The declared property descriptor, or null
  * @returns {string} The port type; ANY_TYPE when nothing is declared
  */
 export function portTypeOf(property) {
-    if (property?.type === PropertyType.OBJECTREF) return OBJECT_TYPE;
-    return property?.type ?? ANY_TYPE;
+    const declared = property?.type ?? null;
+    if (declared === null) return ANY_TYPE;
+
+    if (declared === PropertyType.OBJECTREF) return OBJECT_TYPE;
+    // ONE LEVEL DOWN, THROUGH THIS VERY FUNCTION. A list of references is a list of handles
+    // on a wire for the same reason a reference is a handle (ADR-0034 §3.5), and stating
+    // that a second time here is how the two would come to disagree.
+    if (declared === PropertyType.ARRAY) return parameterised(declared, portTypeOf(elementOf(property)));
+    if (declared === PropertyType.ENUM) return parameterised(declared, optionKey(property.values));
+
+    return declared;
+}
+
+/**
+ * The type a parameterised port type is a parameterisation OF.
+ *
+ * `array<number>` is an `array`, and that is what a hue, an icon and a control are chosen
+ * from — none of the three is a function of what a list HOLDS. Exported so the Editor reads
+ * the parameter off with the Core's own rule rather than with a second parser.
+ *
+ * @param {string} type - A port type
+ * @returns {string} Its base type; the type itself when it takes no parameter
+ */
+export function baseTypeOf(type) {
+    if (typeof type !== 'string') return ANY_TYPE;
+
+    const at = type.indexOf(PARAMETER_OPEN);
+    return at === -1 ? type : type.slice(0, at);
+}
+
+/** `array<number>` -> `number`; ANY_TYPE for a type that carries no parameter. */
+function typeParameterOf(type) {
+    const at = typeof type === 'string' ? type.indexOf(PARAMETER_OPEN) : -1;
+    return at === -1 ? ANY_TYPE : type.slice(at + 1, -1);
+}
+
+const PARAMETER_OPEN = '<';
+
+/** A type and its parameter, as the one name the two of them make. */
+function parameterised(base, parameter) {
+    return `${base}${PARAMETER_OPEN}${parameter}>`;
+}
+
+/**
+ * A choice's options, as the one string that identifies WHICH choice it is.
+ *
+ * THE SET, NOT THE LIST. Two Choices offering the same options are the same type however
+ * they are ordered, because reordering options is a display gesture ADR-0031 §2 lists
+ * alongside adding and removing — and a reorder that silently broke every wire in the graph
+ * would be a gesture no creator could afford to make. Sorting is what makes the name a
+ * function of the set; duplicates collapse for the same reason.
+ *
+ * ESCAPED, SO THE NAME IS INJECTIVE. Without it `['a|b']` and `['a', 'b']` would produce one
+ * name, and two Choices that accept different values would be silently interchangeable —
+ * exactly the confusion this encoding exists to prevent.
+ *
+ * @param {any} values - What the property declares as its options
+ * @returns {string} The canonical name of that option set
+ */
+function optionKey(values) {
+    if (!globalThis.Array.isArray(values)) return '';
+
+    const options = values.map(value => globalThis.String(value).replace(/[\\|<>]/g, match => `\\${match}`));
+    return [...new globalThis.Set(options)].sort().join('|');
 }
 
 /**

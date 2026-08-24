@@ -23,7 +23,7 @@
 // parseInt, colours guessed from whether a string happens to start with '#', a hard-coded
 // blacklist of field names, and four dead `TODO Range` style branches.
 
-import { PropertyType, componentSchema, isPropertyType } from '../../core/mod.js';
+import { PropertyType, componentSchema, elementOf } from '../../core/mod.js';
 
 /**
  * Field kinds the Inspector knows how to render.
@@ -63,27 +63,38 @@ export const FieldKind = {
 };
 
 /**
- * The kinds a control draws from the VALUE ALONE.
+ * The kinds a row of a list can be drawn with.
  *
  * It is the question a list has to ask about its elements, and it has exactly one honest
- * answer per kind. A `resource` is resolved against the project and a reference against the
- * scene, so their controls are handed a project and a scene by the panel that builds them
- * (windows/inspector.js) — a row inside a list has neither, and drawing them with the value
- * control instead would put a text box over an opaque identity, which is the one thing
- * ADR-0030 §1 and ADR-0034 §3.5 both refuse. A nested list is a rendering nobody has
- * designed. A read-only element has nothing to edit.
+ * answer per kind. Most of these draw from the VALUE ALONE: a number, a colour, a choice
+ * need nothing but what they hold.
+ *
+ * AN OBJECT REFERENCE IS THE ONE THAT NEEDS SOMETHING, AND IT IS GIVEN IT. Resolving one
+ * needs the scene, which `<px-list>` is now handed by the panel that builds it exactly as
+ * `<px-object>` already was (windows/inspector.js) — so a row shows the Object it points at
+ * and offers the same picker, rather than a text box over an opaque identity, which is what
+ * ADR-0034 §3.5 refuses. Its DEFAULT is still not authorable on a `.px`: a project-scoped
+ * file may not carry a scene's identities, and `defaultField()` says so (inspector/
+ * definition.js).
+ *
+ * `resource` IS DELIBERATELY NOT HERE. It resolves against the project, which a list is not
+ * given — the same move as the scene, the day a list of resources is asked for. Until then a
+ * list of them stays read-only rather than being drawn by a control that would resolve
+ * nothing. A read-only element has nothing to edit either, and a nested list is refused a
+ * level up, in the Core (ADR-0031 §3).
  *
  * So a list of those is not "unsupported": it is a list whose elements this Editor cannot
  * yet edit, and it stays read-only — showing what it holds, as it already did.
  */
-const SELF_CONTAINED = new globalThis.Set([
+const EDITABLE_ELEMENT = new globalThis.Set([
     FieldKind.NUMBER,
     FieldKind.INT,
     FieldKind.RANGE,
     FieldKind.BOOLEAN,
     FieldKind.STRING,
     FieldKind.COLOR,
-    FieldKind.ENUM
+    FieldKind.ENUM,
+    FieldKind.OBJECT
 ]);
 
 /**
@@ -101,10 +112,13 @@ const SELF_CONTAINED = new globalThis.Set([
  * `resource-to-property` means — so `ui/resource-field.js` shows what the reference points
  * at and offers pick, drop and clear. It is still not a text field, and never will be.
  *
- * `array` remains read-only, and honestly: it shows its element count, which is true and
- * useful, and editing one needs a list control that does not exist yet. It is a real type
- * at the Core (ADR-0023); what it lacks is a control, and that is a visible piece of work
- * rather than a silent dead end.
+ * `array` HAS ONE NOW, AND THE PARAGRAPH THAT SAID OTHERWISE IS GONE RATHER THAN OVERRULED.
+ * It used to read: "editing one needs a list control that does not exist yet ... what it
+ * lacks is a control, and that is a visible piece of work rather than a silent dead end."
+ * That work is `ui/list-field.js`. What decides whether a given list earns the control is
+ * not the type but the DECLARATION — what it says its elements are (ADR-0031 §3) — so the
+ * decision is made in `field()`, beside the one that turns a choice with nothing to choose
+ * from back into a read-only row.
  */
 const KIND_BY_PROPERTY_TYPE = {
     [PropertyType.NUMBER]: FieldKind.NUMBER,
@@ -395,7 +409,10 @@ function field(name, property = {}) {
     const max = numeric(property.max);
     const display = DISPLAY_UNITS[property.unit] ?? { scale: 1, unit: property.unit ?? null, step: null };
 
-    const element = declared === PropertyType.ARRAY ? elementOf(property.element) : null;
+    // WHAT ONE ELEMENT IS, ANSWERED BY THE CORE. The element type is part of a list's type
+    // (ADR-0031 §3), so validation, the port type and this control all have to read the same
+    // declaration — and `elementOf()` is the one place that says what counts as one.
+    const element = elementOf(property);
 
     let kind = fieldKindFor(declared);
     if (kind === FieldKind.ENUM && values.length === 0) kind = FieldKind.READONLY;
@@ -467,36 +484,16 @@ function field(name, property = {}) {
  * ASKED THROUGH `field()` ITSELF, so the answer is the kind an element would ACTUALLY get —
  * a choice with no options is read-only there too, and stating that rule a second time here
  * is how two rules that were one start to disagree. The recursion is one level deep and no
- * deeper: a nested list is refused above it, which is also the honest answer while nobody
- * has designed how a list of lists is drawn.
+ * deeper, and it is not this file that stops it: ADR-0031 §3 admits every `PropertyType`
+ * except `array` as an element, so `elementOf()` refuses a list of lists in the Core and
+ * this only ever sees a shape one level down.
  *
  * @param {object|null} element - The element's declaration, already normalised
  * @returns {boolean} True when every row can be drawn from its value alone
  */
 function editableElement(element) {
-    if (!element || element.type === PropertyType.ARRAY) return false;
-    return SELF_CONTAINED.has(field('', element).kind);
-}
-
-/**
- * The declaration of one element of a list, or null when there is none to honour.
- *
- * DECLARED, NEVER GUESSED — the rule ADR-0023 §7 states for the reflective fallback, applied
- * here: a list whose elements are not declared, or are declared as something the Core has no
- * type for, has no element shape at all. It stays read-only, which is what it already was,
- * rather than being edited through a control chosen by guesswork.
- *
- * Copied rather than referenced, so the descriptor a control holds and the schema a
- * component declares cannot be written through one another.
- *
- * @param {any} element - What the property declared for its elements
- * @returns {object|null} The element's declaration, copied
- */
-function elementOf(element) {
-    if (!element || typeof element !== 'object' || globalThis.Array.isArray(element)) return null;
-    if (!isPropertyType(element.type)) return null;
-
-    return { ...element };
+    if (!element) return false;
+    return EDITABLE_ELEMENT.has(field('', element).kind);
 }
 
 function numeric(value) {

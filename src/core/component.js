@@ -76,6 +76,7 @@
 // Object's public surface would change unpredictably as components are added.
 
 import { isMissingComponent, missingComponent } from './missing.js';
+import { copyValue } from './properties/types.js';
 
 /**
  * Resolve the type name that keys a component on an Object.
@@ -180,7 +181,13 @@ export function reconcileValues(component, values = {}) {
             continue;
         }
         if (schema && !globalThis.Object.hasOwn(schema, key)) continue;
-        component[key] = value;
+        // COPIED, FOR THE REASON `defaultForProperty()` COPIES A DECLARED DEFAULT: sharing
+        // one array between two instances is the aliasing that shows up as two objects
+        // mysteriously editing each other's state. One payload rebuilt twice — a scene
+        // opened beside itself, an undo replaying a deleted subtree — would otherwise hand
+        // both components the very same list. A primitive is returned as it is, so this
+        // costs a type check on the values that are not containers.
+        component[key] = copyValue(value);
     }
 
     return component;

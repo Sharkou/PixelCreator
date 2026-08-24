@@ -29,6 +29,7 @@ import {
     PROPERTY_REFERENCE,
     PortKind,
     PropertyType,
+    baseTypeOf,
     portsOf,
     referencedComponent
 } from '../../core/mod.js';
@@ -214,6 +215,13 @@ export function paramWrites(definition, node, name, value, context = {}) {
  * a port anyway (ADR-0034 §3.2, §3.6) — so the box would also be a lie. Everything else gets
  * one, whether or not something is wired to it (ADR-0031 §1).
  *
+ * THE DESCRIPTOR IS BUILT FROM THE BASE TYPE, because a port carries a type and not a
+ * declaration. `array<number>` says a list of numbers travels here; what it does not carry
+ * is the element's bounds or a Choice's options, which are what those two controls need —
+ * they live on the property, and a port is not one. So a list and a choice reach `fieldFor()`
+ * as an undeclared list and an optionless choice, and get the read-only row both already
+ * had, by the rule ADR-0031 §2 and §3 state rather than by falling through an unknown name.
+ *
  * The descriptor is built by the same `fieldFor()` every other value in the Editor goes
  * through, so the control, the parsing and the bounds are not decided here.
  *
@@ -229,7 +237,7 @@ export function inputFields(ports) {
 
         fields.push({
             ...fieldFor(port.id, {
-                type: port.type,
+                type: baseTypeOf(port.type),
                 label: port.label,
                 default: port.default,
                 placeholder: port.placeholder

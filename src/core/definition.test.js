@@ -15,6 +15,7 @@ import {
     deserializeScene,
     PropertyType,
     defaultForProperty,
+    elementOf,
     isValidValue
 } from './mod.js';
 
@@ -379,4 +380,121 @@ test('an objectref survives a save and a reload, and outlives what it points at'
         target.id,
         'a dead reference is still written out'
     );
+});
+
+// --- what one element of a List is (ADR-0031 §3) ---------------------------------------
+//
+// The element type is PART of the list's type, and one function answers what it is: the
+// validator, the port type, the reference boundary and the Inspector all ask it. Four
+// callers deciding for themselves what counts as a declaration is four rules that would
+// eventually disagree.
+
+test('a List declares its element type, in either of the two spellings', () => {
+    // `of` is what ADR-0031 §3 writes and what a `.px` authors: a type name, so declaring it
+    // is one ordinary SET_PROPERTY on the descriptor.
+    assert.deepEqual(elementOf({ type: 'array', of: 'number' }), { type: 'number' });
+
+    // `element` is the same thing with room for constraints, which is what a component
+    // written in JavaScript needs: `Tilemap.palette` declares the colour its entries start at.
+    assert.deepEqual(elementOf({ type: 'array', element: { type: 'color', default: '#000000' } }),
+        { type: 'color', default: '#000000' });
+});
+
+test('the richer spelling wins when a property carries both', () => {
+    assert.deepEqual(elementOf({ type: 'array', of: 'number', element: { type: 'int', min: 0 } }),
+        { type: 'int', min: 0 }, 'the declaration with the constraints is the one to honour');
+});
+
+test('only a List has elements', () => {
+    assert.equal(elementOf({ type: 'number', of: 'int' }), null);
+    assert.equal(elementOf({ type: 'enum', values: ['a'], of: 'string' }), null);
+    assert.equal(elementOf(null), null);
+    assert.equal(elementOf({}), null);
+});
+
+test('an element the Core has no type for is not a declaration', () => {
+    // DECLARED, NEVER GUESSED (ADR-0023 §7). Half a declaration would have a control chosen
+    // by guesswork, which is worse than the read-only row a list already had.
+    for (const property of [
+        { type: 'array' },
+        { type: 'array', of: 'nonsense' },
+        { type: 'array', of: 42 },
+        { type: 'array', element: { type: 'nonsense' } },
+        { type: 'array', element: {} },
+        { type: 'array', element: 'int' },
+        { type: 'array', element: [] }
+    ]) {
+        assert.equal(elementOf(property), null, `${JSON.stringify(property)} was taken as a declaration`);
+    }
+});
+
+test('a List of Lists is refused, in the Core, once', () => {
+    // ADR-0031 §3 admits every PropertyType as an element EXCEPT `array`: a list of lists is
+    // a structure, and a structure is the question ADR-0023 leaves open. Refusing it here is
+    // what stops every caller from having to remember the rule.
+    assert.equal(elementOf({ type: 'array', of: 'array' }), null);
+    assert.equal(elementOf({ type: 'array', element: { type: 'array', of: 'number' } }), null);
+});
+
+test('an element declaration is copied, so a schema cannot be written through it', () => {
+    const schema = { type: 'array', element: { type: 'int' } };
+
+    elementOf(schema).min = 5;
+
+    assert.equal(schema.element.min, undefined, 'the component schema was written through');
+});
+
+// --- a List is valid when every element of it is ----------------------------------------
+
+test('a List validates its elements against their declaration', () => {
+    const numbers = { type: 'array', of: 'number' };
+
+    assert.equal(isValidValue(numbers, []), true, 'an empty list is a list');
+    assert.equal(isValidValue(numbers, [1, 2.5, -3]), true);
+    assert.equal(isValidValue(numbers, [1, 'two']), false);
+    assert.equal(isValidValue(numbers, [1, null]), false);
+    assert.equal(isValidValue(numbers, 'not a list'), false);
+    assert.equal(isValidValue(numbers, null), false);
+});
+
+test('the element rule is this very function, one level down', () => {
+    // Adding a type to the Core makes it a legal element on the day it becomes a legal
+    // property, because there is no second validator for what a list may hold.
+    assert.equal(isValidValue({ type: 'array', of: 'int' }, [1, 2]), true);
+    assert.equal(isValidValue({ type: 'array', of: 'int' }, [1, 2.5]), false, 'an int is not a decimal');
+    assert.equal(isValidValue({ type: 'array', of: 'boolean' }, [true, false]), true);
+    assert.equal(isValidValue({ type: 'array', of: 'string' }, ['a', '']), true);
+    assert.equal(isValidValue({ type: 'array', of: 'objectref' }, ['obj_1', null]), true);
+    assert.equal(isValidValue({ type: 'array', of: 'objectref' }, [42]), false);
+});
+
+test('a List of Choices is invalid the moment an element stops being an option', () => {
+    const moods = { type: 'array', element: { type: 'enum', values: ['calm', 'angry'] } };
+
+    assert.equal(isValidValue(moods, ['calm', 'angry']), true);
+    assert.equal(isValidValue(moods, ['calm', 'furious']), false,
+        'a value that is not one of the options is not a Choice');
+});
+
+test('a List that declares nothing holds whatever it holds', () => {
+    // `Tilemap.tiles` is exactly this, and it must keep validating: a list the Core cannot
+    // read is not a malformed one.
+    assert.equal(isValidValue({ type: 'array' }, [1, 'two', null]), true);
+    assert.equal(isValidValue({ type: 'array' }, 'still not a list'), false);
+});
+
+// --- a Choice is one of its options ------------------------------------------------------
+
+test('a Choice starts at its first option and accepts only its options', () => {
+    const property = { type: 'enum', values: ['calm', 'angry'] };
+
+    assert.equal(defaultForProperty(property), 'calm');
+    assert.equal(isValidValue(property, 'angry'), true);
+    assert.equal(isValidValue(property, 'furious'), false);
+    assert.equal(isValidValue(property, null), false);
+});
+
+test('a Choice with nothing to choose from starts at nothing and accepts nothing', () => {
+    assert.equal(defaultForProperty({ type: 'enum' }), null);
+    assert.equal(isValidValue({ type: 'enum' }, 'anything'), false);
 });

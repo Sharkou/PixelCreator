@@ -140,11 +140,74 @@ export function isValidValue(property, value) {
         case PropertyType.RESOURCE:
         case PropertyType.OBJECTREF:
             return value === null || typeof value === 'string';
-        case PropertyType.ARRAY:
-            return globalThis.Array.isArray(value);
+        // A LIST IS VALID WHEN EVERY ELEMENT OF IT IS (ADR-0031 §3). The element's shape is
+        // a declaration like any other, so the check is this very function one level down —
+        // there is no second validator for what a list may hold, and adding a type to the
+        // Core makes it a legal element on the same day it becomes a legal property.
+        //
+        // A list that declares nothing about its elements holds whatever it holds. That is
+        // the same permissiveness `Tilemap.tiles` already relies on, and it is what keeps a
+        // value the Core cannot read from being reported as malformed.
+        case PropertyType.ARRAY: {
+            if (!globalThis.Array.isArray(value)) return false;
+
+            const element = elementOf(property);
+            return element === null || value.every(item => isValidValue(element, item));
+        }
         default:
             return true;
     }
+}
+
+/**
+ * The declaration of one element of a list, or null when there is none to honour.
+ *
+ * THE ELEMENT TYPE IS PART OF THE LIST'S TYPE (ADR-0031 §3), and this is the one place that
+ * reads it. Validation asks it, the port type asks it, the boundary that resolves a
+ * reference asks it and the Inspector asks it — four callers that would otherwise each
+ * decide what counts as a declaration, and would eventually disagree.
+ *
+ * TWO SPELLINGS, ONE ANSWER, AND NEITHER IS A SECOND VOCABULARY:
+ *
+ *   `of: 'number'`                    a type name. What ADR-0031 §3 writes, and what the
+ *                                     `.px` Inspector authors — a scalar, so declaring it
+ *                                     is one ordinary SET_PROPERTY on the descriptor;
+ *   `element: { type, min, max, … }`  a property declaration one level down (ADR-0007's
+ *                                     own shape). What a component written in JavaScript
+ *                                     uses when an element needs more than a name:
+ *                                     `Tilemap.palette` declares the colour its entries
+ *                                     start at this way.
+ *
+ * The second is the first with room for constraints, so it wins when both are present.
+ *
+ * DECLARED, NEVER GUESSED (ADR-0023 §7). An element declared as something the Core has no
+ * type for is not a declaration, and neither is a list of lists: ADR-0031 §3 admits every
+ * `PropertyType` except `array`, because a structure is the question ADR-0023 leaves open.
+ * Either way the answer is null, the list keeps the read-only row it already had, and
+ * nothing is edited through a control chosen by guesswork.
+ *
+ * Copied rather than referenced, so a descriptor a control holds and the schema a component
+ * declares cannot be written through one another.
+ *
+ * @param {object|null} property - The declared property descriptor
+ * @returns {object|null} The element's declaration, copied
+ */
+export function elementOf(property) {
+    if (property?.type !== PropertyType.ARRAY) return null;
+
+    const declared = isDeclaration(property.element)
+        ? property.element
+        : (typeof property.of === 'string' ? { type: property.of } : null);
+
+    if (!declared) return null;
+    if (!isPropertyType(declared.type) || declared.type === PropertyType.ARRAY) return null;
+
+    return { ...declared };
+}
+
+/** Whether a value is shaped like a property declaration at all. */
+function isDeclaration(value) {
+    return Boolean(value) && typeof value === 'object' && !globalThis.Array.isArray(value);
 }
 
 /**

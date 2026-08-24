@@ -343,3 +343,63 @@ test('a list declared read-only keeps its flag, whatever its elements say', () =
     const descriptor = describeComponent(new Locked()).find(entry => entry.name === 'swatches');
     assert.equal(descriptor.readonly, true);
 });
+
+// --- what a list of each declared shape is edited with ------------------------------------
+
+/** A component declaring one property, described exactly as the Inspector describes it. */
+function listFor(property) {
+    class Subject {
+        static type = 'Subject';
+        static schema = { subject: { type: PropertyType.ARRAY, default: [], ...property } };
+        constructor() { this.subject = []; }
+    }
+    return describeComponent(new Subject()).find(entry => entry.name === 'subject');
+}
+
+test('a List declared with a type name is a list, exactly as one declared in full is', () => {
+    // `of` is what ADR-0031 §3 writes and what the `.px` Inspector authors; `element` is the
+    // same thing with room for constraints. One normaliser answers both (core elementOf).
+    const named = listFor({ of: PropertyType.NUMBER });
+    const full = listFor({ element: { type: PropertyType.NUMBER } });
+
+    assert.equal(named.kind, FieldKind.LIST);
+    assert.deepEqual(named.element, full.element);
+    assert.equal(itemFieldFor(named.element).kind, FieldKind.NUMBER);
+});
+
+test('every element type the Editor can draw gets the control its own type asks for', () => {
+    const kinds = {
+        [PropertyType.NUMBER]: FieldKind.NUMBER,
+        [PropertyType.INT]: FieldKind.INT,
+        [PropertyType.STRING]: FieldKind.STRING,
+        [PropertyType.BOOLEAN]: FieldKind.BOOLEAN,
+        [PropertyType.COLOR]: FieldKind.COLOR,
+        // A reference resolves against the scene, which the panel hands the list
+        // (ui/list-field.js) — so a row shows the Object it points at, never its identity.
+        [PropertyType.OBJECTREF]: FieldKind.OBJECT
+    };
+
+    for (const [type, kind] of globalThis.Object.entries(kinds)) {
+        const list = listFor({ of: type });
+
+        assert.equal(list.kind, FieldKind.LIST, `a list of ${type} was not editable`);
+        assert.equal(itemFieldFor(list.element).kind, kind, `a ${type} row got the wrong control`);
+    }
+});
+
+test('a list of Choices draws each row as the same dropdown the Choice would get', () => {
+    const list = listFor({ element: { type: PropertyType.ENUM, values: ['idle', 'run'] } });
+
+    const row = itemFieldFor(list.element);
+
+    assert.equal(row.kind, FieldKind.ENUM);
+    assert.deepEqual(row.values, ['idle', 'run'], 'a row is told what it may hold');
+});
+
+test('a blank element starts where its own type starts', () => {
+    // The value `Add` puts in a new row: a declared default when there is one, the type's
+    // own otherwise — the same answer `defaultForProperty()` gives a property.
+    assert.equal(itemFieldFor({ type: PropertyType.NUMBER }).default, null);
+    assert.equal(itemFieldFor({ type: PropertyType.COLOR, default: '#000000' }).default, '#000000');
+    assert.equal(itemFieldFor({ type: PropertyType.ENUM, values: ['idle', 'run'] }).default, null);
+});

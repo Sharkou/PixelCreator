@@ -17,7 +17,7 @@
 // the chosen type by exactly the mapping every other field goes through. Adding a type is
 // still one line in the Core and one in `FieldKind`, and nothing here changes.
 
-import { PropertyType, propertyTypes } from '../../core/mod.js';
+import { PropertyType, elementOf, propertyTypes } from '../../core/mod.js';
 import { iconForPropertyType } from '../ui/icons.js';
 import { FieldKind, fieldFor } from './schema.js';
 
@@ -62,6 +62,22 @@ export const PROPERTY_TYPE_LABELS = {
  */
 export function authorableTypes() {
     return propertyTypes().filter(type => type !== PropertyType.INT);
+}
+
+/**
+ * The types a creator may declare the ELEMENTS of a List as.
+ *
+ * THE SAME LIST, ONE SHORT, AND THE MISSING ONE IS THE DECISION. ADR-0031 §3 admits every
+ * `PropertyType` as an element except `array`: a list of lists is a structure, and a
+ * structure is the question ADR-0023 leaves open rather than the one a list answers. The
+ * Core refuses the declaration in `elementOf()`; this is the same refusal made where a
+ * creator would otherwise be offered it, so the menu never contains a choice that would be
+ * ignored.
+ *
+ * @returns {string[]} The types the element dropdown offers, in the order it offers them
+ */
+export function elementTypes() {
+    return authorableTypes().filter(type => type !== PropertyType.ARRAY);
 }
 
 /**
@@ -110,9 +126,59 @@ export function describeProperty(property) {
                 icons: authorableTypes().map(type => iconForPropertyType(type)),
                 tooltip: 'The shape of the value. Changing it resets the default'
             }),
+            ...configurationFields(property),
             defaultField(property)
         ]
     };
+}
+
+/**
+ * The rows a type needs BEFORE its default means anything.
+ *
+ * TWO TYPES TAKE A PARAMETER, AND UNTIL IT IS DECLARED THEY HAVE NO CONTROL. A Choice with
+ * no options is read-only and a List with no element type is read-only — both correctly, and
+ * both were dead ends: the Type dropdown offered `Choice` and `List`, and nothing anywhere
+ * let a creator say what a Choice may hold or what a List is a list OF. ADR-0031 §2 and §3
+ * put both in the descriptor, beside the default, so declaring one is an ordinary
+ * SET_PROPERTY on the same reactive record every other field writes to.
+ *
+ * A ROW PER PARAMETER, AND ONLY WHEN THE TYPE HAS ONE. A `number` gains nothing here; a
+ * Choice gains its options, a List the shape of its elements. That is what keeps the card
+ * three rows for the types that need three.
+ *
+ * @param {object} property - The reactive descriptor
+ * @returns {object[]} Field descriptors, or nothing for a type that takes no parameter
+ */
+export function configurationFields(property) {
+    if (property?.type === PropertyType.ENUM) {
+        // THE OPTIONS ARE A LIST OF TEXT, AND THAT IS THE WHOLE CONTROL. ADR-0031 §2: an
+        // option IS its value, has no identity of its own, and is a string in the payload —
+        // so `<px-list>` over `string` elements is exactly the shape of the data, and adding,
+        // removing and reordering are the three gestures it already has.
+        return [fieldFor('values', {
+            type: PropertyType.ARRAY,
+            element: { type: PropertyType.STRING },
+            label: 'Options',
+            tooltip: 'What this Choice may hold. An option is its own value, so renaming one changes the value'
+        })];
+    }
+
+    if (property?.type === PropertyType.ARRAY) {
+        return [fieldFor('of', {
+            type: PropertyType.ENUM,
+            label: 'Of',
+            values: elementTypes(),
+            labels: elementTypes().map(type => PROPERTY_TYPE_LABELS[type] ?? type),
+            icons: elementTypes().map(type => iconForPropertyType(type)),
+            // A LIST THAT SAYS NOTHING IS A LIST OF ANYTHING, and read-only. The empty
+            // dropdown has to say which of the two empties it is (ADR-0031 §2's rule, applied
+            // to the other parameter): nothing chosen yet, not nothing to choose.
+            placeholder: 'Anything — not editable',
+            tooltip: 'What one element of this List is. Changing it empties the default'
+        })];
+    }
+
+    return [];
 }
 
 /**
@@ -123,9 +189,11 @@ export function describeProperty(property) {
  * they attach the Component, shown while they are declaring it.
  *
  * `resource` is a real control here too, for the same reason it is one everywhere else:
- * a reference is picked or dropped, never typed. `array` is still read-only, because what
- * it lacks is a list control (ADR-0023) — and a text box for it would be an invitation to
- * corrupt a value nobody can see.
+ * a reference is picked or dropped, never typed. `array` is one as well now that a list can
+ * say what it holds: the Of row above declares the element type, and the default becomes the
+ * same `<px-list>` a creator will meet on every instance. A list that still declares nothing
+ * keeps the read-only row it had — not for want of a control, but because there is nothing
+ * to draw one from.
  *
  * @param {object} property - The reactive descriptor
  * @returns {object} A field descriptor for `default`
@@ -145,7 +213,14 @@ export function defaultField(property) {
     // declaration with `"default": null` for exactly this reason, and `defaultForProperty()`
     // answers null whatever is stored, so nothing is lost by refusing to author it: the
     // reference is set on each Object the Component is attached to.
-    if (property?.type === PropertyType.OBJECTREF) {
+    //
+    // A LIST OF THEM IS THE SAME LEAK, ONE LEVEL DOWN, and it is the one this section had to
+    // learn: `List<Object>` is a perfectly good property on an instance — the Inspector edits
+    // it against the open scene — but its DEFAULT lives in the `.px`, and a default holding
+    // three ObjectIds is three scene identities written into a file of project scope. The
+    // element type is part of the list's type (ADR-0031 §3), so the rule is read off it
+    // rather than restated.
+    if (property?.type === PropertyType.OBJECTREF || elementOf(property)?.type === PropertyType.OBJECTREF) {
         return {
             ...descriptor,
             kind: FieldKind.READONLY,

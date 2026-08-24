@@ -4,7 +4,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ComponentDefinition, NodeRegistry, PropertyType, propertyTypes, registerStandardNodes } from '../../core/mod.js';
 import { FieldKind } from './schema.js';
-import { PROPERTY_TYPE_LABELS, authorableTypes, defaultField, describeDefinition, describeProperty } from './definition.js';
+import {
+    PROPERTY_TYPE_LABELS,
+    authorableTypes,
+    defaultField,
+    describeDefinition,
+    describeProperty,
+    elementTypes
+} from './definition.js';
 
 function definition(payload = {}) {
     return new ComponentDefinition(payload, { registry: registerStandardNodes(new NodeRegistry()) });
@@ -152,4 +159,101 @@ test('an Object reference has no default a creator may author', () => {
 test('every other reference type still authors its default', () => {
     assert.equal(defaultField({ type: PropertyType.STRING }).readonly, false);
     assert.equal(defaultField({ type: PropertyType.NUMBER }).kind, FieldKind.NUMBER);
+});
+
+// --- declaring what a Choice holds and what a List is OF (ADR-0031 §2, §3) --------------
+//
+// Both were menu entries leading nowhere: the Type dropdown offered `Choice` and `List`, and
+// nothing anywhere let a creator say which options a Choice offers or what a List is a list
+// of — so both landed on the read-only row, forever. The parameter lives in the descriptor,
+// beside the default, and is edited by the controls this Editor already has.
+
+function fieldsOf(property) {
+    return describeProperty(property).fields.map(field => field.name);
+}
+
+test('a Choice gains a row for its options, and it is a list of text', () => {
+    const model = definition();
+    const property = model.addProperty({ name: 'mood', type: PropertyType.ENUM });
+
+    assert.deepEqual(fieldsOf(property), ['name', 'type', 'values', 'default']);
+
+    const options = describeProperty(property).fields.find(field => field.name === 'values');
+    assert.equal(options.kind, FieldKind.LIST);
+    // An option IS its value and has no identity of its own (ADR-0031 §2), so the control is
+    // exactly the shape of the data: a list of strings.
+    assert.deepEqual(options.element, { type: PropertyType.STRING });
+});
+
+test('a List gains a row for what it holds, and a list of lists is not offered', () => {
+    const model = definition();
+    const property = model.addProperty({ name: 'waypoints', type: PropertyType.ARRAY });
+
+    assert.deepEqual(fieldsOf(property), ['name', 'type', 'of', 'default']);
+
+    const of = describeProperty(property).fields.find(field => field.name === 'of');
+    assert.equal(of.kind, FieldKind.ENUM);
+    assert.equal(of.values.includes(PropertyType.ARRAY), false, 'a structure is not what a list answers');
+    assert.equal(of.values.includes(PropertyType.NUMBER), true);
+    assert.ok(of.placeholder, 'and an unset one says which of the two empties it is');
+});
+
+test('every other type is still three rows', () => {
+    const model = definition();
+
+    for (const type of [PropertyType.NUMBER, PropertyType.STRING, PropertyType.COLOR, PropertyType.BOOLEAN]) {
+        assert.deepEqual(fieldsOf(model.addProperty({ type })), ['name', 'type', 'default'],
+            `${type} gained a parameter it has no use for`);
+    }
+});
+
+test('the element list is the authorable list, one short', () => {
+    assert.deepEqual(elementTypes(), authorableTypes().filter(type => type !== PropertyType.ARRAY));
+    assert.equal(elementTypes().includes(PropertyType.OBJECTREF), true,
+        'a List of Objects is a perfectly good property on an instance');
+});
+
+test('the default of a Choice becomes a dropdown over the options it was given', () => {
+    const model = definition();
+    const property = model.addProperty({ name: 'mood', type: PropertyType.ENUM });
+
+    assert.equal(defaultField(property).kind, FieldKind.READONLY, 'nothing to choose from yet');
+
+    model.setPropertyOptions(property.id, ['calm', 'angry']);
+
+    const field = defaultField(property);
+    assert.equal(field.kind, FieldKind.ENUM);
+    assert.equal(field.readonly, false);
+    assert.deepEqual(field.values, ['calm', 'angry']);
+});
+
+test('the default of a List becomes a list of whatever it was declared to hold', () => {
+    const model = definition();
+    const property = model.addProperty({ name: 'waypoints', type: PropertyType.ARRAY });
+
+    assert.equal(defaultField(property).kind, FieldKind.READONLY, 'nothing declared, nothing to draw');
+
+    model.setPropertyElement(property.id, PropertyType.COLOR);
+
+    const field = defaultField(property);
+    assert.equal(field.kind, FieldKind.LIST);
+    assert.equal(field.readonly, false);
+    assert.deepEqual(field.element, { type: PropertyType.COLOR });
+});
+
+test('a List of Objects has no default a creator may author', () => {
+    // A `.px` is of PROJECT scope and an ObjectId belongs to ONE scene (ADR-0034 §3.5). A
+    // default holding three references would be three scene identities written into a file
+    // several scenes may use — the same leak the lone reference already refuses, one level
+    // down, and read off the element type rather than restated.
+    const model = definition();
+    const property = model.addProperty({ name: 'targets', type: PropertyType.ARRAY });
+    model.setPropertyElement(property.id, PropertyType.OBJECTREF);
+
+    const field = defaultField(property);
+
+    assert.equal(field.kind, FieldKind.READONLY);
+    assert.equal(field.readonly, true);
+    assert.notEqual(field.kind, FieldKind.LIST, 'the scene must not be offered here');
+    assert.ok(field.placeholder, 'and it says where the references ARE set');
 });

@@ -28,6 +28,7 @@ import {
     GraphSeverity,
     OBJECT_TYPE,
     PropertyType,
+    baseTypeOf,
     compatibleTargets,
     createId,
     groupNodes,
@@ -1804,11 +1805,17 @@ function categoryHue(category) {
 
 /**
  * The colour a data type wears.
- * @param {string} type - One of PropertyType, or ANY_TYPE
+ * A PARAMETERISED TYPE WEARS ITS BASE TYPE'S HUE, and the palette gains no row for it. A
+ * `List<Number>` is a list — what makes it blue rather than green would be what it HOLDS,
+ * and a hue per element type is a table that grows with the Core's type list and says
+ * nothing a creator can read off six colours. `baseTypeOf()` is the Core's own way of
+ * asking, so this table stays the eight shapes ADR-0023 names and no more.
+ *
+ * @param {string} type - A port type, as `portTypeOf()` produces one
  * @returns {string} A CSS colour
  */
 function typeHue(type) {
-    return TYPE_HUES[type] ?? 'var(--px-hue-any)';
+    return TYPE_HUES[baseTypeOf(type)] ?? 'var(--px-hue-any)';
 }
 
 /**

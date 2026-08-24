@@ -1281,3 +1281,211 @@ test('a property that is not a reference is unchanged by the boundary', () => {
     assert.equal(component.flag, false, 'and so is a false');
     assert.equal(component.label, 'named');
 });
+
+// --- Choice and List, end to end (ADR-0031 §2, §3) --------------------------------------
+//
+// The parameter a Choice and a List carry is part of their type (core/graph/nodes.js), so
+// what these pin is the whole chain: a declaration becomes a port type, the port type decides
+// which wires are allowed, and the value that travels is the one the property holds.
+
+test('a Choice travels from one property to another of the same Choice', () => {
+    const file = px();
+    const from = file.property({ name: 'mood', type: PropertyType.ENUM, values: ['calm', 'angry'], default: 'angry' });
+    const to = file.property({ name: 'shown', type: PropertyType.ENUM, values: ['calm', 'angry'], default: 'calm' });
+
+    const update = file.node('event.update');
+    const read = file.node('property.get', { property: from.id });
+    const write = file.node('property.set', { property: to.id });
+
+    file.wire([update, 'out'], [write, 'in']);
+    assert.ok(file.wire([read, 'value'], [write, 'value']), 'two Choices offering the same options are one type');
+
+    const { component, behavior } = behaviourFor(file.model);
+    behavior.update(null, {});
+
+    assert.equal(component.shown, 'angry');
+});
+
+test('a Choice reads as Text, and refuses to be written from one', () => {
+    const file = px();
+    const mood = file.property({ name: 'mood', type: PropertyType.ENUM, values: ['calm', 'angry'], default: 'calm' });
+    const label = file.property({ name: 'label', type: PropertyType.STRING, default: '' });
+
+    const read = file.node('property.get', { property: mood.id });
+    const asText = file.node('property.set', { property: label.id });
+    assert.ok(file.wire([read, 'value'], [asText, 'value']), 'every option is a string, so nothing is lost');
+
+    // The reverse is where a Choice would stop being a Choice: an arbitrary string is not one
+    // of the options, and this is the wire the type system exists to refuse.
+    const text = file.node('value.string', { value: 'furious' });
+    const write = file.node('property.set', { property: mood.id });
+    const verdict = file.model.graph.canConnect(
+        { node: text.id, port: 'value' }, { node: write.id, port: 'value' }
+    );
+
+    assert.equal(verdict.allowed, false);
+    assert.equal(verdict.code, GraphIssueCode.TYPE_MISMATCH);
+});
+
+test('two Choices offering different options refuse each other', () => {
+    const file = px();
+    const mood = file.property({ name: 'mood', type: PropertyType.ENUM, values: ['calm', 'angry'] });
+    const heading = file.property({ name: 'heading', type: PropertyType.ENUM, values: ['up', 'down'] });
+
+    const read = file.node('property.get', { property: mood.id });
+    const write = file.node('property.set', { property: heading.id });
+
+    assert.equal(file.model.graph.canConnect(
+        { node: read.id, port: 'value' }, { node: write.id, port: 'value' }
+    ).allowed, false, 'the value could never be one of the target\'s options');
+});
+
+test('a List travels whole, and a list of something else refuses it', () => {
+    const file = px();
+    const from = file.property({ name: 'waypoints', type: PropertyType.ARRAY, of: PropertyType.NUMBER, default: [3, 4] });
+    const to = file.property({ name: 'copy', type: PropertyType.ARRAY, of: PropertyType.NUMBER, default: [] });
+    const names = file.property({ name: 'names', type: PropertyType.ARRAY, of: PropertyType.STRING, default: [] });
+
+    const update = file.node('event.update');
+    const read = file.node('property.get', { property: from.id });
+    const write = file.node('property.set', { property: to.id });
+    file.wire([update, 'out'], [write, 'in']);
+    file.wire([read, 'value'], [write, 'value']);
+
+    const { component, behavior } = behaviourFor(file.model);
+    behavior.update(null, {});
+    assert.deepEqual(component.copy, [3, 4]);
+
+    const wrong = file.node('property.set', { property: names.id });
+    assert.equal(file.model.graph.canConnect(
+        { node: read.id, port: 'value' }, { node: wrong.id, port: 'value' }
+    ).allowed, false, 'a List of Number is not a List of Text');
+});
+
+test('a List is not the thing it holds', () => {
+    const file = px();
+    const list = file.property({ name: 'waypoints', type: PropertyType.ARRAY, of: PropertyType.NUMBER, default: [] });
+
+    const read = file.node('property.get', { property: list.id });
+    const add = file.node('math.add');
+
+    assert.equal(file.model.graph.canConnect(
+        { node: read.id, port: 'value' }, { node: add.id, port: 'a' }
+    ).allowed, false);
+});
+
+// --- a List of references crosses the boundary ADR-0034 §3.5 draws ------------------------
+
+test('a List of Objects reads as handles and is stored as identities', () => {
+    const file = px();
+    const targets = file.property({ name: 'targets', type: PropertyType.ARRAY, of: PropertyType.OBJECTREF, default: [] });
+    const copy = file.property({ name: 'copy', type: PropertyType.ARRAY, of: PropertyType.OBJECTREF, default: [] });
+
+    const update = file.node('event.update');
+    const read = file.node('property.get', { property: targets.id });
+    const write = file.node('property.set', { property: copy.id });
+    file.wire([update, 'out'], [write, 'in']);
+    file.wire([read, 'value'], [write, 'value']);
+
+    const payload = file.model.serialize();
+    const Component = defineComponent(payload);
+    const scene = new Scene();
+    const holder = scene.add(new SceneObject('Holder'));
+    const first = scene.add(new SceneObject('First'));
+    const second = scene.add(new SceneObject('Second'));
+    holder.addComponent(new Component());
+    const component = holder.components[payload.type];
+    component.targets = [first.id, second.id];
+
+    const behavior = interpretGraph(payload.graph, { registry })(component);
+    behavior.update(holder, { scene });
+
+    // What was written is the IDENTITY, never the handle that arrived: `serializeScene()`
+    // must never find an Object record inside a component's values (§3.5, invariant 3).
+    assert.deepEqual(component.copy, [first.id, second.id]);
+
+    const written = serializeScene(scene).objects
+        .find(entry => entry.id === holder.id).components[0].values;
+    assert.deepEqual(written.copy, [first.id, second.id]);
+    assert.equal(JSON.stringify(written).includes('"name"'), false, 'no Object record was persisted');
+});
+
+test('a reference in a List that points at nothing reads as nothing, and keeps its place', () => {
+    // A target that is gone is a state of the running scene, not a fault (ADR-0034 §3.4).
+    // Read through a wire, because what a port hands downstream is the whole point: a list
+    // that silently lost an element would renumber every index after it.
+    const file = px();
+    const targets = file.property({ name: 'targets', type: PropertyType.ARRAY, of: PropertyType.OBJECTREF, default: [] });
+    const copy = file.property({ name: 'copy', type: PropertyType.ARRAY, of: PropertyType.OBJECTREF, default: [] });
+
+    const update = file.node('event.update');
+    const read = file.node('property.get', { property: targets.id });
+    const write = file.node('property.set', { property: copy.id });
+    file.wire([update, 'out'], [write, 'in']);
+    file.wire([read, 'value'], [write, 'value']);
+
+    const payload = file.model.serialize();
+    const Component = defineComponent(payload);
+    const scene = new Scene();
+    const holder = scene.add(new SceneObject('Holder'));
+    const alive = scene.add(new SceneObject('Alive'));
+    holder.addComponent(new Component());
+    const component = holder.components[payload.type];
+    component.targets = [alive.id, 'obj_gone'];
+
+    interpretGraph(payload.graph, { registry })(component).update(holder, { scene });
+
+    assert.deepEqual(component.copy, [alive.id, null],
+        'a dead reference is a hole in the list, not a shorter list');
+});
+
+// --- the values survive the scene payload -------------------------------------------------
+
+test('Choice and List values survive serialize then deserialize', () => {
+    const file = px();
+    const mood = file.property({ name: 'mood', type: PropertyType.ENUM, values: ['calm', 'angry'], default: 'calm' });
+    file.property({ name: 'waypoints', type: PropertyType.ARRAY, of: PropertyType.NUMBER, default: [] });
+
+    const payload = file.model.serialize();
+    const Component = defineComponent(payload);
+    const registryOfComponents = new ComponentRegistry();
+    registryOfComponents.register(Component);
+
+    const scene = new Scene();
+    const hero = scene.add(new SceneObject('Hero'));
+    hero.addComponent(new Component());
+    const component = hero.components[payload.type];
+    component.mood = 'angry';
+    component.waypoints = [1, 2.5, -3];
+
+    const written = serializeScene(scene);
+    assert.deepEqual(JSON.parse(JSON.stringify(written)), written, 'already JSON, with no migration');
+
+    const reopened = deserializeScene(written, { registry: registryOfComponents });
+    const back = reopened.get(hero.id).components[payload.type];
+
+    assert.equal(back.mood, 'angry');
+    assert.deepEqual(back.waypoints, [1, 2.5, -3]);
+    assert.notEqual(back.waypoints, component.waypoints, 'and it is a list of its own');
+
+    // Unused so the linter and the reader agree it is the identity that matters.
+    assert.ok(mood.id);
+});
+
+test('nothing belonging to a scene ever reaches the `.px` payload', () => {
+    // A `.px` is of PROJECT scope and an ObjectId belongs to ONE scene (ADR-0034 §3.5), so a
+    // graph that reads and writes a list of references still carries no identity from the
+    // scene it happened to run in.
+    const file = px();
+    const targets = file.property({ name: 'targets', type: PropertyType.ARRAY, of: PropertyType.OBJECTREF, default: [] });
+    const update = file.node('event.update');
+    const read = file.node('property.get', { property: targets.id });
+    const write = file.node('property.set', { property: targets.id });
+    file.wire([update, 'out'], [write, 'in']);
+    file.wire([read, 'value'], [write, 'value']);
+
+    const payload = JSON.stringify(file.model.serialize());
+
+    assert.equal(/obj_/.test(payload), false, 'no ObjectId is serialized into a graph');
+    assert.equal(payload.includes(PropertyType.OBJECTREF), true, 'the DECLARATION is project scope, and stays');
+});

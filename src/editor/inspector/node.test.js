@@ -333,3 +333,25 @@ test('a node whose reference cannot be resolved keeps its type label', () => {
     assert.equal(describeNode(node('property.setOn', {}), { registry, components }).title,
         'Set Property On');
 });
+
+// --- a port carries a type, and a control needs a declaration -----------------------------
+
+test('a parameterised port reaches the control mapping as the type it is a parameterisation of', () => {
+    // `array<number>` says a list of numbers travels here; what a port does not carry is the
+    // element's bounds or a Choice's options, which are what those two controls need — they
+    // live on the property, and a port is not one. So both land on the read-only row by the
+    // rule ADR-0031 §2 and §3 state, rather than by falling through an unknown name.
+    const declared = [
+        { id: 'p_mood', name: 'mood', type: PropertyType.ENUM, values: ['calm', 'angry'], default: 'calm' },
+        { id: 'p_tags', name: 'tags', type: PropertyType.ARRAY, of: PropertyType.STRING, default: [] }
+    ];
+
+    for (const property of declared) {
+        const ports = portsOf(registry.get('property.set'),
+            node('property.set', { property: property.id }), { properties: declared });
+        const [value] = inputFields(ports);
+
+        assert.equal(value.port, 'value');
+        assert.equal(value.kind, FieldKind.READONLY, `${property.type} drew a control it cannot fill`);
+    }
+});

@@ -38,7 +38,7 @@ import { makeReactive } from '../properties/reactive.js';
 import { Operations } from '../operations/operations.js';
 import { OperationType, setPropertyOperation } from '../operations/operation.js';
 import { addPropertyOperation, removePropertyOperation } from '../operations/graph-operations.js';
-import { PropertyType, defaultForProperty, isPropertyType } from '../properties/types.js';
+import { PropertyType, copyValue, defaultForProperty, isPropertyType } from '../properties/types.js';
 import { Graph } from './graph.js';
 import { nodes as defaultNodes } from './nodes.js';
 import { validateGraph } from './validate.js';
@@ -314,8 +314,97 @@ export class ComponentDefinition {
 
         const group = batch ?? createId();
         const changed = this.setPropertyField(id, 'type', type, { actor, batch: group }).applied;
+
+        // WHAT CONFIGURED THE OLD TYPE DOES NOT CONFIGURE THE NEW ONE, and leaving it behind
+        // is not harmless: a Choice's options and a List's element type are part of what the
+        // property IS (ADR-0031 §2, §3), so a `number` still carrying `values: ['red']` would
+        // write a clause into the `.px` that describes a property that no longer exists —
+        // and would silently become a Choice again the day the type was switched back.
+        //
+        // `undefined` rather than an empty value, because the clause should DISAPPEAR:
+        // `serialize()` spreads the descriptor and JSON drops what is undefined, so the
+        // payload is the one a property of that type would have been declared with.
+        if (type !== PropertyType.ENUM) this.setPropertyField(id, 'values', undefined, { actor, batch: group });
+        if (type !== PropertyType.ARRAY) this.setPropertyField(id, 'of', undefined, { actor, batch: group });
+
         this.setPropertyField(id, 'default', defaultForProperty({ type }), { actor, batch: group });
         return changed;
+    }
+
+    /**
+     * Change the options a Choice offers, and keep its default one of them.
+     *
+     * ONE BATCH, BECAUSE IT IS ONE INTENT (ADR-0024 §4). ADR-0031 §2 states the rule this
+     * exists to apply: a Choice whose default is not among its options holds a value that
+     * `isValidValue()` refuses, so removing or renaming the option a property defaults to
+     * has to carry the default with it. The first option is the only candidate — anything
+     * else would be the model inventing a value a creator never wrote.
+     *
+     * THE DEFAULT IS LEFT ALONE WHILE IT IS STILL LEGAL, which is what makes editing the
+     * rest of the list free: adding an option, reordering, or renaming one that is not the
+     * default changes nothing else.
+     *
+     * @param {string} id - The property's identifier
+     * @param {any[]} values - The options it offers
+     * @param {object} [options] - Options
+     * @param {string} [options.actor] - Who authored the intent
+     * @param {string} [options.batch] - Groups this into a larger history entry
+     * @returns {boolean} True when the options changed
+     */
+    setPropertyOptions(id, values, { actor, batch } = {}) {
+        const property = this.#properties.get(id);
+        if (!property) return false;
+
+        const options = globalThis.Array.isArray(values) ? [...values] : [];
+        const group = batch ?? createId();
+        const changed = this.setPropertyField(id, 'values', options, { actor, batch: group }).applied;
+        if (!changed) return false;
+
+        if (!options.includes(property.default)) {
+            this.setPropertyField(id, 'default', options[0] ?? null, { actor, batch: group });
+        }
+
+        return true;
+    }
+
+    /**
+     * Change the type of one element of a List.
+     *
+     * THE ELEMENT TYPE IS PART OF THE LIST'S TYPE, so changing it is the same move as
+     * changing a property's type and takes the same consequence: the default goes back to
+     * what a fresh list is, which is empty (ADR-0031 §3). A list of numbers retyped to a list
+     * of colours would otherwise keep numbers in its default that no element control could
+     * draw and `isValidValue()` would refuse.
+     *
+     * `of` IS THE NAME ADR-0031 §3 GIVES IT, and it is a type name rather than a declaration
+     * because that is what a creator picks: one dropdown, one ordinary SET_PROPERTY on the
+     * descriptor, replicated and inverted by machinery that already exists. A component
+     * written in JavaScript declares the richer `element` instead when an element needs
+     * bounds or options; `elementOf()` is where the two meet (core/properties/types.js).
+     *
+     * @param {string} id - The property's identifier
+     * @param {string|null} of - One of PropertyType, or null for a list that declares nothing
+     * @param {object} [options] - Options
+     * @param {string} [options.actor] - Who authored the intent
+     * @param {string} [options.batch] - Groups this into a larger history entry
+     * @returns {boolean} True when the element type changed
+     */
+    setPropertyElement(id, of, { actor, batch } = {}) {
+        const property = this.#properties.get(id);
+        if (!property) return false;
+        if (property.type !== PropertyType.ARRAY) return false;
+
+        const wanted = isPropertyType(of) && of !== PropertyType.ARRAY ? of : null;
+        const group = batch ?? createId();
+        const changed = this.setPropertyField(id, 'of', wanted, { actor, batch: group }).applied;
+        if (!changed) return false;
+
+        this.setPropertyField(id, 'default', defaultForProperty({ type: PropertyType.ARRAY }), {
+            actor,
+            batch: group
+        });
+
+        return true;
     }
 
     /**
@@ -446,6 +535,17 @@ export class ComponentDefinition {
         const properties = {};
         for (const property of this.properties()) {
             const { name, ...descriptor } = snapshot(property);
+
+            // `undefined` IS HOW A FIELD SAYS IT IS NOT ONE OF MINE, and the payload has to
+            // agree: a Choice retyped to a Number keeps the `values` key on its reactive
+            // record until the record itself is replaced, and writing it out would put a
+            // clause in the `.px` describing a property that no longer exists. The same
+            // convention `serializeComponent()` already follows for a value (core/
+            // serialize.js), applied to a declaration.
+            for (const [field, value] of globalThis.Object.entries(descriptor)) {
+                if (value === undefined) delete descriptor[field];
+            }
+
             properties[name] = descriptor;
         }
 
@@ -506,7 +606,15 @@ export class ComponentDefinition {
     }
 }
 
-/** A descriptor as plain data, with no reactive wrapper riding along. */
+/**
+ * A descriptor as plain data, with no reactive wrapper riding along.
+ *
+ * DEEP, SINCE A DESCRIPTOR CAN HOLD A CONTAINER. A Choice carries its options and a List
+ * its default elements (ADR-0031 §2, §3), and a shallow copy would leave the very array the
+ * live descriptor holds inside an ADD_PROPERTY or a REMOVE_PROPERTY payload — so editing
+ * the options after a deletion would change what the undo puts back, and `serialize()`
+ * would write a `.px` that a later edit could reach into.
+ */
 function snapshot(property) {
-    return globalThis.Object.freeze({ ...property });
+    return globalThis.Object.freeze(copyValue({ ...property }));
 }

@@ -23,7 +23,7 @@
 // resolved at run time, which is also what lets a deleted property produce a structured
 // error instead of a silent `undefined`.
 
-import { PropertyType, defaultForProperty } from '../properties/types.js';
+import { PropertyType, defaultForProperty, elementOf } from '../properties/types.js';
 import { ANY_TYPE, OBJECT_TYPE, PortKind, nodes as defaultNodes, portTypeOf } from './nodes.js';
 import { declaredProperties } from '../definition.js';
 import { GraphError, GraphIssueCode } from './errors.js';
@@ -235,10 +235,23 @@ function requireTargetProperty(io) {
  * @returns {any} The value the port carries
  */
 export function portValueOf(property, value, scene) {
-    if (property?.type !== PropertyType.OBJECTREF) return value;
     // `Map.get` on anything that is not a stored identity answers nothing, which is the
     // honest reading of a reference that points at no object of this scene.
-    return scene?.get?.(value) ?? null;
+    if (property?.type === PropertyType.OBJECTREF) return scene?.get?.(value) ?? null;
+
+    // A LIST OF REFERENCES CROSSES THE SAME BOUNDARY, ELEMENT BY ELEMENT. `portTypeOf()`
+    // types the port `array<object>` for exactly this declaration, and a port typed with
+    // handles handed a list of ObjectIds is the defect this function was written for, one
+    // level down: `Is Valid` would answer on a string and `Parent` would read nothing.
+    //
+    // A value that is not a list reads as an empty one, never as itself: `[]` is what a
+    // list's absence looks like (ADR-0031 §3), and letting a stray value through would put a
+    // shape on the port that its type does not describe.
+    if (elementOf(property)?.type === PropertyType.OBJECTREF) {
+        return globalThis.Array.isArray(value) ? value.map(item => scene?.get?.(item) ?? null) : [];
+    }
+
+    return value;
 }
 
 /**
@@ -260,8 +273,16 @@ export function portValueOf(property, value, scene) {
  * @returns {any} The value to store
  */
 export function storedValueOf(property, value) {
-    if (property?.type !== PropertyType.OBJECTREF) return value;
-    return value?.id ?? null;
+    if (property?.type === PropertyType.OBJECTREF) return value?.id ?? null;
+
+    // The same translation the other way, element by element — so a list of handles arriving
+    // on a `Set Property` is stored as a list of ObjectIds and `serializeScene()` never
+    // writes an Object record into a scene payload (ADR-0034 §3.5, invariant 3).
+    if (elementOf(property)?.type === PropertyType.OBJECTREF) {
+        return globalThis.Array.isArray(value) ? value.map(item => item?.id ?? null) : [];
+    }
+
+    return value;
 }
 
 /** The Component on the Object a node was handed, or null when there is neither. */
