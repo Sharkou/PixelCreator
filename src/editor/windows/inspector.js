@@ -268,6 +268,14 @@ export class Inspector extends Element {
             min-height: calc(var(--px-control) + var(--px-space-1) + 2px);
         }
 
+        /* A CONTROL TALLER THAN ITS LABEL PUTS THE LABEL AT THE TOP, not in the middle of
+           it. Every control was one row high until a list arrived, so centring was the
+           whole answer; a palette of six colours would leave its label floating halfway
+           down a column of swatches, beside nothing. The padding is what lines the word up
+           with the first row rather than with the top of the box. */
+        .row.tall { align-items: start; }
+        .row.tall > .label { padding-top: calc((var(--px-control) - 1em) / 2); }
+
         /* A property label is quieter than its value — that contrast is what makes a
            column of numbers legible at a glance. Still 4.6:1 on the panel surface. */
         .row > .label {
@@ -1976,8 +1984,11 @@ export class Inspector extends Element {
         // A plain number is a value in a column of values; a slider, a colour or a
         // string is content and takes the width it needs.
         const single = isNumeric(descriptor) && descriptor.kind !== FieldKind.RANGE;
+        // A list is the one control that is taller than its label, so it is the one that
+        // needs the label at the top of it.
+        const tall = descriptor.kind === FieldKind.LIST;
 
-        return el('div', { class: 'row' },
+        return el('div', { class: `row${tall ? ' tall' : ''}` },
             label,
             el('div', { class: `fields${single ? ' single' : ''}` }, field, single ? el('span') : null)
         );

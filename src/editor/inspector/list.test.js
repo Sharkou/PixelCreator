@@ -318,6 +318,19 @@ test('the grid beside it is untouched, and still read-only', () => {
     assert.deepEqual(it.tilemap.tiles, [1, 2], 'and it still holds what it held');
 });
 
+test('a read-only list hands the flag to every one of its rows', () => {
+    // THE FLAG HAS TO REACH THE CONTROL, not just the list. `<px-list>` builds each row's
+    // descriptor from the element's declaration and stamps `readonly` on it; a row that
+    // kept the flag but drew an editable control would be the list saying one thing and
+    // doing another. Asserted on the descriptor, which is what the control is handed.
+    for (const type of [PropertyType.NUMBER, PropertyType.INT, PropertyType.STRING,
+        PropertyType.COLOR, PropertyType.BOOLEAN]) {
+        const row = { ...itemFieldFor({ type }), readonly: true };
+
+        assert.equal(row.readonly, true, `a read-only list left its ${type} rows editable`);
+    }
+});
+
 test('a list declared read-only keeps its flag, whatever its elements say', () => {
     class Locked {
         static type = 'Locked';

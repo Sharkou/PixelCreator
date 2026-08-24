@@ -153,6 +153,17 @@ export class NumberInput extends Element {
         .steppers .down i { border-top: 3px solid currentColor; }
 
         :host([steppers='false']) .steppers { display: none; }
+
+        /* READ-ONLY IS A REAL STATE, AND THIS CONTROL HAD NO WAY TO SHOW IT. Every other
+           control in the Editor honours descriptor.readonly — a text box goes readOnly,
+           a checkbox and a swatch go disabled — and a number stayed fully editable, which
+           made a read-only number the one field that lied. It was latent until a list of
+           numbers could be declared read-only and each row inherited the flag
+           (inspector/list.js). Steppers withdraw, the box refuses the caret, and the value
+           stays readable, which is the point of showing it at all. */
+        :host([readonly]) .steppers { display: none; }
+        :host([readonly]) input { cursor: default; color: var(--px-text-dim); }
+        :host([readonly]) .prefix { cursor: default; }
     `);
 
     #config = {
@@ -180,6 +191,7 @@ export class NumberInput extends Element {
      * @param {string} [config.prefix] - A one-letter label, draggable to scrub
      * @param {string} [config.suffix] - A unit shown after the value
      * @param {boolean} [config.steppers] - Show the stepper column
+     * @param {boolean} [config.readonly] - Show the value, and refuse every way of changing it
      * @param {Function} [config.source] - Returns the unrounded value a gesture starts from
      * @param {Function} config.onInput - Called with the number whenever it changes
      * @returns {NumberInput} This element
@@ -187,6 +199,7 @@ export class NumberInput extends Element {
     configure(config) {
         this.#config = { ...this.#config, ...config };
         if (config.steppers === false) this.setAttribute('steppers', 'false');
+        this.toggleAttribute('readonly', Boolean(this.#config.readonly));
         if (this.isConnected) this.#render();
         return this;
     }
@@ -218,13 +231,14 @@ export class NumberInput extends Element {
 
     #render() {
         this.release('control');
-        const { prefix, suffix } = this.#config;
+        const { prefix, suffix, readonly } = this.#config;
 
         this.#input = el('input', {
             type: 'text',
             inputMode: 'decimal',
             spellcheck: false,
             autocomplete: 'off',
+            readOnly: Boolean(readonly),
             value: format(this.#value),
             oninput: () => this.#report(this.#input.value),
             onkeydown: event => this.#onKey(event),
@@ -238,7 +252,7 @@ export class NumberInput extends Element {
         });
 
         let handle = null;
-        if (prefix) {
+        if (prefix && !readonly) {
             handle = el('span', {
                 class: 'prefix',
                 textContent: prefix,
@@ -252,10 +266,12 @@ export class NumberInput extends Element {
         }
 
         fill(this.shadowRoot,
-            handle,
+            // The prefix is still drawn when it cannot be dragged: it names the axis of a
+            // paired field, and a row that lost its `X` would be unreadable.
+            handle ?? (prefix ? el('span', { class: 'prefix', textContent: prefix }) : null),
             this.#input,
             suffix ? el('span', { class: 'suffix', textContent: suffix }) : null,
-            el('div', { class: 'steppers' }, this.#stepper(1), this.#stepper(-1))
+            readonly ? null : el('div', { class: 'steppers' }, this.#stepper(1), this.#stepper(-1))
         );
     }
 

@@ -63,7 +63,18 @@ export class ListField extends Element {
         .item:hover .handles,
         .item:focus-within .handles { opacity: 1; }
 
-        .item .ghost { width: 18px; height: 18px; }
+        /* A read-only list has nothing to hand: buttons that appear on hover and then
+           refuse the click are worse than no buttons. */
+        :host([disabled]) .handles { display: none; }
+
+        /* SMALLER BUTTONS, BY REBINDING THE TOKEN THEY ARE MEASURED FROM. Three handles at
+           the full control size would outweigh the value beside them on a row this dense.
+           Setting the --px-control token here rather than overriding width and height keeps
+           the shared button coherent: its hit target is inset by half the difference between
+           --px-control and --px-hit, so a hard-coded box would have left the 28 px target
+           measured against a size the button no longer had (ui/styles.js). */
+        .item .handles { --px-control: 18px; }
+
         .item .ghost[disabled] { opacity: 0.3; cursor: default; }
         .item .remove:hover { color: var(--px-danger); }
 
@@ -163,7 +174,7 @@ export class ListField extends Element {
                 class: 'add',
                 type: 'button',
                 onclick: () => this.#commit(addItem(this.items, this.#blank()))
-            }, icon('plus', 14), el('span', { textContent: 'Add' }))
+            }, icon('plus', 16), el('span', { textContent: 'Add' }))
         );
 
         // ONE SUBSCRIPTION, ON THE LIST ITSELF. Every edit replaces the whole array, so the
@@ -231,7 +242,7 @@ export class ListField extends Element {
             'aria-label': `${title} item ${index + 1}`,
             disabled: readonly || to < 0 || to >= count,
             onclick: () => this.#commit(moveItem(this.items, index, to))
-        }, icon(glyph, 14));
+        }, icon(glyph, 16));
 
         return el('div', { class: 'item' },
             field,
@@ -245,7 +256,7 @@ export class ListField extends Element {
                     'aria-label': `Remove item ${index + 1}`,
                     disabled: readonly,
                     onclick: () => this.#commit(removeItem(this.items, index))
-                }, icon('close', 14))
+                }, icon('close', 16))
             )
         );
     }

@@ -319,6 +319,9 @@ export class Field extends Element {
                 integer: descriptor.kind === FieldKind.INT,
                 prefix: this.#prefix,
                 suffix: descriptor.unit,
+                // The one control that used to ignore it, so a read-only number was the
+                // single field in this Editor that said one thing and did another.
+                readonly: descriptor.readonly,
                 // What the box shows is shortened; what a stepper moves is not.
                 source: () => toDisplayExact(descriptor, this.#target[descriptor.name]),
                 onInput: amount => this.#push(amount)
