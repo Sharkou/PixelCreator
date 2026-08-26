@@ -10,9 +10,16 @@ import {
     PropertyType,
     Scene,
     Transform,
-    componentSchema
+    componentSchema,
+    nodes,
+    registerStandardNodes
 } from '../../core/mod.js';
+
+// The catalogue a `.px` model resolves its node types in, and the one the interpreter
+// reads. The Workspace uses the default registry, so this is the registry to fill.
+registerStandardNodes();
 import { Project, ResourceKind } from '../../project/mod.js';
+import { Behaviors, createGraphInterpreter } from '../../runtime/mod.js';
 import { Workspace } from './workspace.js';
 import { createResourceOfKind } from './commands.js';
 import { createDefinitions } from './definitions.js';
@@ -27,9 +34,18 @@ async function setup() {
     workspace.create(scene);
 
     const px = createResourceOfKind(workspace.project, ResourceKind.COMPONENT, { parent: null });
-    const definitions = createDefinitions({ project: workspace.project, registry, workspace, scene });
+    // The other half of what a `.px` is: the shell holds one host for the session and hands
+    // it over, exactly as `project/graphs.js` requires (ADR-0015, ADR-0020).
+    const behaviors = new Behaviors(createGraphInterpreter({ registry: nodes }));
+    const definitions = createDefinitions({
+        project: workspace.project,
+        registry,
+        workspace,
+        scene,
+        behaviors
+    });
 
-    return { workspace, scene, registry, px, definitions };
+    return { workspace, scene, registry, px, definitions, behaviors };
 }
 
 /** An object in the scene carrying the installed Component. */
@@ -163,4 +179,57 @@ test('an open .px installs the model being edited, not the payload last saved', 
 
     assert.ok('unsaved' in componentSchema(registry.get(px.id)),
         'a creator who declares a property and drops the .px expects it to be there');
+});
+
+test('installing a .px binds its graph, so the type has a behaviour and not just a schema', async () => {
+    const { px, definitions, behaviors, workspace, registry } = await setup();
+
+    const model = await workspace.attach(px.id, { registry });
+    model.graph.addNode({ type: 'event.update' });
+
+    await definitions.install(px.id);
+
+    assert.equal(behaviors.has(px.id), true, 'a Component is properties AND behaviour');
+    assert.equal(behaviors.graphOf(px.id).nodes.length, 1);
+});
+
+test('refresh re-reads an open .px, so a graph edited after the install is the one that runs', async () => {
+    const { px, definitions, behaviors, workspace, registry } = await setup();
+
+    const model = await workspace.attach(px.id, { registry });
+    await definitions.install(px.id);
+    const first = behaviors.graphOf(px.id);
+
+    // A node added is not a schema change, so nothing re-installs on its own — which is
+    // exactly the gap `refresh()` closes at the moment a session starts.
+    model.graph.addNode({ type: 'event.update' });
+    assert.equal(behaviors.graphOf(px.id), first, 'a graph nudge does not rebuild the class');
+
+    await definitions.refresh();
+
+    assert.notEqual(behaviors.graphOf(px.id), first, 'a new payload, so a new behaviour');
+    assert.equal(behaviors.graphOf(px.id).nodes.length, 1);
+});
+
+test('refresh reads the model being edited, saved or not', async () => {
+    const { px, definitions, behaviors, workspace, registry } = await setup();
+    await definitions.install(px.id);
+
+    const model = await workspace.attach(px.id, { registry });
+    model.graph.addNode({ type: 'event.start' });
+    await definitions.refresh();
+
+    assert.equal(behaviors.graphOf(px.id).nodes[0].type, 'event.start',
+        'a creator who wires a graph and presses Play expects THAT graph to run');
+});
+
+test('a .px with no behaviours host installs all the same', async () => {
+    const registry = new ComponentRegistry();
+    const workspace = new Workspace();
+    const project = workspace.project;
+    const px = createResourceOfKind(project, ResourceKind.COMPONENT, { parent: null });
+    const definitions = createDefinitions({ project, registry });
+
+    assert.equal(await definitions.install(px.id), px.id);
+    assert.deepEqual(await definitions.refresh(), [px.id]);
 });

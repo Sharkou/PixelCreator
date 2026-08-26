@@ -79,6 +79,7 @@ export {
     nodes,
     portOf,
     portsOf,
+    shapeDependsOnNode,
     typesCompatible
 } from './graph/nodes.js';
 export {

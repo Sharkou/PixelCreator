@@ -196,6 +196,23 @@ export class Workspace {
         return this.#editors.get(this.#active)?.dirty ?? false;
     }
 
+    /**
+     * Whether one editor carries work that is not in the store.
+     *
+     * THE STRIP NEEDS THIS ONE, AND `dirty` COULD NOT ANSWER IT. Every tab used to be asked
+     * "is the ACTIVE editor dirty", which was the right question while a tab that was not
+     * active was also not on screen. The workbench shows every open `.px` at once, so a
+     * graph with unsaved work went unmarked the moment the creator touched the scene — the
+     * mark saying nothing when there IS something is the one direction it must never fail
+     * in.
+     *
+     * @param {string} id - The ResourceId
+     * @returns {boolean} True when that editor has unsaved work
+     */
+    dirtyOf(id) {
+        return this.#editors.get(id)?.dirty ?? false;
+    }
+
     /** The resources a window is presenting, in the order they were opened. */
     opened() {
         return [...this.#editors.values()].filter(editor => editor.open).map(editor => editor.resource);
@@ -251,6 +268,16 @@ export class Workspace {
     /** The active editor's ResourceId, or null. */
     get activeId() {
         return this.#active;
+    }
+
+    /**
+     * The editor being worked in: the last one an intent was authored on, or the active one.
+     *
+     * `#context` also names the manifest, which has no model to write, so it only counts
+     * when it names an editor.
+     */
+    get #working() {
+        return this.#editors.has(this.#context) ? this.#context : this.#active;
     }
 
     /**
@@ -427,12 +454,21 @@ export class Workspace {
     /**
      * Write an editor's model to the store.
      *
+     * WHICH EDITOR, BY DEFAULT: the one being worked in — the last one an intent was
+     * authored on, and the editor that is active when that is not one (a manifest edit, or
+     * nothing yet). It used to be `#active` alone, which was the same answer while exactly
+     * one surface was on screen: activating a tab was the only way to start working in
+     * something else. The workbench ended that — the scene keeps the stage while a `.px` is
+     * wired in the band below it — so a save aimed at the visible tab would write the graph
+     * while the creator was moving objects. Undo has always asked this question this way
+     * (`activeHistory`), and the two now agree by construction (ADR-0024).
+     *
      * @param {object} [options] - Options
-     * @param {string} [options.id] - Which editor; the active one by default
+     * @param {string} [options.id] - Which editor; the one being worked in by default
      * @param {string} [options.actor] - Who authored the intent
      * @returns {boolean} True when something was written
      */
-    save({ id = this.#active, actor } = {}) {
+    save({ id = this.#working, actor } = {}) {
         const editor = this.#editors.get(id);
         if (!editor) return false;
 

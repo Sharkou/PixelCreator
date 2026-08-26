@@ -177,6 +177,7 @@ export class Viewport extends Element {
     #selection = null;
     #subject = null;
     #onError = null;
+    #behaviors = null;
 
     #surface = null;
     #gridRenderer = null;
@@ -221,14 +222,20 @@ export class Viewport extends Element {
      * @param {object} context.selection - The Editor selection, read to draw the outline
      * @param {object} [context.subject] - Where a selection INTENT is announced (ADR-0032)
      * @param {Function} [context.onError] - Receives runtime ComponentFailure reports
+     * @param {object} [context.behaviors] - The `.px` graphs bound to component types
      * @returns {Viewport} This element
      */
-    bind({ scene, camera, selection, subject = null, onError }) {
+    bind({ scene, camera, selection, subject = null, onError, behaviors = null }) {
         this.#scene = scene;
         this.#camera = camera;
         this.#selection = selection;
         this.#subject = subject;
         this.#onError = onError ?? null;
+        // THE RUNTIME THAT DRAWS IS THE RUNTIME THAT PLAYS (ADR-0029 §1), so the graphs
+        // have to reach it here: there is no second engine to hand them to. It is bound
+        // rather than constructed because the host owns the Project that resolves a graph
+        // and this element owns the canvas a Runtime needs (ADR-0015, ADR-0020).
+        this.#behaviors = behaviors;
 
         // TWO ROLES, AND THEY ARE NOT THE SAME OBJECT. `selection` is READ — the outline,
         // the handles and the cursor all ask it what is selected. `subject` is WRITTEN, and
@@ -435,7 +442,8 @@ export class Viewport extends Element {
         this.#sceneRenderer = new Canvas2DRenderer(scene.getContext('2d', { alpha: true }));
         this.#runtime = new Runtime(this.#scene, {
             renderer: this.#sceneRenderer,
-            onError: report => this.#onError?.(report)
+            onError: report => this.#onError?.(report),
+            behaviors: this.#behaviors ?? undefined
         });
         // Edit mode: the scene is drawn every frame but never stepped.
         this.#runtime.running = false;

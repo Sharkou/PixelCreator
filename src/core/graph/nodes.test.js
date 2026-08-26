@@ -20,6 +20,7 @@ import {
     baseTypeOf,
     portTypeOf,
     portsOf,
+    shapeDependsOnNode,
     typesCompatible
 } from './nodes.js';
 import {
@@ -689,4 +690,26 @@ test('`any` stays universal, whatever the parameter', () => {
         assert.equal(typesCompatible(ANY_TYPE, type), true);
         assert.equal(typesCompatible(type, ANY_TYPE), true);
     }
+});
+
+// --- what a change to a node can change ------------------------------------------------------
+
+test('a node type says for itself whether its shape depends on the node', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    // Dynamic: the port is typed by the property the node names, so picking one retypes it.
+    for (const type of ['property.get', 'property.set', 'property.getOn', 'property.setOn']) {
+        assert.equal(shapeDependsOnNode(registry.get(type)), true, type);
+    }
+
+    // Fixed: a literal declares its ports as arrays, so the value it holds moves nothing.
+    for (const type of ['value.number', 'value.string', 'value.boolean', 'math.add', 'flow.branch']) {
+        assert.equal(shapeDependsOnNode(registry.get(type)), false, type);
+    }
+});
+
+test('a title that reads the node counts, even when the ports do not', () => {
+    assert.equal(shapeDependsOnNode({ inputs: [], outputs: [], title: node => node.id }), true);
+    assert.equal(shapeDependsOnNode({ inputs: [], outputs: [], title: 'Fixed' }), false);
+    assert.equal(shapeDependsOnNode(null), false, 'a type nothing resolves reshapes nothing');
 });

@@ -21,7 +21,8 @@ src/editor/
 ├── inspector/schema.js   schéma → descripteurs, unités d'affichage, appariement (pur)
 ├── viewport/             viewport · surface · picking · resize · grid · overlay · guides
 │   └── tools/            select-tool · pan-tool
-└── windows/              hierarchy · inspector · toolbar · project · timeline · search
+└── windows/              hierarchy · inspector · toolbar · project · timeline · graph
+                          workbench (pur) · search · drop (pur)
 ```
 
 ### Convention de nommage
@@ -41,20 +42,22 @@ nôtre passe par `globalThis` pour le global, ou alias à l'import.**
 
 ### Disposition
 
-**L4** (`design/README.md`, D8) : la Timeline s'arrête avant l'Inspector, qui garde une
-colonne ininterrompue du titlebar au plancher ; quand rien n'est animé, la bande n'est pas
-là du tout.
+**L4** (`design/README.md`, D8) : la bande basse s'arrête avant l'Inspector, qui garde une
+colonne ininterrompue du titlebar au plancher ; quand rien n'est animé et qu'aucun `.px`
+n'est ouvert, la bande n'est pas là du tout.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ titlebar                       [hier] [proj] [time] [insp]   │
 ├─────────────┬───────────────────────────┬───────────────────┤
 │ Hierarchy   │                  [outils] │ Inspector         │
-│  (loupe)    │       Viewport            │                   │
+│  (loupe)    │       zone haute          │                   │
 ├─────────────┤                           │                   │
 │ Project     │                           │                   │
 ├─────────────┴───────────────────────────┤                   │
-│ Timeline — conditionnelle               │                   │
+│ Timeline │ Player.px │ …                │                   │
+├─────────────────────────────────────────┤                   │
+│ bande basse — repliée quand elle est vide│                   │
 └─────────────────────────────────────────┴───────────────────┘
 ```
 
@@ -465,11 +468,100 @@ Un port de **flux** est un triangle, un port de **donnée** un disque : c'est la
 que la toile fait respecter, donc la montrer n'est pas de la décoration. Un nœud en erreur
 est cerné, et la phrase du validateur s'affiche en bas de la toile.
 
+### Une seule barre d'onglets, et la Timeline reste seule en bas — IMPLÉMENTÉ (2026-08-26)
+
+La structure des fenêtres **ne bouge pas** : Hierarchy et Project empilés à gauche,
+Inspector pleine hauteur à droite, et la bande basse sous Hierarchy + Project + zone
+centrale, arrêtée avant l'Inspector. C'est L4 exactement (design/README.md, D8).
+
+```
+┌──────────────┬──────────────────────────────────┬──────────────┐
+│  HIERARCHY   │  Scene │ Player.px │ Enemy.px    │              │
+│              ├──────────────────────────────────┤              │
+├──────────────┤                                  │  INSPECTOR   │
+│   PROJECT    │         DOCUMENT ACTIF           │              │
+│              │                                  │              │
+├──────────────┴──────────────────────────────────┤              │
+│                    TIMELINE                     │              │
+└─────────────────────────────────────────────────┴──────────────┘
+```
+
+```
+editor/windows/documents.js      quels documents, et lequel est montré — PUR
+editor/editor.js documentArea()  la barre d'onglets, le corps, une surface par document
+```
+
+#### Le modèle
+
+**Un document est un onglet de la zone centrale.** La Scene en est un, chaque `.px` ouvert
+en est un, les Fichiers en seront. Un seul est affiché à la fois.
+
+| | Réordonnable | Fermable |
+|---|---|---|
+| **Scene** | oui | **non** — permanente |
+| **`.px`** (et Fichiers plus tard) | oui | oui |
+
+Il n'y a **pas de seconde barre d'onglets**, donc pas de notion de zone pour un document,
+pas de transfert, pas de cible de dépôt, pas d'état à mémoriser. **La barre EST
+`opened()`, rang pour rang** : seuls les kinds ayant une surface peuvent être ouverts
+(table `EDITORS` du `Workspace`), donc rien n'est perdu au passage et réordonner un onglet
+est `Workspace.reorder(id, rang)` — sans traduction, parce qu'il n'y a pas de second ordre.
+Un test épingle cette correspondance plutôt que de lui faire confiance.
+
+**La Timeline n'est pas un document** et n'est donc pas un onglet : pas de ressource, pas de
+modèle, pas de pile d'undo, rien à fermer — et elle veut une bande horizontale, pas le corps
+des documents. Elle garde la zone basse et la bascule du titlebar qu'elle a toujours eues.
+
+- Timeline ouverte → elle occupe la bande ; le Project s'arrête à son seam.
+- Timeline fermée → la bande disparaît ; la zone centrale prend toute la hauteur et le
+  Project descend jusqu'au plancher.
+
+C'est ce qui remplace un bouton « maximize » : **fermer la Timeline donne au graphe toute la
+hauteur**, et c'est un contrôle qui existait déjà. **Mesuré** : Inspector 795 dans les deux
+cas ; zone centrale 602 avec la Timeline, 795 sans ; bande à x 0–1165, Inspector à 1166.
+
+#### Une surface par document, gardée branchée
+
+Une toile tient son pan, son zoom et sa sélection : elle est **masquée** quand un autre
+onglet est choisi, jamais détachée — détacher relâche tout ce que l'élément a souscrit
+(`ui/element.js`). Elle n'est retirée qu'à la fermeture de la ressource, c'est-à-dire au
+moment où le `Workspace` libère son modèle et sa pile. **Vérifié** : deux toiles gardent
+chacune sa vue à travers six changements d'onglet.
+
+Une toile qui n'est pas affichée n'a **pas de boîte** : elle refuse de cadrer sur du vide, et
+`wake()` le lui redemande quand elle revient à l'écran.
+
+#### Ce que deux documents ouverts obligent à tenir
+
+- **`Ctrl S` enregistre l'éditeur dans lequel on travaille**, pas l'onglet montré — la
+  réponse que `Ctrl Z` utilise depuis toujours (`activeHistory`, ADR-0024). Sélectionner un
+  `.px` dans Project l'**attache** sans l'afficher (ADR-0027 §10) : sans cette règle, éditer
+  ses propriétés puis enregistrer visait la mauvaise ressource.
+- **La pastille « non enregistré » est par onglet** (`Workspace.dirtyOf()`), sinon un `.px`
+  modifié devient muet dès qu'un autre onglet est montré.
+- **`Play` ramène l'onglet Scene au premier plan**, parce que c'est ce que Play veut dire :
+  lancer la scène derrière un graphe cacherait ce qu'on vient de lancer, et ADR-0029 §4 en
+  fait un danger. **`Stop` ne remet rien** — le graphe est à un onglet.
+
+#### Deux pièges du glisser, gardés parce qu'ils restent vrais
+
+Le réordonnancement est le seul geste de glisser de la barre. Deux corrections trouvées à
+l'usage restent nécessaires et sont écrites dans `editor.js` :
+
+1. **Le seuil mesurait le déplacement horizontal seul**, donc une pression partant en biais
+   devait être poussée de côté avant que la barre ne réponde. C'est une distance
+   (`Math.hypot`), comme dans `windows/project.js` depuis toujours.
+2. **Les écouteurs `pointermove` / `pointerup` vivaient sur l'onglet.** Une pression relâchée
+   ailleurs laissait le geste en place, et comme une souris annonce toujours le même
+   `pointerId`, **l'onglet suivant que le pointeur touchait reprenait le geste abandonné**.
+   Le geste possède des écouteurs au niveau de la fenêtre, pour exactement sa durée.
+
 ### Ouvrir et fermer une ressource — IMPLÉMENTÉ (2026-08-18, ADR-0027)
 
 `Workspace` tient une **carte** d'éditeurs ouverts, chacun avec son modèle, sa pipeline et
-sa pile d'undo (ADR-0024). Une bande d'onglets au-dessus de la scène dit ce qui est ouvert
-et n'apparaît que lorsqu'il y a un choix à faire.
+sa pile d'undo (ADR-0024). Une bande d'onglets dit ce qui est ouvert — **au bas du shell
+depuis le 2026-08-25**, plus au-dessus de la scène, et la scène n'y a plus d'onglet du tout
+(voir la section précédente).
 
 - **« Attaché » n'est pas « ouvert ».** Sélectionner un `.px` donne à l'Inspector un modèle
   vivant pour éditer ses propriétés ; seul un double-clic l'ouvre, et **seule une ressource
@@ -519,8 +611,9 @@ valeur en ligne sur une entrée de nœud non connectée · copier/coller dans le
 Faits depuis : undo/redo (ADR-0024), Operations structurelles (ADR-0019), reparentage et
 réordonnancement par glisser-déposer, enregistrement, le Project comme véritable
 gestionnaire de ressources (ADR-0025), le drag & drop transverse et l'ordre dans un dossier
-(ADR-0026), et **le graphe `.px` : modèle, propriétés utilisateur, validation, interprète,
-fenêtre, ouverture et fermeture** (ADR-0027).
+(ADR-0026), **le graphe `.px` : modèle, propriétés utilisateur, validation, interprète,
+fenêtre, ouverture et fermeture** (ADR-0027), et **la barre d'onglets de documents : la
+Scene et chaque `.px` ouvert y sont des onglets, la Timeline garde sa bande à part**.
 
 Le titlebar ne porte **ni transport ni barre de commandes**, bien que la maquette dessine
 les deux : Play demande l'instantané de scène restauré à l'arrêt, `Ctrl K` demande un

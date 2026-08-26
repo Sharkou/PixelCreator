@@ -101,11 +101,31 @@ export function el(tag, props = {}, ...children) {
 
 /**
  * Replace an element's children.
+ *
+ * AN IDENTICAL LIST IS LEFT ALONE, and that is a correctness rule rather than a saving.
+ * `replaceChildren()` DETACHES every child before putting it back, so a re-render that
+ * hands back the very nodes already there still takes them out of the document — and a
+ * node that leaves the document loses the focus and the caret inside it. The Project panel
+ * writes a rename on every keystroke and redraws on every write, reusing its tiles: the box
+ * being typed into was pulled out of the page by its own first letter, so a creator got one
+ * character and then nothing.
+ *
+ * Every window here already guards its TEXT while an edit is in progress. This guards the
+ * ELEMENT, which is the half none of them could state for itself.
+ *
  * @param {HTMLElement} parent - The element to fill
  * @param {...any} children - Nodes and strings, nested arrays allowed
  * @returns {HTMLElement} The parent
  */
 export function fill(parent, ...children) {
-    parent.replaceChildren(...children.flat(Infinity).filter(child => child !== null && child !== undefined && child !== false));
+    const nodes = children.flat(Infinity)
+        .filter(child => child !== null && child !== undefined && child !== false);
+
+    if (nodes.length === parent.childNodes.length
+        && nodes.every((node, index) => parent.childNodes[index] === node)) {
+        return parent;
+    }
+
+    parent.replaceChildren(...nodes);
     return parent;
 }

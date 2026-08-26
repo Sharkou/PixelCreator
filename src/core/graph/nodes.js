@@ -189,6 +189,29 @@ export function createPort(port) {
 }
 
 /**
+ * Whether a node's DRAWN SHAPE is a function of the node record, or fixed by its type.
+ *
+ * THE CATALOGUE ALREADY SAYS IT, AND THIS ONLY READS THE ANSWER. A port list or a title
+ * declared as a function is one that depends on the node — its params, mostly — and a port
+ * list declared as an array is one no param can move. There is no second table saying which
+ * params matter, because a second table is a thing to keep in step with the first.
+ *
+ * WHAT READS IT, AND WHY IT IS WORTH A NAME. A window redrawing on every write rebuilt the
+ * very box a creator was typing in, and took the caret with it — one character per click.
+ * `windows/graph.js` already skipped the redraw for `node.inputs`, on exactly this
+ * reasoning applied by hand to the catalogue as it stood; this is the same reasoning asked
+ * of each definition instead, so a node type added later answers for itself.
+ *
+ * @param {NodeDefinition|null} definition - The node type
+ * @returns {boolean} True when a change to the node can change what it draws as
+ */
+export function shapeDependsOnNode(definition) {
+    return typeof definition?.inputs === 'function'
+        || typeof definition?.outputs === 'function'
+        || typeof definition?.title === 'function';
+}
+
+/**
  * The ports a node has right now.
  *
  * `context` is whatever a dynamic port list needs — for the property nodes, the component's

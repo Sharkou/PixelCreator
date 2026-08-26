@@ -18,6 +18,15 @@
 // the guard exists to catch two unrelated classes claiming one name, which cannot happen
 // when the name is an identity nobody else can mint (ADR-0016 §6).
 //
+// AND IT BINDS THE OTHER HALF OF THE `.px` (ADR-0015, ADR-0016). A Component is properties
+// AND behaviour, and this used to install only the first: the type appeared in Add
+// Component, an object carried it, and the graph a creator had just wired ran nowhere,
+// because nothing in the live Editor ever called `behaviors.bind()`. `project/graphs.js`
+// already pairs `defineComponent()` with it for a headless load; the same pairing belongs
+// here, for a session where the payload comes from a model being edited rather than from
+// the store. The `behaviors` host is PASSED IN and never imported, exactly as that module
+// requires — the shell owns both objects and hands one to the other.
+//
 // AND IT RECONCILES WHAT IS ALREADY IN THE SCENE (ADR-0031 §4). Re-installing swaps the
 // class the registry hands out, which only helps the NEXT instance; the objects already
 // carrying the old one used to keep it until the scene was reloaded. So installing now
@@ -27,7 +36,7 @@
 // when.
 
 import { createId, defineComponent } from '../../core/mod.js';
-import { ResourceKind } from '../../project/mod.js';
+import { ResourceKind, bindGraph } from '../../project/mod.js';
 import { reconcileScene } from './reconcile.js';
 
 /**
@@ -39,9 +48,10 @@ import { reconcileScene } from './reconcile.js';
  * @param {object} [context.workspace] - Consulted first, so an OPEN `.px` installs the
  *   model being edited rather than the payload last written to the store
  * @param {object} [context.scene] - The open scene, whose instances are reconciled
- * @returns {{install: Function, types: Function}} The installer
+ * @param {object} [context.behaviors] - The runtime's Behaviors host, when there is one
+ * @returns {{install: Function, refresh: Function, types: Function}} The installer
  */
-export function createDefinitions({ project, registry, workspace = null, scene = null }) {
+export function createDefinitions({ project, registry, workspace = null, scene = null, behaviors = null }) {
     /** ResourceId -> the revision the registered class was built from. */
     const installed = new globalThis.Map();
 
@@ -152,6 +162,13 @@ export function createDefinitions({ project, registry, workspace = null, scene =
 
         installed.set(id, revision);
 
+        // THE BEHAVIOUR, BOUND WITH THE SCHEMA. A graph is data to the Core and to the
+        // Project, and a value to the Runtime: `bindGraph()` reads the one the class now
+        // carries and hands it over (project/graphs.js). It is a fresh payload on every
+        // pass, so `Behaviors` sees a new identity and replaces the running behaviour on
+        // the next step, which is the invalidation ADR-0016 §7 describes.
+        if (behaviors) await bindGraph(project, Component, behaviors);
+
         // ONE BATCH FOR THE WHOLE RECONCILIATION, so a creator who did not like what
         // declaring a property did to their scene takes it back in one gesture.
         if (reconcile && before && scene) {
@@ -161,10 +178,31 @@ export function createDefinitions({ project, registry, workspace = null, scene =
         return id;
     }
 
+    /**
+     * Re-read every installed `.px`, so what runs is what is on screen.
+     *
+     * WHY IT EXISTS AT ALL, AND WHY IT IS NOT AN OBSERVER. `install()` runs when something
+     * asks to USE a definition, and again when an edit changes its SCHEMA — moving a node
+     * or drawing a wire is neither, deliberately, because re-registering a class on every
+     * nudge of a drag would rebuild it sixty times a second. So a graph edited after the
+     * type was installed leaves the bound behaviour behind, and the only moment that
+     * matters is the one where the simulation is about to run it.
+     *
+     * A MODEL BEING EDITED WINS OVER THE STORE, through `install()`'s own rule: a creator
+     * who wires a graph and presses Play expects THAT graph to run, saved or not.
+     *
+     * @returns {Promise<string[]>} The types that were re-read, in installation order
+     */
+    async function refresh() {
+        const ids = types();
+        for (const id of ids) await install(id);
+        return ids;
+    }
+
     /** The `.px` types installed in this session, in installation order. */
     function types() {
         return [...installed.keys()];
     }
 
-    return { install, types };
+    return { install, refresh, types };
 }

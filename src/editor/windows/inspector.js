@@ -2039,7 +2039,26 @@ export class Inspector extends Element {
         return button;
     }
 
-    #openAddMenu(anchor, object) {
+    /**
+     * The Add Component menu — the registry's types, and the creator's own.
+     *
+     * A `.px` IS A COMPONENT (ADR-0026 §1), and it only becomes an attachable TYPE once
+     * something registers it. `project/definitions.js` names this menu as one of the two
+     * gestures that ASK to use a definition — the other being a drop — and it was the one
+     * that never asked: the registry held only the shipped types, so a creator who had just
+     * written `Counter.px` could not put it on an object from here, and the file the whole
+     * Graph window exists to edit had exactly one way onto an Object.
+     *
+     * INSTALLING IS IDEMPOTENT, so asking for all of them costs one read each and answers
+     * the same thing twice (ADR-0021: the identity of a `.px` is its own ResourceId). It
+     * happens when the menu OPENS rather than at start-up, which is the on-demand rule that
+     * module states, applied to the moment a creator actually asks what they may attach.
+     */
+    async #openAddMenu(anchor, object) {
+        for (const resource of this.#workspace?.project?.resources(ResourceKind.COMPONENT) ?? []) {
+            await this.#definitions?.install(resource.id);
+        }
+
         const available = availableComponents(object, this.#registry);
         const items = [];
 

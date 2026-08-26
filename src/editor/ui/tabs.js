@@ -4,12 +4,19 @@
 // hide anything, and does not slot content: the window that uses it already knows how to
 // show its own children, and a tab strip that also managed content would be two things.
 //
-// NO CONSUMER TODAY, AND IT STAYS. It was the Project/Timeline strip of the old bottom
-// dock; L4 gave each of those its own zone, so nothing renders it at the moment. It is
-// kept deliberately, as a primitive rather than as dead code, because the surfaces that
-// will want it are already named in the roadmap: Project alongside a Graph window, several
-// scenes open at once, a Graph per `.px` resource (ADR-0009, ADR-0016). Every one of those
-// is a strip of choices over a single body — this element, unchanged.
+// NO CONSUMER TODAY, AND IT STAYS — but not for the reason this file used to give. It was
+// the Project/Timeline strip of the old bottom dock; L4 gave each of those its own zone, so
+// nothing renders it.
+//
+// THE DOCUMENT STRIP DID NOT TAKE IT, and that was the right call. The strip above the
+// stage needs tabs that CLOSE, that carry an unsaved mark, and that reorder under the
+// pointer; all three already existed there, tested by use. Rebuilding them in here to
+// "reuse a primitive" would have been a rewrite wearing the word reuse, and it would have
+// dragged Workspace vocabulary into `ui/`, which knows about no model at all.
+//
+// So what is left for this element is what it actually is: a strip of choices with no
+// lifecycle behind them — a segmented control. The surfaces that may still want one are
+// named in the roadmap (ADR-0009, ADR-0016); none of them is here yet.
 //
 // `Graph` is the name of the visual-programming window, always. `Composer` is reserved for
 // a possible future music-composition window and must never be used for this one
@@ -24,8 +31,9 @@
 //
 // What is NOT built here, and must not be until something asks: closable tabs, overflow
 // scrolling, drag to reorder, detachment. Speculating on those is how a primitive becomes
-// a framework before it has a user. It is registered by editor.js so it stays loadable and
-// testable; the day a window slots one in, this file is the whole of the work.
+// a framework before it has a user — and the one surface that turned out to need them
+// already had them, which is the case in point. It is registered by editor.js so it stays
+// loadable and testable; the day a window slots one in, this file is the whole of the work.
 
 import { Element, el, fill } from './element.js';
 import { sheet } from './styles.js';

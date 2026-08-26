@@ -33,7 +33,8 @@ import {
     createId,
     groupNodes,
     makeReactive,
-    observe
+    observe,
+    shapeDependsOnNode
 } from '../../core/mod.js';
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
@@ -379,6 +380,7 @@ export class GraphWindow extends Element {
     #controls = null;
 
     #view = { x: 0, y: 0, zoom: 1 };
+    #watching = false;
     #selected = null;
     #drag = null;
     #issues = [];
@@ -401,23 +403,7 @@ export class GraphWindow extends Element {
         this.#definition = definition;
         this.#selected = null;
         this.#drag = null;
-
-        if (definition) {
-            // ONE SUBSCRIPTION, NOT ONE PER NODE. Every edit of this `.px` — a node moving,
-            // a wire appearing, a property being renamed under a Set Property — travels the
-            // one pipeline it owns, so one listener is the whole of the reactivity here.
-            //
-            // EXCEPT A VALUE TYPED INTO A NODE, WHICH CHANGES NO SHAPE. `node.inputs` feeds
-            // no port list — every dynamic port in the catalogue reads `params`, never
-            // `inputs` — and the field bound to it already follows the model on its own
-            // (`#drawControl`). Redrawing rebuilt the very box being typed into and took the
-            // caret with it, so a creator got one character per click. `params` still
-            // redraws, because a property picked there DOES retype the ports.
-            this.track(definition.operations.on('operation', operation => {
-                if (operation.type === 'SET_PROPERTY' && operation.prop === 'inputs') return;
-                this.#draw();
-            }), 'graph');
-        }
+        this.#watch();
 
         if (this.isConnected) {
             this.#frame();
@@ -628,8 +614,92 @@ export class GraphWindow extends Element {
         globalThis.addEventListener('keydown', this.#onKeyDown);
         this.track(() => globalThis.removeEventListener('keydown', this.#onKeyDown));
 
+        // RE-ESTABLISHED HERE, NOT ONLY IN `bind()`. A disconnect releases everything the
+        // element subscribed to (ui/element.js), and re-parenting an element is performed by
+        // the browser as a disconnect followed by a reconnect — so a canvas that was moved
+        // rather than rebuilt would come back looking correct and silently stop following
+        // its model. Nothing moves one today; this is what makes that safe to do, and it
+        // costs one idempotent call. The pan, the zoom and the selection are private fields
+        // and are untouched either way.
+        this.#watch();
+
         this.#frame();
         this.#draw();
+    }
+
+    /**
+     * Follow this `.px`'s pipeline, once.
+     *
+     * ONE SUBSCRIPTION, NOT ONE PER NODE. Every edit of this `.px` — a node moving, a wire
+     * appearing, a property being renamed under a Set Property — travels the one pipeline it
+     * owns, so one listener is the whole of the reactivity here.
+     *
+     * EXCEPT A VALUE TYPED INTO A NODE, WHICH CHANGES NO SHAPE. Redrawing rebuilds the very
+     * box being typed into and takes the caret with it, so a creator gets one character per
+     * click. The field already follows the model on its own (`#drawControl`), so the redraw
+     * buys nothing when nothing about the node can look different — see `#reshapes()`.
+     *
+     * The flag is cleared by the release itself, so "am I already watching" cannot drift
+     * from whether the subscription is actually held.
+     */
+    #watch() {
+        if (this.#watching || !this.#definition) return;
+
+        const definition = this.#definition;
+        this.#watching = true;
+        this.track(() => { this.#watching = false; }, 'graph');
+        this.track(definition.operations.on('operation', operation => {
+            if (this.#reshapes(operation)) this.#draw();
+        }), 'graph');
+    }
+
+    /**
+     * Whether an edit can change what this canvas draws.
+     *
+     * THE QUESTION IS ASKED OF THE CATALOGUE, NOT OF A LIST KEPT HERE. `shapeDependsOnNode()`
+     * answers it from the node type's own declarations: a port list or a title declared as a
+     * FUNCTION reads the node, so picking a property under a `Set Property` retypes its port
+     * and the node has to be drawn again; declared as an ARRAY it cannot, so the number a
+     * creator is typing into a `Number` node changes nothing but the number. Adding a node
+     * type therefore needs no line here (core/graph/nodes.js).
+     *
+     * `node.inputs` NEVER reshapes anything, whatever the type: it is what a port holds while
+     * nothing is wired to it (ADR-0031 §1), and no port list in the catalogue reads it.
+     *
+     * ANYTHING THAT IS NOT A NODE'S OWN FIELD REDRAWS. A property of the `.px` being renamed
+     * or retyped is a `SET_PROPERTY` too, and it retypes every port that names it — so the
+     * default here is to draw, and only a node's own `params` and `inputs` are excused.
+     *
+     * @param {object} operation - The operation just applied
+     * @returns {boolean} True when the canvas has to be drawn again
+     */
+    #reshapes(operation) {
+        if (operation.type !== 'SET_PROPERTY') return true;
+        if (operation.prop !== 'params' && operation.prop !== 'inputs') return true;
+
+        const node = this.#definition.graph.node(operation.target?.object ?? null);
+        if (!node) return true;
+        if (operation.prop === 'inputs') return false;
+
+        return shapeDependsOnNode(this.#definition.registry.get(node.type));
+    }
+
+    /**
+     * Tell the canvas it is on screen.
+     *
+     * THE SAME WORD THE VIEWPORT USES, and for the same reason: neither draws because a
+     * clock told it to, so something has to say when there is a reason (`viewport.js`).
+     * The workbench says it when this canvas's tab becomes the shown one, or when the band
+     * itself is opened — which is the first moment the element has a box, and therefore the
+     * first moment framing the graph means anything.
+     *
+     * @returns {GraphWindow} This element
+     */
+    wake() {
+        if (!this.isConnected || this.hidden) return this;
+        this.#frame();
+        this.#draw();
+        return this;
     }
 
     #build() {
@@ -1701,7 +1771,15 @@ export class GraphWindow extends Element {
         const layout = this.#layout();
         if (layout.length === 0 || (!force && this.#framed === this.#definition)) return;
 
+        // A CANVAS THAT IS NOT ON SCREEN HAS NOTHING TO FRAME INTO. The workbench keeps one
+        // instance per open `.px` and hides the ones whose tab is not showing, so this runs
+        // on a zero-sized box every time a second graph is opened. `fitView()` answers the
+        // identity view for an empty viewport, which is a correct answer to a meaningless
+        // question — and remembering it would mean the graph never got framed at all. So
+        // the attempt is declined instead, and `wake()` is what tries again.
         const box = this.getBoundingClientRect();
+        if (box.width <= 0 || box.height <= 0) return;
+
         this.#view = fitView(layout, { width: box.width, height: box.height });
         this.#framed = this.#definition;
     }

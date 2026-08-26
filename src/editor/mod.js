@@ -111,6 +111,10 @@ export { SelectTool } from './viewport/tools/select-tool.js';
 export { PanTool } from './viewport/tools/pan-tool.js';
 
 export { matches, visibleObjects } from './windows/search.js';
+// Which documents the upper area holds and which one it shows — the part that is
+// arithmetic. The strip itself is composed by the shell; this is the piece worth testing,
+// like the geometry of a Hierarchy drop below.
+export { DOCUMENT_SURFACES, activeDocument, documentViews } from './windows/documents.js';
 // `canDrop` is taken by the drag-and-drop rules below, which answer what a drop MEANS
 // (ADR-0026); this one answers whether one row may be dropped on another without closing a
 // cycle. Two questions, so two names — the barrel is where a collision of names becomes a

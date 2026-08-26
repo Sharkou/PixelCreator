@@ -438,3 +438,64 @@ test('the active editor is the one the shortcuts act on, and it can be switched'
     assert.equal(workspace.history, workspace.histories.get(scene.id));
     assert.equal(workspace.activate(scene.id), false, 'activating the active one changes nothing');
 });
+
+test('save writes the editor being worked in, not the tab that is showing', async () => {
+    // THE WORKBENCH PUT TWO SURFACES ON SCREEN AT ONCE. The scene keeps the stage while a
+    // `.px` is wired in the band below it, so "the active editor" and "what the creator is
+    // editing" stopped being one fact. Undo has always followed the last authored intent
+    // (ADR-0024); save follows it now too, or a creator moving objects would press Ctrl S
+    // and write the graph.
+    const workspace = new Workspace();
+    const scene = sceneWithOne();
+    const sceneResource = workspace.create(scene);
+    const component = componentResource(workspace);
+    const definition = await workspace.open(component.id);
+
+    assert.equal(workspace.activeId, component.id, 'the graph is the active editor');
+
+    scene.objects()[0].setProperty('name', 'Heroine');
+    assert.equal(workspace.save(), true);
+    assert.equal(workspace.project.read(sceneResource.id).objects[0].name, 'Heroine');
+    assert.equal(workspace.project.read(component.id).properties.speed, undefined);
+
+    // And the other way round: an edit in the graph hands the save back to the graph.
+    definition.addProperty({ name: 'speed', type: 'number', default: 12 });
+    workspace.save();
+    assert.equal(workspace.project.read(component.id).properties.speed.default, 12);
+});
+
+test('save falls back to the active editor when the last intent was the manifest', async () => {
+    // Selecting a resource in the Project panel makes the manifest the context, and the
+    // manifest has no model to write. A save then still has to mean something.
+    const workspace = new Workspace();
+    const component = componentResource(workspace);
+    const definition = await workspace.open(component.id);
+
+    definition.addProperty({ name: 'speed', type: 'number', default: 3 });
+    workspace.select(component.id);
+    assert.equal(workspace.context, 'project');
+
+    assert.equal(workspace.save(), true);
+    assert.equal(workspace.project.read(component.id).properties.speed.default, 3);
+});
+
+test('unsaved work is answered per editor, not only for the active one', async () => {
+    // The workbench shows every open `.px` at once, so each tab asks about ITSELF. Asking
+    // about the active editor made a graph with unsaved work go unmarked the moment the
+    // creator touched the scene.
+    const workspace = new Workspace();
+    const scene = sceneWithOne();
+    workspace.create(scene);
+    const component = componentResource(workspace);
+    const definition = await workspace.open(component.id);
+
+    definition.addProperty({ name: 'speed', type: 'number', default: 1 });
+    assert.equal(workspace.dirtyOf(component.id), true);
+
+    workspace.activate(workspace.project.resources()
+        .find(resource => resource.kind === ResourceKind.SCENE).id);
+    assert.equal(workspace.dirty, false, 'the scene has nothing to save');
+    assert.equal(workspace.dirtyOf(component.id), true, 'the graph still does');
+
+    assert.equal(workspace.dirtyOf('nothing'), false);
+});

@@ -14,7 +14,7 @@
 // tap on empty space. A tablet must never hit a wall (docs/architecture/EDITOR.md).
 
 import { Object, Scene, Transform, components, observe, registerStandardNodes } from '../core/mod.js';
-import { Camera } from '../runtime/mod.js';
+import { Behaviors, Camera, createGraphInterpreter } from '../runtime/mod.js';
 import { Selection } from './selection.js';
 import { Subject } from './subject.js';
 import { Layout } from './layout.js';
@@ -26,14 +26,14 @@ import { Transport, TransportState } from './transport.js';
 import { fillStarterScene } from './project/starter.js';
 import { installDocumentStyles, sheet } from './ui/styles.js';
 import { el, fill } from './ui/element.js';
-import { icon, iconForResource } from './ui/icons.js';
+import { icon } from './ui/icons.js';
 import { openMenu } from './ui/menu.js';
-import { ResourceKind } from '../project/mod.js';
 import { DropZone, describePayload } from './dnd/payload.js';
 import { createDragGhost } from './ui/drag-ghost.js';
 import { canDrop, performDrop } from './dnd/rules.js';
 import { previewOffsets, rankAt } from './dnd/reflow.js';
 import { carriesFiles, readDroppedFiles } from './dnd/files.js';
+import { activeDocument, documentViews } from './windows/documents.js';
 
 import './ui/window.js';
 import './ui/menu.js';
@@ -158,7 +158,7 @@ const shellStyles = sheet(`
     /* THE RUNNING SCENE IS MARKED, because everything changed while it runs is lost at
        Stop (ADR-0029 section 4). A hairline along the top of the stage: present enough to
        be noticed, quiet enough to work with. */
-    .shell.playing .stage { box-shadow: inset 0 2px 0 var(--px-success); }
+    .shell.playing .area-upper { box-shadow: inset 0 2px 0 var(--px-success); }
     .titlebar .gap { width: var(--px-space-2); flex: 0 0 auto; }
 
     /* The prototype's avatar: a gradient disc, 22 px, and a real button — it opens a menu
@@ -213,13 +213,17 @@ const shellStyles = sheet(`
             z-index: var(--px-z-drawer);
         }
 
-        .workspace > px-splitter { display: none; }
+        /* THE INSPECTOR'S SEAM, AND ONLY IT. The Inspector is floating over the scene
+           here, so there is nothing on its far side to trade against; the left column is
+           still a real column and keeps its seam. Before the shell became three columns
+           this rule named one element by accident of nesting — it names it on purpose
+           now. */
+        .workspace > px-splitter.seam-right { display: none; }
     }
 
     /* ── the stage ─────────────────────────────────────────────────────
-       WHAT A CREATOR IS LOOKING AT, and the strip that says what else is open. The scene
-       and every open .px share this space rather than each taking a column: they are
-       the same kind of thing — a resource being edited — and a canvas needs the room
+       ONE TAB BAR OVER ONE BODY. The Scene and every open .px file share this space: they
+       are the same kind of thing — a document being edited — and a canvas needs the room
        (ADR-0027). The strip appears only when there is a choice to make. */
     .stage {
         display: flex;
@@ -229,7 +233,17 @@ const shellStyles = sheet(`
         min-height: 0;
     }
 
-    .stage > px-viewport, .stage > px-graph { flex: 1; min-width: 0; min-height: 0; }
+    /* One surface at a time, and the others are HIDDEN rather than detached: a detached
+       element releases every subscription it took (ui/element.js), and a canvas holds its
+       own pan, zoom and selection that a rebuild would throw away. */
+    .stage-body {
+        display: flex;
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
+    }
+
+    .stage-body > * { flex: 1; min-width: 0; min-height: 0; }
 
     .stage-tabs {
         display: flex;
@@ -316,10 +330,15 @@ const shellStyles = sheet(`
     .stage-tab .close:hover { background: var(--px-surface-active); opacity: 1; }
     .stage-tab .dot { width: 6px; height: 6px; margin: 0 6px; border-radius: 50%; background: var(--px-accent); }
 
+    /* The Scene has nothing to close, so it has no room reserved for a button. */
+    .stage-tab.permanent { padding-right: var(--px-space-2); }
     /* A size restored from storage must never be able to swallow the window. */
     .col-left { width: min(var(--px-left), 40vw); }
     .col-right { width: min(var(--px-right), 46vw); }
     .col-left > px-project { height: min(var(--px-project), 60%); }
+    /* A seam dragged to the ceiling must still leave the Scene something. Wanting the
+       document alone is answered by carrying its tab up instead, which folds the band
+       rather than crushing what is above it. */
     .stack > px-timeline { height: min(var(--px-timeline), 45vh); }
 `);
 
@@ -350,7 +369,7 @@ export function start(mount = document.body) {
     // It starts in memory. An IndexedDB store is a swap of one implementation, which is
     // the whole reason `ResourceStore` is an interface.
     const workspace = new Workspace();
-    workspace.create(scene);
+    const sceneResource = workspace.create(scene);
     const histories = workspace.histories;
     const history = workspace.history;
 
@@ -358,7 +377,21 @@ export function start(mount = document.body) {
     // can carry one. The Project layer owns that step (project/definitions.js); the shell
     // owns the registry, so it is the shell that hands the two to each other — the same
     // arrangement `project/graphs.js` describes for binding a graph.
-    const definitions = createDefinitions({ project: workspace.project, registry: components, workspace, scene });
+    // AND A `.px` IS A BEHAVIOUR TOO, which is the half that never reached the Runtime.
+    // `Behaviors` interprets a graph once per graph and runs one execution state per
+    // component instance (ADR-0015 §3). The interpreter reads the very catalogue
+    // `registerStandardNodes()` filled above, and is handed a sink for the `Log` node —
+    // the one node that talks to the outside, and which is inert until a host gives it
+    // somewhere to talk to (core/graph/standard.js).
+    const behaviors = new Behaviors(createGraphInterpreter({ log: reportLog }));
+
+    const definitions = createDefinitions({
+        project: workspace.project,
+        registry: components,
+        workspace,
+        scene,
+        behaviors
+    });
 
     // ONE INTENTION CHANNEL FOR THREE SUBJECTS (ADR-0032). A window says what the creator
     // is working on; it does not have to know that a second holder exists, and it cannot
@@ -366,11 +399,10 @@ export function start(mount = document.body) {
     // further down, and the re-entrancy flag they needed.
     const subject = new Subject({ selection, workspace });
 
-    const viewport = el('px-viewport').bind({ scene, camera, selection, subject, onError: reportFailure });
+    const viewport = el('px-viewport').bind({ scene, camera, selection, subject, onError: reportFailure, behaviors });
     const hierarchy = el('px-hierarchy').bind({ scene, selection, subject, viewport, workspace });
     const inspector = el('px-inspector').bind({ scene, selection, subject, registry: components, workspace, definitions });
     const project = el('px-project').bind({ workspace, scene, selection, subject });
-    const graph = el('px-graph', { hidden: true });
     const timeline = el('px-timeline');
 
     // The creation tools are slotted INTO the viewport, beside Frame selection and Reset
@@ -402,7 +434,7 @@ export function start(mount = document.body) {
         get: () => layout.get('timeline'),
         set: value => layout.set('timeline', value)
     });
-    const rightSplit = el('px-splitter').bind({
+    const rightSplit = el('px-splitter', { class: 'seam-right' }).bind({
         axis: 'x',
         invert: true,
         get: () => layout.get('right'),
@@ -411,16 +443,23 @@ export function start(mount = document.body) {
 
     const columnLeft = el('div', { class: 'col-left' }, hierarchy, projectSplit, project);
     const columnRight = el('div', { class: 'col-right' }, inspector);
-    // THE SCENE AND EVERY OPEN `.px` SHARE ONE SURFACE (ADR-0027). They are the same kind
-    // of thing — a resource being edited — and both want the room; a strip above says what
-    // else is open, and appears only when there is more than one.
-    const tabs = stageTabs({ workspace, viewport, graph });
+
+    // THE SCENE KEEPS THE STAGE, AND THE CANVASES MOVED UNDER IT. They used to share one
+    // surface and switch each other out, so wiring a behaviour meant losing sight of the
+    // scene it acts on — which is the one thing a creator needs to see while wiring
+    // (ADR-0027, docs/architecture/EDITOR.md). The band L4 already grants the bottom of the
+    // shell now carries a strip of views over one body: the Timeline, and one canvas per
+    // open `.px`. It spans exactly what it spanned before and still stops at the
+    // Inspector's seam.
+    // ONE TAB BAR FOR THE DOCUMENTS, and the Timeline alone in the band under everything.
+    // The nesting is the layout: `.work` is the row of left column plus document area, and
+    // the Timeline sits under that row — which is why the Project stops at the seam when
+    // the Timeline is open and reaches the floor when it is closed, with no rule saying so.
+    // That is L4 exactly as D8 settled it (design/README.md).
+    const docs = documentArea({ workspace, viewport });
+
     const stack = el('div', { class: 'stack' },
-        el('div', { class: 'work' },
-            columnLeft,
-            leftSplit,
-            el('div', { class: 'stage' }, tabs.element, viewport, graph)
-        ),
+        el('div', { class: 'work' }, columnLeft, leftSplit, docs.element),
         timelineSplit,
         timeline
     );
@@ -450,6 +489,37 @@ export function start(mount = document.body) {
     // transport tells it once that there is a reason to. From there the running branch of
     // its own tick keeps the frames coming.
     transport.observe(() => viewport.wake());
+
+    // PLAY MEANS WATCH THE SCENE, so Play makes sure there is a Scene to watch. Not a mode
+    // switch invented for the occasion — it is what the button already means. A creator who
+    // has carried a graph into the upper area is looking at the graph, and starting the
+    // scene behind it would hide the very thing that was started; ADR-0029 §4 turns that
+    // from an annoyance into a hazard, since everything changed while the scene runs is lost
+    // at Stop and the mark that says so is drawn on the Scene.
+    //
+    // IT PUTS NOTHING BACK AT STOP. The graph is still a tab away, and choosing for the
+    // creator which of the two they wanted to be looking at is the guess this Editor keeps
+    // declining to make.
+    transport.observe(state => {
+        if (state !== TransportState.EDITING) workspace.activate(sceneResource.id);
+    });
+
+    // WHAT PLAYS IS WHAT IS ON SCREEN. A graph edited after its type was installed leaves
+    // the bound behaviour behind — moving a node is not a schema change and deliberately
+    // does not re-register the class (project/definitions.js) — so the session about to
+    // run re-reads every `.px` first, model before store, saved or not.
+    //
+    // ON THE WAY IN FROM `EDITING`, AND ONLY THERE. Re-binding hands `Behaviors` a new
+    // payload, which is how ADR-0016 §7 says a graph is edited: the running behaviour is
+    // replaced, and its execution state — including whether `On Start` has run — starts
+    // again. Doing that on a resume would make Pause then Play re-run `On Start`, which is
+    // not what resuming means (ADR-0029 §2).
+    let previousState = transport.state;
+    transport.observe(state => {
+        const starting = previousState === TransportState.EDITING && state === TransportState.PLAYING;
+        previousState = state;
+        if (starting) definitions.refresh();
+    });
 
     const applyVisibility = () => {
         hierarchy.hidden = !layout.shows('hierarchy');
@@ -518,7 +588,8 @@ export function start(mount = document.body) {
         if (!model) reportUnopenable(resource);
     });
 
-    bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hierarchy, inspector, project });
+
+    bindDragAndDrop({ shell, scene, subject, viewport, graph: () => docs.graph, workspace, hierarchy, inspector, project, definitions });
     bindShortcuts({ scene, selection, subject, viewport, history, workspace });
 
     return { scene, camera, selection, subject, layout, viewport, history, histories, workspace, transport, definitions };
@@ -711,7 +782,12 @@ function transportControls(transport) {
  *
  * @param {object} context - The windows, and the model they act on
  */
-function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hierarchy, inspector, project }) {
+function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hierarchy, inspector, project, definitions }) {
+    // THE CANVAS IS NOW ONE OF SEVERAL, so it is asked for rather than held. Each open `.px`
+    // has its own `<px-graph>`, and up to TWO of them are on screen at once — one per area.
+    // `graphs()` answers which, and the pointer decides between them the same way it decides
+    // between any two windows: by which one it is actually inside.
+    const canvases = typeof graph === 'function' ? graph : () => [graph].filter(Boolean);
     const context = () => ({
         scene,
         project: workspace.project,
@@ -775,19 +851,20 @@ function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hi
             return { target: { zone: DropZone.SCENE, x: point.x, y: point.y }, element: viewport };
         }
 
-        // THE OTHER SURFACE OF THE STAGE. The canvas and the scene share the slot and are
-        // mutually exclusive — the hidden one has no box, so only one of these two can
-        // answer. It is asked like every other window, by its own bounds, rather than being
-        // whatever is left when nothing else matched: a zone reached by elimination is a
-        // zone that silently grows every time a panel is added.
+        // THE CANVAS IN THE WORKBENCH. The scene and the shown graph no longer exclude one
+        // another, so both are asked — the viewport first because it is where the pointer
+        // spends its time. Each is asked by its own bounds, like every other window, rather
+        // than being whatever is left when nothing else matched: a zone reached by
+        // elimination is a zone that silently grows every time a panel is added.
         //
         // NOTHING LANDS HERE YET, and that is exactly why it has to be asked: a target no
         // rule mentions produces silence, and the rule table now answers for this one with
         // a sentence per kind of drag (dnd/rules.js, ADR-0034 §3.7).
-        if (within(graph, clientX, clientY)) {
+        for (const shown of canvases()) {
+            if (!within(shown, clientX, clientY)) continue;
             // The canvas answers which NODE is under the pointer, because a drop onto one
             // configures it while a drop beside it is refused. Always a zone either way.
-            return { target: graph.zoneAt(clientX, clientY), element: graph };
+            return { target: shown.zoneAt(clientX, clientY), element: shown };
         }
 
         if (within(hierarchy, clientX, clientY)) {
@@ -884,9 +961,11 @@ function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hi
             return;
         }
         // The canvas performs its own, for the reason the Inspector does: the rule acts
-        // through the window, which owns the batch the change travels under.
-        if (found.element === graph) {
-            graph.drop(payload, clientX, clientY);
+        // through the window, which owns the batch the change travels under. Asked by what
+        // the element IS rather than by identity with one particular canvas, because there
+        // may be one in each area and `targetAt` has already chosen between them.
+        if (found.element.tagName === 'PX-GRAPH') {
+            found.element.drop(payload, clientX, clientY);
             return;
         }
         if (canDrop(payload, found.target).allowed) performDrop(payload, found.target, context());
@@ -922,6 +1001,9 @@ function bindShortcuts({ scene, selection, subject, viewport, history, workspace
             // is a fact about the workspace rather than about any one panel.
             if (key === 's') {
                 event.preventDefault();
+                // Which editor gets written is the Workspace's answer, not this file's:
+                // save and undo ask one question — which editor is being worked in — and
+                // asking it in two places is how they came to disagree (ADR-0024).
                 workspace?.save();
                 return;
             }
@@ -987,73 +1069,157 @@ function isEditing() {
 }
 
 /**
- * The strip of open editors, and which one the stage is showing.
+ * The document area: one tab bar over one body.
  *
- * WHAT A TAB IS HERE, AND WHAT IT IS NOT. It is a view of `Workspace.opened()` — the
- * resources a window is presenting — and clicking one calls `activate()`. It is NOT a
- * document model, not a drag-to-reorder strip, and not detachable: which resource is open
- * is Workspace state (ADR-0020), and everything a tab strip usually accumulates beyond
- * that is view state nobody has asked for yet.
+ * WHAT A TAB IS, AND WHAT IT IS NOT. It is a view of `Workspace.opened()` — the resources a
+ * window is presenting — and clicking one calls `activate()`. It is NOT a document model:
+ * the resource, its live model, its pipeline and its undo stack are `OpenEditor` state the
+ * Workspace already owns and never serializes (ADR-0020, ADR-0024). Nothing here holds a
+ * second copy of any of it, and nothing here holds an order of its own: the strip IS
+ * `opened()`, so reordering a tab is `Workspace.reorder()` and nothing else.
  *
- * The strip hides itself when there is nothing to choose between, so a creator who never
- * opens a `.px` never sees a row of chrome (ADR-0026 §14: only what exists).
+ * ONE SURFACE INSTANCE PER OPEN DOCUMENT, KEPT CONNECTED. A canvas holds its own pan, zoom
+ * and node selection; rebuilding it on every tab change would throw all three away, and
+ * detaching it would release the subscription that keeps it in step with its model
+ * (`ui/element.js`). So a surface is made when the document opens, hidden when another tab
+ * is chosen, and removed only when the resource closes — which is exactly when the
+ * Workspace releases its model and its stack.
  *
- * @param {object} context - The workspace and the two surfaces it switches between
- * @returns {{element: HTMLElement, sync: Function}} The strip, and how to refresh it
+ * THE VIEWPORT IS ONE OF THESE SURFACES. It is handed in rather than made here because it
+ * exists whether or not anything is open, and because the shell has already given it its
+ * tools and its runtime.
+ *
+ * @param {object} context - The workspace and the Scene's surface
+ * @returns {object} `{ element, graph, sync }`
  */
-function stageTabs({ workspace, viewport, graph }) {
-    const element = el('div', { class: 'stage-tabs', role: 'tablist' });
+function documentArea({ workspace, viewport }) {
+    const tabs = el('div', { class: 'stage-tabs', role: 'tablist' });
+    const body = el('div', { class: 'stage-body' }, viewport);
+    const element = el('div', { class: 'stage' }, tabs, body);
 
-    // A NAME IS THE MODEL'S, AND A TAB READS IT LIKE EVERY OTHER VIEW. The strip used to
-    // print `resource.name` once per rebuild, so renaming a scene from the Project panel
-    // left the tab showing the old name until something unrelated happened to redraw it —
-    // the one representation in the Editor that did not follow a keystroke (ADR-0026 §3).
-    // Now each tab subscribes to the entry it names, and the subscriptions are dropped
-    // whenever the strip is rebuilt.
+    /** ResourceId -> the canvas showing it. One instance per open `.px`. */
+    const canvases = new globalThis.Map();
+
+    /** The document on screen. Held only so a rebuild does not lose it to a fallback. */
+    let shown = null;
+
+    // A NAME IS THE MODEL'S, AND A TAB READS IT LIKE EVERY OTHER VIEW. A tab used to print
+    // `resource.name` once per rebuild, so renaming a `.px` from the Project panel left the
+    // tab showing the old name until something unrelated redrew it — the one representation
+    // in the Editor that did not follow a keystroke (ADR-0026 §3).
     let watching = [];
     const unwatch = () => {
         for (const stop of watching) stop();
         watching = [];
     };
 
-    // --- reordering ------------------------------------------------------------------
+    /** The element that draws a document, made once and kept. */
+    const surfaceOf = view => {
+        if (view.surface === 'scene') return viewport;
+
+        let canvas = canvases.get(view.id);
+        if (!canvas) {
+            canvas = el('px-graph');
+            canvases.set(view.id, canvas);
+            canvas.bind(workspace.attached(view.id), { components: () => componentCatalogue(components) });
+        }
+        return canvas;
+    };
+
+    /**
+     * Tell the surface on screen that it is on screen.
+     *
+     * A CANVAS THAT IS NOT SHOWING HAS NO BOX TO FRAME INTO. It is hidden while another tab
+     * is chosen, so the framing it attempts on connect measures zero and would be remembered
+     * as done; the canvas declines an empty box and this is what asks it again (graph.js).
+     */
+    const wake = () => {
+        const surface = [...body.children].find(child => !child.hidden);
+        surface?.wake?.();
+    };
+
+    // --- carrying a tab --------------------------------------------------------------
     //
-    // A flat list, so it reorganises under the pointer like every other one (ADR-0028 §1),
-    // and the arithmetic is the shared one. What it is NOT is undoable: which tab sits
-    // where is view state, and `Workspace.reorder()` says why.
+    // REORDERING, AND ONLY REORDERING. There is one strip, so there is nowhere else a tab
+    // could be taken; it reorganises under the pointer like every other flat list in this
+    // Editor and the arithmetic is the shared one (ADR-0028 §1, dnd/reflow.js). It is not
+    // undoable: which tab sits where is view state, and `Workspace.reorder()` says why.
+    //
+    // TWO THINGS THIS GOT WRONG ONCE, both found by using it rather than by testing it, and
+    // both written down because they are traps this shape of code falls into again:
+    //
+    //   1. THE THRESHOLD MEASURED HORIZONTAL TRAVEL ONLY, so a press that set off at any
+    //      angle had to be nudged sideways before the strip would answer. It is a distance
+    //      now, which is what `windows/project.js` has always used.
+    //   2. THE MOVE AND UP HANDLERS LIVED ON THE TAB. A press that ended anywhere else left
+    //      the gesture set, and since a mouse always reports the same pointerId, the next tab
+    //      the pointer touched resumed the ABANDONED drag — from coordinates recorded
+    //      somewhere else, so it jumped. The gesture owns window-level listeners for exactly
+    //      as long as it lasts, and there is no way for one to outlive it.
     let drag = null;
 
-    const cancelDrag = () => {
+    /**
+     * Whether the press that is ending was a drag.
+     *
+     * A `click` still fires after a drag that began on a button, and it would read as a
+     * choice of tab. Cleared by the next press, so a drag that ended over some other element
+     * cannot swallow the tab's next real click.
+     */
+    let dragged = false;
+
+    const stopGesture = () => {
         if (!drag) return;
-        for (const tab of element.children) {
+        globalThis.removeEventListener('pointermove', moveDrag);
+        globalThis.removeEventListener('pointerup', endDrag);
+        globalThis.removeEventListener('pointercancel', abortDrag);
+        if (drag.tab.hasPointerCapture?.(drag.pointerId)) {
+            drag.tab.releasePointerCapture(drag.pointerId);
+        }
+
+        for (const tab of tabs.children) {
             tab.classList.remove('dragging', 'sliding');
             tab.style.transform = '';
         }
         drag = null;
     };
 
-    const beginDrag = (event, tab, id) => {
+    function beginDrag(event, tab, view) {
         if (event.button > 0) return;
-        drag = { tab, id, pointerId: event.pointerId, from: event.clientX, started: false, shown: null };
-    };
 
-    const moveDrag = event => {
+        dragged = false;
+        drag = {
+            tab, view,
+            pointerId: event.pointerId,
+            from: { x: event.clientX, y: event.clientY },
+            started: false,
+            rank: null
+        };
+
+        // Captured at once rather than at the threshold: it is what keeps the moves coming
+        // when the pointer leaves the tab, and leaving the tab is most of the gesture.
+        try {
+            tab.setPointerCapture(event.pointerId);
+        } catch {
+            // Nothing to capture. The window listeners below still resolve the gesture.
+        }
+        globalThis.addEventListener('pointermove', moveDrag);
+        globalThis.addEventListener('pointerup', endDrag);
+        globalThis.addEventListener('pointercancel', abortDrag);
+    }
+
+    function moveDrag(event) {
         if (!drag || event.pointerId !== drag.pointerId) return;
 
         if (!drag.started) {
-            if (Math.abs(event.clientX - drag.from) < TAB_DRAG_THRESHOLD) return;
+            // A DISTANCE, NOT A WIDTH. See note 1 above.
+            if (Math.hypot(event.clientX - drag.from.x, event.clientY - drag.from.y) < TAB_DRAG_THRESHOLD) return;
             drag.started = true;
-            try {
-                drag.tab.setPointerCapture(drag.pointerId);
-            } catch {
-                // The gesture still resolves from the events it does receive.
-            }
 
             // Measured before anything slides: reading a tab mid-transition would make the
             // rank depend on how far the previous answer had got to drawing itself.
-            drag.tabs = [...element.children];
-            drag.boxes = drag.tabs.map(tab => {
-                const box = tab.getBoundingClientRect();
+            drag.tabs = [...tabs.children];
+            drag.boxes = drag.tabs.map(each => {
+                const box = each.getBoundingClientRect();
                 return { start: box.left, size: box.width };
             });
             drag.index = drag.tabs.indexOf(drag.tab);
@@ -1061,74 +1227,91 @@ function stageTabs({ workspace, viewport, graph }) {
         }
 
         event.preventDefault();
+
         const to = rankAt(event.clientX, drag.boxes);
-        if (to !== drag.shown) {
-            drag.shown = to;
+        if (to !== drag.rank) {
+            drag.rank = to;
             const offsets = previewOffsets(drag.boxes.map(box => box.size), drag.index, to);
-            drag.tabs.forEach((tab, i) => {
+            drag.tabs.forEach((each, i) => {
                 if (i === drag.index) return;
-                tab.classList.add('sliding');
-                tab.style.transform = offsets[i] === 0 ? '' : `translateX(${offsets[i]}px)`;
+                each.classList.add('sliding');
+                each.style.transform = offsets[i] === 0 ? '' : `translateX(${offsets[i]}px)`;
             });
         }
-        drag.tab.style.transform = `translateX(${event.clientX - drag.from}px)`;
-    };
 
-    const endDrag = event => {
+        drag.tab.style.transform =
+            `translate(${event.clientX - drag.from.x}px, ${event.clientY - drag.from.y}px)`;
+    }
+
+    function abortDrag(event) {
+        if (event && drag && event.pointerId !== drag.pointerId) return;
+        const started = drag?.started;
+        stopGesture();
+        if (started) sync();
+    }
+
+    function endDrag(event) {
         if (!drag || event.pointerId !== drag.pointerId) return;
 
-        const moved = drag.started;
-        const { id, shown, index } = drag;
-        cancelDrag();
+        const { started, view, rank, index } = drag;
+        stopGesture();
+        dragged = started;
 
-        if (moved && shown !== null && shown !== index) workspace.reorder(id, shown);
-        return moved;
-    };
+        // A press that never became a drag is a click, and the tab handles it.
+        if (!started) return;
 
-    const sync = () => {
-        // A rebuild in the middle of a gesture would drop the element under the pointer.
-        if (drag?.started) return;
+        // THE STRIP IS `opened()`, RANK FOR RANK (windows/documents.js), so the rank the
+        // pointer landed on is the rank the Workspace is given. No translation, because
+        // there is no second order to translate between.
+        if (rank !== null && rank !== index) workspace.reorder(view.id, rank);
+        sync();
+    }
 
-        unwatch();
-        const open = workspace.opened();
-        const active = workspace.activeId;
+    const renderTabs = views => {
+        // ONE TAB IS NO CHOICE. The strip earns its row the moment there are two — a
+        // creator who never opens a `.px` never sees it (ADR-0026 §14: only what exists).
+        tabs.hidden = views.length < 2;
 
-        // ONE TAB IS NO CHOICE. The strip earns its row the moment there are two.
-        element.hidden = open.length < 2;
+        fill(tabs, views.map(view => {
+            const on = view.id === shown;
+            // Per tab, not per active editor: several documents are open at once, and a mark
+            // only the shown one could wear would go quiet exactly when it matters.
+            const dirty = workspace.dirtyOf(view.id);
 
-        fill(element, open.map(resource => {
-            const on = resource.id === active;
-            const dirty = workspace.dirty && on;
-
-            const close = el('button', {
+            const close = view.closable ? el('button', {
                 class: 'close',
                 type: 'button',
-                title: `Close ${resource.name}`,
-                'aria-label': `Close ${resource.name}`,
+                title: `Close ${view.label}`,
+                'aria-label': `Close ${view.label}`,
                 onpointerdown: event => event.stopPropagation(),
                 onclick: event => {
                     event.stopPropagation();
-                    workspace.close(resource.id);
+                    workspace.close(view.id);
                 }
-            }, icon('close', 12));
+            }, icon('close', 12)) : null;
 
-            const label = el('span', { class: 'name', textContent: resource.name || 'Untitled' });
+            const label = el('span', { class: 'name', textContent: view.label });
 
             const tab = el('button', {
-                class: `stage-tab${on ? ' on' : ''}`,
+                class: `stage-tab${on ? ' on' : ''}${view.closable ? '' : ' permanent'}`,
                 type: 'button',
                 role: 'tab',
                 'aria-selected': globalThis.String(on),
-                onpointerdown: event => beginDrag(event, tab, resource.id),
-                onpointermove: moveDrag,
-                onpointerup: event => {
-                    // A press that became a drag is not a click on a tab.
-                    if (endDrag(event)) return;
-                    workspace.activate(resource.id);
-                },
-                onpointercancel: cancelDrag
+                title: view.label,
+                // ONLY THE PRESS IS THE TAB'S. Everything after it belongs to the gesture and
+                // is listened for on the window, so a release anywhere at all ends it — and a
+                // tab the pointer merely passes over cannot inherit it.
+                onpointerdown: event => beginDrag(event, tab, view),
+                onclick: () => {
+                    if (dragged) {
+                        dragged = false;
+                        return;
+                    }
+                    // WHICH EDITOR THE SHORTCUTS ACT ON follows the tab, as it always has.
+                    workspace.activate(view.id);
+                }
             },
-                el('span', { class: 'glyph' }, icon(iconForResource(resource), 14)),
+                el('span', { class: 'glyph' }, icon(view.icon, 14)),
                 label,
                 // THE DOT DOES NOT REPLACE THE CLOSE BUTTON. Sharing one slot looked tidy
                 // and meant a tab with unsaved work could not be closed at all — the one
@@ -1137,28 +1320,44 @@ function stageTabs({ workspace, viewport, graph }) {
                 close
             );
 
-            const entry = workspace.project.get(resource.id);
+            const entry = workspace.project.get(view.id);
             if (entry) {
                 watching.push(observe(entry, 'name', change => {
                     label.textContent = change.value || 'Untitled';
-                    close.title = `Close ${change.value}`;
+                    if (close) close.title = `Close ${change.value}`;
                 }));
             }
 
             return tab;
         }));
+    };
 
-        // WHICH SURFACE IS SHOWN follows the active editor's KIND, not a flag somebody has
-        // to remember to set. A scene shows the viewport; a `.px` shows the canvas.
-        const showing = workspace.activeId ? workspace.project.get(workspace.activeId) : null;
-        const isGraph = showing?.kind === ResourceKind.COMPONENT && workspace.isOpen(showing.id);
+    const sync = () => {
+        // A rebuild in the middle of a gesture would drop the element under the pointer.
+        if (drag?.started) return;
 
-        viewport.hidden = isGraph;
-        graph.hidden = !isGraph;
-        graph.bind(isGraph ? workspace.attached(showing.id) : null,
-            { components: () => componentCatalogue(components) });
+        unwatch();
+        const views = documentViews(workspace.opened());
 
+        // A canvas whose `.px` closed has nothing left to show: the Workspace has released
+        // its model and its undo stack.
+        const live = new globalThis.Set(views.map(view => view.id));
+        for (const [id, canvas] of canvases) {
+            if (live.has(id)) continue;
+            canvas.remove();
+            canvases.delete(id);
+        }
 
+        shown = activeDocument(views, workspace.activeId, shown);
+
+        for (const view of views) {
+            const surface = surfaceOf(view);
+            if (surface.parentElement !== body) body.append(surface);
+            surface.hidden = view.id !== shown;
+        }
+
+        renderTabs(views);
+        wake();
     };
 
     for (const event of ['opened', 'closed', 'active', 'dirty', 'saved', 'reordered']) {
@@ -1166,7 +1365,14 @@ function stageTabs({ workspace, viewport, graph }) {
     }
     sync();
 
-    return { element, sync };
+    return {
+        element,
+        /** The canvas a pointer could be over: the one showing, when a `.px` is showing. */
+        get graph() {
+            return [...canvases.values()].find(canvas => !canvas.hidden && canvas.isConnected) ?? null;
+        },
+        sync
+    };
 }
 
 /**
@@ -1180,6 +1386,12 @@ function stageTabs({ workspace, viewport, graph }) {
  */
 function reportUnopenable(resource) {
     console.warn(`[editor] "${resource.name}" has no editor yet — nothing opens a ${resource.kind}.`);
+}
+
+function reportLog(value) {
+    // Where `Log` writes until there is a Console window, in the spirit of the report
+    // below: a creator's own trace, marked as theirs rather than mixed into the Editor's.
+    console.log('[graph]', value);
 }
 
 function reportFailure(report) {
