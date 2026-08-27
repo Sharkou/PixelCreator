@@ -99,6 +99,48 @@ test('a node with no property selected is a warning: it runs, it just does nothi
     assert.equal(runnable(issues), true);
 });
 
+// --- an Object port with nothing in it (ADR-0034 §3.2) -------------------------------------
+
+test('a node with nothing wired to its Object port says so, and still runs', () => {
+    // The least readable state a graph can be in, and until now the silent one: the node
+    // names a Component and a property, executes every frame, and writes to nobody.
+    const issues = check(graph({ nodes: [node('n1', 'object.isValid')] }));
+
+    assert.equal(issues.length, 1);
+    assert.equal(issues[0].code, GraphIssueCode.MISSING_REFERENCE);
+    assert.equal(issues[0].severity, GraphSeverity.WARNING);
+    assert.equal(issues[0].node, 'n1');
+    assert.equal(issues[0].port, 'object', 'and it names the port to aim at');
+    assert.equal(runnable(issues), true, 'null is a legal thing for it to read (ADR-0034 §3.4)');
+});
+
+test('an Object port that is fed is not reported', () => {
+    const payload = graph({
+        nodes: [node('n1', 'scene.self'), node('n2', 'object.isValid')],
+        connections: [wire('c1', ['n1', 'object'], ['n2', 'object'])]
+    });
+
+    assert.deepEqual(check(payload), []);
+});
+
+test('it is the port TYPE that is checked, not a list of node types', () => {
+    // Every node carrying a handle port answers the same way when nothing feeds it, so one
+    // rule covers the four that exist and the fifth that does not exist yet.
+    for (const type of ['object.isValid', 'scene.parent', 'property.getOn', 'property.setOn']) {
+        const issues = check(graph({ nodes: [node(type, type)] }));
+        const found = issues.filter(issue => issue.port === 'object');
+
+        assert.equal(found.length, 1, `${type} reports its empty Object port`);
+        assert.equal(found[0].severity, GraphSeverity.WARNING);
+    }
+});
+
+test('a node with no Object port is never asked about one', () => {
+    const issues = check(graph({ nodes: [node('n1', 'value.number')] }));
+
+    assert.deepEqual(issues, []);
+});
+
 // --- connections ---------------------------------------------------------------------------------
 
 test('a connection naming a node the graph does not hold is reported', () => {

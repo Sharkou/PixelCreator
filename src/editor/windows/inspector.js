@@ -1380,7 +1380,8 @@ export class Inspector extends Element {
             // does that (project/definitions.js) and the rule is handed the result rather
             // than reaching for a registry of its own.
             install: id => this.#definitions?.install(id) ?? null,
-            addComponent: (object, type) => addComponent(object, type, this.#registry)
+            // The options travel, so a rule that attaches AND configures is one undo entry.
+            addComponent: (object, type, options) => addComponent(object, type, this.#registry, options)
         };
     }
 

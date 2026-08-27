@@ -98,7 +98,31 @@ export class GraphWindow extends Element {
             cursor: default;
         }
 
-        svg.panning { cursor: grabbing; }
+        /* A GESTURE IN FLIGHT OWNS THE CURSOR OF THE WHOLE CANVAS, DESCENDANTS INCLUDED.
+           What the pointer is OVER stops mattering the moment it is holding something: a
+           node carried across the canvas passes over other nodes' fields, and an input element
+           inside a foreignObject asserts a text cursor of its own — so the closed hand
+           flickered back to a caret every time the node being dragged crossed another one,
+           and outran it entirely on a fast drag. The state is on the SVG rather than on the
+           node for that reason: the node is not where the pointer is.
+
+           IT IS THE RULE ui/cursors.js ALREADY WRITES for the shell-wide drag, applied to
+           the one surface that has its own gestures — hence the descendant selector and the
+           important flag, which are what reach past a control's own opinion.
+
+           AND THE CONTROLS STEP OUT OF THE WAY, because a selector cannot reach them. A
+           field lives in px-field's OWN shadow root, which no rule written here — nor in the
+           document — can select into, so the caret would survive any amount of important.
+           What CAN be said from here is that the foreignObject holding it takes no pointer
+           while a gesture is in flight, which is the truer statement anyway: a creator
+           carrying a node is not pointing at a field, and a field that lit up under a node
+           being dragged over it was answering a question nobody asked. With it inert, the
+           pointer meets the node's own shapes, which these rules do reach. */
+        svg.panning, svg.panning * { cursor: grabbing !important; }
+        svg.moving, svg.moving * { cursor: grabbing !important; }
+        svg.panning .param,
+        svg.moving .param,
+        svg.wiring .param { pointer-events: none; }
 
         /* ── nodes ─────────────────────────────────────────────────────── */
 
@@ -169,21 +193,32 @@ export class GraphWindow extends Element {
            THE STATES ARE THREE, AND THEY DIFFER. At rest the field is the same well every
            value in this Editor sits in; hovered it is outlined in the node's hue; focused it
            is ringed in it. A field that shows a value it is not producing — one masked by a
-           wire — stays legible and visibly inert, and a read-only one never lights at all. */
+           wire — stays legible and visibly inert, and a read-only one never lights at all.
+
+           THE TINT IS BOUND ONCE AND EVERY ACCENT TOKEN IS DERIVED FROM IT. Rebinding only
+           two of them left the third — the muted wash a focused control lays under its
+           border — reading the product coral, so a focused field on a blue Number node wore
+           a blue border inside an orange halo: two palettes on one control, which is exactly
+           what a per-node hue exists to prevent. The wash is a TRANSPARENCY OF the hue rather
+           than a seventh colour, so it is mixed from it instead of being a second table to
+           keep in step (every --px-hue token would otherwise need a muted twin). */
         .param-row {
-            --px-accent: var(--px-node-hue, var(--px-accent));
-            --px-accent-border: var(--px-node-hue, var(--px-accent-border));
+            /* The one thing a row is told; everything below is a function of it. */
+            --px-node-tint: var(--px-node-hue, var(--px-accent));
+            --px-accent: var(--px-node-tint);
+            --px-accent-border: var(--px-node-tint);
+            --px-accent-muted: color-mix(in srgb, var(--px-node-tint) 16%, transparent);
         }
 
         .param-row:focus-within .param-label { color: var(--px-node-hue, var(--px-text)); }
 
         /* Masked by a wire: still readable, visibly not what is running — and never lit,
-           because what it shows is not what runs. */
+           because what it shows is not what runs. One token, so the wash goes quiet with
+           the border rather than staying lit in a colour the row no longer wears. */
         .param-row.masked { opacity: 0.45; }
         .param-row.masked,
         .param-row:has(px-field[disabled]) {
-            --px-accent: var(--px-border-subtle);
-            --px-accent-border: var(--px-border-subtle);
+            --px-node-tint: var(--px-border-subtle);
         }
 
         .node .title {
@@ -242,7 +277,9 @@ export class GraphWindow extends Element {
         /* Every other port dims, so the ones that could take the wire are what is left to
            look at. */
         svg.wiring .node .port:not(.candidate):not(.rejected) { opacity: 0.35; }
-        svg.wiring { cursor: crosshair; }
+        /* Same rule as the two above, and for the same reason: a wire in flight is a
+           gesture, so the crosshair survives crossing a field on its way to a port. */
+        svg.wiring, svg.wiring * { cursor: crosshair !important; }
 
         /* ── wires ─────────────────────────────────────────────────────── */
 
@@ -1383,6 +1420,11 @@ export class GraphWindow extends Element {
                 // (ADR-0024 §4).
                 batch: `${hit.node.id}:${event.pointerId}:${event.timeStamp}`
             };
+            // THE HAND CLOSES ON THE PRESS, AND IT STAYS CLOSED WHEREVER THE POINTER GOES.
+            // `.node.dragging` says it on the node being carried, which is the wrong element
+            // to ask the moment the pointer is anywhere else — over another node, over one of
+            // its fields, or ahead of the node on a fast drag (see the sheet).
+            this.#svg.classList.add('moving');
             capture(this.#svg, event.pointerId);
             this.#draw();
             return;
@@ -1594,7 +1636,7 @@ export class GraphWindow extends Element {
         const wasRegrab = this.#drag?.kind === 'wire' && this.#drag.regrab;
 
         this.#pending.removeAttribute('d');
-        this.#svg.classList.remove('panning');
+        this.#svg.classList.remove('panning', 'moving');
         this.#clearWireMarks();
         if (pointerId !== undefined && this.#svg.hasPointerCapture?.(pointerId)) {
             this.#svg.releasePointerCapture(pointerId);

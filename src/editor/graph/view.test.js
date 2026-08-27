@@ -306,6 +306,89 @@ test('more controls than ports grow the node a row at a time', () => {
     );
 });
 
+// --- a result is read after what it is computed from -------------------------------------
+//
+// A NODE THAT CONSUMES MORE THAN IT PRODUCES HAS COMBINED ITS INPUTS, so what it produces is
+// their RESULT and belongs below them. Pairing an input with an output on one line says the
+// two are one thing seen from both sides; `Add` is not that, and drawing `A … Result` / `B`
+// left a creator asking which of the two the result came from.
+
+test('a node that reduces its inputs puts the result below them', () => {
+    const multiply = place('math.multiply', 0, 0);
+    const rows = nodeRows(multiply.ports, inputFields(multiply.ports));
+
+    assert.deepEqual(
+        rows.map(row => [row.input?.id ?? null, row.output?.id ?? null]),
+        [['a', null], ['b', null], [null, 'result']]
+    );
+    assert.equal(rows[0].control.port, 'a', 'each input keeps its own field');
+    assert.equal(rows[1].control.port, 'b');
+    assert.equal(rows[2].control, null, 'and the result row is the result, and nothing else');
+});
+
+test('every arithmetic and comparison node reads the same way', () => {
+    // The rule is derived from the ports, so it is not a list of node types anybody has to
+    // keep in step — which is exactly what this asserts.
+    for (const type of ['math.add', 'math.subtract', 'math.multiply', 'math.divide',
+        'compare.greater', 'compare.less', 'compare.equal', 'logic.and', 'logic.or']) {
+        const it = place(type, 0, 0);
+        const rows = nodeRows(it.ports, inputFields(it.ports));
+        const last = rows.at(-1);
+
+        assert.equal(rows.length, 3, `${type} shows two inputs and a result`);
+        assert.equal(last.input, null, `${type} keeps its result on a row of its own`);
+        assert.equal(last.output.id, 'result');
+    }
+});
+
+test('one value in and one value out still share a row', () => {
+    // `Not` and `Parent` genuinely have a counterpart per input, so the zip says something
+    // true and nothing moves. The rule is arity, not a family of node types.
+    for (const type of ['logic.not', 'scene.parent', 'object.isValid']) {
+        const it = place(type, 0, 0);
+        const rows = nodeRows(it.ports, inputFields(it.ports));
+
+        assert.equal(rows.length, 1, `${type} is one row`);
+        assert.ok(rows[0].input && rows[0].output, `${type} pairs its two ports`);
+    }
+});
+
+test('flow ports keep their place in the zip, whatever the values do', () => {
+    // A node's entry and its exit are the same height, and moving them apart would say they
+    // were different things. `Set Property On` takes two values and produces none, so there
+    // is no result to move — and its two triangles stay on one line.
+    const set = place('property.setOn', 0, 0, { component: 'Transform', property: 'p_x' });
+    const rows = nodeRows(set.ports, []);
+
+    assert.equal(rows[0].input.kind, PortKind.FLOW);
+    assert.equal(rows[0].output.kind, PortKind.FLOW, 'in and out, on one line');
+    assert.deepEqual(rows.slice(1).map(row => row.output), [null, null], 'and nothing else on the right');
+});
+
+test('a node that produces more than it consumes is left alone', () => {
+    const sequence = place('flow.sequence', 0, 0);
+    const rows = nodeRows(sequence.ports, []);
+
+    assert.equal(rows.length, 2, 'the zip is what gives every output a line');
+    assert.equal(rows[0].input.id, 'in');
+    assert.deepEqual(rows.map(row => row.output.id), ['first', 'second']);
+});
+
+test('a result on its own row keeps its label and its socket', () => {
+    const node = { x: 0, y: 0 };
+    const multiply = place('math.multiply', 0, 0);
+    const controls = inputFields(multiply.ports);
+    const rows = nodeRows(multiply.ports, controls);
+
+    const silenced = silencedPorts(rows);
+    assert.equal(silenced.has('out:result'), false, 'no control speaks for it, so it speaks');
+
+    const port = portPosition(node, multiply.ports, 'out', 'result', controls);
+    assert.equal(port.y, node.y + HEADER_HEIGHT + 8 + 2 * ROW_HEIGHT + ROW_HEIGHT / 2,
+        'the socket sits on the row the label is drawn on');
+    assert.equal(controlBoxes(node, rows).length, 2, 'and the result row holds no field');
+});
+
 test('a control naming a port that is not there falls back to a free row', () => {
     // A `Set Property` whose property was deleted still has to draw: the port went, the
     // descriptor may not have, and dropping the control on the floor would hide a value.

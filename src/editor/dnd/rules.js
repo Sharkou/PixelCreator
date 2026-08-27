@@ -24,7 +24,8 @@ import {
     Object as SceneObject,
     PropertyType,
     Transform,
-    componentSchema
+    componentSchema,
+    createId
 } from '../../core/mod.js';
 import { ResourceKind, isFolder, canMove } from '../../project/mod.js';
 import { Sprite } from '../../runtime/mod.js';
@@ -33,11 +34,29 @@ import { createResourceOfKind } from '../project/commands.js';
 import { uniqueName } from '../commands.js';
 
 /**
- * What an image becomes when it is dropped into a scene.
+ * WHICH COMPONENT CONSUMES WHICH KIND OF RESOURCE — the one relation, stated once.
  *
  * ONE PLACE SAYS "AN IMAGE IS A SPRITE". A second kind of asset — a sound, a tilemap —
  * adds a row here and changes nothing else, which is the extension point ADR-0026 asks
  * for. A kind with no row is not instantiable, and the rules below refuse it by name.
+ *
+ * IT ANSWERS TWO GESTURES RATHER THAN ONE, AND THAT IS WHY `consumes` REPLACED A `build`
+ * PER ROW. Dropping an image on the SCENE makes a whole object — a Transform and something
+ * that draws; dropping it on an object's Inspector attaches only the second half, to the
+ * object that is already there. Those are two readings of the same sentence, so writing the
+ * sentence twice is how the two would come to disagree about what an image is: the tile a
+ * creator dropped in the scene would be 64 units and the one they dropped on an object
+ * would be nothing at all, and neither place would look wrong on its own.
+ *
+ * The row names the class AND its registered type because the two gestures reach a
+ * Component by different roads: the scene builds a detached object, so it needs the
+ * constructor; attaching goes through the Editor's own ADD_COMPONENT command, which names a
+ * type and asks the registry (ADR-0021). `Component.type` is that name, so the row states
+ * the class and reads the name off it rather than carrying a second spelling.
+ *
+ * `values` IS WHAT A FRESH ONE NEEDS BEFORE IT SHOWS ANYTHING. A `Sprite` starts 0 by 0 and
+ * draws nothing at that size, so attaching one and stopping would answer a gesture with a
+ * component a creator cannot see — which ADR-0026 §6 names the worst possible answer.
  */
 const INSTANTIABLE = [
     {
@@ -45,22 +64,50 @@ const INSTANTIABLE = [
         accepts: resource => resource.kind === ResourceKind.ASSET
             && (resource.mime ?? '').startsWith('image/'),
         label: 'Image',
-        /**
-         * Build the object an image becomes.
-         * @param {object} resource - The image resource
-         * @param {object} context - `{ scene }`
-         * @returns {object} A detached object, ready to be added
-         */
-        build: (resource, { scene }) => {
-            const object = new SceneObject(uniqueName(scene, baseName(resource.name)));
-            object.addComponent(new Transform());
-            // `source` is the ResourceId, never the bytes: a scene references its images
-            // and never carries them (ADR-0020).
-            object.addComponent(new Sprite(resource.id, 64, 64));
-            return object;
+        consumes: {
+            Component: Sprite,
+            /** Where the reference goes. The ResourceId, never the bytes (ADR-0020). */
+            property: 'source',
+            values: { width: 64, height: 64 }
         }
     }
 ];
+
+/**
+ * A Component that consumes a resource, built and pointed at it.
+ *
+ * Detached: what it is added TO is the caller's business, and only the scene path builds a
+ * component this way — attaching to an object that already exists goes through the Editor's
+ * command so it is one Operation and undoes like any other (ADR-0019).
+ *
+ * @param {object} consumes - The `consumes` record of an INSTANTIABLE row
+ * @param {object} resource - The manifest entry it is pointed at
+ * @returns {object} The component
+ */
+function consumer({ Component, property, values }, resource) {
+    const component = new Component();
+    component[property] = resource.id;
+    for (const [name, value] of globalThis.Object.entries(values ?? {})) component[name] = value;
+    return component;
+}
+
+/**
+ * The object a resource becomes: a place in the world, and the thing that shows it.
+ *
+ * ONE BUILDER FOR EVERY ROW, because the shape is the same for all of them — what differs
+ * is which Component consumes the resource, and that is what the row says.
+ *
+ * @param {object} rule - An INSTANTIABLE row
+ * @param {object} resource - The manifest entry
+ * @param {object} context - `{ scene }`
+ * @returns {object} A detached object, ready to be added
+ */
+function buildInstance(rule, resource, { scene }) {
+    const object = new SceneObject(uniqueName(scene, baseName(resource.name)));
+    object.addComponent(new Transform());
+    object.addComponent(consumer(rule.consumes, resource));
+    return object;
+}
 
 /**
  * Why a drag that reached the canvas and found no meaning there is refused, in its own words.
@@ -287,6 +334,65 @@ export const RULES = [
             if (!type) return null;
 
             return { component: context.addComponent?.(target.object, type) ?? null, type };
+        }
+    },
+
+    {
+        // A RESOURCE DROPPED ON AN OBJECT BECOMES THE COMPONENT THAT CONSUMES IT. Dropping
+        // an image in the scene has always meant "an object that shows this picture"; the
+        // same image let go on an object that already exists means the same thing minus the
+        // object — attach what shows it, and point it at the resource. It is the row above
+        // one scope down: that one attaches a `.px`, which IS a Component; this one attaches
+        // the Component a plain asset needs in order to be anything at all.
+        //
+        // NOTHING HERE KNOWS WHAT AN IMAGE IS. Which Component consumes which resource is
+        // the INSTANTIABLE table's single sentence, read by both gestures (see it above), so
+        // a sound or a tilemap becomes droppable here on the day it becomes instantiable —
+        // by the same row, and with no rule written.
+        //
+        // ONE GESTURE, ONE UNDO ENTRY. Attaching the Component and pointing it at the
+        // resource are two Operations of one intent, so they travel under one batch and a
+        // single `Ctrl Z` takes the whole drop back (ADR-0024 §4).
+        id: 'resource-to-components',
+        accepts: (payload, target) => payload.kind === DragKind.RESOURCE
+            && target.zone === DropZone.COMPONENTS
+            && Boolean(target.object)
+            && Boolean(instantiator(payload.resource)),
+        // ALREADY THERE IS A REFUSAL WITH SOMEWHERE TO GO. Attaching a second Sprite is
+        // legal — several renderers on one Object all draw (editor/registry.js) — but it is
+        // almost never what a creator dropping a picture on an object that already shows one
+        // meant, and quietly making two is a state they have to notice before they can undo
+        // it. The row that WOULD take it is named, because a refusal a creator cannot act on
+        // is half a refusal (ADR-0026 §6).
+        refuses: (payload, target) => {
+            const consumes = instantiator(payload.resource)?.consumes;
+            if (!target.object.hasComponent(consumes.Component.type)) return null;
+
+            return `${target.object.name} already has a ${consumes.Component.type}. `
+                + `Drop the ${payload.resource.name || 'resource'} on its `
+                + `${humanise(consumes.property)} instead.`;
+        },
+        describe: (payload, target) => {
+            const consumes = instantiator(payload.resource).consumes;
+            return `Add a ${consumes.Component.type} showing `
+                + `${payload.resource.name || 'this resource'} to ${target.object.name}`;
+        },
+        perform: (payload, target, context) => {
+            const { Component, property, values } = instantiator(payload.resource).consumes;
+            const batch = createId();
+
+            const component = context.addComponent?.(target.object, Component.type, { batch });
+            if (!component) return null;
+
+            // Through `setProperty`, like every other value the Editor writes: one
+            // controlled path, so the drop replicates and undoes like a typed value
+            // (CONVENTIONS.md).
+            component.setProperty(property, payload.resource.id, { batch });
+            for (const [name, value] of globalThis.Object.entries(values ?? {})) {
+                component.setProperty(name, value, { batch });
+            }
+
+            return { component, type: Component.type, assigned: payload.resource.id };
         }
     },
 
@@ -672,7 +778,7 @@ function instantiate(resource, target, context) {
     const rule = instantiator(resource);
     if (!rule || !context.scene) return null;
 
-    const object = rule.build(resource, context);
+    const object = buildInstance(rule, resource, context);
     const transform = object.getComponent('Transform');
     if (transform) {
         transform.x = Math.round(target.x ?? 0);
@@ -688,6 +794,24 @@ function instantiate(resource, target, context) {
 
     context.select?.(added);
     return added;
+}
+
+/**
+ * A property name, as a creator reads it in the Inspector.
+ *
+ * The same transformation `inspector/schema.js` applies to a property with no declared
+ * label. It is repeated here rather than imported for the reason this module has no other
+ * import from the Inspector: a rule says what a drop MEANS and must not depend on the panel
+ * that happens to be showing it. Two words, and they cannot drift apart in any way a creator
+ * could notice.
+ *
+ * @param {string} name - The property's name
+ * @returns {string} What the row is titled
+ */
+function humanise(name) {
+    return globalThis.String(name ?? '')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/^./, first => first.toUpperCase());
 }
 
 /** A file name without its extension, for naming an object after the image it shows. */

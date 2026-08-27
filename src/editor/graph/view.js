@@ -112,6 +112,21 @@ export const MAX_ZOOM = 2.5;
  * things, which is the very defect ADR-0033 §1 was written against. Refusing that row is not
  * an exception to the algebra; it is the half of it that had not been written down.
  *
+ * AND ONE MORE, WHICH IS THE HALF THE ZIP CANNOT STATE: **a node that consumes more values
+ * than it produces puts what it produces BELOW everything it consumes.** Pairing an input
+ * with an output on one line says the two are one thing seen from both sides — a literal
+ * and the socket its content leaves by, a picker and the value it names. `Add` is not that:
+ * `A` and `Result` are two different things, and printing them on one line made a creator
+ * read `A … Result` / `B` and ask which of the two the result belonged to. Below its inputs,
+ * a result reads as what it is — the thing computed FROM them, in the order arithmetic is
+ * written in.
+ *
+ * IT IS DERIVED, NOT DECLARED, AND ONLY DATA IS COUNTED. Nothing in the catalogue says "I am
+ * a reduction": the port lists already do, and a flag on twelve node types would be a second
+ * table to keep in step with them (ADR-0033 §1). Flow ports keep their place in the zip
+ * because execution is not a value — `Set Property`'s two triangles are one line, and moving
+ * them apart would say a node's entry and its exit were different heights.
+ *
  * That is the whole algebra. What it produces, without a single special case:
  *
  * | Node | Rows |
@@ -119,7 +134,8 @@ export const MAX_ZOOM = 2.5;
  * | `Number`, `Boolean`, `Text` | ONE — the field and the output socket, side by side |
  * | `Get Property` | ONE — the property picker, and the socket that carries its value |
  * | `Set Property` | flow in / picker / flow out, then the value socket beside its field |
- * | `Add` | A with its field and Result, then B with its field |
+ * | `Add`, `Multiply`, `Equal`, `And` | A with its field, B with its field, then Result |
+ * | `Not` | ONE — one value in, one out: the zip still says something true |
  * | `Branch` | flow in / true, then the condition beside its checkbox / false |
  *
  * WHY IT MATTERS BEYOND TIDINESS. A creator reads a graph by following a value into a
@@ -135,10 +151,16 @@ export function nodeRows(ports, controls = []) {
     const inputs = ports?.inputs ?? [];
     const outputs = ports?.outputs ?? [];
 
+    // The results leave the zip when there are fewer of them than there are values going in;
+    // the flow ports never do. Both lists keep their declared order.
+    const results = reduces(inputs, outputs) ? outputs.filter(isData) : [];
+    const paired = results.length === 0 ? outputs : outputs.filter(port => !isData(port));
+
     const rows = [];
-    for (let index = 0; index < Math.max(inputs.length, outputs.length); index++) {
-        rows.push({ input: inputs[index] ?? null, output: outputs[index] ?? null, control: null });
+    for (let index = 0; index < Math.max(inputs.length, paired.length); index++) {
+        rows.push({ input: inputs[index] ?? null, output: paired[index] ?? null, control: null });
     }
+    for (const result of results) rows.push({ input: null, output: result, control: null });
 
     // A control that edits a port goes to that port's row, wherever it is. Placed first, so
     // it cannot be displaced by a param that merely wanted "the next free row".
@@ -166,6 +188,39 @@ export function nodeRows(ports, controls = []) {
     }
 
     return rows;
+}
+
+/**
+ * Whether a port carries a value rather than execution order.
+ *
+ * A port that declares no kind is a data port, which is the rule `createPort()` applies —
+ * stated here too because this module is also handed hand-written port lists by its tests
+ * and by `hitTest()`'s callers, and a second answer to "is this a wire or a value" is the
+ * kind of divergence ADR-0033 moved this arithmetic into one file to prevent.
+ *
+ * @param {object|null} port - The port
+ * @returns {boolean} True for a data port
+ */
+function isData(port) {
+    return Boolean(port) && port.kind !== PortKind.FLOW;
+}
+
+/**
+ * Whether a node's outputs are the RESULT of its inputs rather than a counterpart to them.
+ *
+ * The measure is arity, and it is the only one available without asking a node type to
+ * describe itself: a node that takes two values and gives one back has combined them, and
+ * there is no input the single output belongs beside. One-for-one is left alone — `Not` and
+ * `Parent` genuinely have a counterpart per input — and so is a node that produces more than
+ * it consumes, where the zip is what gives every output a line.
+ *
+ * @param {object[]} inputs - The node's input ports
+ * @param {object[]} outputs - The node's output ports
+ * @returns {boolean} True when the outputs should follow every input row
+ */
+function reduces(inputs, outputs) {
+    const produced = outputs.filter(isData).length;
+    return produced > 0 && produced < inputs.filter(isData).length;
 }
 
 /**

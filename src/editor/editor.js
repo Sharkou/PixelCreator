@@ -832,7 +832,9 @@ function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hi
         folder: null,
         select: object => subject.object(object),
         install: id => definitions.install(id),
-        addComponent: (object, type) => addComponent(object, type, components)
+        // The options travel: a rule that attaches a Component AND writes its value is one
+        // gesture, so both Operations share the batch it mints (ADR-0024 §4).
+        addComponent: (object, type, options) => addComponent(object, type, components, options)
     });
 
     // Files dropped on the scene surface: imported, then placed where they landed.

@@ -255,6 +255,8 @@ export class Hierarchy extends Element {
     // The press that may become a drag, then the drag itself. One field, because a row is
     // either being pressed or being carried, never both.
     #drag = null;
+    /** Set for exactly one click: the one that ends a drag and must not also select. */
+    #dragged = false;
 
     /**
      * Point the window at the scene it lists.
@@ -481,14 +483,33 @@ export class Hierarchy extends Element {
         return entry.row;
     }
 
+    /**
+     * Keep a gesture inside the control it started in.
+     *
+     * A ROW ANSWERS TO BOTH EVENTS, SO A CONTROL INSIDE IT HAS TO STOP BOTH. `pointerdown`
+     * is where a drag is armed and `click` is where the selection moves, and a control that
+     * stopped only the first would fold a branch or hide an object AND select it — which is
+     * not what either button says it does. It used to be enough to stop the press, because
+     * that was where the selection moved; the day it moved to the click (see the row) this
+     * became two events, and stating only one of them would have been the bug.
+     *
+     * @param {Function} act - What the control does
+     * @returns {object} The two handlers, to spread onto the element
+     */
+    static #own(act) {
+        return {
+            onpointerdown: event => event.stopPropagation(),
+            onclick: event => {
+                event.stopPropagation();
+                act();
+            }
+        };
+    }
+
     #buildRow(object) {
-        // The row selects on pointerdown, so a control inside it has to stop that event
-        // and not merely the click: folding a branch or hiding an object is not a way of
-        // saying "select this".
         const twisty = el('span', {
             class: 'ghost twisty',
-            onpointerdown: event => event.stopPropagation(),
-            onclick: () => this.#toggle(object)
+            ...Hierarchy.#own(() => this.#toggle(object))
         }, icon('chevron'));
 
         const name = el('span', { class: 'name', textContent: object.name || '(unnamed)' });
@@ -517,15 +538,14 @@ export class Hierarchy extends Element {
             type: 'button',
             title: 'Delete',
             'aria-label': `Delete ${object.name}`,
-            onpointerdown: event => event.stopPropagation(),
-            onclick: () => this.#delete(object)
+            ...Hierarchy.#own(() => this.#delete(object))
         }, icon('trash'));
 
         // WAS THIS ROW ALREADY SELECTED WHEN THE PRESS STARTED? That single bit is half of
-        // the rename gesture, and it has to be read here: `pointerdown` selects, and
-        // `click` fires afterwards, so asking the selection at click time always answers
-        // "yes" and the first click on a name dropped a caret nobody asked for. The other
-        // half is the delay — see the header.
+        // the rename gesture, and it has to be read on the PRESS: the selection may move on
+        // the click that follows, so asking at click time would always answer "yes" and the
+        // first click on a name would drop a caret nobody asked for. The other half is the
+        // delay — see the header.
         let wasSelected = false;
 
         const row = el('div', {
@@ -534,12 +554,30 @@ export class Hierarchy extends Element {
             onpointerdown: event => {
                 this.#cancelRename();
                 wasSelected = this.#selection.has(object);
-                this.#announce(object);
                 this.#armDrag(event, object, row);
             },
             onpointermove: event => this.#dragMove(event),
             onpointerup: event => this.#dragDrop(event),
             onpointercancel: () => this.#cancelDrag(),
+            // SELECTION WAITS FOR THE CLICK, and it is the rule the Project panel already
+            // lives by, for a reason that applies here word for word: a press that becomes a
+            // drag must leave the selection alone. Announcing on the press meant that
+            // starting to drag an Object swapped the Inspector to THAT Object — so the only
+            // properties still on screen belonged to the thing in the creator's hand, and
+            // the reference they were carrying it to had gone. Dropping an Object on another
+            // object's property was unreachable by construction (ADR-0032, ADR-0034 §3.5).
+            //
+            // A drag is not a selection, and neither is a hover. Nothing here holds a
+            // "currently dragged subject": the panel simply stops speaking while the gesture
+            // is one, and the Inspector goes on showing what the creator last chose.
+            onclick: () => {
+                // A click that ended a drag is not a click on a row.
+                if (this.#dragged) {
+                    this.#dragged = false;
+                    return;
+                }
+                this.#announce(object);
+            },
             ondblclick: () => {
                 // Cancels the pending rename the first click of this very double-click
                 // armed, then does what a double-click means everywhere on the row.
@@ -587,8 +625,7 @@ export class Hierarchy extends Element {
         const button = el('button', {
             class: 'ghost',
             type: 'button',
-            onpointerdown: event => event.stopPropagation(),
-            onclick: () => object.setProperty(prop, !object[prop])
+            ...Hierarchy.#own(() => object.setProperty(prop, !object[prop]))
         }, icon(glyph()));
 
         const sync = () => {
@@ -857,6 +894,8 @@ export class Hierarchy extends Element {
         const here = this.#within(event.clientX, event.clientY);
         const drop = drag.started && here ? this.#resolveDrop(event.clientY) : null;
         const object = drag.object;
+        // The click that follows this release belongs to the drag, not to the row.
+        this.#dragged = drag.started;
         // Outside, the shell is holding this gesture and has to be told where it landed;
         // inside, it was never told about it at all. `#cancelDrag()` reports neither.
         const announced = drag.announced;

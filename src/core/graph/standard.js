@@ -678,7 +678,16 @@ export const STANDARD_NODES = [
         tooltip: 'Reads a property of a Component on another Object',
         title: (node, context) => titleOfTarget('Get', node, context),
         params: { ...componentParam, ...componentPropertyParam },
-        inputs: [data('object', OBJECT_TYPE)],
+        // "ON WHAT", NOT "AN OBJECT". The node is named `Get Property On` and reads as
+        // `Get Health.hp`; the socket that says WHICH Object it reads from is the missing
+        // half of that sentence, and calling it `Object` named the port's type instead of
+        // its job. `Target` is the only thing on the row that can say it — an `object` port
+        // carries no control and never will (ADR-0034 §3.2), so its label is all it has.
+        //
+        // THE LABEL, NEVER THE ID. `object` remains the port's identity, so no graph that
+        // names it changes and no wire moves (core/graph/nodes.js): a label is presentation,
+        // and the interpreter never sees one.
+        inputs: [data('object', OBJECT_TYPE, 'Target')],
         outputs: (node, context) => {
             const property = referencedComponentProperty(node, context);
             return [data('value', portTypeOf(property), property?.name ?? 'Value')];
@@ -711,7 +720,9 @@ export const STANDARD_NODES = [
             const property = referencedComponentProperty(node, context);
             return [
                 flow('in'),
-                data('object', OBJECT_TYPE),
+                // See `property.getOn`: the socket says which Object is written to, and it
+                // is the only thing on its row that can (ADR-0034 §3.2).
+                data('object', OBJECT_TYPE, 'Target'),
                 data('value', portTypeOf(property), property?.name ?? 'Value', property?.default)
             ];
         },

@@ -17,6 +17,8 @@ import { Project, ResourceKind } from '../../project/mod.js';
 import { Sprite, RectangleRenderer } from '../../runtime/mod.js';
 import { Workspace } from '../project/workspace.js';
 import { registerBuiltIns } from '../registry.js';
+import { addComponent } from '../commands.js';
+import { History } from '../history.js';
 import {
     DragKind,
     DropZone,
@@ -243,6 +245,143 @@ test('a property may narrow what it accepts, and the refusal is declared', () =>
         acceptsResource({ component: { constructor: { schema: { source: { type: 'resource' } } } }, prop: 'source' }, sound),
         true
     );
+});
+
+// --- a resource dropped on an object's components (ADR-0026 §6) --------------------------
+//
+// THE SAME SENTENCE THE SCENE DROP READS, MINUS THE OBJECT. "An image is a Sprite" is one
+// row of the INSTANTIABLE table; dropping the image in the scene reads it as "an object
+// showing this picture", dropping it on an object reads it as "show this picture on THAT
+// object". These tests are about the two readings staying one sentence.
+
+/** The context a panel hands a rule, with the Editor's own ADD_COMPONENT command in it. */
+function attaching(ctx) {
+    return {
+        ...ctx,
+        addComponent: (object, type, options) => addComponent(object, type, ctx.scene.registry, options)
+    };
+}
+
+test('an image dropped on an object attaches the Component that shows it', () => {
+    const ctx = context();
+    const asset = imageIn(ctx.project);
+    const object = ctx.scene.add(new SceneObject('Hero'));
+
+    const target = { zone: DropZone.COMPONENTS, object };
+    const verdict = canDrop(resourcePayload(asset), target);
+    assert.equal(verdict.allowed, true);
+    assert.match(verdict.reason, /Sprite/, 'the ghost names what it would attach');
+
+    const result = performDrop(resourcePayload(asset), target, attaching(ctx));
+
+    assert.equal(result.type, 'Sprite');
+    assert.equal(object.hasComponent('Sprite'), true);
+    assert.equal(object.getComponent('Sprite').source, asset.id, 'and it is pointed at the resource');
+});
+
+test('what is stored is the ResourceId, never the payload', () => {
+    const ctx = context();
+    const asset = imageIn(ctx.project);
+    const object = ctx.scene.add(new SceneObject('Hero'));
+
+    performDrop(resourcePayload(asset), { zone: DropZone.COMPONENTS, object }, attaching(ctx));
+
+    const stored = object.getComponent('Sprite').source;
+    assert.equal(stored, asset.id);
+    assert.equal(stored.includes('data:'), false, 'a scene references its images (ADR-0020)');
+});
+
+test('the attached Component is visible, not a Component of size zero', () => {
+    const ctx = context();
+    const object = ctx.scene.add(new SceneObject('Hero'));
+
+    performDrop(resourcePayload(imageIn(ctx.project)), { zone: DropZone.COMPONENTS, object }, attaching(ctx));
+
+    const sprite = object.getComponent('Sprite');
+    assert.ok(sprite.width > 0 && sprite.height > 0,
+        'a drop that attaches something invisible is a drop that looks like nothing happened');
+});
+
+test('the two readings of one row agree about what an image is', () => {
+    // THE INVARIANT, and the reason `consumes` replaced a `build` per row: an image placed
+    // in the scene and an image dropped on an object must produce the SAME Sprite. Two
+    // spellings of the sentence would drift, and neither place would look wrong on its own.
+    const ctx = context();
+    const asset = imageIn(ctx.project);
+
+    const placed = performDrop(resourcePayload(asset), { zone: DropZone.SCENE, x: 0, y: 0 }, ctx)
+        .objects[0]
+        .getComponent('Sprite');
+
+    const attached = ctx.scene.add(new SceneObject('Hero'));
+    performDrop(resourcePayload(asset), { zone: DropZone.COMPONENTS, object: attached }, attaching(ctx));
+    const grown = attached.getComponent('Sprite');
+
+    assert.deepEqual(
+        { source: grown.source, width: grown.width, height: grown.height },
+        { source: placed.source, width: placed.width, height: placed.height }
+    );
+});
+
+test('attaching and pointing are one gesture, so they are one undo entry', () => {
+    const ctx = context();
+    const asset = imageIn(ctx.project);
+    const object = ctx.scene.add(new SceneObject('Hero'));
+    const history = new History(ctx.scene.operations);
+
+    performDrop(resourcePayload(asset), { zone: DropZone.COMPONENTS, object }, attaching(ctx));
+    assert.equal(object.hasComponent('Sprite'), true);
+
+    assert.equal(history.depth, 1, 'one drop, one entry (ADR-0024 §4)');
+    history.undo();
+    assert.equal(object.hasComponent('Sprite'), false, 'and the whole drop goes back at once');
+});
+
+test('an object that already carries the Component refuses, and says where to aim', () => {
+    const ctx = context();
+    const asset = imageIn(ctx.project);
+    const object = ctx.scene.add(new SceneObject('Hero'));
+    object.addComponent(new Sprite());
+
+    const verdict = canDrop(resourcePayload(asset), { zone: DropZone.COMPONENTS, object });
+
+    assert.equal(verdict.allowed, false);
+    assert.match(verdict.reason, /already has a Sprite/);
+    assert.match(verdict.reason, /Source/, 'a refusal a creator cannot act on is half a refusal');
+    assert.equal(performDrop(resourcePayload(asset), { zone: DropZone.COMPONENTS, object }, attaching(ctx)), null);
+    assert.equal(object.componentTypes().filter(type => type === 'Sprite').length, 1);
+});
+
+test('a resource nothing consumes is not attachable, and no rule pretends otherwise', () => {
+    const ctx = context();
+    const sound = ctx.project.add({ kind: ResourceKind.ASSET, name: 'jump.wav', mime: 'audio/wav' }, 'x');
+    const object = ctx.scene.add(new SceneObject('Hero'));
+
+    // No row of INSTANTIABLE claims it, so the same absence refuses it in the scene and here.
+    assert.equal(instantiator(sound), null);
+    assert.equal(canDrop(resourcePayload(sound), { zone: DropZone.COMPONENTS, object }).allowed, false);
+    assert.equal(object.componentTypes().length, 0);
+});
+
+test('a folder is not a Component, whatever it is dropped on', () => {
+    const ctx = context();
+    const folder = ctx.project.addFolder({ name: 'Assets' });
+    const object = ctx.scene.add(new SceneObject('Hero'));
+
+    assert.equal(canDrop(resourcePayload(folder), { zone: DropZone.COMPONENTS, object }).allowed, false);
+});
+
+test('a row of the Inspector still wins over the panel behind it', () => {
+    // The panel-wide zone must not shadow the more specific target: an image let go on
+    // `source` assigns a picture rather than attaching a second Sprite. The two targets are
+    // resolved by the Inspector (`zoneAt`), and both rules stay reachable from here.
+    const ctx = context();
+    const asset = imageIn(ctx.project);
+    const object = ctx.scene.add(new SceneObject('Hero'));
+    const sprite = object.addComponent(new Sprite());
+
+    assert.equal(canDrop(resourcePayload(asset), { zone: DropZone.PROPERTY, component: sprite, prop: 'source' }).allowed, true);
+    assert.equal(canDrop(resourcePayload(asset), { zone: DropZone.COMPONENTS, object }).allowed, false);
 });
 
 // --- moving a resource inside the Project panel ------------------------------------------

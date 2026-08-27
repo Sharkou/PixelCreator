@@ -23,7 +23,7 @@
 
 import { GraphIssueCode, GraphSeverity, graphIssue } from './errors.js';
 import { GRAPH_VERSION } from './graph.js';
-import { PortDirection, PortKind, nodes as defaultNodes, portsOf, typesCompatible } from './nodes.js';
+import { OBJECT_TYPE, PortDirection, PortKind, nodes as defaultNodes, portsOf, typesCompatible } from './nodes.js';
 import {
     COMPONENT_PROPERTY_REFERENCE,
     COMPONENT_REFERENCE,
@@ -126,6 +126,7 @@ export function validateGraph(graph, { registry = defaultNodes, properties = [],
         if (issue) issues.push(issue);
     }
 
+    issues.push(...checkObjectInputs({ byId, registry, context, filled }));
     issues.push(...findDataCycles(graph, { byId, registry, context }));
 
     return issues;
@@ -171,6 +172,53 @@ function checkReferences(node, definition, context) {
                 message: kind.missing,
                 node: node.id,
                 property: id
+            }));
+        }
+    }
+
+    return issues;
+}
+
+/**
+ * An `object` input with nothing wired to it.
+ *
+ * THE ONE FINDING ADR-0034 §3.2 ASKS FOR AND NOTHING PRODUCED. "Port non connecté : rend
+ * `null`, et le validateur émet un avertissement — le traitement qu'ADR-0027 donne déjà à
+ * « aucune propriété sélectionnée »." The rule was written and never implemented, and what
+ * it left behind is the least readable state a graph can be in: a `Set Property On` naming a
+ * Component and a property, wired to nothing, runs every frame, writes to no Object, and
+ * reports nothing at all. A creator has no way to tell it from a graph that works.
+ *
+ * A WARNING, NEVER AN ERROR, and the distinction is the file's own (see the header): the
+ * graph RUNS — the node reads `null` and does nothing, which is a legal thing for it to do
+ * (ADR-0034 §3.4). What it is not is a thing a creator meant to leave that way, so it is
+ * said where a human sees it and the graph is not stopped.
+ *
+ * IT IS THE PORT TYPE THAT DECIDES, NOT THE NODE. Every port carrying a handle answers the
+ * same way when nothing feeds it, so `Is Valid` and `Parent` are covered by the same three
+ * lines that cover the two property nodes — and a fifth node carrying such a port is covered
+ * on the day it is declared, without a word written here (ADR-0034 §3.2).
+ *
+ * @param {object} state - `{ byId, registry, context, filled }`, after every connection
+ * @returns {object[]} Findings, in node order
+ */
+function checkObjectInputs({ byId, registry, context, filled }) {
+    const issues = [];
+
+    for (const node of byId.values()) {
+        const definition = registry.get(node.type);
+        if (!definition) continue;
+
+        for (const port of portsOf(definition, node, context).inputs) {
+            if (port.kind !== PortKind.DATA || port.type !== OBJECT_TYPE) continue;
+            if (filled.has(`in:${node.id}:${port.id}`)) continue;
+
+            issues.push(graphIssue({
+                code: GraphIssueCode.MISSING_REFERENCE,
+                severity: GraphSeverity.WARNING,
+                message: `Nothing is wired to ${port.label}, so this node has no Object to work on.`,
+                node: node.id,
+                port: port.id
             }));
         }
     }
