@@ -24,6 +24,63 @@
 // They differ whenever the device size was rounded, and that difference is the half pixel
 // that pushed every edge of the scene into an antialiased seam.
 
+import { screenToWorld } from '../../runtime/mod.js';
+
+/**
+ * Where a page coordinate falls, in the surface's own pixels.
+ *
+ * ONE RULE, ONE PLACE. The Viewport converts a pointer for its tools, its guides and its
+ * zoom anchor, and the pointer adapter converts the same pointer for the running game
+ * (`editor/input.js`). Two copies of `(client - rect) * scale` would be two chances to
+ * disagree about where the pointer is, in the one file whose whole subject is that the
+ * mapping is exact.
+ *
+ * @param {number} clientX - Horizontal page coordinate
+ * @param {number} clientY - Vertical page coordinate
+ * @param {object} rect - The surface's bounding rectangle
+ * @param {object|null} metrics - The measurement, for the CSS-to-device ratio
+ * @returns {[number, number]} The point in device pixels
+ */
+export function devicePoint(clientX, clientY, rect, metrics) {
+    return [
+        (clientX - (rect?.left ?? 0)) * (metrics?.scaleX ?? 1),
+        (clientY - (rect?.top ?? 0)) * (metrics?.scaleY ?? 1)
+    ];
+}
+
+/**
+ * The two things a running game needs to know about a pointer (ADR-0038).
+ *
+ * THE WHOLE CHAIN, IN ONE READABLE PLACE:
+ *
+ *   PointerEvent.clientX/Y  →  the surface's top-left  →  device pixels  →  screenToWorld
+ *
+ * SCREEN IS IN CSS PIXELS, WORLD COMES FROM THE ENGINE'S OWN CONVERSION. The device step in
+ * between is a fact about the canvas's backing store, not about the game: a creator's `.px`
+ * must read the same numbers whether the Editor is on a Retina display or not, so what
+ * leaves here is the CSS-pixel offset into the surface and the world point the engine's
+ * `screenToWorld()` answers — never a device pixel, and never a page coordinate.
+ *
+ * IT IS PURE, WHICH IS WHY IT IS HERE AND NOT IN THE ELEMENT. The conversion is the one
+ * part of the pointer path that can be wrong in a way no screenshot reveals, so it is
+ * checked under Node against the very matrices the renderer draws with.
+ *
+ * @param {number} clientX - Horizontal page coordinate
+ * @param {number} clientY - Vertical page coordinate
+ * @param {object} context - `{ rect, metrics, view }` as the Viewport holds them
+ * @returns {{screenX: number, screenY: number, worldX: number, worldY: number}} Both spaces
+ */
+export function locatePointer(clientX, clientY, { rect, metrics, view }) {
+    const world = screenToWorld(view, ...devicePoint(clientX, clientY, rect, metrics));
+
+    return {
+        screenX: clientX - (rect?.left ?? 0),
+        screenY: clientY - (rect?.top ?? 0),
+        worldX: world.x,
+        worldY: world.y
+    };
+}
+
 /**
  * Measure a surface in both units.
  *

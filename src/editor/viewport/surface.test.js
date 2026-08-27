@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Matrix } from '../../core/mod.js';
-import { Viewport as Surface, viewMatrix } from '../../runtime/mod.js';
-import { measureSurface, quantiseCamera, sameSurface } from './surface.js';
+import { Matrix, Object as SceneObject, Transform } from '../../core/mod.js';
+import { Camera, Viewport as Surface, viewMatrix } from '../../runtime/mod.js';
+import { devicePoint, locatePointer, measureSurface, quantiseCamera, sameSurface } from './surface.js';
 
 /** A ResizeObserverEntry as the browser reports one. */
 function entry({ css, device }) {
@@ -97,4 +97,111 @@ test('the camera is left alone below one device pixel per world unit', () => {
     // stutter — and nothing is crisp at that scale anyway.
     assert.deepEqual(quantiseCamera(137.4183, -20.6, 0.05), { x: 137.4183, y: -20.6 });
     assert.deepEqual(quantiseCamera(137.4183, -20.6, NaN), { x: 137.4183, y: -20.6 });
+});
+
+// --- where a pointer actually is (ADR-0038) ---------------------------------------------
+//
+// THE PART OF THE POINTER PATH THAT NO SCREENSHOT CHECKS. An adapter that shipped
+// `clientX/clientY` straight to the Runtime would look perfectly fine on a viewport that
+// happened to sit at the top left of an unzoomed, uncentred window — and would be wrong by
+// hundreds of units the moment anyone panned. So the conversion is checked here against the
+// very matrices the renderer draws with.
+
+/** A camera Object at a place, with a lens, as the Editor holds one. */
+function camera({ x = 0, y = 0, zoom = 1 } = {}) {
+    const object = new SceneObject('Editor Camera');
+    object.addComponent(new Transform(x, y));
+    if (zoom !== 1) object.addComponent(new Camera(zoom));
+    return object;
+}
+
+/** The three things the Viewport hands `locatePointer()`. */
+function viewport({ rect, css = [800, 600], device = null, eye = camera() } = {}) {
+    const metrics = measureSurface(entry({ css, device: device ?? css }), null, 1);
+    const surface = new Surface(metrics.cssWidth, metrics.cssHeight);
+    const view = Matrix.compose(0, 0, 0, metrics.scaleX, metrics.scaleY)
+        .multiply(viewMatrix(eye, surface));
+    return { rect, metrics, view };
+}
+
+test('the centre of an unmoved viewport is the world origin', () => {
+    const context = viewport({ rect: { left: 0, top: 0 } });
+
+    const at = locatePointer(400, 300, context);
+
+    assert.deepEqual([at.screenX, at.screenY], [400, 300]);
+    assert.ok(Math.abs(at.worldX) < 1e-9);
+    assert.ok(Math.abs(at.worldY) < 1e-9);
+});
+
+test('a page coordinate is not a world coordinate, and the surface offset is why', () => {
+    // THE TEST THE WHOLE FILE IS FOR. The viewport starts 240 px into the page because the
+    // Hierarchy is to its left; shipping clientX would put every click 240 units off.
+    const context = viewport({ rect: { left: 240, top: 56 } });
+
+    const at = locatePointer(640, 356, context);
+
+    assert.deepEqual([at.screenX, at.screenY], [400, 300], 'screen is measured from the surface');
+    assert.ok(Math.abs(at.worldX) < 1e-9, 'the centre of the surface is still the origin');
+    assert.ok(Math.abs(at.worldY) < 1e-9);
+    assert.notEqual(at.worldX, 640, 'clientX is not a world coordinate');
+});
+
+test('panning the camera moves what a fixed pointer is over', () => {
+    const context = viewport({ rect: { left: 240, top: 56 }, eye: camera({ x: 100, y: -50 }) });
+
+    const at = locatePointer(640, 356, context);
+
+    assert.ok(Math.abs(at.worldX - 100) < 1e-9, 'the centre now looks at the camera');
+    assert.ok(Math.abs(at.worldY + 50) < 1e-9);
+    assert.deepEqual([at.screenX, at.screenY], [400, 300], 'and the screen point did not move');
+});
+
+test('zooming in makes a pointer travel fewer world units', () => {
+    const plain = viewport({ rect: { left: 0, top: 0 } });
+    const close = viewport({ rect: { left: 0, top: 0 }, eye: camera({ zoom: 2 }) });
+
+    const far = locatePointer(600, 300, plain);
+    const near = locatePointer(600, 300, close);
+
+    assert.ok(Math.abs(far.worldX - 200) < 1e-9, '200 CSS px right of centre is 200 units');
+    assert.ok(Math.abs(near.worldX - 100) < 1e-9, 'at zoom 2 the same pixels are half the world');
+    assert.equal(far.screenX, near.screenX, 'the screen point is the same either way');
+});
+
+test('a pan and a zoom together compose, rather than one winning', () => {
+    const context = viewport({
+        rect: { left: 240, top: 56 },
+        eye: camera({ x: 100, y: -50, zoom: 2 })
+    });
+
+    const at = locatePointer(640 + 200, 356 + 100, context);
+
+    assert.ok(Math.abs(at.worldX - 200) < 1e-9, '100 + 200/2');
+    assert.ok(Math.abs(at.worldY - 0) < 1e-9, '-50 + 100/2');
+});
+
+test('a retina backing store changes no world coordinate, and no screen one', () => {
+    // The device ratio is a fact about the canvas, not about the game: the same click must
+    // read the same numbers on both displays, or a `.px` would behave differently per screen.
+    const plain = viewport({ rect: { left: 240, top: 56 }, css: [800, 600] });
+    const retina = viewport({ rect: { left: 240, top: 56 }, css: [800, 600], device: [1600, 1200] });
+
+    const one = locatePointer(840, 256, plain);
+    const two = locatePointer(840, 256, retina);
+
+    assert.equal(retina.metrics.scaleX, 2, 'the surfaces really do differ');
+    assert.deepEqual([one.screenX, one.screenY], [two.screenX, two.screenY]);
+    assert.ok(Math.abs(one.worldX - two.worldX) < 1e-9);
+    assert.ok(Math.abs(one.worldY - two.worldY) < 1e-9);
+});
+
+test('the device point is the one the canvas is drawn in, and it does follow the ratio', () => {
+    // The other half of the statement above: the device step exists, it is just not what
+    // leaves this file for the Runtime.
+    const rect = { left: 240, top: 56 };
+
+    assert.deepEqual(devicePoint(840, 256, rect, { scaleX: 1, scaleY: 1 }), [600, 200]);
+    assert.deepEqual(devicePoint(840, 256, rect, { scaleX: 2, scaleY: 2 }), [1200, 400]);
+    assert.deepEqual(devicePoint(840, 256, rect, null), [600, 200], 'unmeasured is one to one');
 });

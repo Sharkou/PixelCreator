@@ -58,7 +58,7 @@ import { sheet } from '../ui/styles.js';
 import { icon } from '../ui/icons.js';
 import { drawGrid, matrixScale } from './grid.js';
 import { editorBounds } from './picking.js';
-import { measureSurface, quantiseCamera, sameSurface } from './surface.js';
+import { devicePoint, locatePointer, measureSurface, quantiseCamera, sameSurface } from './surface.js';
 import { ZOOM_DETENT, clampZoom, notchZoom } from './zoom.js';
 import { GUIDE_STYLES, Guides } from './guides.js';
 import { frameDelta } from '../transport.js';
@@ -354,6 +354,30 @@ export class Viewport extends Element {
     }
 
     /**
+     * Where a page coordinate is, in the two spaces a running game reads (ADR-0038).
+     *
+     * THE VIEWPORT ANSWERS THIS BECAUSE THE VIEWPORT IS WHAT KNOWS. Zoom, pan, the device
+     * ratio and the camera are all here, and none of them may reach the Runtime — so the
+     * pointer adapter asks this and writes the ANSWER into the input state, rather than
+     * being handed a camera it would have to understand (`editor/input.js`).
+     *
+     * `worldAt()` answers the same question for a drop, in one space. This answers both,
+     * because the input state holds both, and computing the screen half a second time in
+     * the adapter is the duplication `locatePointer()` exists to prevent.
+     *
+     * @param {number} clientX - Horizontal page coordinate
+     * @param {number} clientY - Vertical page coordinate
+     * @returns {{screenX: number, screenY: number, worldX: number, worldY: number}} Both spaces
+     */
+    locate(clientX, clientY) {
+        return locatePointer(clientX, clientY, {
+            rect: this.#bounds(),
+            metrics: this.#metrics,
+            view: this.view
+        });
+    }
+
+    /**
      * The world point at the middle of the view.
      * @returns {{x: number, y: number}} The world point
      */
@@ -499,11 +523,7 @@ export class Viewport extends Element {
     }
 
     #toDevice(clientX, clientY) {
-        const rect = this.#bounds();
-        const metrics = this.#metrics;
-        const scaleX = metrics?.scaleX ?? 1;
-        const scaleY = metrics?.scaleY ?? 1;
-        return [(clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY];
+        return devicePoint(clientX, clientY, this.#bounds(), this.#metrics);
     }
 
     /* ── frame loop ──────────────────────────────────────────────────────── */

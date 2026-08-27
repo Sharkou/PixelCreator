@@ -137,3 +137,147 @@ export class KeyboardInput {
         if (down) state.press(code); else state.release(code);
     }
 }
+
+// The pointer half of the same idea, and the differences from the keyboard are all
+// consequences of one fact: a pointer has a PLACE, and a keyboard does not.
+//
+// IT LISTENS ON THE GAME SURFACE, NOT ON THE WINDOW (ADR-0038). That is what answers, for
+// the pointer, the question `isEditing()` answers for the keyboard: a press in the Inspector
+// or on a tab never reaches the viewport, so it is never a click in the game — not because
+// a rule declined it, but because it was never aimed at the game. No notion of "game focus"
+// is invented here, and none is needed while there is one surface the game is drawn on.
+//
+// A RELEASE IS HEARD ANYWHERE, AND THAT ASYMMETRY IS DELIBERATE. A press must start on the
+// surface, but the release of that press regularly lands somewhere else — a drag that ran
+// off the canvas, a pointer that left the window. Listening for `pointerup` on the window
+// is what stops a button from being held forever by a release nobody heard, and releasing a
+// button that was never pressed is a no-op on a Set, so an Inspector click passing by costs
+// nothing and means nothing.
+//
+// IT NEVER CONVERTS COORDINATES. `locate()` is the Viewport's answer, because zoom, pan, the
+// device ratio and the camera all live there and none of them may reach the Runtime. This
+// adapter carries the answer across and writes it down.
+
+export class PointerInput {
+
+    #input;
+    #target;
+    #window;
+    #locate;
+    #owner;
+    #listening = false;
+    #handlers = null;
+    #windowHandlers = null;
+
+    /**
+     * Wire a pointer to the input state a runtime reads.
+     *
+     * @param {object} context - What it feeds, what it listens to, and who resolves a point
+     * @param {object} context.input - The runtime's `Input` (runtime/input/input.js)
+     * @param {object} context.target - The game surface to listen on; the Viewport element
+     * @param {Function} context.locate - (clientX, clientY) => `{ screenX, screenY, worldX, worldY }`
+     * @param {object} [context.window] - Where a release is heard from; the window by default
+     * @param {string|null} [context.owner] - Whose input this fills in; local by default
+     */
+    constructor({ input, target, locate, window = globalThis, owner = null }) {
+        if (!input?.of) throw new TypeError('PointerInput: expected a runtime Input');
+        if (!target?.addEventListener) throw new TypeError('PointerInput: expected a surface to listen on');
+        if (typeof locate !== 'function') throw new TypeError('PointerInput: expected a locate function');
+
+        this.#input = input;
+        this.#target = target;
+        this.#locate = locate;
+        this.#window = window;
+        this.#owner = owner;
+    }
+
+    /** Whether it is currently attached. */
+    get listening() {
+        return this.#listening;
+    }
+
+    /**
+     * Start feeding the input state.
+     *
+     * IDEMPOTENT, for the reason `KeyboardInput.start()` is: Play, Stop, Play must attach
+     * one set of listeners and not two.
+     *
+     * @returns {PointerInput} This adapter
+     */
+    start() {
+        if (this.#listening) return this;
+
+        this.#handlers = {
+            pointermove: event => this.#move(event),
+            // The press carries a position too: a tap on a touch screen is the first time
+            // that pointer has been anywhere, so a button read without it would be a click
+            // at wherever the last mouse happened to leave the cursor.
+            pointerdown: event => { this.#move(event); this.#press(event, true); }
+        };
+        this.#windowHandlers = {
+            pointerup: event => this.#press(event, false),
+            // A cancelled pointer is one the platform took away — a system gesture, a
+            // scroll taking over. It is a release that will never come otherwise.
+            pointercancel: event => this.#press(event, false),
+            blur: () => this.#state().clear()
+        };
+
+        for (const [type, handler] of globalThis.Object.entries(this.#handlers)) {
+            this.#target.addEventListener(type, handler);
+        }
+        for (const [type, handler] of globalThis.Object.entries(this.#windowHandlers)) {
+            this.#window.addEventListener?.(type, handler);
+        }
+        this.#listening = true;
+        return this;
+    }
+
+    /**
+     * Stop, and release whatever was held.
+     * @returns {PointerInput} This adapter
+     */
+    stop() {
+        if (!this.#listening) return this;
+
+        for (const [type, handler] of globalThis.Object.entries(this.#handlers ?? {})) {
+            this.#target.removeEventListener(type, handler);
+        }
+        for (const [type, handler] of globalThis.Object.entries(this.#windowHandlers ?? {})) {
+            this.#window.removeEventListener?.(type, handler);
+        }
+        this.#handlers = null;
+        this.#windowHandlers = null;
+        this.#listening = false;
+        this.#state().clear();
+        return this;
+    }
+
+    /** The state this machine fills in — the local player's, unless told otherwise. */
+    #state() {
+        return this.#input.of(this.#owner);
+    }
+
+    /** Write where the pointer is, in both spaces, as the Viewport resolved them. */
+    #move(event) {
+        const at = this.#locate(event.clientX, event.clientY);
+        if (!at) return;
+
+        const state = this.#state();
+        state.movePointer(at.screenX, at.screenY);
+        state.movePointerInWorld(at.worldX, at.worldY);
+    }
+
+    /**
+     * Press or release one button.
+     *
+     * `event.button` is the DOM's index — 0 primary, 1 auxiliary, 2 secondary — which is
+     * already the numbering `InputState` documents, so nothing is translated (ADR-0014).
+     */
+    #press(event, down) {
+        const button = event?.button;
+        if (typeof button !== 'number') return;
+
+        const state = this.#state();
+        if (down) state.pressButton(button); else state.releaseButton(button);
+    }
+}

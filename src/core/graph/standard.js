@@ -136,6 +136,22 @@ const data = (id, type, label, fallback, placeholder) => ({
  */
 const DEFAULT_KEY = 'Space';
 
+/**
+ * The pointer buttons a creator can name, in the order a mouse presents them.
+ *
+ * A NAME IS STORED, AN INDEX IS READ, and the two are the same list read from both ends.
+ * `InputState` indexes buttons by number because that is what every platform reports
+ * (`isButtonDown(0)`), but a `.px` is a file that outlives the platform that wrote it — so
+ * it carries `"right"` the way `input.key` carries `"Space"`, and for the same reason
+ * ADR-0014 §2 gives: what is saved must not depend on how a device happens to number its
+ * buttons. The position in this list IS the index, so there is one list and not two.
+ */
+const BUTTON_NAMES = ['left', 'middle', 'right'];
+const BUTTON_LABELS = ['Left', 'Middle', 'Right'];
+
+/** The button a `Pointer Button` node watches before a creator has chosen one. */
+const DEFAULT_BUTTON = 'left';
+
 /** The reference param every property node carries. */
 const propertyParam = {
     property: {
@@ -322,6 +338,23 @@ function requireProperty(io) {
     );
 }
 
+/**
+ * Which button a `Pointer Button` node watches.
+ *
+ * `??`, not `||`: a node nobody has touched carries no `button` and watches the default,
+ * while `0` is the primary button a creator chose — the same distinction `input.key` draws
+ * between an untouched field and an emptied one, and the reason `0` may not be read as
+ * absent here.
+ *
+ * @param {object} node - The node
+ * @returns {number} The button index
+ */
+function buttonOf(node) {
+    const named = node?.params?.button ?? DEFAULT_BUTTON;
+    const at = BUTTON_NAMES.indexOf(named);
+    return at === -1 ? 0 : at;
+}
+
 /** The node types the engine ships. */
 export const STANDARD_NODES = [
 
@@ -422,6 +455,70 @@ export const STANDARD_NODES = [
             };
         },
         tooltip: 'Whether a key is held, went down this step, or came up this step'
+    },
+
+    {
+        type: 'input.pointer',
+        label: 'Pointer',
+        category: 'Input',
+        keywords: ['input', 'mouse', 'cursor', 'touch', 'position', 'aim', 'x', 'y'],
+        // IN WORLD COORDINATES, AND THAT IS THE WHOLE POINT (ADR-0038). A graph has no
+        // camera, no viewport and no zoom, and must not be given any: what it is handed is
+        // the place in the scene the pointer is over, already resolved by whoever owns the
+        // mapping. Screen pixels would be unusable here — the graph could not convert them,
+        // and a node that took a camera would drag the whole view into the simulation.
+        outputs: [
+            data('x', PropertyType.NUMBER, 'X'),
+            data('y', PropertyType.NUMBER, 'Y')
+        ],
+        evaluate: io => {
+            const state = io.ctx?.input?.of?.(io.self?.owner ?? null);
+            if (!state) return { x: 0, y: 0 };
+            return { x: state.pointerWorldX, y: state.pointerWorldY };
+        },
+        tooltip: 'Where the pointer is in the scene, in world coordinates'
+    },
+
+    {
+        type: 'input.pointerButton',
+        label: 'Pointer Button',
+        category: 'Input',
+        keywords: ['input', 'mouse', 'click', 'press', 'held', 'released', 'touch', 'tap'],
+        params: {
+            button: {
+                type: PropertyType.ENUM,
+                values: BUTTON_NAMES,
+                labels: BUTTON_LABELS,
+                default: DEFAULT_BUTTON,
+                label: 'Button',
+                tooltip: 'Which pointer button this node watches'
+            }
+        },
+        title: node => {
+            const named = BUTTON_LABELS[buttonOf(node)];
+            return named ? `${named} Button` : null;
+        },
+        // THE SAME THREE QUESTIONS A KEY ANSWERS, and deliberately the same three words:
+        // `InputState` already distinguishes a button held from one that went down and one
+        // that came up, bounded to a single step by the same `commit()` (ADR-0014 §5). A
+        // second vocabulary for the same idea would be a second thing to learn.
+        outputs: [
+            data('held', PropertyType.BOOLEAN),
+            data('pressed', PropertyType.BOOLEAN),
+            data('released', PropertyType.BOOLEAN)
+        ],
+        evaluate: io => {
+            const button = buttonOf(io.node);
+            const state = io.ctx?.input?.of?.(io.self?.owner ?? null);
+            if (!state) return { held: false, pressed: false, released: false };
+
+            return {
+                held: state.isButtonDown(button),
+                pressed: state.buttonPressed(button),
+                released: state.buttonReleased(button)
+            };
+        },
+        tooltip: 'Whether a pointer button is held, went down this step, or came up this step'
     },
 
     // --- the component's own properties ---------------------------------------------

@@ -33,6 +33,8 @@ export class InputState {
     #axes = new Map();
     #pointerX = 0;
     #pointerY = 0;
+    #pointerWorldX = 0;
+    #pointerWorldY = 0;
 
     /**
      * Press a key.
@@ -136,12 +138,16 @@ export class InputState {
     }
 
     /**
-     * Move the pointer.
+     * Move the pointer, in screen space.
      *
-     * IN SCREEN SPACE. Turning it into world coordinates is the camera's job
-     * (`screenToWorld`), because only the camera and the viewport know the mapping, and
-     * baking one in here would make the input state depend on how the scene is being
-     * looked at.
+     * THE RAW DEVICE FACT: where on the surface the pointer is, origin top left, in the
+     * surface's own pixels (ADR-0013 §3). It says nothing about what is being pointed AT,
+     * because the same coordinates mean a different place the moment the camera moves.
+     *
+     * NOTHING CONVERTS IT HERE. Turning a screen point into a world point is the camera's
+     * job (`screenToWorld`), because only the camera and the viewport know the mapping —
+     * which is why the world point arrives through `movePointerInWorld()` from whoever has
+     * one, rather than being computed from this (ADR-0014 §2, ADR-0038).
      *
      * @param {number} x - Horizontal position
      * @param {number} y - Vertical position
@@ -151,6 +157,27 @@ export class InputState {
         this.#pointerY = y;
     }
 
+    /**
+     * Move the pointer, in world space.
+     *
+     * WHAT IS BEING POINTED AT, which is the fact gameplay is about: aim here, click that.
+     * It is a SECOND fact and not a derivation of the first — no arithmetic here relates
+     * the two, and none could, because the mapping belongs to a viewport this file must
+     * never learn about.
+     *
+     * WHO FILLS IT IN. Whoever holds a viewport: the Editor's pointer adapter on a client
+     * (`editor/input.js`), the network layer on a server, replaying what a player aimed at.
+     * A headless test calls it directly with the point it means, which is exactly what
+     * makes the same graph runnable with no browser at all (ADR-0038).
+     *
+     * @param {number} x - Horizontal world coordinate
+     * @param {number} y - Vertical world coordinate
+     */
+    movePointerInWorld(x, y) {
+        this.#pointerWorldX = x;
+        this.#pointerWorldY = y;
+    }
+
     /** Pointer position in screen space. */
     get pointerX() {
         return this.#pointerX;
@@ -158,6 +185,15 @@ export class InputState {
 
     get pointerY() {
         return this.#pointerY;
+    }
+
+    /** Pointer position in world space — what it is pointing at. */
+    get pointerWorldX() {
+        return this.#pointerWorldX;
+    }
+
+    get pointerWorldY() {
+        return this.#pointerWorldY;
     }
 
     /**
@@ -208,6 +244,8 @@ export class InputState {
         this.#axes.clear();
         this.#pointerX = 0;
         this.#pointerY = 0;
+        this.#pointerWorldX = 0;
+        this.#pointerWorldY = 0;
     }
 }
 

@@ -23,7 +23,7 @@ import { addComponent, deleteObject } from './commands.js';
 import { Workspace } from './project/workspace.js';
 import { createDefinitions } from './project/definitions.js';
 import { Transport, TransportState } from './transport.js';
-import { KeyboardInput } from './input.js';
+import { KeyboardInput, PointerInput } from './input.js';
 import { fillStarterScene } from './project/starter.js';
 import { installDocumentStyles, sheet } from './ui/styles.js';
 import { el, fill } from './ui/element.js';
@@ -505,9 +505,26 @@ export function start(mount = document.body) {
     // A SESSION LISTENS; EDITING DOES NOT. `PAUSED` is `PLAYING` without the clock (ADR-0029
     // §6), so it keeps listening: dropping the keyboard on a pause would mean a key released
     // while held stayed down for the resume, which is a stuck key and not a paused game.
-    const keyboard = new KeyboardInput({ input: viewport.runtime.input });
+    //
+    // THE POINTER LISTENS ON THE VIEWPORT, THE KEYBOARD ON THE WINDOW, and the difference is
+    // the whole of the focus rule (ADR-0038). A key has nowhere to land, so the keyboard has
+    // to ask whether a field is being typed into; a pointer lands somewhere, and a press in
+    // the Inspector simply never reaches the surface the game is drawn on. The Viewport is
+    // also asked WHERE the pointer is — zoom, pan and the camera all live there, and none of
+    // them may reach the Runtime.
+    const input = viewport.runtime.input;
+    const keyboard = new KeyboardInput({ input });
+    const pointer = new PointerInput({
+        input,
+        target: viewport,
+        locate: (clientX, clientY) => viewport.locate(clientX, clientY)
+    });
+
     transport.observe(state => {
-        if (state === TransportState.EDITING) keyboard.stop(); else keyboard.start();
+        const playing = state !== TransportState.EDITING;
+        for (const adapter of [keyboard, pointer]) {
+            if (playing) adapter.start(); else adapter.stop();
+        }
     });
 
     // PLAY MEANS WATCH THE SCENE, so Play makes sure there is a Scene to watch. Not a mode

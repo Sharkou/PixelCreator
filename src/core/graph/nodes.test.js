@@ -252,6 +252,110 @@ test('a Key node with no input on the context is inert rather than broken', () =
     );
 });
 
+test('the Pointer node yields two numbers, and nothing that needs a camera', () => {
+    // A graph has no viewport and must never be given one (ADR-0038): what leaves this node
+    // is a place in the scene, already resolved.
+    const definition = registerStandardNodes(new NodeRegistry()).get('input.pointer');
+
+    const { inputs, outputs } = portsOf(definition, { type: 'input.pointer', params: {} }, {});
+
+    assert.deepEqual(inputs, [], 'nothing is fed in, and no camera is asked for');
+    assert.deepEqual(outputs.map(port => port.id), ['x', 'y']);
+    for (const port of outputs) {
+        assert.equal(port.kind, PortKind.DATA, port.id);
+        assert.equal(port.type, PropertyType.NUMBER, port.id);
+    }
+    assert.equal(shapeDependsOnNode(definition), false, 'it has nothing to be pointed at');
+});
+
+test('the Pointer node reads the world position of its own Object\'s owner', () => {
+    const definition = registerStandardNodes(new NodeRegistry()).get('input.pointer');
+    const asked = [];
+    const state = { pointerWorldX: 12, pointerWorldY: -34, pointerX: 400, pointerY: 300 };
+
+    const read = definition.evaluate({
+        self: { owner: 'alice' },
+        ctx: { input: { of: owner => (asked.push(owner), state) } }
+    });
+
+    assert.deepEqual(asked, ['alice']);
+    assert.deepEqual(read, { x: 12, y: -34 }, 'the world point, never the screen one');
+});
+
+test('the Pointer Button node asks the same three questions a key does', () => {
+    const definition = registerStandardNodes(new NodeRegistry()).get('input.pointerButton');
+
+    const { outputs } = portsOf(definition, { type: 'input.pointerButton', params: {} }, {});
+
+    assert.deepEqual(outputs.map(port => port.id), ['held', 'pressed', 'released']);
+    for (const port of outputs) assert.equal(port.type, PropertyType.BOOLEAN, port.id);
+    assert.deepEqual(outputs.map(port => port.label), ['Held', 'Pressed', 'Released']);
+});
+
+test('a button is stored as a name, and read as the index the input state uses', () => {
+    // ONE LIST READ FROM BOTH ENDS. The payload carries `"right"`, which outlives whatever
+    // number a platform gives that button; the position in the list is the index the input
+    // state is asked with. `labels` is only what a creator reads.
+    const definition = registerStandardNodes(new NodeRegistry()).get('input.pointerButton');
+    const descriptor = definition.params.button;
+
+    assert.equal(descriptor.type, PropertyType.ENUM);
+    assert.deepEqual(descriptor.values, ['left', 'middle', 'right']);
+    assert.deepEqual(descriptor.labels, ['Left', 'Middle', 'Right']);
+    assert.equal(descriptor.default, 'left');
+
+    assert.equal(definition.title({ params: { button: 'right' } }), 'Right Button');
+    assert.equal(definition.title({ params: {} }), 'Left Button', 'untouched watches the default');
+});
+
+test('a button a payload names that does not exist falls back rather than reading nothing', () => {
+    // A hand-written or migrated payload is the only way to get here, and answering for a
+    // button nobody has is worse than answering for the primary one.
+    const definition = registerStandardNodes(new NodeRegistry()).get('input.pointerButton');
+    const asked = [];
+    const state = {
+        isButtonDown: button => (asked.push(button), false),
+        buttonPressed: () => false,
+        buttonReleased: () => false
+    };
+    const ctx = { input: { of: () => state } };
+
+    definition.evaluate({ node: { params: { button: 'thumb' } }, self: null, ctx });
+    definition.evaluate({ node: { params: {} }, self: null, ctx });
+
+    assert.deepEqual(asked, [0, 0]);
+});
+
+test('each named button asks for its own index', () => {
+    const definition = registerStandardNodes(new NodeRegistry()).get('input.pointerButton');
+    const asked = [];
+    const ctx = {
+        input: {
+            of: () => ({
+                isButtonDown: button => (asked.push(button), false),
+                buttonPressed: () => false,
+                buttonReleased: () => false
+            })
+        }
+    };
+
+    for (const button of ['left', 'middle', 'right']) {
+        definition.evaluate({ node: { params: { button } }, self: null, ctx });
+    }
+
+    assert.deepEqual(asked, [0, 1, 2]);
+});
+
+test('the pointer nodes are inert without an input on the context, not broken', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    assert.deepEqual(
+        registry.get('input.pointer').evaluate({ self: null, ctx: {} }), { x: 0, y: 0 });
+    assert.deepEqual(
+        registry.get('input.pointerButton').evaluate({ node: { params: {} }, self: null, ctx: {} }),
+        { held: false, pressed: false, released: false });
+});
+
 // --- what a wire may reach (the picker that opens on a dropped link) --------------------
 
 test('a number output offers the nodes that take a number', () => {

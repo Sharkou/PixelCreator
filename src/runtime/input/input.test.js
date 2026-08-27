@@ -110,6 +110,56 @@ test('the pointer position is stored in screen space', () => {
     assert.equal(state.pointerY, 45);
 });
 
+test('the pointer holds a world position too, and it is a second fact (ADR-0038)', () => {
+    // Not a derivation of the screen point: nothing here could relate the two, because the
+    // mapping belongs to a viewport this file must never learn about. Whoever has one writes
+    // both, and a headless test writes the world point on its own.
+    const state = new InputState();
+
+    state.movePointer(120, 45);
+    state.movePointerInWorld(-30, 12.5);
+
+    assert.equal(state.pointerWorldX, -30);
+    assert.equal(state.pointerWorldY, 12.5);
+    assert.equal(state.pointerX, 120, 'the screen point is untouched by the world one');
+    assert.equal(state.pointerY, 45);
+});
+
+test('a fresh pointer is at the world origin, not undefined', () => {
+    const state = new InputState();
+
+    assert.equal(state.pointerWorldX, 0);
+    assert.equal(state.pointerWorldY, 0);
+});
+
+test('the world pointer holds still until it is moved again', () => {
+    // A pointer that stops moving is still somewhere: a graph reading it every step must
+    // keep reading the last place, not fall back to the origin.
+    const state = new InputState();
+    state.movePointerInWorld(64, -8);
+
+    state.commit();
+    state.commit();
+
+    assert.equal(state.pointerWorldX, 64);
+    assert.equal(state.pointerWorldY, -8);
+});
+
+test('owners hold independent pointers', () => {
+    // The browser has one mouse today, which is not a reason to give the model one
+    // (ADR-0014 §3): a server steps one simulation holding every player's aim.
+    const input = new Input();
+
+    input.of('alice').movePointerInWorld(10, 20);
+    input.of('bob').movePointerInWorld(-10, -20);
+
+    assert.deepEqual(
+        [input.of('alice').pointerWorldX, input.of('alice').pointerWorldY], [10, 20]);
+    assert.deepEqual(
+        [input.of('bob').pointerWorldX, input.of('bob').pointerWorldY], [-10, -20]);
+    assert.deepEqual([input.local.pointerWorldX, input.local.pointerWorldY], [0, 0]);
+});
+
 test('axes hold their value', () => {
     const state = new InputState();
 
@@ -127,6 +177,7 @@ test('clear releases everything', () => {
     state.pressButton(0);
     state.setAxis('throttle', 1);
     state.movePointer(10, 10);
+    state.movePointerInWorld(-4, 7);
 
     state.clear();
 
@@ -135,6 +186,8 @@ test('clear releases everything', () => {
     assert.deepEqual(state.axes(), []);
     assert.equal(state.pointerX, 0);
     assert.equal(state.pointerY, 0);
+    assert.equal(state.pointerWorldX, 0);
+    assert.equal(state.pointerWorldY, 0);
 });
 
 // --- owners -----------------------------------------------------------------------

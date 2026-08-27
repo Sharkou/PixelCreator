@@ -1708,3 +1708,274 @@ test('the same key script replayed reaches the same state, twice', () => {
     assert.deepEqual(first, run());
     assert.ok(first.some(([, pressed]) => pressed), 'and the keys actually did something');
 });
+
+// --- where the player is pointing (ADR-0038) --------------------------------------------
+//
+// THE SAME PROOF AS FOR THE KEYBOARD, ONE SPACE FURTHER. The pointer is moved by hand here
+// exactly as the Editor's adapter moves it, in WORLD coordinates — because that is what the
+// adapter writes after asking the Viewport, and because a graph has no camera to convert
+// with. Nothing in this file has seen a `PointerEvent`, and nothing needed to.
+
+/**
+ * A `.px` writing the pointer's world position into two properties, stepped by a Runtime.
+ * @returns {object} The runtime, its input, and the component to read
+ */
+function pointing({ owner = null } = {}) {
+    const file = px();
+    const atX = file.property({ name: 'atX', type: PropertyType.NUMBER, default: 0 });
+    const atY = file.property({ name: 'atY', type: PropertyType.NUMBER, default: 0 });
+
+    const update = file.node('event.update');
+    const pointer = file.node('input.pointer');
+    const writeX = file.node('property.set', { property: atX.id });
+    const writeY = file.node('property.set', { property: atY.id });
+
+    file.wire([update, 'out'], [writeX, 'in']);
+    file.wire([writeX, 'out'], [writeY, 'in']);
+    file.wire([pointer, 'x'], [writeX, 'value']);
+    file.wire([pointer, 'y'], [writeY, 'value']);
+
+    return runnable(file, owner);
+}
+
+/**
+ * A `.px` writing what one pointer button is doing into three properties.
+ * @returns {object} The runtime, its input, and the component to read
+ */
+function clicking({ button, owner = null } = {}) {
+    const file = px();
+    const held = file.property({ name: 'held', type: PropertyType.BOOLEAN, default: false });
+    const pressed = file.property({ name: 'pressed', type: PropertyType.BOOLEAN, default: false });
+    const released = file.property({ name: 'released', type: PropertyType.BOOLEAN, default: false });
+
+    const update = file.node('event.update');
+    const params = button === undefined ? {} : { button };
+    const read = file.node('input.pointerButton', params);
+    const writeHeld = file.node('property.set', { property: held.id });
+    const writePressed = file.node('property.set', { property: pressed.id });
+    const writeReleased = file.node('property.set', { property: released.id });
+
+    file.wire([update, 'out'], [writeHeld, 'in']);
+    file.wire([writeHeld, 'out'], [writePressed, 'in']);
+    file.wire([writePressed, 'out'], [writeReleased, 'in']);
+    file.wire([read, 'held'], [writeHeld, 'value']);
+    file.wire([read, 'pressed'], [writePressed, 'value']);
+    file.wire([read, 'released'], [writeReleased, 'value']);
+
+    return runnable(file, owner);
+}
+
+/** Bind a `.px` to a one-object scene and hand back the Runtime that steps it. */
+function runnable(file, owner) {
+    const payload = file.model.serialize();
+    const Component = defineComponent(payload);
+    const behaviors = new Behaviors(createGraphInterpreter({ registry }));
+    behaviors.bind(Component, payload.graph);
+
+    const types = new ComponentRegistry();
+    types.register(Component);
+    const scene = new Scene('Level', { registry: types });
+    const object = scene.add(new SceneObject('Hero', { owner }));
+    object.addComponent(new Component());
+
+    const runtime = new Runtime(scene, { behaviors });
+    return { runtime, input: runtime.input, object, component: object.components[payload.type] };
+}
+
+test('a graph reads the pointer in world coordinates', () => {
+    const it = pointing();
+
+    it.input.local.movePointerInWorld(120, -45);
+    it.runtime.step();
+
+    assert.equal(it.component.atX, 120);
+    assert.equal(it.component.atY, -45);
+});
+
+test('the pointer node ignores the screen position entirely', () => {
+    // The two are different facts (ADR-0038). A node that read the screen one would place
+    // an object hundreds of units away the moment the camera moved.
+    const it = pointing();
+
+    it.input.local.movePointer(400, 300);
+    it.runtime.step();
+
+    assert.equal(it.component.atX, 0, 'a screen point is not what this node carries');
+    assert.equal(it.component.atY, 0);
+});
+
+test('an untouched pointer reads the world origin rather than nothing', () => {
+    const it = pointing();
+
+    it.runtime.step();
+
+    assert.equal(it.component.atX, 0);
+    assert.equal(it.component.atY, 0);
+});
+
+test('a graph reads the pointer of the owner its Object belongs to', () => {
+    const it = pointing({ owner: 'alice' });
+
+    it.input.of('bob').movePointerInWorld(999, 999);
+    it.runtime.step();
+    assert.equal(it.component.atX, 0, "another player's aim is not this one's");
+
+    it.input.of('alice').movePointerInWorld(64, 32);
+    it.runtime.step();
+    assert.equal(it.component.atX, 64);
+    assert.equal(it.component.atY, 32);
+});
+
+test('a button nobody is holding reads as false', () => {
+    const it = clicking();
+
+    it.runtime.step();
+
+    assert.equal(it.component.held, false);
+    assert.equal(it.component.pressed, false);
+    assert.equal(it.component.released, false);
+});
+
+test('Pressed is true on the step that observes the click, and on no other', () => {
+    const it = clicking();
+
+    it.input.local.pressButton(0);
+    it.runtime.step();
+    assert.equal(it.component.pressed, true);
+    assert.equal(it.component.held, true);
+
+    it.runtime.step();
+    assert.equal(it.component.pressed, false, 'still held, no longer newly pressed');
+    assert.equal(it.component.held, true);
+});
+
+test('Released is true on the step that observes the release, and on no other', () => {
+    const it = clicking();
+
+    it.input.local.pressButton(0);
+    it.runtime.step();
+
+    it.input.local.releaseButton(0);
+    it.runtime.step();
+    assert.equal(it.component.released, true);
+    assert.equal(it.component.held, false);
+
+    it.runtime.step();
+    assert.equal(it.component.released, false);
+});
+
+test('a Pointer Button node watches the button it names, and no other', () => {
+    const right = clicking({ button: 'right' });
+
+    right.input.local.pressButton(0);
+    right.runtime.step();
+    assert.equal(right.component.held, false, 'the primary button is not the secondary one');
+
+    right.input.local.pressButton(2);
+    right.runtime.step();
+    assert.equal(right.component.held, true);
+});
+
+test('a Pointer Button node nobody has touched watches the primary button', () => {
+    // Same trap as `input.key`: adding a node stores `params: {}`, so a fallback that did
+    // not match the declared default would make the node silent.
+    const it = clicking({ button: undefined });
+
+    it.input.local.pressButton(0);
+    it.runtime.step();
+
+    assert.equal(it.component.held, true);
+});
+
+test('a button drives an existing node: a held click branches, and the branch writes', () => {
+    const file = px();
+    const clicks = file.property({ name: 'clicks', type: PropertyType.NUMBER, default: 0 });
+
+    const update = file.node('event.update');
+    const button = file.node('input.pointerButton');
+    const branch = file.node('flow.branch');
+    const get = file.node('property.get', { property: clicks.id });
+    const one = file.node('value.number', { value: 1 });
+    const add = file.node('math.add');
+    const set = file.node('property.set', { property: clicks.id });
+
+    file.wire([update, 'out'], [branch, 'in']);
+    file.wire([button, 'pressed'], [branch, 'condition']);
+    file.wire([branch, 'true'], [set, 'in']);
+    file.wire([get, 'value'], [add, 'a']);
+    file.wire([one, 'value'], [add, 'b']);
+    file.wire([add, 'result'], [set, 'value']);
+
+    const it = runnable(file, null);
+
+    it.runtime.step();
+    assert.equal(it.component.clicks, 0);
+
+    it.input.local.pressButton(0);
+    it.runtime.step();
+    it.runtime.step();
+    assert.equal(it.component.clicks, 1, 'one press is one click, however long it is held');
+
+    // A SECOND CLICK NEEDS A STEP BETWEEN THE TWO. Releasing and pressing again inside one
+    // step leaves the button down at both boundaries, so the simulation never saw it come
+    // up — which is the fixed-step contract, not a shortcoming of this node.
+    it.input.local.releaseButton(0);
+    it.runtime.step();
+    assert.equal(it.component.clicks, 1);
+
+    it.input.local.pressButton(0);
+    it.runtime.step();
+    assert.equal(it.component.clicks, 2);
+});
+
+test('the pointer drives an existing node: aiming moves a Transform', () => {
+    // The demonstration the slice is for, headless: `Pointer -> Set Property -> Transform`.
+    const file = px();
+    const update = file.node('event.update');
+    const pointer = file.node('input.pointer');
+    const self = file.node('scene.self');
+    const setX = file.node('property.setOn', { component: 'Transform', property: 'x' });
+
+    file.wire([update, 'out'], [setX, 'in']);
+    file.wire([self, 'object'], [setX, 'object']);
+    file.wire([pointer, 'x'], [setX, 'value']);
+
+    const payload = file.model.serialize();
+    const Component = defineComponent(payload);
+    const behaviors = new Behaviors(createGraphInterpreter({ registry }));
+    behaviors.bind(Component, payload.graph);
+
+    const types = new ComponentRegistry();
+    types.register(Transform);
+    types.register(Component);
+    const scene = new Scene('Level', { registry: types });
+    const object = scene.add(new SceneObject('Hero'));
+    object.addComponent(new Transform());
+    object.addComponent(new Component());
+
+    const runtime = new Runtime(scene, { behaviors });
+    runtime.input.local.movePointerInWorld(87, -12);
+    runtime.step();
+
+    assert.equal(object.components.Transform.x, 87);
+});
+
+test('the same pointer script replayed reaches the same state, twice', () => {
+    const script = [[0, 0, false], [10, 5, true], [20, 10, true], [20, 10, false]];
+
+    const run = () => {
+        const it = clicking();
+        const seen = [];
+        for (const [x, y, down] of script) {
+            it.input.local.movePointerInWorld(x, y);
+            if (down) it.input.local.pressButton(0); else it.input.local.releaseButton(0);
+            it.runtime.step();
+            seen.push([it.component.held, it.component.pressed, it.component.released]);
+        }
+        return seen;
+    };
+
+    const first = run();
+    assert.deepEqual(first, run());
+    assert.ok(first.some(([, pressed]) => pressed), 'and the clicks actually did something');
+});
