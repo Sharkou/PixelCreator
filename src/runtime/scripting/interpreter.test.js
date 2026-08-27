@@ -1489,3 +1489,222 @@ test('nothing belonging to a scene ever reaches the `.px` payload', () => {
     assert.equal(/obj_/.test(payload), false, 'no ObjectId is serialized into a graph');
     assert.equal(payload.includes(PropertyType.OBJECTREF), true, 'the DECLARATION is project scope, and stays');
 });
+
+// --- what the player is doing (ADR-0014) ------------------------------------------------
+//
+// THE WHOLE SLICE, MINUS THE BROWSER. A key is pressed by hand here exactly as the Editor's
+// adapter presses it (`editor/input.js`), and the graph reads it through the step context.
+// Nothing in this file — or in anything it imports — has ever seen a `KeyboardEvent`, which
+// is the property that makes a server able to replay what a player sent.
+
+/**
+ * A `.px` writing what one key is doing into three properties, stepped by a real Runtime.
+ *
+ * IT GOES THROUGH `Runtime.step()` RATHER THAN CALLING THE BEHAVIOUR, because the half of
+ * the contract worth testing is the one the runtime owns: `commit()` at the end of a step is
+ * what makes `Pressed` true exactly once.
+ *
+ * @param {object} [options] - `{ key, owner }`
+ * @returns {object} The runtime, its input, and the component to read
+ */
+function keyboard({ key = 'Space', owner = null } = {}) {
+    // `undefined` places the node with NO param at all, which is what the Editor writes for
+    // a node nobody has typed into.
+    const params = key === undefined ? {} : { key };
+    const file = px();
+    const held = file.property({ name: 'held', type: PropertyType.BOOLEAN, default: false });
+    const pressed = file.property({ name: 'pressed', type: PropertyType.BOOLEAN, default: false });
+    const released = file.property({ name: 'released', type: PropertyType.BOOLEAN, default: false });
+
+    const update = file.node('event.update');
+    const read = file.node('input.key', params);
+    const writeHeld = file.node('property.set', { property: held.id });
+    const writePressed = file.node('property.set', { property: pressed.id });
+    const writeReleased = file.node('property.set', { property: released.id });
+
+    file.wire([update, 'out'], [writeHeld, 'in']);
+    file.wire([writeHeld, 'out'], [writePressed, 'in']);
+    file.wire([writePressed, 'out'], [writeReleased, 'in']);
+    file.wire([read, 'held'], [writeHeld, 'value']);
+    file.wire([read, 'pressed'], [writePressed, 'value']);
+    file.wire([read, 'released'], [writeReleased, 'value']);
+
+    const payload = file.model.serialize();
+    const Component = defineComponent(payload);
+    const behaviors = new Behaviors(createGraphInterpreter({ registry }));
+    behaviors.bind(Component, payload.graph);
+
+    const types = new ComponentRegistry();
+    types.register(Component);
+    const scene = new Scene('Level', { registry: types });
+    const object = scene.add(new SceneObject('Hero', { owner }));
+    object.addComponent(new Component());
+
+    const runtime = new Runtime(scene, { behaviors });
+    return { runtime, input: runtime.input, component: object.components[payload.type] };
+}
+
+test('a key nobody is holding reads as false', () => {
+    const it = keyboard();
+
+    it.runtime.step();
+
+    assert.equal(it.component.held, false);
+    assert.equal(it.component.pressed, false);
+    assert.equal(it.component.released, false);
+});
+
+test('a graph observes a key that is held', () => {
+    const it = keyboard();
+
+    it.input.local.press('Space');
+    it.runtime.step();
+
+    assert.equal(it.component.held, true);
+});
+
+test('Pressed is true on the step that observes the press, and on no other', () => {
+    // The other half of ADR-0014 §5: `commit()` at the end of a step is what bounds it, so a
+    // key held for a hundred steps is one jump and not a hundred.
+    const it = keyboard();
+
+    it.input.local.press('Space');
+    it.runtime.step();
+    assert.equal(it.component.pressed, true);
+    assert.equal(it.component.held, true);
+
+    it.runtime.step();
+    assert.equal(it.component.pressed, false, 'still held, no longer newly pressed');
+    assert.equal(it.component.held, true);
+});
+
+test('Released is true on the step that observes the release, and on no other', () => {
+    const it = keyboard();
+
+    it.input.local.press('Space');
+    it.runtime.step();
+
+    it.input.local.release('Space');
+    it.runtime.step();
+    assert.equal(it.component.released, true);
+    assert.equal(it.component.held, false);
+
+    it.runtime.step();
+    assert.equal(it.component.released, false);
+});
+
+test('a graph reads the input of the owner its Object belongs to', () => {
+    // ADR-0014 §3: input is a state per player, never one global keyboard. Someone else's
+    // keys must not move this object, which is the whole reason `of()` takes an owner.
+    const it = keyboard({ owner: 'alice' });
+
+    it.input.of('bob').press('Space');
+    it.runtime.step();
+    assert.equal(it.component.held, false, "another player's keyboard is not this one's");
+
+    it.input.of('alice').press('Space');
+    it.runtime.step();
+    assert.equal(it.component.held, true);
+});
+
+test('an object with no owner reads the local keyboard, so offline play needs no special case', () => {
+    const it = keyboard({ owner: null });
+
+    it.input.local.press('Space');
+    it.runtime.step();
+
+    assert.equal(it.component.held, true);
+});
+
+test('a Key node nobody has touched reads the key its field shows', () => {
+    // MEASURED IN THE EDITOR, AND IT WAS SILENT. Adding a node stores `params: {}` — the
+    // field draws the type's declared default, and nothing is written until a creator types.
+    // A fallback of its own in `evaluate` therefore made the node READ `Space` and ANSWER as
+    // if it read nothing: the demonstration graph did nothing at all, with no error to see.
+    const it = keyboard({ key: undefined });
+
+    it.input.local.press('Space');
+    it.runtime.step();
+
+    assert.equal(it.component.held, true);
+});
+
+test('a Key node whose field was emptied answers false rather than refusing', () => {
+    // Not the same act as the one above, so not the same answer: `''` is a field a creator
+    // CLEARED. And it is still not an error — a key is a LITERAL, like the value of a
+    // `Number` node, not a reference to something that must exist. `property.get` throws
+    // because it names a property the Component no longer declares; there is nothing here
+    // that could have gone missing (ADR-0034 §3.4).
+    const it = keyboard({ key: '' });
+
+    it.input.local.press('Space');
+
+    assert.doesNotThrow(() => it.runtime.step());
+    assert.equal(it.component.held, false);
+});
+
+test('a key drives an existing node: held Space branches, and the branch writes', () => {
+    const file = px();
+    const steps = file.property({ name: 'steps', type: PropertyType.NUMBER, default: 0 });
+
+    const update = file.node('event.update');
+    const key = file.node('input.key', { key: 'Space' });
+    const branch = file.node('flow.branch');
+    const get = file.node('property.get', { property: steps.id });
+    const one = file.node('value.number', { value: 1 });
+    const add = file.node('math.add');
+    const set = file.node('property.set', { property: steps.id });
+
+    file.wire([update, 'out'], [branch, 'in']);
+    file.wire([key, 'held'], [branch, 'condition']);
+    file.wire([branch, 'true'], [set, 'in']);
+    file.wire([get, 'value'], [add, 'a']);
+    file.wire([one, 'value'], [add, 'b']);
+    file.wire([add, 'result'], [set, 'value']);
+
+    const payload = file.model.serialize();
+    const Component = defineComponent(payload);
+    const behaviors = new Behaviors(createGraphInterpreter({ registry }));
+    behaviors.bind(Component, payload.graph);
+
+    const types = new ComponentRegistry();
+    types.register(Component);
+    const scene = new Scene('Level', { registry: types });
+    const object = scene.add(new SceneObject('Hero'));
+    object.addComponent(new Component());
+    const runtime = new Runtime(scene, { behaviors });
+    const component = object.components[payload.type];
+
+    runtime.step();
+    assert.equal(component.steps, 0, 'nothing held, the branch takes its other side');
+
+    runtime.input.local.press('Space');
+    runtime.step();
+    runtime.step();
+    assert.equal(component.steps, 2);
+
+    runtime.input.local.release('Space');
+    runtime.step();
+    assert.equal(component.steps, 2, 'released, and the branch stops writing');
+});
+
+test('the same key script replayed reaches the same state, twice', () => {
+    // The property a server's reconciliation rests on (ADR-0011), stated for input: the
+    // graph is a function of the initial scene and of the keys it was given.
+    const script = [true, true, false, true, false, false];
+
+    const run = () => {
+        const it = keyboard();
+        const seen = [];
+        for (const down of script) {
+            if (down) it.input.local.press('Space'); else it.input.local.release('Space');
+            it.runtime.step();
+            seen.push([it.component.held, it.component.pressed, it.component.released]);
+        }
+        return seen;
+    };
+
+    const first = run();
+    assert.deepEqual(first, run());
+    assert.ok(first.some(([, pressed]) => pressed), 'and the keys actually did something');
+});

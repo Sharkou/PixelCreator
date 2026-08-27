@@ -124,10 +124,11 @@ test('node types group by category, in the declared order, with nothing empty', 
 
     const groups = groupNodes(registry);
 
-    // `Scene` sits third, between what a Component knows about itself and what it does
-    // with it: the nodes that reach other Objects (ADR-0034 §3.3).
-    assert.deepEqual(groups.map(group => group.category).slice(0, 4),
-        ['Events', 'Properties', 'Scene', 'Flow']);
+    // `Input` sits beside `Events` because both are the outside world arriving in a graph
+    // (ADR-0014), and `Scene` after the Component's own properties, between what a Component
+    // knows about itself and what it does with it: reaching other Objects (ADR-0034 §3.3).
+    assert.deepEqual(groups.map(group => group.category).slice(0, 5),
+        ['Events', 'Input', 'Properties', 'Scene', 'Flow']);
     assert.equal(groups.every(group => group.entries.length > 0), true);
     assert.equal(groups.flatMap(group => group.entries).length, STANDARD_NODES.length);
 });
@@ -165,6 +166,90 @@ test('no shipped node reaches for an environment', () => {
             assert.equal(forbidden.test(definition[hook].toString()), false, `${definition.type}.${hook}`);
         }
     }
+});
+
+test('the Key node asks three questions about a key, and all three are booleans', () => {
+    // ADR-0014 §5 answers exactly these three about a key, and the node is that shape and
+    // no other. Its ports do NOT depend on what it is pointed at — a key is a literal, so a
+    // Key node reads as a boolean before anyone has typed anything into it.
+    const registry = registerStandardNodes(new NodeRegistry());
+    const definition = registry.get('input.key');
+
+    // Its PORTS are fixed by the type — a key is a literal, so a Key node reads as a boolean
+    // before anyone has typed anything into it. Only its title moves with the node, which is
+    // what `shapeDependsOnNode` is true for.
+    assert.equal(typeof definition.outputs, 'object', 'the outputs are declared, not derived');
+    assert.equal(definition.inputs, undefined);
+
+    const { outputs } = portsOf(definition, { type: 'input.key', params: {} }, {});
+    assert.deepEqual(outputs.map(port => port.id), ['held', 'pressed', 'released']);
+    for (const port of outputs) {
+        assert.equal(port.kind, PortKind.DATA, port.id);
+        assert.equal(port.type, PropertyType.BOOLEAN, port.id);
+    }
+    assert.deepEqual(outputs.map(port => port.label), ['Held', 'Pressed', 'Released']);
+});
+
+test('a configured Key node says which key, and an empty one keeps its own label', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const definition = registry.get('input.key');
+
+    // Which is why its shape is a function of the node: typing a key changes what it reads
+    // as, so the window has to redraw it (`shapeDependsOnNode`).
+    assert.equal(shapeDependsOnNode(definition), true);
+
+    assert.equal(definition.title({ params: { key: 'ArrowLeft' } }), 'Key ArrowLeft');
+    // A node nobody has touched READS `Space`, so it says so — the title is what the node
+    // does, and there is nothing missing from it. An EMPTIED field reads nothing, and then
+    // there is nothing to say beyond the type's own label.
+    assert.equal(definition.title({ params: {} }), 'Key Space');
+    assert.equal(definition.title({ params: { key: '' } }), null);
+});
+
+test('the Key node reads the input it is handed and never looks for one', () => {
+    // The guard above forbids `window` and `document` by name; this states the positive
+    // half. The state arrives on the step context, indexed by the owner of the Object the
+    // Component sits on (ADR-0014 §3, §4) — there is no global to reach for.
+    const definition = registerStandardNodes(new NodeRegistry()).get('input.key');
+    const asked = [];
+    const state = { isDown: () => true, pressed: () => false, released: () => false };
+
+    const read = definition.evaluate({
+        param: () => 'Space',
+        self: { owner: 'alice' },
+        ctx: { input: { of: owner => (asked.push(owner), state) } }
+    });
+
+    assert.deepEqual(asked, ['alice'], 'it asked for the owner of its own Object');
+    assert.deepEqual(read, { held: true, pressed: false, released: false });
+});
+
+test('the key a Key node shows is the key it reads before anyone types one', () => {
+    // The field draws `params.key ?? descriptor.default`; `evaluate` reads `params.key ??`
+    // its own fallback. Two values, one meaning — so the test is that they are one value.
+    const definition = registerStandardNodes(new NodeRegistry()).get('input.key');
+    const shown = definition.params.key.default;
+    const asked = [];
+
+    definition.evaluate({
+        param: () => undefined,
+        self: null,
+        ctx: { input: { of: () => ({ isDown: key => (asked.push(key), false), pressed: () => false, released: () => false }) } }
+    });
+
+    assert.equal(shown, 'Space');
+    assert.deepEqual(asked, [shown], 'an untouched node reads the key its field shows');
+});
+
+test('a Key node with no input on the context is inert rather than broken', () => {
+    // A runtime always holds an Input, so this is the headless check and the honest answer
+    // for a node evaluated outside a step: nothing is held.
+    const definition = registerStandardNodes(new NodeRegistry()).get('input.key');
+
+    assert.deepEqual(
+        definition.evaluate({ param: () => 'Space', self: null, ctx: {} }),
+        { held: false, pressed: false, released: false }
+    );
 });
 
 // --- what a wire may reach (the picker that opens on a dropped link) --------------------

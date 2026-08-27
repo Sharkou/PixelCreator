@@ -187,9 +187,14 @@ function createComponent(project, { parent, actor }) {
     );
     if (!component) return null;
 
+    // NO `label`, AND THAT IS THE POINT. `label` is what a creator CHOSE to call the type,
+    // and a fresh `.px` has been called nothing — writing the file name in would mint a copy
+    // that stops being true the moment the file is renamed, which is exactly what it did:
+    // `Counter.px` in the Project panel and `New Component.px` in Add Component, one thing
+    // with two names. What a `.px` with no label of its own is called is its resource's name,
+    // resolved where it is shown and never stored (editor/registry.js, ADR-0016, ADR-0021).
     project.save(component.id, {
         type: component.id,
-        label: name,
         properties: {},
         graph: emptyGraph()
     }, { actor, batch });

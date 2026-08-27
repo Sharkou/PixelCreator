@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ComponentRegistry, Scene, Transform, defineComponent } from '../core/mod.js';
 import { RectangleRenderer } from '../runtime/mod.js';
+import { Project, ResourceKind } from '../project/mod.js';
+import { createResourceOfKind } from './project/commands.js';
 import { describeType, groupTypes, registerBuiltIns } from './registry.js';
 import { Selection } from './selection.js';
 import { addComponent, availableComponents, createObject, deleteObject, removeComponent, uniqueName } from './commands.js';
@@ -172,4 +174,57 @@ test('an unknown type is grouped rather than dropped', () => {
         category: 'Other',
         entries: [{ type: 'res_mystery', label: 'Mystery', category: 'Other' }]
     }]);
+});
+
+// --- what a `.px` is called -------------------------------------------------------------
+//
+// A `.px` IS A RESOURCE AND A TYPE AT ONCE (ADR-0026), and the two carry different names on
+// purpose (ADR-0021): the identity is the ResourceId, the name is data a creator edits.
+// Creating one used to COPY the file name into the definition, which made a third name that
+// was true until the first rename — the Project panel read `Counter.px` and Add Component
+// went on offering `New Component.px`.
+
+test('a `.px` with no label of its own is called what the project calls it', () => {
+    const known = registry();
+    const project = new Project('Game');
+    const resource = createResourceOfKind(project, ResourceKind.COMPONENT);
+    known.register(defineComponent({ type: resource.id, properties: {} }));
+
+    assert.equal(describeType(resource.id, known, { project }).label, 'New Component',
+        'the resource name, without the extension: this names a TYPE, beside Sprite and Transform');
+});
+
+test('renaming the `.px` renames the Component, with nothing to invalidate', () => {
+    const known = registry();
+    const project = new Project('Game');
+    const resource = createResourceOfKind(project, ResourceKind.COMPONENT);
+    known.register(defineComponent({ type: resource.id, properties: {} }));
+
+    project.setProperty(resource.id, 'name', 'Counter.px');
+
+    assert.equal(describeType(resource.id, known, { project }).label, 'Counter');
+    assert.equal(groupTypes([resource.id], known, { project })[0].entries[0].label, 'Counter',
+        'and the Add Component menu reads the same answer');
+});
+
+test('a label a creator really chose survives a rename of the file', () => {
+    const known = registry();
+    const project = new Project('Game');
+    const resource = createResourceOfKind(project, ResourceKind.COMPONENT);
+    // What `setLabel()` writes: a name for the TYPE, apart from the name of the file.
+    known.register(defineComponent({ type: resource.id, label: 'Health', properties: {} }));
+
+    project.setProperty(resource.id, 'name', 'Counter.px');
+
+    assert.equal(describeType(resource.id, known, { project }).label, 'Health',
+        'two fields mean two answers, and the chosen one wins (ADR-0016)');
+});
+
+test('a shipped type is unaffected by any of it', () => {
+    const known = registry();
+    const project = new Project('Game');
+
+    assert.equal(describeType('RectangleRenderer', known, { project }).label, 'Rectangle');
+    assert.equal(describeType('Transform', known, { project }).label, 'Transform');
+    assert.equal(describeType('Transform', known).label, 'Transform', 'and with no project at all');
 });

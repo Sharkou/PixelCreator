@@ -23,9 +23,11 @@ import { addComponent, deleteObject } from './commands.js';
 import { Workspace } from './project/workspace.js';
 import { createDefinitions } from './project/definitions.js';
 import { Transport, TransportState } from './transport.js';
+import { KeyboardInput } from './input.js';
 import { fillStarterScene } from './project/starter.js';
 import { installDocumentStyles, sheet } from './ui/styles.js';
 import { el, fill } from './ui/element.js';
+import { isEditing } from './ui/focus.js';
 import { icon } from './ui/icons.js';
 import { openMenu } from './ui/menu.js';
 import { DropZone, describePayload } from './dnd/payload.js';
@@ -368,7 +370,7 @@ export function start(mount = document.body) {
     //
     // It starts in memory. An IndexedDB store is a swap of one implementation, which is
     // the whole reason `ResourceStore` is an interface.
-    const workspace = new Workspace();
+    const workspace = new Workspace({ components });
     const sceneResource = workspace.create(scene);
     const histories = workspace.histories;
     const history = workspace.history;
@@ -489,6 +491,24 @@ export function start(mount = document.body) {
     // transport tells it once that there is a reason to. From there the running branch of
     // its own tick keeps the frames coming.
     transport.observe(() => viewport.wake());
+
+    // THE KEYBOARD REACHES THE GAME HERE, AND NOWHERE ELSE (ADR-0014). The adapter writes
+    // into the `Input` the Runtime already holds; the Runtime reads it on every step and has
+    // no idea a browser exists. That asymmetry is the whole design — the same graph runs
+    // here, headless, and on a server replaying key names off the network.
+    //
+    // IT IS COMPOSED HERE BECAUSE THE TWO HALVES MEET HERE. The Viewport owns the Runtime
+    // and the Transport owns the session; the adapter needs one to write into and the other
+    // to know when. `editor.js` is already the file that holds both, and putting the wiring
+    // in either of them would have made that one reach for the other.
+    //
+    // A SESSION LISTENS; EDITING DOES NOT. `PAUSED` is `PLAYING` without the clock (ADR-0029
+    // §6), so it keeps listening: dropping the keyboard on a pause would mean a key released
+    // while held stayed down for the resume, which is a stuck key and not a paused game.
+    const keyboard = new KeyboardInput({ input: viewport.runtime.input });
+    transport.observe(state => {
+        if (state === TransportState.EDITING) keyboard.stop(); else keyboard.start();
+    });
 
     // PLAY MEANS WATCH THE SCENE, so Play makes sure there is a Scene to watch. Not a mode
     // switch invented for the occasion — it is what the button already means. A creator who
@@ -1052,23 +1072,6 @@ function bindShortcuts({ scene, selection, subject, viewport, history, workspace
 }
 
 /**
- * Whether the creator is typing, in which case shortcuts must keep out of the way.
- *
- * Walks into shadow roots: the field being typed into is inside one, so
- * `document.activeElement` alone only ever reports the window.
- *
- * @returns {boolean} True when a text control has focus
- */
-function isEditing() {
-    let element = document.activeElement;
-    while (element?.shadowRoot?.activeElement) element = element.shadowRoot.activeElement;
-
-    if (!element) return false;
-    if (element.isContentEditable) return true;
-    return element.tagName === 'INPUT' || element.tagName === 'SELECT' || element.tagName === 'TEXTAREA';
-}
-
-/**
  * The document area: one tab bar over one body.
  *
  * WHAT A TAB IS, AND WHAT IT IS NOT. It is a view of `Workspace.opened()` — the resources a
@@ -1121,7 +1124,9 @@ function documentArea({ workspace, viewport }) {
         if (!canvas) {
             canvas = el('px-graph');
             canvases.set(view.id, canvas);
-            canvas.bind(workspace.attached(view.id), { components: () => componentCatalogue(components) });
+            canvas.bind(workspace.attached(view.id), {
+                components: () => componentCatalogue(components, { project: workspace.project })
+            });
         }
         return canvas;
     };

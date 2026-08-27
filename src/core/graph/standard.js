@@ -126,6 +126,16 @@ const data = (id, type, label, fallback, placeholder) => ({
     placeholder: placeholder ?? null
 });
 
+/**
+ * The key a `Key` node reads before a creator has typed one into it.
+ *
+ * DECLARED ONCE, READ TWICE. It is the param's `default` — which is what the field SHOWS on
+ * a node nobody has touched — and it is what `evaluate` falls back to when the node carries
+ * no `key` at all. A node added and left alone stores `params: {}`, so stating the fallback
+ * separately is how a node comes to read as `Space` and answer as if it read nothing.
+ */
+const DEFAULT_KEY = 'Space';
+
 /** The reference param every property node carries. */
 const propertyParam = {
     property: {
@@ -344,6 +354,74 @@ export const STANDARD_NODES = [
         ],
         evaluate: io => ({ deltaTime: io.ctx?.deltaTime ?? 0, time: io.ctx?.time ?? 0 }),
         tooltip: 'Runs every simulation step, at the fixed rate the clock sets'
+    },
+
+    // --- what the player is doing ------------------------------------------------------
+    //
+    // THE INPUT ARRIVES ON THE STEP CONTEXT, EXACTLY LIKE THE TIME DOES. This node reads
+    // `io.ctx.input`, which the Runtime hands over because it was handed it — it never goes
+    // looking for a keyboard, and there is no keyboard here to look for. `KeyboardEvent`,
+    // `window` and `document` are unknown words in this file, and that is what lets the same
+    // graph run in a browser, on a server replaying what a player sent, and in a headless
+    // test that presses keys by hand (ADR-0014).
+    //
+    // INDEXED BY OWNER, SO IT IS THE RIGHT PLAYER'S KEYBOARD. `Object.owner` names the
+    // player an object belongs to (ADR-0001), so the state is `input.of(self.owner)` and
+    // never a global one. The `local` owner always exists, which is what makes an object
+    // with no owner playable offline with no special case (ADR-0014 §3).
+    //
+    // THREE OUTPUTS, NOT THREE NODES AND NOT ONE MODE PARAM. They are the three questions
+    // `InputState` answers about a key, and a creator wiring a jump wants `Pressed` next to
+    // the `Held` they were about to use by mistake. Each is statically a boolean, so nothing
+    // here is polymorphic — the shape of this node does not depend on what it is pointed at.
+
+    {
+        type: 'input.key',
+        label: 'Key',
+        category: 'Input',
+        keywords: ['input', 'keyboard', 'keys', 'press', 'held', 'down', 'released', 'control'],
+        params: {
+            key: {
+                type: PropertyType.STRING,
+                default: DEFAULT_KEY,
+                label: 'Key',
+                // OPAQUE, AND DELIBERATELY SO (ADR-0014 §2). A browser adapter writes
+                // `KeyboardEvent.code` values in, so that is what a creator types here; the
+                // Core has no list of keys and would be wrong to grow one, because a server
+                // replaying names off the network never produces an event to read them from.
+                tooltip: 'The key, as the browser names it: Space, KeyW, ArrowLeft, ShiftLeft'
+            }
+        },
+        // A CONFIGURED NODE SAYS WHICH KEY, like `Get speed` says which property. The label
+        // alone is what a node nobody has pointed anywhere reads as.
+        title: node => {
+            const key = node?.params?.key ?? DEFAULT_KEY;
+            return key ? `Key ${key}` : null;
+        },
+        outputs: [
+            data('held', PropertyType.BOOLEAN),
+            data('pressed', PropertyType.BOOLEAN),
+            data('released', PropertyType.BOOLEAN)
+        ],
+        // A KEY IS A LITERAL, NOT A REFERENCE, so an empty one answers false rather than
+        // refusing. `property.get` throws because it NAMES something that must exist and no
+        // longer does — a design-time fault. A key nobody typed is an empty `Number` node,
+        // and the catalogue has never made those an error (ADR-0034 §3.4).
+        evaluate: io => {
+            // `??`, not `||`: a node nobody has touched carries no `key` and reads the
+            // declared default, while a field a creator has EMPTIED is an empty key and
+            // reads nothing. The two are different answers to different acts.
+            const key = io.param('key') ?? DEFAULT_KEY;
+            const state = key ? io.ctx?.input?.of?.(io.self?.owner ?? null) : null;
+            if (!state) return { held: false, pressed: false, released: false };
+
+            return {
+                held: state.isDown(key),
+                pressed: state.pressed(key),
+                released: state.released(key)
+            };
+        },
+        tooltip: 'Whether a key is held, went down this step, or came up this step'
     },
 
     // --- the component's own properties ---------------------------------------------

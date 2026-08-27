@@ -40,6 +40,7 @@ import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
 import { DropPosition, dropPositionAt } from './drop.js';
 import { previewSlots, rankAtPoint } from '../dnd/reflow.js';
 import { foldTrail } from '../ui/trail.js';
+import { isEditing } from '../ui/focus.js';
 import '../ui/window.js';
 
 /** How far a pointer travels before a press on a tile becomes a drag. */
@@ -1297,24 +1298,6 @@ function ancestors(project, id) {
         parent = folder.parent ?? null;
     }
     return chain;
-}
-
-/**
- * Whether the creator is typing, in which case a key belongs to the field.
- *
- * Walks into shadow roots, because the box being typed into is inside one and
- * `document.activeElement` alone only ever reports the window — the same guard
- * `editor.js` and `windows/graph.js` use, for the same reason.
- *
- * @returns {boolean} True when a text control has focus
- */
-function isEditing() {
-    let element = document.activeElement;
-    while (element?.shadowRoot?.activeElement) element = element.shadowRoot.activeElement;
-
-    if (!element) return false;
-    if (element.isContentEditable) return true;
-    return element.tagName === 'INPUT' || element.tagName === 'SELECT' || element.tagName === 'TEXTAREA';
 }
 
 /**

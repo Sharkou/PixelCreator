@@ -2,7 +2,17 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { NodeRegistry, OBJECT_TYPE, PortKind, registerStandardNodes, portsOf } from '../../core/mod.js';
+import {
+    ComponentRegistry,
+    NodeRegistry,
+    OBJECT_TYPE,
+    PortKind,
+    Transform,
+    registerStandardNodes,
+    portsOf
+} from '../../core/mod.js';
+import { componentCatalogue } from '../registry.js';
+import { inputFields } from '../inspector/node.js';
 import {
     GRID,
     MAJOR_EVERY,
@@ -30,6 +40,11 @@ import {
 } from './view.js';
 
 const registry = registerStandardNodes(new NodeRegistry());
+
+/** What the Editor knows about the project's Component types, for a node that names one. */
+const COMPONENTS = new ComponentRegistry();
+COMPONENTS.register(Transform);
+const CATALOGUE = componentCatalogue(COMPONENTS);
 
 function place(type, x, y, params = {}) {
     const node = { id: `${type}@${x},${y}`, type, x, y, params };
@@ -233,7 +248,9 @@ test('a control that edits a port takes that port\'s row', () => {
 });
 
 test('a control that edits no port takes the first row that has none', () => {
-    const ports = { inputs: [], outputs: [{ id: 'value', kind: 'data' }] };
+    // TYPED, because `createPort()` gives a data port that declares none the `any` type —
+    // and `any` is one of the two a control can never speak for (`silencedPorts`).
+    const ports = { inputs: [], outputs: [{ id: 'value', kind: 'data', type: 'number' }] };
     const rows = nodeRows(ports, [{ name: 'value' }]);
 
     // THE COMPACT VALUE NODE, and it falls out of the rule rather than being a case: one
@@ -244,7 +261,7 @@ test('a control that edits no port takes the first row that has none', () => {
 });
 
 test('Get Property is one row: the picker, and the socket beside it', () => {
-    const ports = { inputs: [], outputs: [{ id: 'value', kind: 'data' }] };
+    const ports = { inputs: [], outputs: [{ id: 'value', kind: 'data', type: 'number' }] };
     const rows = nodeRows(ports, [{ name: 'property' }]);
 
     assert.equal(rows.length, 1);
@@ -277,7 +294,7 @@ test('a control that edits a port is never displaced by one that edits none', ()
 });
 
 test('more controls than ports grow the node a row at a time', () => {
-    const ports = { inputs: [], outputs: [{ id: 'value', kind: 'data' }] };
+    const ports = { inputs: [], outputs: [{ id: 'value', kind: 'data', type: 'number' }] };
 
     assert.equal(nodeRows(ports, []).length, 1);
     assert.equal(nodeRows(ports, [{ name: 'a' }]).length, 1);
@@ -355,7 +372,7 @@ test('a control leaves room for a port label it does not speak for', () => {
 
 test('a param speaks for both ports on its row, and takes the room back', () => {
     const node = { x: 0, y: 0 };
-    const ports = { inputs: [], outputs: [{ id: 'value', kind: 'data', label: 'Value' }] };
+    const ports = { inputs: [], outputs: [{ id: 'value', kind: 'data', type: 'number', label: 'Value' }] };
     const rows = nodeRows(ports, [{ name: 'value' }]);
     const silenced = silencedPorts(rows);
     const [box] = controlBoxes(node, rows);
@@ -365,29 +382,59 @@ test('a param speaks for both ports on its row, and takes the room back', () => 
     assert.ok(box.x + box.width > node.x + NODE_WIDTH - 40);
 });
 
-// THE ROW A PARAM LANDS ON IS NOT NECESSARILY A ROW IT IS ABOUT. `Get Property On` puts its
-// Component picker on the row carrying the Object socket it reads FROM, and silencing that
-// socket left an unnamed dot on a line reading "Component" (ADR-0034 3.2).
-test('a param never speaks for an object socket sharing its row', () => {
+// A ROW A PARAM CANNOT SPEAK FOR IS A ROW IT IS NEVER GIVEN. `Set Property On` used to put
+// its property picker on the row carrying the Object socket it writes THROUGH, and both were
+// drawn: `Object Property [x]`, one line saying two things — the defect ADR-0033 1 was
+// written against, reappearing through the half of its rule that had not been written down.
+test('a param never lands on a row whose port has to speak for itself', () => {
     const ports = {
         inputs: [{ id: 'object', kind: 'data', type: OBJECT_TYPE, label: 'Object' }],
         outputs: [{ id: 'value', kind: 'data', type: 'number', label: 'Value' }]
     };
-    const silenced = silencedPorts(nodeRows(ports, [{ name: 'component' }]));
+    const rows = nodeRows(ports, [{ name: 'component' }]);
+    const silenced = silencedPorts(rows);
 
+    assert.equal(rows.length, 2, 'it takes a row of its own rather than that one');
+    assert.equal(rows[0].control.name, 'component');
+    assert.equal(rows[0].input, null, 'and that row carries no port to be confused with');
+    assert.equal(rows[1].input.id, 'object');
     assert.ok(!silenced.has('in:object'), 'the only thing naming an object port is its name');
-    assert.ok(silenced.has('out:value'), 'a port a creator could type into is another matter');
+    assert.ok(!silenced.has('out:value'), 'nor is the socket it shares a line with spoken for');
 });
 
-test('an object socket keeps its room even when a param shares the row', () => {
-    const node = { x: 0, y: 0 };
-    const ports = {
-        inputs: [{ id: 'object', kind: 'data', type: OBJECT_TYPE, label: 'Object' }],
-        outputs: []
-    };
-    const [box] = controlBoxes(node, nodeRows(ports, [{ name: 'component' }]));
+test('an `any` socket is as unspeakable-for as an object one', () => {
+    // Neither takes a control (`carriesControl`), so on both the label is all there is.
+    const ports = { inputs: [{ id: 'value', kind: 'data', type: 'any', label: 'Value' }], outputs: [] };
+    const rows = nodeRows(ports, [{ name: 'property' }]);
 
-    assert.ok(box.x > node.x + 40, 'the field starts after the socket and the word beside it');
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].control.name, 'property');
+    assert.ok(!silencedPorts(rows).has('in:value'));
+});
+
+test('a row a param makes for itself goes in where it was refused, not at the end', () => {
+    // READING ORDER IS THE WHOLE POINT. Appending put `Set Property On`'s property picker
+    // BELOW the value whose type it decides, so a creator read the node backwards.
+    const ports = {
+        inputs: [
+            { id: 'in', kind: 'flow' },
+            { id: 'object', kind: 'data', type: OBJECT_TYPE, label: 'Object' },
+            { id: 'value', kind: 'data', type: 'number', label: 'x' }
+        ],
+        outputs: [{ id: 'out', kind: 'flow' }]
+    };
+    const rows = nodeRows(ports, [
+        { name: 'component' },
+        { name: 'property' },
+        { name: 'value', port: 'value' }
+    ]);
+
+    assert.deepEqual(
+        rows.map(row => row.control?.name ?? null),
+        ['component', 'property', null, 'value'],
+        'component, property, the object socket, then the value beside its field'
+    );
+    assert.equal(rows[2].input.id, 'object', 'and the object socket keeps a line to itself');
 });
 
 test('the Scene nodes draw their object sockets with their names on', () => {
@@ -402,6 +449,109 @@ test('the Scene nodes draw their object sockets with their names on', () => {
         assert.ok(object.label, `${type}'s object port has no name to show`);
         assert.ok(!silenced.has(`in:${object.id}`), `${type} hides what its object socket takes`);
     }
+});
+
+// THE TWO NODES THE ROW RULE WAS COMPLETED FOR, AGAINST THE REAL CATALOGUE. A fixture can
+// be made to pass; these read the layout a creator actually gets (ADR-0034 3.3).
+test('Set Property On says Object, Property and Value once each, in that order', () => {
+    const node = {
+        id: 'n', type: 'property.setOn', x: 0, y: 0,
+        params: { component: 'Transform', property: 'x' }
+    };
+    const definition = registry.get('property.setOn');
+    const ports = portsOf(definition, node, { properties: [], components: CATALOGUE });
+
+    const value = ports.inputs.find(port => port.id === 'value');
+    assert.equal(value.type, 'number', 'the port is typed the moment both params are known');
+
+    const controls = [
+        ...globalThis.Object.keys(definition.params).map(name => ({ name })),
+        ...inputFields(ports)
+    ];
+    const rows = nodeRows(ports, controls);
+    const silenced = silencedPorts(rows);
+
+    assert.deepEqual(rows.map(row => row.control?.name ?? null), ['component', 'property', null, 'value']);
+    assert.equal(rows[2].input.id, 'object');
+    assert.ok(!silenced.has('in:object'), 'the object socket still says what it takes');
+    assert.ok(silenced.has('in:value'), 'and the value socket is spoken for by its own field');
+});
+
+test('Get Property On keeps its object socket off the pickers\' rows too', () => {
+    const node = {
+        id: 'n', type: 'property.getOn', x: 0, y: 0,
+        params: { component: 'Transform', property: 'y' }
+    };
+    const definition = registry.get('property.getOn');
+    const ports = portsOf(definition, node, { properties: [], components: CATALOGUE });
+    const rows = nodeRows(ports, globalThis.Object.keys(definition.params).map(name => ({ name })));
+
+    assert.deepEqual(rows.map(row => row.control?.name ?? null), ['component', 'property', null]);
+    assert.equal(rows[2].input.id, 'object');
+    assert.equal(rows[2].output.id, 'value');
+});
+
+test('a value port a creator can type into gets a field once its type is known', () => {
+    const definition = registry.get('property.setOn');
+    const unset = { id: 'a', type: 'property.setOn', x: 0, y: 0, params: {} };
+    const known = { id: 'b', type: 'property.setOn', x: 0, y: 0, params: { component: 'Transform', property: 'x' } };
+
+    const context = { properties: [], components: CATALOGUE };
+    assert.deepEqual(inputFields(portsOf(definition, unset, context)), [],
+        'nothing to type into a port whose type nothing has decided yet');
+
+    const [field] = inputFields(portsOf(definition, known, context));
+    assert.equal(field.port, 'value', 'and it writes through the port, not through a param');
+    assert.equal(field.name, 'value');
+});
+
+// A NODE IS ITS ROWS, SO EVERYTHING ON IT IS PLACED BY THEM. Port positions were indexed
+// within their own side's list instead, which is the same answer as the rows only while the
+// rows are a plain zip — so the day a control took a line of its own, the labels moved and
+// the sockets did not (ADR-0033 1).
+test('a socket sits on the row its label is drawn on, control or no control', () => {
+    const node = { x: 0, y: 0 };
+    const ports = {
+        inputs: [
+            { id: 'in', kind: 'flow' },
+            { id: 'object', kind: 'data', type: OBJECT_TYPE, label: 'Object' },
+            { id: 'value', kind: 'data', type: 'number', label: 'x' }
+        ],
+        outputs: [{ id: 'out', kind: 'flow' }]
+    };
+    const controls = [{ name: 'component' }, { name: 'property' }, { name: 'value', port: 'value' }];
+    const rows = nodeRows(ports, controls);
+
+    // Rows: [component] [property] [object] [value]. A socket's height is its ROW's height,
+    // and the boxes are laid out from the same rows — so a control box and the socket beside
+    // it share a line, whatever index the port has in its own list.
+    for (const box of controlBoxes(node, rows)) {
+        const row = rows[box.index];
+        for (const [direction, port] of [['in', row.input], ['out', row.output]]) {
+            if (!port) continue;
+            const at = portPosition(node, ports, direction, port.id, controls);
+            assert.ok(at.y > box.y && at.y < box.y + box.height + 1,
+                `${port.id} is not on the line its row's control is drawn on`);
+        }
+    }
+
+    const object = portPosition(node, ports, 'in', 'object', controls);
+    const value = portPosition(node, ports, 'in', 'value', controls);
+    assert.equal(value.y - object.y, ROW_HEIGHT, 'and consecutive rows are one row apart');
+
+    // Asked WITHOUT the controls — the old answer — the same socket sits a row higher,
+    // because the property picker's line is not in that reckoning. That gap IS the defect.
+    const naive = portPosition(node, ports, 'in', 'value');
+    assert.equal(value.y - naive.y, ROW_HEIGHT);
+});
+
+test('a node with no controls places its ports exactly as it always did', () => {
+    const branch = place('flow.branch', 40, 60);
+
+    assert.deepEqual(
+        placePorts(branch.node, branch.ports).map(entry => entry.y),
+        placePorts(branch.node, branch.ports, []).map(entry => entry.y)
+    );
 });
 
 test('a port with no label of its own needs no room kept for one', () => {

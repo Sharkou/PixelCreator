@@ -206,14 +206,32 @@ export function paramWrites(definition, node, name, value, context = {}) {
 }
 
 /**
+ * Whether a port can carry a control at all.
+ *
+ * THE THREE THAT CANNOT, AND THEY FAIL FOR THREE DIFFERENT REASONS. A FLOW port carries
+ * execution, not a value — there is nothing to type. An `any` port has no shape, so there is
+ * no control to draw. An OBJECT port carries a live handle, which is not a value a creator
+ * types: a box there could never be filled in, and the Runtime ignores whatever a node holds
+ * for such a port anyway (ADR-0034 §3.2, §3.6) — so the box would also be a lie.
+ *
+ * IT IS A PREDICATE RATHER THAN A LINE INSIDE `inputFields()` BECAUSE THE GEOMETRY ASKS IT
+ * TOO. A port with no control has nothing else on its row to describe it, so its own label
+ * is all it has and a row must not be given to something that would silence it
+ * (`graph/view.js`). One fact, two readers, and they cannot drift.
+ *
+ * @param {object|null} port - The port
+ * @returns {boolean} True when a creator can state a value for it
+ */
+export function carriesControl(port) {
+    if (!port || port.kind === PortKind.FLOW) return false;
+    return Boolean(port.type) && port.type !== ANY_TYPE && port.type !== OBJECT_TYPE;
+}
+
+/**
  * The input ports a creator can type a value into, as field descriptors.
  *
- * WHICH PORTS, AND WHY NOT ALL OF THEM. A FLOW port carries execution, not a value — there
- * is nothing to type. An `any` port has no shape, so there is no control to draw. An OBJECT
- * port carries a live handle, which is not a value a creator types: a control there would be
- * a box that can never be filled in, and the Runtime ignores whatever a node holds for such
- * a port anyway (ADR-0034 §3.2, §3.6) — so the box would also be a lie. Everything else gets
- * one, whether or not something is wired to it (ADR-0031 §1).
+ * WHICH PORTS, AND WHY NOT ALL OF THEM: `carriesControl()`, just above. Everything it admits
+ * gets a field, whether or not something is wired to it (ADR-0031 §1).
  *
  * THE DESCRIPTOR IS BUILT FROM THE BASE TYPE, because a port carries a type and not a
  * declaration. `array<number>` says a list of numbers travels here; what it does not carry
@@ -232,8 +250,7 @@ export function inputFields(ports) {
     const fields = [];
 
     for (const port of ports?.inputs ?? []) {
-        if (port.kind === PortKind.FLOW) continue;
-        if (!port.type || port.type === ANY_TYPE || port.type === OBJECT_TYPE) continue;
+        if (!carriesControl(port)) continue;
 
         fields.push({
             ...fieldFor(port.id, {

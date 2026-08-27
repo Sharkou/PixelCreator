@@ -85,7 +85,12 @@ test('a component is ONE `.px` resource, carrying its own graph', () => {
 
     assert.equal(component.kind, ResourceKind.COMPONENT);
     assert.equal(definition.type, component.id, 'a definition is identified by its own resource');
-    assert.equal(definition.label, component.name);
+    // AND IT CARRIES NO LABEL. `label` is what a creator CHOSE to call the type; a fresh
+    // `.px` has been called nothing, and writing the file name in would mint a copy that
+    // stops being true at the first rename — `Counter.px` in the panel, `New Component.px`
+    // in Add Component. What it is called is resolved from the resource, where it is shown
+    // (editor/registry.js, ADR-0016 §label, ADR-0021).
+    assert.equal('label' in definition, false, 'a name is not a label');
     assert.deepEqual(definition.properties, {});
     assert.deepEqual(definition.graph, { version: 1, nodes: [], connections: [] });
 

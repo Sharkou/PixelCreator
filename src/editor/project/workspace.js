@@ -66,7 +66,7 @@ const EDITORS = {
         // `any` and the validator stays silent rather than guessing.
         load: async (project, id, { registry, nodes }) => ComponentDefinition.deserialize(
             await project.read(id) ?? { type: id },
-            { registry: nodes, components: registry ? () => componentCatalogue(registry) : null }
+            { registry: nodes, components: registry ? () => componentCatalogue(registry, { project }) : null }
         ),
         save: (project, id, model, options) => project.save(id, model.serialize(), options),
         exclusive: false
@@ -76,6 +76,7 @@ const EDITORS = {
 export class Workspace {
 
     #project;
+    #components = null;
     #histories;
     #nodes;
     #emitter = new Emitter();
@@ -109,10 +110,18 @@ export class Workspace {
      * @param {object} [options.project] - The project to work in; a new one by default
      * @param {string|null} [options.actor] - Whose operations the stacks record
      * @param {object} [options.nodes] - The NodeRegistry a `.px` graph is read against
+     * @param {object} [options.components] - The ComponentRegistry a node naming a Component
+     *   type resolves against, for every `.px` this workspace loads
      */
-    constructor({ project = new Project('Untitled Project'), actor = null, nodes = defaultNodes } = {}) {
+    constructor({
+        project = new Project('Untitled Project'),
+        actor = null,
+        nodes = defaultNodes,
+        components = null
+    } = {}) {
         this.#project = project;
         this.#nodes = nodes;
+        this.#components = components;
         this.#histories = new Histories({ actor });
         // The manifest is a resource like the ones it lists, so it gets its own stack.
         this.#histories.for(project.id, project.operations);
@@ -522,7 +531,17 @@ export class Workspace {
         const entry = EDITORS[resource.kind];
         if (!entry) return null;
 
-        const model = await entry.load(this.#project, id, { registry, nodes: this.#nodes });
+        // WHOEVER ATTACHES FIRST MUST NOT DECIDE WHAT THE MODEL CAN RESOLVE. A `.px` is
+        // attached by SELECTING it — the Inspector does that to edit its properties — and
+        // opened by double-clicking it, and only the second call used to carry a registry.
+        // So the model built by the selection could never resolve a Component type, its
+        // `Set Property On` ports stayed `any`, and no later `open()` could repair it: the
+        // early return above hands back the model that already exists. The session-wide
+        // registry answers the same whoever asks, which is why it belongs to the Workspace.
+        const model = await entry.load(this.#project, id, {
+            registry: this.#components ?? registry,
+            nodes: this.#nodes
+        });
         if (!model) return null;
 
         return this.#adopt(resource, model, { open: false });

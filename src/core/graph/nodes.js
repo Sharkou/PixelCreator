@@ -62,8 +62,16 @@ export const ANY_TYPE = 'any';
  */
 export const OBJECT_TYPE = 'object';
 
-/** Groups the node menu shows, in the order it shows them. */
-export const NODE_CATEGORIES = ['Events', 'Properties', 'Scene', 'Flow', 'Values', 'Math', 'Compare', 'Logic', 'Debug'];
+/**
+ * Groups the node menu shows, in the order it shows them.
+ *
+ * `Input` sits next to `Events` because both are the outside world arriving in a graph:
+ * one as a moment, the other as a state that is true while it lasts. Neither reaches for
+ * that world — the runtime hands both over on the step context (ADR-0014).
+ */
+export const NODE_CATEGORIES = [
+    'Events', 'Input', 'Properties', 'Scene', 'Flow', 'Values', 'Math', 'Compare', 'Logic', 'Debug'
+];
 
 /**
  * A node type, as data.

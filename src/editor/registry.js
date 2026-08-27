@@ -17,7 +17,8 @@
 // and grouping is the whole of the change. It does NOT say an Object has one renderer:
 // several renderers on one Object still work and still all draw.
 
-import { components as defaultRegistry, declaredProperties, Transform } from '../core/mod.js';
+import { componentDefinition, components as defaultRegistry, declaredProperties, Transform } from '../core/mod.js';
+import { baseNameOf } from '../project/mod.js';
 import { Camera, ParticleSystem, RectangleRenderer, Sprite, Tilemap } from '../runtime/mod.js';
 
 /** The component types shipped with the engine. */
@@ -47,19 +48,60 @@ export function registerBuiltIns(registry = defaultRegistry) {
 
 /**
  * How a component type is presented in the Editor.
+ *
+ * THREE ANSWERS TO ONE QUESTION, IN THE ORDER THEY DESERVE TO WIN:
+ *
+ *   the label the definition CARRIES   what a creator chose to call the type
+ *   the resource's name                what a `.px` is called when it was never renamed AS a type
+ *   the shipped table, then the type   for a class, which has no resource
+ *
+ * WHY THE MIDDLE ONE IS RESOLVED HERE AND NEVER STORED. A `.px` is a resource and a type at
+ * once (ADR-0026), and the two carry different names for a reason ADR-0021 is explicit
+ * about: the identity is the ResourceId, the name is data a creator edits. Copying the name
+ * into the definition — which is what creating one used to do — makes a third thing that is
+ * true only until the next rename, and `Add Component` went on offering `New Component.px`
+ * after the Project panel had shown `Counter.px` for an hour. Reading the manifest at the
+ * moment the name is drawn has no copy to go stale.
+ *
+ * WITHOUT THE EXTENSION, because this names a TYPE. `Counter.px` is the file; `Counter` is
+ * the Component, and it stands in a menu beside `Sprite` and `Transform`, which are not
+ * spelled with the language they were written in either.
+ *
+ * A LABEL THAT WAS REALLY CHOSEN STILL WINS. `setLabel()` exists on the model and a `.px`
+ * authored elsewhere may carry one; renaming the file then leaves it alone, which is what
+ * having two fields means.
+ *
  * @param {string} type - The component type name
  * @param {object} [registry] - Registry to resolve the class in
+ * @param {object} [options] - Options
+ * @param {object} [options.project] - Consulted for a `.px`'s current name
  * @returns {{type: string, label: string, category: string}} Its presentation
  */
-export function describeType(type, registry = defaultRegistry) {
+export function describeType(type, registry = defaultRegistry, { project = null } = {}) {
     const ComponentClass = registry.get(type);
     const shipped = SHIPPED[type];
 
     return {
         type,
-        label: ComponentClass?.label ?? shipped?.label ?? type,
+        label: componentDefinition(ComponentClass)?.label
+            || resourceName(type, project)
+            || shipped?.label
+            || ComponentClass?.label
+            || type,
         category: ComponentClass?.category ?? shipped?.category ?? 'Other'
     };
+}
+
+/**
+ * What the project calls a type, when the type is one of its resources.
+ *
+ * @param {string} type - The component type name, which for a `.px` is its ResourceId
+ * @param {object|null} project - The project, when the caller has one
+ * @returns {string|null} Its name without the extension, or null
+ */
+function resourceName(type, project) {
+    const resource = project?.get?.(type) ?? null;
+    return resource ? baseNameOf(resource) || null : null;
 }
 
 /**
@@ -72,12 +114,14 @@ export function describeType(type, registry = defaultRegistry) {
  * would be a second thing to keep in step.
  *
  * @param {object} [registry] - The registry to read
+ * @param {object} [options] - Options
+ * @param {object} [options.project] - Consulted so a renamed `.px` reads as its new name
  * @returns {Array<{type: string, label: string, properties: object[]}>} The catalogue
  */
-export function componentCatalogue(registry = defaultRegistry) {
+export function componentCatalogue(registry = defaultRegistry, { project = null } = {}) {
     return registry.types().map(type => ({
         type,
-        label: describeType(type, registry).label,
+        label: describeType(type, registry, { project }).label,
         properties: declaredProperties(registry.get(type))
     }));
 }
@@ -87,10 +131,12 @@ export function componentCatalogue(registry = defaultRegistry) {
  *
  * @param {string[]} types - Type names to arrange
  * @param {object} [registry] - Registry to resolve the classes in
+ * @param {object} [options] - Options
+ * @param {object} [options.project] - Consulted so a renamed `.px` reads as its new name
  * @returns {object[]} `{ category, entries }` groups, empty ones dropped
  */
-export function groupTypes(types, registry = defaultRegistry) {
-    const described = types.map(type => describeType(type, registry));
+export function groupTypes(types, registry = defaultRegistry, { project = null } = {}) {
+    const described = types.map(type => describeType(type, registry, { project }));
     const order = [...CATEGORIES];
 
     // A category a creator invented takes its place after the known ones rather than

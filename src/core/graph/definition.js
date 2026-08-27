@@ -549,9 +549,16 @@ export class ComponentDefinition {
             properties[name] = descriptor;
         }
 
+        // AN EMPTY LABEL IS NOT A LABEL, so it is not written. `label` says what a creator
+        // CHOSE to call this type, and a definition nobody has named carries none — which is
+        // the state `defineComponent()` already describes ("the type itself when absent") and
+        // the one it refuses to be handed as an empty string. Writing `label: ''` out made a
+        // `.px` that had never been named unloadable as a Component, and it is the same
+        // convention the properties above follow: a field with nothing to say is absent
+        // rather than present and empty.
         return {
             type: this.#type,
-            label: this.#meta.label,
+            ...(this.#meta.label ? { label: this.#meta.label } : {}),
             properties,
             graph: this.#graph.serialize()
         };

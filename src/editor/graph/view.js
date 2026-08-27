@@ -22,7 +22,8 @@
 // never rewritten by a zoom, which is the mistake that makes a graph editor lose its
 // layout.
 
-import { OBJECT_TYPE } from '../../core/mod.js';
+import { PortKind } from '../../core/mod.js';
+import { carriesControl } from '../inspector/node.js';
 import { MAJOR_EVERY, adaptiveSpacing } from '../grid.js';
 
 /** A node's box, in graph units. Wide enough for two port labels, a control and a title. */
@@ -100,7 +101,16 @@ export const MAX_ZOOM = 2.5;
  * ONE RULE, AND EVERY LAYOUT BELOW FALLS OUT OF IT:
  *
  *   **a control belongs to the row of the port it edits; a control that edits no port
- *   takes the first row that has none yet, and makes a new row when there is none left.**
+ *   takes the first row it can be the LABEL of, and makes a row of its own when there is
+ *   none.**
+ *
+ * THE SECOND HALF USED TO READ "the first row that has none yet", AND THAT LOST A ROW'S
+ * OTHER PROMISE — "a row says a thing once". A row carrying an object port is the one row a
+ * control cannot speak for: an object socket has no field and can have none (ADR-0034 §3.2),
+ * so its name is the only thing that says what it takes (`silencedPorts`). Dropping a param
+ * there printed both, and `Set Property On` read `Object Property [x]` — one line saying two
+ * things, which is the very defect ADR-0033 §1 was written against. Refusing that row is not
+ * an exception to the algebra; it is the half of it that had not been written down.
  *
  * That is the whole algebra. What it produces, without a single special case:
  *
@@ -140,12 +150,52 @@ export function nodeRows(ports, controls = []) {
     }
 
     for (const control of floating) {
-        const free = rows.find(entry => !entry.control);
-        if (free) free.control = control;
-        else rows.push({ input: null, output: null, control });
+        const at = rows.findIndex(entry => !entry.control && canBeLabelled(entry));
+        if (at !== -1) {
+            rows[at].control = control;
+            continue;
+        }
+
+        // A ROW OF ITS OWN, WHERE IT WAS REFUSED, and the position is the point. Appending
+        // put `Set Property On`'s property picker BELOW the value it decides the type of, so
+        // a creator read the node backwards — pick the value, then say what it is for. It
+        // goes in ahead of the row that would not have it, which is where reading order
+        // wanted it in the first place.
+        const refused = rows.findIndex(entry => !entry.control);
+        rows.splice(refused === -1 ? rows.length : refused, 0, { input: null, output: null, control });
     }
 
     return rows;
+}
+
+/**
+ * Whether a control can stand as the whole of a row's label.
+ *
+ * ONE ANSWER, TWO READERS, and they must agree: this decides where a floating control MAY
+ * land, and `silencedPorts()` decides what a control that landed silences. Written twice,
+ * the two would drift and a label would be printed into a field — the failure ADR-0033 §1
+ * moved this decision into the geometry to prevent.
+ *
+ * @param {{input: object|null, output: object|null}} row - The row
+ * @returns {boolean} True when neither of its ports has to speak for itself
+ */
+function canBeLabelled(row) {
+    return !namesItself(row?.input) && !namesItself(row?.output);
+}
+
+/**
+ * Whether a port's own name is the only thing that can say what it carries.
+ *
+ * A DATA PORT THAT TAKES NO CONTROL HAS NOTHING ELSE ON ITS ROW TO DESCRIBE IT — an object
+ * handle and an untyped `any` are exactly those (`carriesControl`, inspector/node.js), so
+ * the label is all they have. Every other data port shows a field a creator reads instead,
+ * and a flow port has no name to lose.
+ *
+ * @param {object|null} port - The port
+ * @returns {boolean} True when its label must survive whatever shares its row
+ */
+function namesItself(port) {
+    return port?.kind === PortKind.DATA && !carriesControl(port);
 }
 
 /**
@@ -177,13 +227,9 @@ export function nodeSize(ports, controls = []) {
  *   row, because the param IS what the row is about. A `Number` node is a field and the
  *   socket its content leaves by; "Value" printed beside both is noise.
  *
- * ONE PORT IS NEVER SPOKEN FOR BY A PARAM, AND IT IS THE ONE THAT CARRIES AN OBJECT. A param
- * takes the first row that has no control yet, so the row it lands on is not necessarily a
- * row it is about: `Get Property On` puts its Component picker beside the Object socket it
- * reads FROM, and silencing that socket left a creator with an unnamed dot on a line that
- * says "Component". Every other port has a control on its row a creator can read instead; an
- * object port has none and can have none — there is nothing to type into it (ADR-0034 §3.2) —
- * so its name is the only thing that says what it takes.
+ * ONE PORT IS NEVER SPOKEN FOR BY A PARAM, AND IT IS THE ONE THAT CARRIES AN OBJECT — see
+ * `namesItself()`. A param no longer LANDS on such a row either (`nodeRows`), so the two
+ * halves now agree: the row a control cannot speak for is a row it is never given.
  *
  * IT LIVES HERE, WITH THE GEOMETRY, because the answer decides two things that must agree:
  * whether the renderer draws a label, and how much room `controlBoxes()` leaves for one. A
@@ -203,8 +249,8 @@ export function silencedPorts(rows) {
             continue;
         }
 
-        if (row.input && row.input.type !== OBJECT_TYPE) silenced.add(`in:${row.input.id}`);
-        if (row.output && row.output.type !== OBJECT_TYPE) silenced.add(`out:${row.output.id}`);
+        if (row.input && !namesItself(row.input)) silenced.add(`in:${row.input.id}`);
+        if (row.output && !namesItself(row.output)) silenced.add(`out:${row.output.id}`);
     }
 
     return silenced;
@@ -258,43 +304,55 @@ export function controlBoxes(node, rows) {
 }
 
 /**
+ * Every port of a node with its position, ready to draw or to pick.
+ *
+ * A PORT SITS ON ITS ROW, NOT AT ITS INDEX — and the difference is the whole reason this
+ * takes the controls. It used to place a port at `index * ROW_HEIGHT` within its own side's
+ * list, which is the same answer as the rows only while the rows are a plain zip of inputs
+ * and outputs. The moment a control takes a line of its own the two disagree, and they
+ * disagreed silently: the labels moved with the rows, the sockets stayed at their old
+ * heights, and `Set Property On` drew "Object" through its property picker while its wires
+ * left from the wrong dots.
+ *
+ * That was ADR-0033 §1's second opinion, hiding in plain sight: a node IS its rows, so where
+ * anything on it sits is a question only `nodeRows()` may answer. The controls are what the
+ * rows are computed from, so they are what this needs — the same pair `nodeSize()` already
+ * takes, for the same reason.
+ *
+ * @param {object} node - The node record
+ * @param {{inputs: object[], outputs: object[]}} ports - Its ports
+ * @param {object[]} [controls] - Field descriptors, as `nodeRows()` takes them
+ * @returns {Array<{port: object, direction: string, x: number, y: number}>} Placed ports
+ */
+export function placePorts(node, ports, controls = []) {
+    const placed = [];
+
+    nodeRows(ports, controls).forEach((row, index) => {
+        const y = node.y + HEADER_HEIGHT + PORT_PADDING + index * ROW_HEIGHT + ROW_HEIGHT / 2;
+        if (row.input) placed.push({ port: row.input, direction: 'in', x: node.x + PORT_INSET, y });
+        if (row.output) {
+            placed.push({ port: row.output, direction: 'out', x: node.x + NODE_WIDTH - PORT_INSET, y });
+        }
+    });
+
+    return placed;
+}
+
+/**
  * Where one port sits, in graph space.
  *
  * @param {object} node - The node record, carrying its position
  * @param {{inputs: object[], outputs: object[]}} ports - Its ports
  * @param {string} direction - 'in' or 'out'
  * @param {string} portId - The port's identifier
+ * @param {object[]} [controls] - Field descriptors, so the port lands on its real row
  * @returns {{x: number, y: number}|null} Its centre, or null when the node has no such port
  */
-export function portPosition(node, ports, direction, portId) {
-    const side = direction === 'in' ? ports.inputs : ports.outputs;
-    const index = side.findIndex(port => port.id === portId);
-    if (index === -1) return null;
+export function portPosition(node, ports, direction, portId, controls = []) {
+    const placed = placePorts(node, ports, controls)
+        .find(entry => entry.direction === direction && entry.port.id === portId);
 
-    return {
-        x: node.x + (direction === 'in' ? PORT_INSET : NODE_WIDTH - PORT_INSET),
-        y: node.y + HEADER_HEIGHT + PORT_PADDING + index * ROW_HEIGHT + ROW_HEIGHT / 2
-    };
-}
-
-/**
- * Every port of a node with its position, ready to draw or to pick.
- *
- * @param {object} node - The node record
- * @param {{inputs: object[], outputs: object[]}} ports - Its ports
- * @returns {Array<{port: object, direction: string, x: number, y: number}>} Placed ports
- */
-export function placePorts(node, ports) {
-    const placed = [];
-
-    for (const [direction, side] of [['in', ports.inputs], ['out', ports.outputs]]) {
-        for (const port of side) {
-            const at = portPosition(node, ports, direction, port.id);
-            if (at) placed.push({ port, direction, x: at.x, y: at.y });
-        }
-    }
-
-    return placed;
+    return placed ? { x: placed.x, y: placed.y } : null;
 }
 
 /**
@@ -402,9 +460,9 @@ export function snap(value) {
 export function hitTest(layout, point) {
     // Reversed: what is drawn last is on top, so it is picked first.
     for (let index = layout.length - 1; index >= 0; index--) {
-        const { node, ports } = layout[index];
+        const { node, ports, controls } = layout[index];
 
-        for (const placed of placePorts(node, ports)) {
+        for (const placed of placePorts(node, ports, controls ?? [])) {
             const dx = placed.x - point.x;
             const dy = placed.y - point.y;
             if (dx * dx + dy * dy <= PORT_HIT_RADIUS * PORT_HIT_RADIUS) {

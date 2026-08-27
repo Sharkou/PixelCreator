@@ -40,6 +40,7 @@ import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { ICON_GRID, icon, iconForNode, iconPaths } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
+import { isEditing } from '../ui/focus.js';
 import { describeNode, inputFields, paramWrites } from '../inspector/node.js';
 import { DropZone } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
@@ -811,13 +812,43 @@ export class GraphWindow extends Element {
             // CONTROLS, and a control is laid out on the row of the port it edits - which
             // is what puts a value and the socket it travels through on one line
             // (graph/view.js, ADR-0033).
-            const controls = [
-                ...(describeNode(node, this.#nodeContext())?.fields ?? []),
-                ...this.#inputRows(node, ports)
-            ];
+            const controls = this.#controlsOf(node, ports);
 
             return { node, ports, controls, rows: nodeRows(ports, controls) };
         });
+    }
+
+    /**
+     * What a node draws inside itself: the params its type declares, then the input ports a
+     * creator may type a constant into (ADR-0031 §1).
+     *
+     * ASKED FOR BY THE GESTURES TOO, not only by the draw. The rows a node has decide where
+     * its sockets are (`placePorts`), so a wire being taken from a port has to resolve them
+     * the same way the drawing did — anything else puts the end of the wire somewhere the
+     * socket is not.
+     *
+     * @param {object} node - The node record
+     * @param {{inputs: object[], outputs: object[]}} ports - Its ports right now
+     * @returns {object[]} Field descriptors, in the order they are laid out
+     */
+    /**
+     * Where a port of a node sits right now, resolved exactly as the drawing resolves it.
+     *
+     * @param {object} node - The node record
+     * @param {string} direction - 'in' or 'out'
+     * @param {string} portId - The port
+     * @returns {{x: number, y: number}|null} Its centre
+     */
+    #portAt(node, direction, portId) {
+        const ports = this.#definition.graph.portsOf(node);
+        return portPosition(node, ports, direction, portId, this.#controlsOf(node, ports));
+    }
+
+    #controlsOf(node, ports) {
+        return [
+            ...(describeNode(node, this.#nodeContext())?.fields ?? []),
+            ...this.#inputRows(node, ports)
+        ];
     }
 
     /**
@@ -915,8 +946,8 @@ export class GraphWindow extends Element {
         const target = byId.get(connection.to.node);
         if (!source || !target) return null;
 
-        const from = portPosition(source.node, source.ports, 'out', connection.from.port);
-        const to = portPosition(target.node, target.ports, 'in', connection.to.port);
+        const from = portPosition(source.node, source.ports, 'out', connection.from.port, source.controls);
+        const to = portPosition(target.node, target.ports, 'in', connection.to.port, target.controls);
         if (!from || !to) return null;
 
         const port = source.ports.outputs.find(entry => entry.id === connection.from.port) ?? null;
@@ -1036,7 +1067,7 @@ export class GraphWindow extends Element {
         // a field.
         const silenced = silencedPorts(rows);
 
-        for (const placed of placePorts(node, ports)) {
+        for (const placed of placePorts(node, ports, controls)) {
             const silent = silenced.has(`${placed.direction}:${placed.port.id}`);
             group.append(...this.#drawPort(node, placed, { silent }));
         }
@@ -1389,7 +1420,7 @@ export class GraphWindow extends Element {
                 kind: 'wire',
                 from: { node: existing.from.node, port: existing.from.port },
                 direction: 'out',
-                origin: portPosition(source, ports, 'out', existing.from.port),
+                origin: portPosition(source, ports, 'out', existing.from.port, this.#controlsOf(source, ports)),
                 regrab: existing.id,
                 hue: port?.kind === 'flow' ? FLOW_HUE : typeHue(port?.type)
             };
@@ -1399,7 +1430,7 @@ export class GraphWindow extends Element {
             kind: 'wire',
             from: { node: hit.node.id, port: hit.port.id },
             direction: hit.direction,
-            origin: portPosition(hit.node, graph.portsOf(hit.node), hit.direction, hit.port.id),
+            origin: this.#portAt(hit.node, hit.direction, hit.port.id),
             regrab: null,
             // A WIRE IN FLIGHT WEARS WHAT IT WILL CARRY. Coral for every drag said only
             // "something is happening"; the type says what would arrive if it landed.
@@ -1957,15 +1988,6 @@ function humanise(id) {
     return globalThis.String(id ?? '')
         .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
         .replace(/^./, first => first.toUpperCase());
-}
-
-/** Whether the creator is typing, in which case Delete belongs to the field. */
-function isEditing() {
-    let element = document.activeElement;
-    while (element?.shadowRoot?.activeElement) element = element.shadowRoot.activeElement;
-    if (!element) return false;
-    if (element.isContentEditable) return true;
-    return element.tagName === 'INPUT' || element.tagName === 'SELECT' || element.tagName === 'TEXTAREA';
 }
 
 /**

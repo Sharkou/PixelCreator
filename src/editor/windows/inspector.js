@@ -1427,8 +1427,12 @@ export class Inspector extends Element {
      * @returns {string} The title to show
      */
     #titleOf(type) {
-        const ComponentClass = this.#registry?.get(type);
-        return ComponentClass?.label ?? describeType(type, this.#registry).label ?? humanise(type);
+        // `describeType` FIRST, because it is the one that knows a `.px` is also a resource
+        // and that the resource's name is what it is called (editor/registry.js). Reading
+        // `ComponentClass.label` ahead of it put the ResourceId in the panel for a `.px` with
+        // no label of its own, which is the identity ADR-0021 exists to keep out of sight.
+        return describeType(type, this.#registry, { project: this.#workspace?.project ?? null }).label
+            || humanise(type);
     }
 
     #renderComponent(object, component, type) {
@@ -2062,7 +2066,8 @@ export class Inspector extends Element {
         const available = availableComponents(object, this.#registry);
         const items = [];
 
-        for (const group of groupTypes(available, this.#registry)) {
+        const project = this.#workspace?.project ?? null;
+        for (const group of groupTypes(available, this.#registry, { project })) {
             items.push({ heading: group.category });
             for (const entry of group.entries) {
                 items.push({

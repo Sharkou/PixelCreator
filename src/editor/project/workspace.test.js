@@ -2,8 +2,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ComponentRegistry, Object, Scene, Transform } from '../../core/mod.js';
+import { ComponentRegistry, Object, Scene, Transform, registerStandardNodes } from '../../core/mod.js';
 import { MemoryResourceStore, Project, ResourceKind } from '../../project/mod.js';
+import { createResourceOfKind } from './commands.js';
 import { Workspace } from './workspace.js';
 
 function registry() {
@@ -498,4 +499,41 @@ test('unsaved work is answered per editor, not only for the active one', async (
     assert.equal(workspace.dirtyOf(component.id), true, 'the graph still does');
 
     assert.equal(workspace.dirtyOf('nothing'), false);
+});
+
+// WHOEVER ATTACHES FIRST MUST NOT DECIDE WHAT THE MODEL CAN RESOLVE. Selecting a `.px`
+// attaches it (the Inspector edits its properties that way); opening it attaches it too.
+// Only the second used to carry a registry, so a `Set Property On` in a `.px` that had been
+// SELECTED before it was opened could never resolve a Component type — its value port stayed
+// `any`, and no later open() repaired it, because the model already existed (ADR-0034 §3.3).
+test('a `.px` resolves Component types however it was attached', async () => {
+    const components = new ComponentRegistry();
+    components.register(Transform);
+    registerStandardNodes();
+
+    const workspace = new Workspace({ components });
+    const px = createResourceOfKind(workspace.project, ResourceKind.COMPONENT, { parent: null });
+
+    // Attached the way a SELECTION does it: no registry in sight.
+    const model = await workspace.attach(px.id);
+    const node = model.graph.addNode({
+        type: 'property.setOn',
+        params: { component: 'Transform', property: 'x' }
+    });
+
+    const value = model.graph.portsOf(node).inputs.find(port => port.id === 'value');
+    assert.equal(value.type, 'number', 'the port is typed from the Component the node names');
+    assert.equal(value.label, 'x');
+});
+
+test('a workspace given no components still opens a `.px`', async () => {
+    registerStandardNodes();
+    const workspace = new Workspace();
+    const px = createResourceOfKind(workspace.project, ResourceKind.COMPONENT, { parent: null });
+
+    const model = await workspace.attach(px.id);
+    const node = model.graph.addNode({ type: 'property.setOn', params: { component: 'Transform' } });
+
+    // Nothing to resolve against, so the port says so rather than guessing (ADR-0034 §3.3).
+    assert.equal(model.graph.portsOf(node).inputs.find(port => port.id === 'value').type, 'any');
 });

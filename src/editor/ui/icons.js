@@ -151,9 +151,13 @@ const PATHS = {
     // --- node categories (ADR-0027) --------------------------------------------------
     //
     // ONE GLYPH PER CATEGORY, not one per node type. Twenty drawings would be twenty things
-    // to recognise; eight say what KIND of thing a node is, which is the question a creator
+    // to recognise; ten say what KIND of thing a node is, which is the question a creator
     // asks while the picker is open. A node type that wants its own may still declare one.
     'node-event': `<path d="M9.2 1.8 4 8.6h3.4L6.8 14.2 12 7.4H8.6z" ${S}/>`,
+    // Input: a keycap with the stroke of a press under it. Not an arrow and not a hand —
+    // what these nodes read is a key by name, which is the one thing the state holds.
+    'node-input': `<rect x="2.6" y="3" width="10.8" height="7.2" rx="1.4" ${S}/>`
+        + `<path d="M5.4 6.6h5.2" ${S}/><path d="M4.6 13h6.8" ${S}/>`,
     'node-flow': `<path d="M2.6 8h6.6" ${S}/><path d="M8.4 4.8 12.4 8l-4 3.2z" ${S}/>`,
     'node-property': `<path d="M8.6 2.4H13v4.4l-6.2 6.2a1.2 1.2 0 0 1-1.7 0L2.4 10.3a1.2 1.2 0 0 1 0-1.7z" ${S}/>`
         + `<circle cx="10.7" cy="5.3" r="1" ${F}/>`,
@@ -370,6 +374,7 @@ export function iconForPropertyType(type) {
  */
 const NODE_CATEGORY_ICONS = {
     Events: 'node-event',
+    Input: 'node-input',
     Flow: 'node-flow',
     Properties: 'node-property',
     Scene: 'node-scene',
