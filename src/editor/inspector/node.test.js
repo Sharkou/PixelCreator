@@ -12,7 +12,7 @@ import {
     portsOf
 } from '../../core/mod.js';
 import { FieldKind } from './schema.js';
-import { NOTHING_SELECTED, describeNode, inputFields, joinPath, paramFields, paramWrites, splitPath } from './node.js';
+import { CHOOSE_PROPERTY, NOTHING_SELECTED, PATH_ARROW, describeNode, inputFields, joinPath, paramFields, paramWrites, splitPath } from './node.js';
 
 const registry = registerStandardNodes(new NodeRegistry());
 
@@ -180,6 +180,22 @@ test('the picker shows the pair the node holds, not the half filed under its own
     assert.ok(picker.values.includes(picker.held), 'and that value is one the list offers');
 });
 
+test('the closed control says which Component, because the list heading is gone', () => {
+    // TWO COMPONENTS DECLARING `speed` ARE ONE WORD APART. In the list a heading answers
+    // which is which; on the node there is no heading, and `speed` alone was ambiguous the
+    // moment a project had two of them (ADR-0041 §2).
+    const description = describeNode(node('property.get'), { registry, properties, components });
+    const picker = fieldNamed(description, 'property');
+
+    const own = picker.values.indexOf(joinPath(null, 'p1'));
+    const other = picker.values.indexOf(joinPath('Transform', 't1'));
+
+    assert.equal(picker.labels[other], 'x', 'the LIST keeps the short name, under its heading');
+    assert.equal(picker.paths[other], `Transform ${PATH_ARROW} x`, 'the ANSWER carries the path');
+    assert.equal(picker.paths[own], 'speed', 'your own fields get no prefix: there is only one');
+    assert.equal(picker.paths[other].includes('.'), false, 'and it is never a dot: that is code');
+});
+
 test('a Component is never a question of its own', () => {
     // It is still STORED — the Core needs to know which type declares the property — but it
     // is written by the picker and never shown as a control (ADR-0040 §2).
@@ -205,11 +221,31 @@ test('nothing to choose from is a read-only row, never an empty dropdown', () =>
     assert.match(picker.placeholder, /no properties/i);
 });
 
-test('something to choose and nothing chosen reads as empty rather than as blank', () => {
+test('a picker with nothing chosen holds the empty string a field understands', () => {
+    // `joinPath(null, '')` is a NUL — a value no option carries — so the control drew an
+    // invisible character where its placeholder belonged, and the row came out blank.
+    const picker = fieldNamed(describeNode(node('property.get'), { registry, properties, components }), 'property');
+
+    assert.equal(picker.held, '');
+    assert.equal(picker.values.includes(picker.held), false, 'and it is not one of the choices');
+});
+
+test('a property picker with nothing chosen says what it is for, not just that it is empty', () => {
+    // IT STANDS IN FOR ITS OWN LABEL. On a node the compound picker takes the whole row so
+    // the path has room (ADR-0041 §2), so `None` would be a dropdown naming neither the
+    // question nor the answer.
     assert.equal(
         fieldNamed(describeNode(node('property.get'), { registry, properties, components }), 'property').placeholder,
-        NOTHING_SELECTED
+        CHOOSE_PROPERTY
     );
+});
+
+test('a picker that is not compound still reads as plainly empty', () => {
+    // `None` is right exactly where a label beside the control already asks the question:
+    // the Key picker keeps its `Key` label, so the control only has to say "not chosen".
+    const key = fieldNamed(describeNode(node('input.key'), { registry, properties }), 'key');
+
+    assert.equal(key.placeholder, NOTHING_SELECTED);
 });
 
 // --- what one param change amounts to ----------------------------------------------------

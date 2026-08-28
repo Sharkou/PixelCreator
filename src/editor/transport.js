@@ -47,6 +47,8 @@ export class Transport {
     #histories;
     #registry;
 
+    #preview;
+
     #state = TransportState.EDITING;
     #snapshot = null;
     #listeners = new globalThis.Set();
@@ -59,8 +61,9 @@ export class Transport {
      * @param {object} context.runtime - The Runtime the Viewport draws with
      * @param {object} [context.histories] - The Histories to clear when play starts
      * @param {object} [context.registry] - Component registry used to restore
+     * @param {Function} [context.preview] - Opens the game in its own window
      */
-    constructor({ scene, runtime, histories = null, registry = null }) {
+    constructor({ scene, runtime, histories = null, registry = null, preview = null }) {
         if (!scene) throw new TypeError('Transport: expected a scene');
         if (!runtime) throw new TypeError('Transport: expected a runtime');
 
@@ -68,6 +71,22 @@ export class Transport {
         this.#runtime = runtime;
         this.#histories = histories;
         this.#registry = registry;
+        this.#preview = preview;
+    }
+
+    /**
+     * Open the game in its own window.
+     *
+     * IT HANGS OFF THE TRANSPORT BUT IT IS NOT A TRANSPORT STATE. Play, Pause and Stop move
+     * this Editor between three states (ADR-0029 §1); Preview leaves this window alone
+     * entirely and opens another one on a snapshot (ADR-0042 §1). It lives here because the
+     * button lives beside the other three, and for no deeper reason — the machine below does
+     * not know it happened.
+     *
+     * @returns {object|null} Whatever the opener answered
+     */
+    preview() {
+        return this.#preview?.() ?? null;
     }
 
     /** One of TransportState. */

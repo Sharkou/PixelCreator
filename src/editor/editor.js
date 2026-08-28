@@ -23,6 +23,7 @@ import { addComponent, deleteObject } from './commands.js';
 import { Workspace } from './project/workspace.js';
 import { createDefinitions } from './project/definitions.js';
 import { Transport, TransportState } from './transport.js';
+import { openPreview } from './preview.js';
 import { KeyboardInput, PointerInput } from './input.js';
 import { fillStarterScene } from './project/starter.js';
 import { installDocumentStyles, sheet } from './ui/styles.js';
@@ -153,6 +154,15 @@ const shellStyles = sheet(`
     .titlebar .transport .pause.on { color: var(--px-warning); background: transparent; }
 
     .titlebar .transport .stop:hover:not([disabled]) { color: var(--px-danger); }
+
+    /* The one control in this group that opens a window instead of acting on this one. */
+    .titlebar .transport .preview:hover:not([disabled]) { color: var(--px-accent); }
+    .titlebar .transport .divide {
+        width: 1px;
+        align-self: stretch;
+        margin: 3px 2px;
+        background: var(--px-border);
+    }
 
     .titlebar .transport.running { border-color: var(--px-success); }
     .titlebar .transport[data-state='paused'] { border-color: var(--px-warning); }
@@ -483,7 +493,11 @@ export function start(mount = document.body) {
         scene,
         runtime: viewport.runtime,
         histories,
-        registry: components
+        registry: components,
+        // THE EDITOR HANDS OVER A FUNCTION, NOT A WINDOW. Everything about how a preview is
+        // stored and addressed lives in `preview.js` and `preview/`; the shell only knows
+        // that pressing the button opens the game somewhere else (ADR-0042 §2).
+        preview: () => openPreview(workspace, { report: message => reportLog(message) })
     });
     chrome.transport(transport);
 
@@ -786,7 +800,21 @@ function transportControls(transport) {
         onclick: () => transport.stop()
     }, icon('stop'));
 
-    const group = el('div', { class: 'transport' }, play, pause, stop);
+    // PREVIEW IS NOT A FOURTH TRANSPORT BUTTON, and it is separated so it does not read as
+    // one. Play, Pause and Stop act on the scene in this window (ADR-0029); Preview opens a
+    // different window, running a snapshot, with no editor around it (ADR-0042 §1). Two
+    // questions — "what is my object doing" and "is my game playable" — and putting them in
+    // one group would say they are the same act.
+    const preview = el('button', {
+        class: 'ghost preview',
+        type: 'button',
+        title: 'Preview — opens the game in its own window',
+        'aria-label': 'Preview',
+        onclick: () => transport.preview?.()
+    }, icon('window'));
+
+    const group = el('div', { class: 'transport' }, play, pause, stop,
+        el('span', { class: 'divide' }), preview);
 
     transport.observe(state => {
         const editing = state === TransportState.EDITING;

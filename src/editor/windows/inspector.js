@@ -35,8 +35,10 @@ import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { icon, iconForComponent, iconForObject, iconForPropertyType, iconForResource } from '../ui/icons.js';
 import { openMenu } from '../ui/menu.js';
+import { ClickGuard, onDrag, releasePointer as release } from '../ui/gesture.js';
 import { searchField } from '../ui/search-field.js';
 import { addComponent, availableComponents, moveComponent, removeComponent } from '../commands.js';
+import { createComponent } from '../project/commands.js';
 import { previewOffsets, rankAt } from '../dnd/reflow.js';
 import { describeResource } from '../inspector/resource.js';
 import { PROPERTY_TYPE_LABELS, defaultField, describeDefinition } from '../inspector/definition.js';
@@ -73,6 +75,16 @@ function readable(project, resource) {
 }
 
 /** How far a pointer travels before a press on a section header becomes a reorder. */
+/**
+ * What the Add Component menu calls the entry that MAKES a `.px` rather than using one.
+ *
+ * A NUL PREFIX, because the value shares a namespace with real Component types and a
+ * creator's `.px` may be called anything at all — including "Custom Component". A character
+ * no identifier can hold is the one thing that cannot collide (`interpreter.js` separates
+ * port keys the same way, and for the same reason).
+ */
+const NEW_COMPONENT = '\u0000new-component';
+
 const DRAG_THRESHOLD = 4;
 
 /** Where a gesture the platform cancelled ended: outside every window, so nothing takes it. */
@@ -569,8 +581,16 @@ export class Inspector extends Element {
 
     /** The press on a type badge that may become a drag out of this panel. */
     #source = null;
-    /** Set for exactly one click: the one that ends a drag and must not also fold. */
-    #dragged = false;
+    /**
+     * The one click that must not fold: the tail of the drag that just ended.
+     *
+     * IT USED TO BE A PANEL-WIDE BOOLEAN, and that is what made "click to fold" need two
+     * clicks at random. The flag was set when any drag ended and cleared by the next click
+     * on ANY foldable header — so a reorder in one section armed a trap that a fold in a
+     * different section, minutes later, walked into. The guard remembers the ELEMENT and
+     * forgets it at the next press (ui/gesture.js).
+     */
+    #clicks = new ClickGuard();
     /** The field currently marked as the one a drop would land in. */
     #dropMark = null;
     /** Where a `.px` would attach, while an object is being inspected. */
@@ -999,13 +1019,11 @@ export class Inspector extends Element {
 
         const header = el('header', {
             title: 'Click to fold',
-            onclick: () => {
+            onclick: event => {
                 // The click that ends a drag is still a click. Folding the property a
-                // creator has just moved would be the one thing they did not ask for.
-                if (this.#dragged) {
-                    this.#dragged = false;
-                    return;
-                }
+                // creator has just moved would be the one thing they did not ask for —
+                // and folding a DIFFERENT one, later, is what the old flag actually did.
+                if (this.#clicks.swallows(event.currentTarget)) return;
                 if (this.#folded.has(key)) this.#folded.delete(key);
                 else this.#folded.add(key);
                 const shown = !this.#folded.has(key);
@@ -1588,14 +1606,27 @@ export class Inspector extends Element {
      * @param {object} list - `{ element, siblings, rank, commit }`
      */
     #makeDraggable(handle, surface, list) {
-        handle.addEventListener('pointerdown', event => {
-            event.stopPropagation();
-            this.#armDrag(event, list);
-        });
+        // ONE PRIMITIVE, AND THE ENDING IS ITS JOB (ui/gesture.js). This used to listen on
+        // the PANEL for the move and the release, so a gesture that ended anywhere the panel
+        // is not — over the canvas, outside the window, or on an element a redraw had just
+        // replaced — never ended at all: the component stayed lifted, the rows stayed slid,
+        // and the ghost stayed on screen. `onDrag` hears the four ways a gesture can stop
+        // and calls `end` for every one of them.
         handle.addEventListener('click', event => event.stopPropagation());
-        surface.addEventListener('pointermove', event => this.#dragMove(event));
-        surface.addEventListener('pointerup', event => this.#dragDrop(event));
-        surface.addEventListener('pointercancel', () => this.#cancelDrag());
+
+        onDrag(handle, {
+            threshold: DRAG_THRESHOLD,
+            start: event => {
+                event.stopPropagation();
+                // A filtered panel shows a subset, so the ranks on screen are not the model's.
+                if (this.#query.trim() !== '') return false;
+                this.#clicks.disarm();
+                this.#armDrag(event, list);
+                return true;
+            },
+            move: event => this.#dragMove(event),
+            end: ending => (ending.cancelled ? this.#cancelDrag() : this.#dragDrop(ending.event))
+        });
     }
 
     #armDrag(event, list) {
@@ -1623,7 +1654,10 @@ export class Inspector extends Element {
         if (!drag.started) {
             if (Math.abs(event.clientY - drag.from) < DRAG_THRESHOLD) return;
             drag.started = true;
-            capture(drag.grip, drag.pointerId);
+            // NO `capture()` HERE ANY MORE: the primitive takes it at the PRESS, which is
+            // earlier and is the point — a gesture that starts near the edge of the panel
+            // used to lose its first moves, and sometimes its release, to whatever was
+            // under the cursor before the threshold was crossed.
 
             // The layout as it is BEFORE anything slides. Measuring live would read the
             // animated position of an element mid-transition, so the rank would depend on
@@ -1753,26 +1787,30 @@ export class Inspector extends Element {
     }
 
     #makeDragSource(handle, payloadOf) {
-        handle.addEventListener('pointerdown', event => {
-            if (event.button > 0) return;
-            event.stopPropagation();
-            this.#source = {
-                handle,
-                payloadOf,
-                pointerId: event.pointerId,
-                from: { x: event.clientX, y: event.clientY },
-                started: false,
-                announced: false
-            };
-            capture(handle, event.pointerId);
-        });
-
-        handle.addEventListener('pointermove', event => this.#sourceMove(event));
-        handle.addEventListener('pointerup', event => this.#sourceEnd(event, event));
-        handle.addEventListener('pointercancel', () => this.#sourceEnd(null, NOWHERE));
         // A press that never travelled is a click on a decoration, and must not fold the
         // section it happens to sit in.
         handle.addEventListener('click', event => event.stopPropagation());
+
+        onDrag(handle, {
+            threshold: DRAG_THRESHOLD,
+            start: event => {
+                event.stopPropagation();
+                this.#clicks.disarm();
+                this.#source = {
+                    handle,
+                    payloadOf,
+                    pointerId: event.pointerId,
+                    from: { x: event.clientX, y: event.clientY },
+                    started: false,
+                    announced: false
+                };
+                return true;
+            },
+            move: event => this.#sourceMove(event),
+            // A CANCELLED CARRY LANDS NOWHERE, which is a real place: the shell is holding
+            // a ghost and has to be told the gesture is over, at a point no window owns.
+            end: ending => this.#sourceEnd(ending.event, ending.event ?? NOWHERE)
+        });
     }
 
     #sourceMove(event) {
@@ -1828,7 +1866,10 @@ export class Inspector extends Element {
         const rank = drag.started && here ? this.#rankUnder(event.clientY) : null;
         const list = drag.list;
         const current = list.rank();
-        this.#dragged = drag.started;
+        // ARMED FOR THE HEADER THIS GRIP LIVES IN, and nothing else. A drag that travelled
+        // ends in a click on the thing it was dragged by; a drag that never moved is a
+        // click on a decoration and folds nothing to begin with.
+        if (drag.started) this.#clicks.arm(drag.grip?.closest?.('header') ?? null);
 
         // Outside, the shell is holding this gesture and has to be told where it landed;
         // inside, it was never told about it. `#cancelDrag()` reports neither.
@@ -1985,13 +2026,10 @@ export class Inspector extends Element {
 
         const header = el('header', {
             title: 'Click to fold',
-            onclick: () => {
+            onclick: event => {
                 // The click that ends a drag is still a click. Folding the section a
                 // creator has just moved would be the one thing they did not ask for.
-                if (this.#dragged) {
-                    this.#dragged = false;
-                    return;
-                }
+                if (this.#clicks.swallows(event.currentTarget)) return;
                 if (this.#folded.has(key)) this.#folded.delete(key);
                 else this.#folded.add(key);
                 const shown = !this.#folded.has(key);
@@ -2165,10 +2203,48 @@ export class Inspector extends Element {
             }
         }
 
+        // ONE MORE ENTRY, AND IT IS THE ONE A CREATOR REACHES FOR FIRST. Writing behaviour
+        // meant leaving this menu, finding the Project panel, creating a `.px`, coming back
+        // and finding it here — four surfaces for one intention. Its own heading, so it
+        // never reads as one of the types already available (ADR-0041 §7).
+        items.push({ heading: 'New' });
+        items.push({
+            id: NEW_COMPONENT,
+            label: 'Custom Component',
+            icon: 'graph',
+            tooltip: 'Create a Component of your own and put it on this Object'
+        });
+
         // Nothing re-renders by hand afterwards: attaching announces itself on the scene,
         // and this window is already listening for that.
-        openMenu(anchor, items, type => addComponent(object, type, this.#registry),
+        openMenu(anchor, items, type => (type === NEW_COMPONENT
+            ? this.#createCustomComponent(object)
+            : addComponent(object, type, this.#registry)),
             { search: true, label: 'components' });
+    }
+
+    /**
+     * Make a Component of the creator's own, and put it on this Object.
+     *
+     * ONE PRIMITIVE, NOT A SECOND ONE. `createComponent()` in `project/commands.js` is how a
+     * `.px` is made, and it is what the Project panel's `+` calls; a second path would be a
+     * second set of rules about naming, folders and the empty graph to keep in step. What
+     * this adds is the two steps that follow — install the type, attach it — so the gesture
+     * ends where the creator meant it to: a Component on the Object, ready to open.
+     *
+     * @param {object} object - The Object to attach it to
+     */
+    async #createCustomComponent(object) {
+        const project = this.#workspace?.project;
+        if (!project) return;
+
+        const created = createComponent(project, { parent: null });
+        if (!created) return;
+
+        // THE TYPE HAS TO EXIST BEFORE IT CAN BE ATTACHED: a `.px` is a Component only once
+        // something registers it (ADR-0016, `project/definitions.js`).
+        await this.#definitions?.install(created.id);
+        addComponent(object, created.id, this.#registry);
     }
 }
 
@@ -2233,29 +2309,3 @@ function detailRow(label, value) {
 
 customElements.define('px-inspector', Inspector);
 
-/**
- * Take pointer capture, tolerating a pointer that is already gone.
- *
- * Capture is a convenience: it keeps the moves coming when the pointer leaves the element
- * it started on. It is not what makes the gesture work, so a pointer the platform no
- * longer knows about must not throw its way out of the handler and abandon the drop.
- *
- * @param {HTMLElement} element - The element to capture on
- * @param {number} pointerId - The pointer
- */
-function capture(element, pointerId) {
-    try {
-        element.setPointerCapture(pointerId);
-    } catch {
-        // Nothing to capture. The drag still resolves from the events it does receive.
-    }
-}
-
-/**
- * Give pointer capture back, if it was ever taken.
- * @param {HTMLElement} element - The element that captured
- * @param {number} pointerId - The pointer
- */
-function release(element, pointerId) {
-    if (element.hasPointerCapture?.(pointerId)) element.releasePointerCapture(pointerId);
-}

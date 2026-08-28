@@ -530,59 +530,101 @@ export const STANDARD_NODES = [
     // the `Held` they were about to use by mistake. Each is statically a boolean, so nothing
     // here is polymorphic — the shape of this node does not depend on what it is pointed at.
 
+    // --- the world reaching in ---------------------------------------------------------
+    //
+    // AN EVENT AND A STATE ARE TWO DIFFERENT THINGS, AND THEY USED TO BE ONE NODE. `Key`
+    // answered three booleans — held, pressed, released — so the commonest sentence a
+    // beginner writes, "when I press Space, jump", could not be written at all. It came out
+    // as `On Update -> Branch -> Jump`: three nodes and two wires to say one thing, and the
+    // creator had to know that a keypress is a value you test every frame rather than a
+    // moment that happens (ADR-0041 3).
+    //
+    // SO THE PAIR IS SPLIT ALONG THE LINE THAT WAS ALWAYS THERE:
+    //
+    //   On Key            a MOMENT. It starts a flow, on the step the key went down or up.
+    //   Key Is Down       a STATE. It answers a question, for as long as the key is held.
+    //
+    // Each node has exactly one execution semantic, which is what makes the catalogue
+    // teachable: a node with a flow output starts something, a node with a data output
+    // answers something, and no node does both.
+    //
+    // "WHILE HELD" IS STILL A CONDITION, and deliberately still costs a Branch. Holding a
+    // key is not an event — it is true on every step until it is not — and dressing it as
+    // one would put a node in the catalogue that fires sixty times a second while looking
+    // exactly like the one that fires once.
+
     {
-        type: 'input.key',
-        label: 'Key',
-        category: 'Input',
-        keywords: ['input', 'keyboard', 'keys', 'press', 'held', 'down', 'released', 'control'],
+        type: 'input.onKey',
+        label: 'On Key',
+        category: 'Events',
+        keywords: ['input', 'keyboard', 'key', 'press', 'pressed', 'released', 'when', 'event'],
+        event: 'update',
         params: {
             key: {
                 type: PropertyType.STRING,
                 default: DEFAULT_KEY,
                 label: 'Key',
-                // STILL AN OPAQUE STRING IN THE MODEL, AND NOW A PICKED ONE IN THE EDITOR.
+                reference: KEY_REFERENCE,
+                tooltip: 'The key this node watches'
+            }
+        },
+        // TWO MOMENTS, TWO OUTPUTS, AND NEITHER IS BEHIND A DROPDOWN. Pressing and releasing
+        // are both things a game reacts to — a jump on the way down, a charged shot on the
+        // way up — and a mode param would hide one of them behind a choice made before the
+        // creator knows they want it.
+        outputs: [flow('pressed', 'Pressed'), flow('released', 'Released')],
+        // WHICH FLOWS FIRED THIS STEP, answered through the contract every flow node uses
+        // (`interpreter.js`, `continuationsOf`). Both can be true on one step — a key tapped
+        // inside a single frame — and both then run, in declared order.
+        execute: io => {
+            const key = io.param('key') ?? DEFAULT_KEY;
+            const state = key ? io.ctx?.input?.of?.(io.self?.owner ?? null) : null;
+            if (!state) return [];
+
+            const fired = [];
+            if (state.pressed(key)) fired.push('pressed');
+            if (state.released(key)) fired.push('released');
+            return fired;
+        },
+        tooltip: 'Runs when this key goes down, and when it comes back up'
+    },
+
+    {
+        type: 'input.key',
+        label: 'Key Is Down',
+        category: 'Input',
+        keywords: ['input', 'keyboard', 'key', 'held', 'down', 'holding', 'while', 'state'],
+        params: {
+            key: {
+                type: PropertyType.STRING,
+                default: DEFAULT_KEY,
+                label: 'Key',
+                // STILL AN OPAQUE STRING IN THE MODEL, AND A PICKED ONE IN THE EDITOR.
                 // What is stored is a `KeyboardEvent.code` exactly as before, so every graph
                 // written until now reads unchanged; what the param gained is a statement of
                 // WHAT KIND of name it holds, which is all the Editor needs to offer the
                 // list instead of a text box (`KEY_REFERENCE` above).
                 reference: KEY_REFERENCE,
-                tooltip: 'The key this node watches, as the browser names it'
+                tooltip: 'The key this node watches'
             }
         },
-        // THREE OUTPUTS, AND THE NAMES ARE THE WHOLE DIFFICULTY. `Held`, `Pressed` and
-        // `Released` are three words for three real states of `InputState`, and two of them
-        // read as the same thing in English: a creator asking "is the key pressed" wants
-        // `Held` and reaches for `Pressed`, which is true for exactly one step and then
-        // never again. So the labels say WHEN each one is true rather than what it is
-        // called, which is the only thing that tells them apart at a glance.
-        //
-        // THE IDS ARE UNTOUCHED. A label is presentation and the interpreter never sees one
-        // (core/graph/nodes.js), so every wire in every graph written until now still lands
-        // where it did.
-        outputs: [
-            data('held', PropertyType.BOOLEAN, 'Is Down'),
-            data('pressed', PropertyType.BOOLEAN, 'Just Pressed'),
-            data('released', PropertyType.BOOLEAN, 'Just Released')
-        ],
+        // THE PORT ID IS UNCHANGED, and that is the migration. This node kept the type name
+        // `input.key`, so every graph that read `held` off it still reads `held` off it —
+        // only the label and the two ports that were really events have gone.
+        outputs: [data('held', PropertyType.BOOLEAN, 'Is Down')],
         // A KEY IS A LITERAL, NOT A REFERENCE, so an empty one answers false rather than
         // refusing. `property.get` throws because it NAMES something that must exist and no
         // longer does — a design-time fault. A key nobody typed is an empty `Number` node,
-        // and the catalogue has never made those an error (ADR-0034 §3.4).
+        // and the catalogue has never made those an error (ADR-0034 3.4).
         evaluate: io => {
             // `??`, not `||`: a node nobody has touched carries no `key` and reads the
             // declared default, while a field a creator has EMPTIED is an empty key and
             // reads nothing. The two are different answers to different acts.
             const key = io.param('key') ?? DEFAULT_KEY;
             const state = key ? io.ctx?.input?.of?.(io.self?.owner ?? null) : null;
-            if (!state) return { held: false, pressed: false, released: false };
-
-            return {
-                held: state.isDown(key),
-                pressed: state.pressed(key),
-                released: state.released(key)
-            };
+            return { held: state ? state.isDown(key) : false };
         },
-        tooltip: 'Whether a key is held, went down this step, or came up this step'
+        tooltip: 'Whether this key is being held right now'
     },
 
     {
@@ -612,11 +654,12 @@ export const STANDARD_NODES = [
     },
 
     {
-        type: 'input.pointerButton',
-        label: 'Pointer Button',
-        category: 'Input',
+        type: 'input.onPointerButton',
+        label: 'On Pointer Button',
+        category: 'Events',
         icon: 'node-pointer',
-        keywords: ['input', 'mouse', 'click', 'press', 'held', 'released', 'touch', 'tap'],
+        keywords: ['input', 'mouse', 'click', 'clicked', 'press', 'released', 'tap', 'when', 'event'],
+        event: 'update',
         params: {
             button: {
                 type: PropertyType.ENUM,
@@ -627,27 +670,49 @@ export const STANDARD_NODES = [
                 tooltip: 'Which pointer button this node watches'
             }
         },
-        // THE SAME THREE QUESTIONS A KEY ANSWERS, and deliberately the same three words:
-        // `InputState` already distinguishes a button held from one that went down and one
-        // that came up, bounded to a single step by the same `commit()` (ADR-0014 §5). A
-        // second vocabulary for the same idea would be a second thing to learn.
-        outputs: [
-            data('held', PropertyType.BOOLEAN, 'Is Down'),
-            data('pressed', PropertyType.BOOLEAN, 'Just Pressed'),
-            data('released', PropertyType.BOOLEAN, 'Just Released')
-        ],
+        // THE SAME TWO MOMENTS A KEY HAS, and deliberately the same two words: `InputState`
+        // draws the same distinction for a button as for a key, bounded to a single step by
+        // the same `commit()` (ADR-0014 5). A second vocabulary for one idea would be a
+        // second thing to learn.
+        outputs: [flow('pressed', 'Pressed'), flow('released', 'Released')],
+        execute: io => {
+            const button = buttonOf(io.node);
+            const state = io.ctx?.input?.of?.(io.self?.owner ?? null);
+            if (!state) return [];
+
+            const fired = [];
+            if (state.buttonPressed(button)) fired.push('pressed');
+            if (state.buttonReleased(button)) fired.push('released');
+            return fired;
+        },
+        tooltip: 'Runs when this pointer button goes down, and when it comes back up'
+    },
+
+    {
+        type: 'input.pointerButton',
+        label: 'Pointer Button Is Down',
+        category: 'Input',
+        icon: 'node-pointer',
+        keywords: ['input', 'mouse', 'held', 'down', 'holding', 'while', 'drag', 'state'],
+        params: {
+            button: {
+                type: PropertyType.ENUM,
+                values: BUTTON_NAMES,
+                labels: BUTTON_LABELS,
+                default: DEFAULT_BUTTON,
+                label: 'Button',
+                tooltip: 'Which pointer button this node watches'
+            }
+        },
+        // THE PORT ID IS UNCHANGED, like `Key Is Down` above and for the same reason: a
+        // graph that read `held` goes on reading `held`.
+        outputs: [data('held', PropertyType.BOOLEAN, 'Is Down')],
         evaluate: io => {
             const button = buttonOf(io.node);
             const state = io.ctx?.input?.of?.(io.self?.owner ?? null);
-            if (!state) return { held: false, pressed: false, released: false };
-
-            return {
-                held: state.isButtonDown(button),
-                pressed: state.buttonPressed(button),
-                released: state.buttonReleased(button)
-            };
+            return { held: state ? state.isButtonDown(button) : false };
         },
-        tooltip: 'Whether a pointer button is held, went down this step, or came up this step'
+        tooltip: 'Whether this pointer button is being held right now'
     },
 
     // --- the component's own properties ---------------------------------------------

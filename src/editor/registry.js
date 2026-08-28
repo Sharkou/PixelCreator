@@ -17,12 +17,14 @@
 // and grouping is the whole of the change. It does NOT say an Object has one renderer:
 // several renderers on one Object still work and still all draw.
 
-import { componentDefinition, components as defaultRegistry, declaredProperties, Transform } from '../core/mod.js';
+import { componentDefinition, declaredProperties } from '../core/mod.js';
 import { baseNameOf } from '../project/mod.js';
-import { Camera, ParticleSystem, RectangleRenderer, Sprite, Tilemap } from '../runtime/mod.js';
+import { BUILT_IN, registerBuiltIns } from '../runtime/mod.js';
 
 /** The component types shipped with the engine. */
-export const BUILT_IN = [Transform, RectangleRenderer, Sprite, ParticleSystem, Tilemap, Camera];
+// RE-EXPORTED, NOT REDECLARED. The list moved to `runtime/builtins.js` the day the game
+// client needed it too; everything in the Editor that reads it goes on reading it here.
+export { BUILT_IN, registerBuiltIns };
 
 /** Groups, in the order the menu shows them. Anything unclaimed lands in the last one. */
 export const CATEGORIES = ['Rendering', 'Scene', 'Other'];
@@ -35,16 +37,6 @@ const SHIPPED = {
     Tilemap: { category: 'Rendering', label: 'Tilemap' },
     Camera: { category: 'Scene', label: 'Camera' }
 };
-
-/**
- * Register the engine's component types.
- * @param {object} [registry] - The registry to fill
- * @returns {object} The registry
- */
-export function registerBuiltIns(registry = defaultRegistry) {
-    for (const ComponentClass of BUILT_IN) registry.register(ComponentClass);
-    return registry;
-}
 
 /**
  * How a component type is presented in the Editor.

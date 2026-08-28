@@ -28,7 +28,8 @@ import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { emptyState } from '../ui/empty-state.js';
 import { icon, iconForResource, IconSize } from '../ui/icons.js';
-import { openMenu } from '../ui/menu.js';
+import { openMenu, pointAnchor } from '../ui/menu.js';
+import { capturePointer as capture, releasePointer as release } from '../ui/gesture.js';
 import { searchField } from '../ui/search-field.js';
 import { createId, observe } from '../../core/mod.js';
 import { baseNameOf, canMove, isFolder, withExtension } from '../../project/mod.js';
@@ -428,6 +429,15 @@ export class Project extends Element {
                 // empty, so the other panel used to keep a selection this click was meant
                 // to drop — the reason now lives in `subject.js`, once (ADR-0032).
                 this.#announce(null);
+            },
+            // RIGHT-CLICK CREATES WHERE YOU CLICKED. The `+` button has always opened this
+            // menu; a creator looking for "new folder here" reaches for the pointer, not
+            // for a toolbar at the other end of the panel. Same list, same primitive, and
+            // the folder it creates in is the one the panel is showing (ADR-0026 §10).
+            oncontextmenu: event => {
+                event.preventDefault();
+                this.#cancelRename();
+                this.#openCreateMenu(pointAnchor(event.clientX, event.clientY));
             },
         });
         this.#crumbs = el('div', { class: 'crumbs' });
@@ -1298,28 +1308,6 @@ function ancestors(project, id) {
         parent = folder.parent ?? null;
     }
     return chain;
-}
-
-/**
- * Take pointer capture, tolerating a pointer that is already gone.
- * @param {HTMLElement} element - The element to capture on
- * @param {number} pointerId - The pointer
- */
-function capture(element, pointerId) {
-    try {
-        element.setPointerCapture(pointerId);
-    } catch {
-        // Nothing to capture. The drag still resolves from the events it does receive.
-    }
-}
-
-/**
- * Give pointer capture back, if it was ever taken.
- * @param {HTMLElement} element - The element that captured
- * @param {number} pointerId - The pointer
- */
-function release(element, pointerId) {
-    if (element.hasPointerCapture?.(pointerId)) element.releasePointerCapture(pointerId);
 }
 
 customElements.define('px-project', Project);

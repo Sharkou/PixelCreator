@@ -478,6 +478,13 @@ function field(name, property = {}) {
         // Component (ADR-0026 §10) — the third parallel array beside `labels` and `icons`,
         // and null for every choice that declares none.
         groups: declared === PropertyType.ENUM && property.groups ? [...property.groups] : null,
+        // AND WHAT IT READS AS ONCE IT IS THE ANSWER. In a grouped list the heading says
+        // which Component a property belongs to, and the row says `Rotation` — but a CLOSED
+        // control shows one line with no heading above it, and `Rotation` alone is ambiguous
+        // the moment two Components declare one (ADR-0041 §2). So an option may read
+        // differently as an answer than as a choice: `Transform \u25b8 Rotation` closed,
+        // `Rotation` in the list. Null everywhere else, and then the label answers for both.
+        paths: declared === PropertyType.ENUM && property.paths ? [...property.paths] : null,
         readonly: Boolean(property.readonly),
         tooltip: property.tooltip ?? null
     };

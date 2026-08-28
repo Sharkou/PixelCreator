@@ -57,7 +57,8 @@
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { icon, iconForObject } from '../ui/icons.js';
-import { openMenu } from '../ui/menu.js';
+import { openMenu, pointAnchor } from '../ui/menu.js';
+import { capturePointer as capture, releasePointer as release } from '../ui/gesture.js';
 import { searchField } from '../ui/search-field.js';
 import { createMenuItems, createObject, deleteObject, reparentObject } from '../commands.js';
 import { DropZone, objectPayload } from '../dnd/payload.js';
@@ -376,6 +377,15 @@ export class Hierarchy extends Element {
                 event.preventDefault();
                 event.dataTransfer.dropEffect = 'copy';
                 this.#tree.classList.add('importing');
+            },
+            // RIGHT-CLICK CREATES, AND CREATES WHERE THE CREATOR IS LOOKING. Clicking the
+            // tree's empty space makes a root object; clicking a ROW makes a child of it —
+            // which is what "add something to the Player" means without a word being read
+            // (ADR-0041 §7). Same list and same command as the `+` button.
+            oncontextmenu: event => {
+                event.preventDefault();
+                this.#openCreateMenu(pointAnchor(event.clientX, event.clientY),
+                    event.target === this.#tree ? null : this.#objectAt(event.target));
             },
             ondragleave: () => this.#tree.classList.remove('importing'),
             ondrop: event => this.#dropFiles(event)
@@ -731,7 +741,7 @@ export class Hierarchy extends Element {
         }
     }
 
-    #openCreateMenu(anchor) {
+    #openCreateMenu(anchor, parent = null) {
         // No filter field on three entries: the search is what makes a long, categorised
         // list usable, and on a short one it is a control to skip past.
         openMenu(anchor, createMenuItems(), kind => {
@@ -739,9 +749,24 @@ export class Hierarchy extends Element {
             this.#announce(createObject(this.#scene, {
                 kind,
                 x: Math.round(centre.x),
-                y: Math.round(centre.y)
+                y: Math.round(centre.y),
+                // A CHILD OF WHAT WAS RIGHT-CLICKED, and a root when nothing was. The `+`
+                // button passes nothing and keeps making roots, as it always did.
+                parent
             }));
         }, { label: 'objects' });
+    }
+
+    /**
+     * The object a row belongs to, from anything inside it.
+     * @param {HTMLElement} element - Where the pointer was
+     * @returns {object|null} The object, or null off any row
+     */
+    #objectAt(element) {
+        const row = element?.closest?.('.row') ?? null;
+        if (!row) return null;
+        for (const entry of this.#rows.values()) if (entry.row === row) return entry.object;
+        return null;
     }
 
     /**
@@ -1031,29 +1056,3 @@ function reconcile(parent, nodes) {
 
 customElements.define('px-hierarchy', Hierarchy);
 
-/**
- * Take pointer capture, tolerating a pointer that is already gone.
- *
- * Capture is a convenience: it keeps the moves coming when the pointer leaves the element
- * it started on. It is not what makes the gesture work, so a pointer the platform no
- * longer knows about must not throw its way out of the handler and abandon the drop.
- *
- * @param {HTMLElement} element - The element to capture on
- * @param {number} pointerId - The pointer
- */
-function capture(element, pointerId) {
-    try {
-        element.setPointerCapture(pointerId);
-    } catch {
-        // Nothing to capture. The drag still resolves from the events it does receive.
-    }
-}
-
-/**
- * Give pointer capture back, if it was ever taken.
- * @param {HTMLElement} element - The element that captured
- * @param {number} pointerId - The pointer
- */
-function release(element, pointerId) {
-    if (element.hasPointerCapture?.(pointerId)) element.releasePointerCapture(pointerId);
-}

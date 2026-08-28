@@ -149,10 +149,14 @@ test('the two On nodes sit with the property nodes whose semantics they share', 
 test('every input node is one family, and the events are the other half of it', () => {
     const registry = registerStandardNodes(new NodeRegistry());
 
+    // A NODE IS FILED BY WHAT IT DOES, NOT BY THE DEVICE IT READS. `On Key` starts a flow,
+    // so it belongs with `On Start` and `On Update`; `Key Is Down` answers a question, so it
+    // belongs with the states. The two halves of "keyboard" sit in two categories on
+    // purpose, and that split IS the model (ADR-0041 §3).
     for (const type of ['input.key', 'input.pointer', 'input.pointerButton']) {
         assert.equal(registry.get(type).category, 'Input', type);
     }
-    for (const type of ['event.start', 'event.update']) {
+    for (const type of ['event.start', 'event.update', 'input.onKey', 'input.onPointerButton']) {
         assert.equal(registry.get(type).category, 'Events', type);
     }
 });
@@ -239,41 +243,65 @@ test('no shipped node reaches for an environment', () => {
     }
 });
 
-test('the Key node asks three questions about a key, and all three are booleans', () => {
-    // ADR-0014 §5 answers exactly these three about a key, and the node is that shape and
-    // no other. Its ports do NOT depend on what it is pointed at — a key is a literal, so a
-    // Key node reads as a boolean before anyone has typed anything into it.
+test('a key is an EVENT and a STATE, and they are two nodes', () => {
+    // THE SPLIT THIS TRANCHE MADE (ADR-0041 §3). One node answered three booleans, so
+    // "when I press Space, jump" came out as `On Update → Branch → Jump`: three nodes and
+    // two wires for one sentence. A moment and a state are different things, and each now
+    // has exactly one execution semantic.
     const registry = registerStandardNodes(new NodeRegistry());
-    const definition = registry.get('input.key');
 
-    // Its PORTS are fixed by the type — a key is a literal, so a Key node reads as a boolean
-    // before anyone has typed anything into it. Only its title moves with the node, which is
-    // what `shapeDependsOnNode` is true for.
-    assert.equal(typeof definition.outputs, 'object', 'the outputs are declared, not derived');
-    assert.equal(definition.inputs, undefined);
+    const event = registry.get('input.onKey');
+    const { outputs: fired } = portsOf(event, { type: 'input.onKey', params: {} }, {});
+    assert.deepEqual(fired.map(port => port.id), ['pressed', 'released']);
+    for (const port of fired) assert.equal(port.kind, PortKind.FLOW, port.id);
+    assert.deepEqual(fired.map(port => port.label), ['Pressed', 'Released']);
+    assert.equal(event.event, 'update', 'an entry node, run every step');
+    assert.equal(typeof event.execute, 'function', 'and it says which of its flows fired');
+    assert.equal(event.evaluate, undefined, 'a moment produces no value');
 
-    const { outputs } = portsOf(definition, { type: 'input.key', params: {} }, {});
-    assert.deepEqual(outputs.map(port => port.id), ['held', 'pressed', 'released']);
-    for (const port of outputs) {
-        assert.equal(port.kind, PortKind.DATA, port.id);
-        assert.equal(port.type, PropertyType.BOOLEAN, port.id);
-    }
-    // THE LABELS SAY WHEN EACH IS TRUE, because two of the three names read as the same
-    // thing in English: a creator asking "is the key pressed" wants the one that lasts and
-    // reaches for the one that is true for a single step. The IDS are what a wire lands on
-    // and they are untouched, so no graph written before this changes (ADR-0027).
-    assert.deepEqual(outputs.map(port => port.label), ['Is Down', 'Just Pressed', 'Just Released']);
+    const state = registry.get('input.key');
+    const { outputs: read } = portsOf(state, { type: 'input.key', params: {} }, {});
+    assert.deepEqual(read.map(port => port.id), ['held'], 'the port id is untouched: graphs keep reading it');
+    assert.equal(read[0].kind, PortKind.DATA);
+    assert.equal(read[0].type, PropertyType.BOOLEAN);
+    assert.equal(read[0].label, 'Is Down');
+    assert.equal(state.event, undefined, 'a state starts nothing');
+    assert.equal(state.execute, undefined);
 });
 
-test('a Key node keeps its name whatever key it watches', () => {
-    const registry = registerStandardNodes(new NodeRegistry());
-    const definition = registry.get('input.key');
+test('On Key fires only on the step the key moved, and can fire twice at once', () => {
+    const definition = registerStandardNodes(new NodeRegistry()).get('input.onKey');
+    const firing = (pressed, released) => definition.execute({
+        node: { params: { key: 'Space' } },
+        param: () => 'Space',
+        self: null,
+        ctx: { input: { of: () => ({ pressed: () => pressed, released: () => released }) } }
+    });
 
-    // Its PORTS never depend on the key, so nothing about it moves — but the param does
-    // change what it does, and the field showing it is inside the node.
-    assert.equal(definition.label, 'Key');
-    assert.equal(definition.title, undefined);
-    assert.equal(definition.params.key.default, 'Space');
+    assert.deepEqual(firing(false, false), [], 'a key nobody touched starts nothing');
+    assert.deepEqual(firing(true, false), ['pressed']);
+    assert.deepEqual(firing(false, true), ['released']);
+    // A TAP INSIDE ONE FRAME IS BOTH, and both run — in declared order, like `Sequence`.
+    assert.deepEqual(firing(true, true), ['pressed', 'released']);
+});
+
+test('On Key with no input on the context fires nothing rather than throwing', () => {
+    const definition = registerStandardNodes(new NodeRegistry()).get('input.onKey');
+
+    assert.deepEqual(definition.execute({ node: { params: {} }, param: () => 'Space', self: null, ctx: {} }), []);
+});
+
+test('both key nodes keep their names whatever key they watch', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    // Their PORTS never depend on the key, so nothing about them moves — but the param does
+    // change what they do, and the field showing it is inside the node (ADR-0040 §5).
+    assert.equal(registry.get('input.key').label, 'Key Is Down');
+    assert.equal(registry.get('input.onKey').label, 'On Key');
+    for (const type of ['input.key', 'input.onKey']) {
+        assert.equal(registry.get(type).title, undefined, type);
+        assert.equal(registry.get(type).params.key.default, 'Space', type);
+    }
 });
 
 test('the Key node reads the input it is handed and never looks for one', () => {
@@ -291,7 +319,7 @@ test('the Key node reads the input it is handed and never looks for one', () => 
     });
 
     assert.deepEqual(asked, ['alice'], 'it asked for the owner of its own Object');
-    assert.deepEqual(read, { held: true, pressed: false, released: false });
+    assert.deepEqual(read, { held: true });
 });
 
 test('the key a Key node shows is the key it reads before anyone types one', () => {
@@ -316,10 +344,7 @@ test('a Key node with no input on the context is inert rather than broken', () =
     // for a node evaluated outside a step: nothing is held.
     const definition = registerStandardNodes(new NodeRegistry()).get('input.key');
 
-    assert.deepEqual(
-        definition.evaluate({ param: () => 'Space', self: null, ctx: {} }),
-        { held: false, pressed: false, released: false }
-    );
+    assert.deepEqual(definition.evaluate({ param: () => 'Space', self: null, ctx: {} }), { held: false });
 });
 
 test('the Pointer node yields two numbers, and nothing that needs a camera', () => {
@@ -352,14 +377,19 @@ test('the Pointer node reads the world position of its own Object\'s owner', () 
     assert.deepEqual(read, { x: 12, y: -34 }, 'the world point, never the screen one');
 });
 
-test('the Pointer Button node asks the same three questions a key does', () => {
-    const definition = registerStandardNodes(new NodeRegistry()).get('input.pointerButton');
+test('a pointer button splits the same way a key does, and into the same two words', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
 
-    const { outputs } = portsOf(definition, { type: 'input.pointerButton', params: {} }, {});
+    const { outputs: fired } = portsOf(registry.get('input.onPointerButton'),
+        { type: 'input.onPointerButton', params: {} }, {});
+    assert.deepEqual(fired.map(port => port.id), ['pressed', 'released']);
+    for (const port of fired) assert.equal(port.kind, PortKind.FLOW, port.id);
 
-    assert.deepEqual(outputs.map(port => port.id), ['held', 'pressed', 'released']);
-    for (const port of outputs) assert.equal(port.type, PropertyType.BOOLEAN, port.id);
-    assert.deepEqual(outputs.map(port => port.label), ['Is Down', 'Just Pressed', 'Just Released']);
+    const { outputs: read } = portsOf(registry.get('input.pointerButton'),
+        { type: 'input.pointerButton', params: {} }, {});
+    assert.deepEqual(read.map(port => port.id), ['held']);
+    assert.equal(read[0].type, PropertyType.BOOLEAN);
+    assert.equal(read[0].label, 'Is Down');
 });
 
 test('a button is stored as a name, and read as the index the input state uses', () => {
@@ -376,7 +406,7 @@ test('a button is stored as a name, and read as the index the input state uses',
 
     // `Right Button` USED TO BE THE WHOLE HEADING, and it dropped the word `Pointer` — the
     // one word saying which node this is. There is no heading but the type's name now.
-    assert.equal(definition.label, 'Pointer Button');
+    assert.equal(definition.label, 'Pointer Button Is Down');
     assert.equal(definition.title, undefined);
 });
 
@@ -396,6 +426,16 @@ test('a button a payload names that does not exist falls back rather than readin
     definition.evaluate({ node: { params: {} }, self: null, ctx });
 
     assert.deepEqual(asked, [0, 0]);
+    // The event node reads the very same list, so a payload naming a button nobody has
+    // falls back on both rather than on one.
+    const event = registerStandardNodes(new NodeRegistry()).get('input.onPointerButton');
+    const fired = [];
+    event.execute({
+        node: { params: { button: 'thumb' } },
+        self: null,
+        ctx: { input: { of: () => ({ buttonPressed: b => (fired.push(b), false), buttonReleased: () => false }) } }
+    });
+    assert.deepEqual(fired, [0]);
 });
 
 test('each named button asks for its own index', () => {
@@ -425,7 +465,9 @@ test('the pointer nodes are inert without an input on the context, not broken', 
         registry.get('input.pointer').evaluate({ self: null, ctx: {} }), { x: 0, y: 0 });
     assert.deepEqual(
         registry.get('input.pointerButton').evaluate({ node: { params: {} }, self: null, ctx: {} }),
-        { held: false, pressed: false, released: false });
+        { held: false });
+    assert.deepEqual(
+        registry.get('input.onPointerButton').execute({ node: { params: {} }, self: null, ctx: {} }), []);
 });
 
 // --- what a wire may reach (the picker that opens on a dropped link) --------------------

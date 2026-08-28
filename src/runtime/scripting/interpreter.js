@@ -199,13 +199,46 @@ function compile(graph, registry) {
 function runEvent(compiled, event, state, budget) {
     for (const id of compiled.entries.get(event) ?? []) {
         const node = compiled.byId.get(id);
-        const outputs = portsOf(compiled.definitions.get(id), node, {}).outputs;
+        const definition = compiled.definitions.get(id);
+        const outputs = portsOf(definition, node, {}).outputs;
+        const flows = outputs.filter(port => port.kind === PortKind.FLOW).map(port => port.id);
 
-        for (const port of outputs) {
-            if (port.kind !== PortKind.FLOW) continue;
-            runFlow(compiled, compiled.flow.get(portKey(id, port.id)), state, budget);
+        // AN ENTRY NODE MAY SAY WHICH OF ITS FLOWS FIRED, and it says it the way every
+        // other flow node already does: `execute(io) -> portId | portId[] | null`, the
+        // contract `Sequence` and `Branch` are written against (ADR-0041 §3).
+        //
+        // WHY THIS IS WHAT MAKES `On Key` POSSIBLE. `On Update` fires unconditionally, so
+        // "run every flow output" was indistinguishable from "run the ones that happened".
+        // The moment an event is CONDITIONAL — a key that went down this step and not the
+        // one before — the node is the only thing that can answer, because only it knows
+        // what it is watching. Asking it costs no new vocabulary: a definition that stays
+        // silent still fires everything, which is exactly what `On Start` and `On Update`
+        // want and why neither of them changed.
+        const frame = { values: new Map() };
+        const fired = definition.execute
+            ? continuationsOf(definition.execute(io(compiled, node, state, frame, new Set())))
+            : flows;
+
+        for (const portId of fired) {
+            runFlow(compiled, compiled.flow.get(portKey(id, portId)), state, budget);
         }
     }
+}
+
+/**
+ * What a node answered, as a list of flow ports to continue down.
+ *
+ * ONE SHAPE FOR THREE ANSWERS: nothing, one port, or several. `Branch` returns a string,
+ * `Sequence` an array, and a node with nothing to do returns null — and both callers of
+ * `execute` have to read all three the same way, or an entry node and a flow node would
+ * disagree about what returning `null` means.
+ *
+ * @param {string|string[]|null|undefined} result - What `execute` answered
+ * @returns {string[]} The flow ports to follow, in order
+ */
+function continuationsOf(result) {
+    if (result === null || result === undefined) return [];
+    return globalThis.Array.isArray(result) ? result : [result];
 }
 
 /**
@@ -241,9 +274,7 @@ function runFlow(compiled, start, state, budget) {
         const frame = { values: new Map() };
         const result = definition.execute ? definition.execute(io(compiled, node, state, frame, new Set())) : null;
 
-        const continuations = result === null || result === undefined
-            ? []
-            : (globalThis.Array.isArray(result) ? result : [result]);
+        const continuations = continuationsOf(result);
 
         // Reversed, so the first declared continuation is the first one popped.
         for (let index = continuations.length - 1; index >= 0; index--) {

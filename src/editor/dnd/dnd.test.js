@@ -656,17 +656,51 @@ test('a node that names a property is a target; one that does not is not', () =>
         'the canvas beside a node is not a node');
 });
 
-test('a Component dropped on a graph is refused, and says what to drag instead', () => {
+test('a Component dropped on a property node sets the context and clears the old property', () => {
+    // BACK, AND COHERENT THIS TIME. It was removed when the Component half was hidden — the
+    // drop wrote a param nothing could show. A picker now reads `Transform ▸ …` once its
+    // Component is set, so the gesture has a visible effect (ADR-0041 §2).
+    const it = linked();
+    const written = [];
+    const target = nodeTarget(GET_ON_PARAMS, { id: 'n1', type: 'property.get', params: { component: 'res_old', property: 'p_gone' } });
+
+    const verdict = canDrop(componentPayload(it.hero, 'res_link', 'Link'), target);
+    assert.equal(verdict.allowed, true);
+    assert.match(verdict.reason, /Link/);
+
+    performDrop(componentPayload(it.hero, 'res_link', 'Link'), target, {
+        setNodeParams: (node, params) => written.push(params)
+    });
+
+    // THE PROPERTY GOES WITH THE OLD COMPONENT: an id from `res_old` names nothing on
+    // `res_link`, and leaving it would be a reference to nothing.
+    assert.deepEqual(written, [{ component: 'res_link', property: null }]);
+});
+
+test('a Component dropped on a node that works on no property is refused with its reason', () => {
     const it = linked();
     const payload = componentPayload(it.hero, 'res_link', 'Link');
+    const target = nodeTarget(registerStandardNodes(new NodeRegistry()).get('value.number').params);
 
-    for (const target of [nodeTarget(GET_ON_PARAMS), { zone: DropZone.GRAPH, at: AT.at, bound: true }]) {
-        const verdict = canDrop(payload, target);
+    const verdict = canDrop(payload, target);
+    assert.equal(verdict.allowed, false);
+    assert.match(verdict.reason, /does not work on a property/);
+    assert.equal(performDrop(payload, target, {}), null);
+});
 
-        assert.equal(verdict.allowed, false);
-        assert.match(verdict.reason, /properties/, 'the refusal names the gesture that works');
-        assert.equal(performDrop(payload, target, { setNodeParam: () => assert.fail('wrote') }), null);
-    }
+test('a Component on bare canvas creates nothing until the creator has chosen Get or Set', () => {
+    const it = linked();
+    const payload = componentPayload(it.hero, 'res_link', 'Link');
+    const at = { x: 12, y: 8 };
+    const made = [];
+    const context = { createNode: (type, params, where) => made.push([type, params, where]) };
+
+    assert.equal(canDrop(payload, { zone: DropZone.GRAPH, at, bound: true }).allowed, true);
+    assert.equal(performDrop(payload, { zone: DropZone.GRAPH, at, bound: true }, context), null);
+    assert.deepEqual(made, [], 'nothing was guessed');
+
+    performDrop(payload, { zone: DropZone.GRAPH, at, bound: true, create: 'property.set' }, context);
+    assert.deepEqual(made, [['property.set', { component: 'res_link' }, at]]);
 });
 
 test('no scene identity can reach a .px through a graph drop', () => {
@@ -913,8 +947,8 @@ test('the drags a canvas takes never answer for one another', () => {
     assert.equal(ruleFor(propertyPayload('res_link', 'p_target', 't'), onNode).id, 'property-to-node');
     // A Component reaches the floor of the canvas wherever it is let go: it has a meaning,
     // and the meaning is not here (ADR-0040 §2).
-    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), bare).id, 'drop-on-graph');
-    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), onNode).id, 'drop-on-graph');
+    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), bare).id, 'component-to-canvas');
+    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), onNode).id, 'component-to-node');
     // AN OBJECT NOW MEANS TWO THINGS, AND THE PLACE DECIDES WHICH — the same rule the other
     // two drags already followed. On bare canvas it declares an input; on a node that acts on
     // an Object it points that node, which is configuration by direct manipulation and not a
@@ -1042,17 +1076,18 @@ test('the socket and the node are one undo entry', () => {
     assert.equal(board.definition.graph.nodes().length, 0);
 });
 
-test('a Component dropped the same way builds nothing, and declares no socket either', () => {
-    // A refused drop is inert all the way down: no node, and no property left behind in the
-    // `.px` by a gesture that did not complete.
+test('a Component dropped the same way arrives aimed, with only its property left', () => {
+    // THE SAME COMPOSITION AS A PROPERTY DROP, ONE RUNG UP. The Object and the Component are
+    // both known at the moment of the gesture; only which property is not.
     const it = linked();
     const board = canvas();
 
     performDrop(componentPayload(it.player, 'Transform', 'Transform'),
         { ...AT, create: 'property.get' }, board.context);
 
-    assert.deepEqual(board.made, []);
-    assert.deepEqual(board.definition.properties(), []);
+    const [socket] = board.definition.properties();
+    assert.equal(socket.name, 'Player');
+    assert.deepEqual(board.made[0].params, { target: socket.id, component: 'Transform' });
 });
 
 test('a property carried with no Object still works, and leaves the target on the wire', () => {
@@ -1114,6 +1149,62 @@ test('the ghost names what the drop will build', () => {
     assert.match(canDrop(propertyPayload('Transform', 'rotation', 'Rotation'), AT).reason, /Rotation/);
 });
 
+// --- a file from outside, straight into a graph (ADR-0041 §6) ----------------------------
+
+test('a file dropped on bare canvas becomes a project resource AND a node holding it', () => {
+    const it = linked();
+    const made = [];
+    const context = {
+        project: it.project,
+        createNode: (type, params, at, options) => (made.push({ type, params, at, options }), { id: 'n1' })
+    };
+
+    const result = performDrop(filesPayload([file('hero.png')]),
+        { zone: DropZone.GRAPH, at: { x: 4, y: 6 }, bound: true }, context);
+
+    assert.equal(result.imported.length, 1, 'the file became a resource of the project');
+    assert.equal(made[0].type, 'value.resource');
+    assert.equal(made[0].params.value, result.imported[0].id, 'and the node points at THAT resource');
+    assert.ok(made[0].options.batch, 'import and node are one undo entry');
+});
+
+test('a file dropped on a Resource node imports it and points the node at it', () => {
+    const it = linked();
+    const written = [];
+    const target = {
+        zone: DropZone.GRAPH,
+        node: { id: 'n1' },
+        params: registerStandardNodes(new NodeRegistry()).get('value.resource').params,
+        label: 'Resource',
+        bound: true
+    };
+
+    const result = performDrop(filesPayload([file('hero.png')]), target, {
+        project: it.project,
+        setNodeParam: (node, name, value, options) => written.push({ name, value, options })
+    });
+
+    assert.equal(result.imported.length, 1);
+    assert.deepEqual(written.map(entry => entry.name), ['value']);
+    assert.equal(written[0].value, result.imported[0].id);
+    assert.ok(written[0].options.batch, 'one gesture, one undo entry');
+});
+
+test('a resource already in the project is referenced, never imported again', () => {
+    // THE THREE CASES ARE TOLD APART BY THE DRAG, not by comparing content. A resource that
+    // exists arrives as a RESOURCE drag and no import can happen on that path at all.
+    const it = linked();
+    const asset = imageIn(it.project);
+    const before = it.project.resources().length;
+    const made = [];
+
+    performDrop(resourcePayload(asset), { zone: DropZone.GRAPH, at: { x: 0, y: 0 }, bound: true },
+        { project: it.project, createNode: (type, params) => made.push({ type, params }) });
+
+    assert.equal(it.project.resources().length, before, 'nothing was duplicated');
+    assert.equal(made[0].params.value, asset.id, 'the node points at the resource that existed');
+});
+
 // --- the graph canvas answers, and its answer is no (ADR-0034 §3.7) ----------------------
 
 test('the graph canvas is a drop zone of the vocabulary, like every other surface', () => {
@@ -1134,12 +1225,11 @@ test('the drags a canvas has a meaning for are taken; the others are refused wit
     assert.equal(canDrop(propertyPayload('res_link', 'p_target', 'target'), target).allowed, true);
     assert.equal(canDrop(resourcePayload(asset), target).allowed, true, 'a resource is a value');
 
-    for (const refused of [filesPayload([file('hero.png')]), componentPayload(it.hero, 'res_link', 'Link')]) {
-        const verdict = canDrop(refused, target);
-        assert.equal(verdict.allowed, false);
-        assert.equal(ruleFor(refused, target).id, 'drop-on-graph');
-        assert.ok(verdict.reason.length > 0);
-    }
+    assert.equal(canDrop(componentPayload(it.hero, 'res_link', 'Link'), target).allowed, true);
+    // A FILE IS TAKEN NOW TOO, and it is the fifth: it becomes a resource of the project
+    // and a node holding it, in one gesture (ADR-0041 §6).
+    assert.equal(canDrop(filesPayload([file('hero.png')]), target).allowed, true);
+    assert.equal(ruleFor(filesPayload([file('hero.png')]), target).id, 'files-to-canvas');
 });
 
 // --- a resource is a value a graph may hold ------------------------------------------------
@@ -1240,8 +1330,7 @@ test('each family a canvas refuses says something different', () => {
 
     const carried = {
         [DragKind.RESOURCE]: resourcePayload(asset),
-        [DragKind.FILES]: filesPayload([file('hero.png')]),
-        [DragKind.COMPONENT]: componentPayload(it.hero, 'res_link', 'Link')
+        [DragKind.FILES]: filesPayload([file('hero.png')])
     };
 
     const seen = new globalThis.Set();

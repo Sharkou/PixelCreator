@@ -36,7 +36,8 @@ import {
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { ICON_GRID, icon, iconForNode, iconPaths } from '../ui/icons.js';
-import { openMenu } from '../ui/menu.js';
+import { openMenu, pointAnchor } from '../ui/menu.js';
+import { capturePointer as capture } from '../ui/gesture.js';
 import { isEditing } from '../ui/focus.js';
 import { describeNode, inputFields, paramWrites } from '../inspector/node.js';
 import { DropZone } from '../dnd/payload.js';
@@ -69,7 +70,7 @@ import '../ui/resource-field.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /** The drags whose meaning on bare canvas is a choice only the creator can make. */
-const CREATES_ON_CANVAS = new globalThis.Set(['property']);
+const CREATES_ON_CANVAS = new globalThis.Set(['property', 'component']);
 
 /** How far a pointer travels before a press on a node becomes a drag. */
 const DRAG_THRESHOLD = 3;
@@ -570,7 +571,12 @@ export class GraphWindow extends Element {
             setNodeParams: (node, params) => this.#writeParams(node, params),
             createNode: (type, params, at, options) => this.#createNode(type, params, at, options),
             declareReference: (payload, target) => this.#declareReference(payload, target),
-            socketFor: (object, options) => this.#socketFor(object, options)
+            socketFor: (object, options) => this.#socketFor(object, options),
+            // WHAT AN IMPORT NEEDS, and nothing more: the project to create the resource in,
+            // and the folder a canvas has no opinion about — so a file dropped on a graph
+            // lands at the project root rather than somewhere a graph invented (ADR-0020).
+            project: this.#project,
+            folder: null
         };
     }
 
@@ -1247,13 +1253,25 @@ export class GraphWindow extends Element {
         // would run without it, and hiding it would make unwiring a surprise.
         // AN EMPTY LABEL DRAWS NOTHING, not an empty box that still takes its gap. It is
         // how a `Number` node gets down to one field and one socket.
+        // A PATH IS ITS OWN LABEL, so it takes the whole row. `Property [ Transform ▸ ro… ]`
+        // truncated the half that matters — the property is the answer and the Component is
+        // only its context (ADR-0041 §2) — because a 176px node cannot hold a word, a path
+        // and a caret. Dropping the word gives the path the space it needs, and it loses
+        // nothing: `Transform ▸ Rotation` already reads as a property, and the placeholder
+        // says so in the same voice when nothing is chosen.
+        const wide = globalThis.Boolean(descriptor.compound);
         const row = el('div', {
             class: `param-row${descriptor.connected ? ' masked' : ''}`,
             style: `--px-node-hue: ${hue}`
         },
-            descriptor.label ? el('span', { class: 'param-label', textContent: descriptor.label }) : null,
+            descriptor.label && !wide
+                ? el('span', { class: 'param-label', textContent: descriptor.label })
+                : null,
             field
         );
+        // THE FULL PATH IS ALWAYS READABLE SOMEWHERE. A very long property name still
+        // truncates on a node this narrow; hovering says the whole of it.
+        if (wide && descriptor.held) row.title = pathTitle(descriptor);
         if (descriptor.connected) row.title = `${descriptor.label} is coming from a connection`;
 
         // The canvas turns a press into a pan or a node drag; inside a field it is a
@@ -2028,29 +2046,10 @@ function humanise(id) {
         .replace(/^./, first => first.toUpperCase());
 }
 
-/**
- * Take pointer capture, tolerating a pointer the platform no longer knows about.
- *
- * Capture is a convenience — it keeps the moves coming when the pointer leaves the canvas —
- * not what makes the gesture work. So a pointer that has already gone must not throw its
- * way out of the handler and abandon the drag. The same guard `windows/inspector.js` uses.
- *
- * @param {Element} element - The element to capture on
- * @param {number} pointerId - The pointer
- */
-function capture(element, pointerId) {
-    try {
-        element.setPointerCapture(pointerId);
-    } catch {
-        // Nothing to capture. The drag still resolves from the events it does receive.
-    }
-}
-
-/** A zero-sized rectangle at a point, so a menu can open where a pointer is. */
-function pointAnchor(x, y) {
-    return {
-        getBoundingClientRect: () => ({ x, y, left: x, top: y, right: x, bottom: y, width: 0, height: 0 })
-    };
+/** The whole of a compound choice, for a row too narrow to draw it. */
+function pathTitle(descriptor) {
+    const at = descriptor.values?.indexOf(descriptor.held) ?? -1;
+    return (at === -1 ? null : descriptor.paths?.[at] ?? descriptor.labels?.[at]) ?? descriptor.label;
 }
 
 customElements.define('px-graph', GraphWindow);

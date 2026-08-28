@@ -248,6 +248,9 @@ export class Menu extends Element {
         if (search) {
             parts.push(el('div', { class: 'foot' },
                 el('span', {}, el('kbd', { textContent: '↑↓' }), 'navigate'),
+                // THE KEYS ARE SAID BECAUSE NOBODY GUESSES THEM. Arrow navigation that is
+                // not announced is arrow navigation nobody uses.
+                el('span', {}, el('kbd', { textContent: '←→' }), 'groups'),
                 el('span', {}, el('kbd', { textContent: '↵' }), 'choose'),
                 el('span', {}, el('kbd', { textContent: 'esc' }), 'close')
             ));
@@ -301,6 +304,8 @@ export class Menu extends Element {
             }
             if (event.key === 'ArrowDown') return this.#step(1, event);
             if (event.key === 'ArrowUp') return this.#step(-1, event);
+            if (event.key === 'ArrowRight') return this.#inward(event);
+            if (event.key === 'ArrowLeft') return this.#outward(event);
             if (event.key === 'Enter') return this.#confirm(event);
         };
 
@@ -505,6 +510,82 @@ export class Menu extends Element {
         buttons[next].scrollIntoView({ block: 'nearest' });
     }
 
+    /**
+     * Go one step INTO the grouping: `\u2192`.
+     *
+     * ONE INTENT, TWO SHAPES OF GROUPING. A browsing menu groups by LEVEL — categories you
+     * walk into — and a picker groups by HEADING, with everything on one page. "Deeper" is
+     * the same wish in both: enter the category under the cursor, or, where there are no
+     * categories to enter, jump to the next heading. A creator who never learns which kind
+     * of menu they are in still gets the answer they meant.
+     *
+     * THE CARET COMES FIRST. The search box has focus, and in a box with text in it the
+     * arrows belong to the text — intercepting them would make the field unusable to edit.
+     * With nothing typed the caret has nowhere to go, so the key is free.
+     */
+    #inward(event) {
+        if (this.#query !== '') return undefined;
+
+        const active = this.#list.querySelector('button.selected');
+        if (active?.classList.contains('group')) {
+            event.preventDefault();
+            active.click();
+            return undefined;
+        }
+
+        return this.#toHeading(1, event);
+    }
+
+    /** Go one step OUT of the grouping: `\u2190`. The mirror of `#inward`. */
+    #outward(event) {
+        if (this.#query !== '') return undefined;
+
+        if (this.#browse && this.#category !== null) {
+            event.preventDefault();
+            this.#category = null;
+            this.#renderList();
+            return undefined;
+        }
+
+        return this.#toHeading(-1, event);
+    }
+
+    /**
+     * Jump to the first row under the next or previous heading.
+     *
+     * WHAT MAKES A LONG PICKER USABLE WITHOUT A MOUSE. The property picker is one page with
+     * a heading per Component; stepping to `Transform` from the bottom of `Particles` is
+     * nine presses of `\u2193` or one of `\u2190`.
+     *
+     * @param {number} direction - 1 forwards, -1 backwards
+     * @param {KeyboardEvent} event - The key, so it can be claimed
+     * @returns {undefined} Nothing, like every other key handler here
+     */
+    #toHeading(direction, event) {
+        const rows = [...this.#list.children];
+        const headings = rows.filter(row => row.classList.contains('heading'));
+        if (headings.length === 0) return undefined;
+
+        const active = this.#list.querySelector('button.selected');
+        const from = active ? rows.indexOf(active) : -1;
+        const ordered = direction > 0 ? headings : [...headings].reverse();
+
+        // The heading the cursor is under is not a destination; the one past it is.
+        const target = ordered.find(heading => (direction > 0
+            ? rows.indexOf(heading) > from
+            : rows.indexOf(heading) < from - 1));
+        if (!target) return undefined;
+
+        let row = target.nextElementSibling;
+        while (row && !(row.tagName === 'BUTTON' && !row.disabled)) row = row.nextElementSibling;
+        if (!row) return undefined;
+
+        event.preventDefault();
+        this.#highlight(row);
+        row.scrollIntoView({ block: 'nearest' });
+        return undefined;
+    }
+
     #confirm(event) {
         const active = this.#list.querySelector('button.selected');
         if (!active) return;
@@ -545,6 +626,23 @@ export function openMenu(anchor, items, onPick, options = {}) {
     document.body.append(menu);
     menu.open(anchor.getBoundingClientRect(), items, onPick, options);
     return menu;
+}
+
+/**
+ * A zero-sized rectangle at a point, so a menu can open where a pointer is.
+ *
+ * SHARED BECAUSE THREE SURFACES NEED IT. It lived in `windows/graph.js` while the canvas was
+ * the only thing with a context menu; the Project grid and the Hierarchy tree have one now,
+ * and a menu that opens at a pointer is not a graph idea (ADR-0041 §7).
+ *
+ * @param {number} x - Client x
+ * @param {number} y - Client y
+ * @returns {{getBoundingClientRect: Function}} Something `openMenu` can anchor to
+ */
+export function pointAnchor(x, y) {
+    return {
+        getBoundingClientRect: () => ({ x, y, left: x, top: y, right: x, bottom: y, width: 0, height: 0 })
+    };
 }
 
 function listen(target, event, handler, capture = false) {

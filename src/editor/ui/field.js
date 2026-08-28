@@ -403,6 +403,13 @@ export class Field extends Element {
             const at = descriptor.values.indexOf(option);
             return (at === -1 ? null : descriptor.icons?.[at]) ?? null;
         };
+        // WHAT IT READS AS ONCE IT IS THE ANSWER, which is not always what it read as in
+        // the list: a row sits under a heading and a closed control does not. Used HERE and
+        // never in the menu, so the list keeps its short names and the button says the path.
+        const pathOf = option => {
+            const at = descriptor.values.indexOf(option);
+            return (at === -1 ? null : descriptor.paths?.[at]) ?? null;
+        };
 
         const glyph = el('span', { class: 'choice-glyph' });
         const text = el('span', { class: 'choice-name' });
@@ -457,7 +464,8 @@ export class Field extends Element {
             // declares none: a component is free to offer '' as a real option with a label
             // of its own, and reading that as "nothing chosen" would take the label away.
             const missing = option === '' && Boolean(descriptor.placeholder);
-            setTextOrPlaceholder(text, missing ? '' : labelOf(option), descriptor.placeholder);
+            setTextOrPlaceholder(text, missing ? '' : (pathOf(option) ?? labelOf(option)),
+                descriptor.placeholder);
             const name = missing ? null : iconOf(option);
             fill(glyph, name ? icon(name, 16) : null);
             glyph.hidden = !name;

@@ -170,7 +170,7 @@ export function resourceKind(kind) {
  * @param {string} [options.actor] - Who authored the intent
  * @returns {object|null} The component's manifest entry
  */
-function createComponent(project, { parent, actor }) {
+export function createComponent(project, { parent = null, actor } = {}) {
     // `New Component.px` — one file, extension included, because that is what a creator
     // sees in the panel and what a rename must preserve (ADR-0026).
     const name = uniqueResourceName(

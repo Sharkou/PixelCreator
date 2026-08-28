@@ -140,6 +140,22 @@ export const NOTHING_SELECTED = 'None';
 export const SELF_TARGET = 'Self';
 
 /**
+ * What separates a Component from its property when the pair is read as one thing.
+ *
+ * A GLYPH, NOT A DOT. `Transform.rotation` is an expression in a programming language, and
+ * this Editor is not one — a creator who has never written code reads a dot as punctuation
+ * they are expected to understand (ADR-0041 §2). An arrow is a direction: the property is
+ * INSIDE the Component, and the shape says so without a word.
+ */
+export const PATH_ARROW = '\u25b8';
+
+/** What a property picker with nothing chosen reads as, standing in for its own label. */
+export const CHOOSE_PROPERTY = 'Choose a property';
+
+/** The group a `.px`'s own declared properties sit under. */
+export const THIS_COMPONENT = 'This Component';
+
+/**
  * Where each kind of reference finds the things a creator may pick, and what to say when
  * there are none.
  *
@@ -182,13 +198,18 @@ const REFERENCES = {
             ...(context.properties ?? []).map(property => ({
                 value: joinPath(null, property.id),
                 label: property.name,
-                group: 'This Component'
+                group: THIS_COMPONENT,
+                // NO PREFIX ON YOUR OWN FIELDS. `This Component \u25b8 speed` would be
+                // ceremony: there is only one Component it could belong to, and naming it
+                // is the abstraction leaking back in through the label.
+                path: property.name
             })),
             ...(context.components ?? []).flatMap(entry =>
                 (entry.properties ?? []).map(property => ({
                     value: joinPath(entry.type, property.id),
                     label: property.name,
-                    group: entry.label ?? entry.type
+                    group: entry.label ?? entry.type,
+                    path: `${entry.label ?? entry.type} ${PATH_ARROW} ${property.name}`
                 })))
         ],
         empty: () => 'This Component declares no properties'
@@ -394,6 +415,25 @@ export function splitPath(value) {
  *
  * @returns {object|null} The descriptor, or null when this param names nothing
  */
+/**
+ * What a compound picker reads as when only its outer half is answered.
+ *
+ * @param {object} descriptor - The param descriptor, carrying `compound`
+ * @param {object} node - The node
+ * @param {object} context - `{ properties, components }`
+ * @returns {string|null} The partial path, or null when there is nothing to say
+ */
+function partialPath(descriptor, node, context) {
+    const outer = descriptor.compound?.[0];
+    if (!outer) return null;
+
+    const type = node?.params?.[outer] ?? null;
+    if (!type || node?.params?.[descriptor.compound[1]]) return null;
+
+    const entry = (context.components ?? []).find(candidate => candidate.type === type);
+    return `${entry?.label ?? type} ${PATH_ARROW} \u2026`;
+}
+
 function referenceChoice(name, descriptor, node, context) {
     const reference = REFERENCES[descriptor?.reference];
     if (!reference) return null;
@@ -401,8 +441,13 @@ function referenceChoice(name, descriptor, node, context) {
     const options = reference.options(node, context);
     // WHAT THE CONTROL SHOWS IS THE PAIR, not the half stored under this name — otherwise a
     // node holding `Transform` + `rotation` would find nothing in a list keyed by both.
+    // NOTHING CHOSEN IS THE EMPTY STRING, NOT AN EMPTY HALF OF A PATH. `joinPath(null, '')`
+    // is `'\u0000'` — a value no option carries, so the control drew an invisible character
+    // instead of its placeholder and the row came out blank. The sentinel a field already
+    // understands is `''`, so that is what an unanswered picker holds.
+    const chosen = node?.params?.[name] ?? '';
     const held = descriptor.compound
-        ? joinPath(node?.params?.[descriptor.compound[0]] ?? null, node?.params?.[name] ?? '')
+        ? (chosen ? joinPath(node?.params?.[descriptor.compound[0]] ?? null, chosen) : '')
         : null;
 
     const field = fieldFor(name, {
@@ -410,18 +455,35 @@ function referenceChoice(name, descriptor, node, context) {
         type: PropertyType.ENUM,
         values: options.map(option => option.value),
         labels: options.map(option => option.label),
+        // THE CLOSED CONTROL SAYS WHOSE. In the list the heading answers that; on the node
+        // there is no heading, and two Components declaring `speed` were indistinguishable
+        // once one of them was chosen (ADR-0041 §2).
+        paths: options.some(option => option.path) ? options.map(option => option.path ?? null) : null,
         // A LONG LIST IS A LIST WITH HEADINGS. Ninety-nine keys in one column is not
         // something a creator reads, and the Editor's dropdown has grouped and filtered
         // since Add Component (ADR-0026 §10) — so an option may say which group it belongs
         // to, and every reference that has no groups passes `null` and draws as it always
         // did.
         groups: options.some(option => option.group) ? options.map(option => option.group ?? '') : null,
+        // A HALF-ANSWERED PATH SAYS WHICH HALF IT HAS. Dropping a Component on a node names
+        // the Component and leaves the property open — the one thing the gesture could not
+        // know. Showing `None` there would hide what the drop just did; showing
+        // `Transform \u25b8 \u2026` says the context is set and one question is left, which
+        // is exactly the state the node is in (ADR-0041 §2).
+        // A CONTROL WITH NO LABEL BESIDE IT HAS TO SAY WHAT IT IS. On a node the compound
+        // picker takes the whole row (windows/graph.js), so `None` would be a dropdown that
+        // names neither the question nor the answer.
         placeholder: options.length === 0
             ? reference.empty(node, context)
-            : reference.unset?.(node, context) ?? NOTHING_SELECTED,
+            : (partialPath(descriptor, node, context)
+                ?? reference.unset?.(node, context)
+                ?? (descriptor.compound ? CHOOSE_PROPERTY : NOTHING_SELECTED)),
     });
 
-    // `fieldFor()` answers a fixed shape, so the joined value rides beside it rather than
-    // through it: a descriptor field the canvas reads instead of the raw param.
-    return held === null ? field : { ...field, held };
+    // `fieldFor()` answers a fixed shape, so what it does not carry rides beside it: the
+    // joined value, and the fact that this control asks a COMPOUND question — which is what
+    // tells the canvas to give it the whole row rather than a word and a stub
+    // (`#drawControl`, windows/graph.js).
+    if (held === null) return field;
+    return { ...field, held, compound: descriptor.compound };
 }

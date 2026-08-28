@@ -1,6 +1,7 @@
 # ADR-0014 — L'input est abstrait, indexé par owner, et passé au runtime
 
 - **Statut :** **accepté** (2026-08-12)
+- **Amendé par :** ADR-0041 (2026-08-28) — §5 : les trois questions d'une touche ne sont plus un seul nœud. Un moment (`On Key`) et un état (`Key Is Down`) sont deux nœuds, parce que ce sont deux choses
 - **Décide :** où vit l'input, quelle forme il a, et comment la simulation y accède
 - **Lié à :** ADR-0001 (`uid` → `owner`), ADR-0004 (contexte d'`update`), ADR-0011 (autorité)
 

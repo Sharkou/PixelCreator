@@ -5,6 +5,7 @@
 // renderer and therefore never draws.
 
 export { Runtime } from './runtime.js';
+export { BUILT_IN, registerBuiltIns } from './builtins.js';
 export { Clock } from './clock/clock.js';
 export { componentFailure, rethrowLater } from './errors.js';
 

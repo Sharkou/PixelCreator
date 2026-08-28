@@ -130,11 +130,10 @@ function buildInstance(rule, resource, { scene }) {
 const NOTHING_OPEN = 'There is no Component open on this canvas to declare anything in.';
 
 const REFUSED_ON_GRAPH = {
-    // A COMPONENT IS NOT SOMETHING A GRAPH HOLDS, and saying so is the honest answer rather
-    // than a gap. A graph reads and writes PROPERTIES; a Component is what a property is
-    // filed under, and it has one gesture of its own — giving it to an Object (ADR-0040 §2).
-    [DragKind.COMPONENT]: 'A graph works on properties, not on Components. Drag one of its '
-        + 'properties here, or drop it on an Object to add it.',
+    // Only reachable for a drop ONTO a node that works on no property: bare canvas takes a
+    // Component now, and so does any node carrying a property picker (ADR-0041 §2).
+    [DragKind.COMPONENT]: 'This node does not work on a property. Drop a Component on a Get '
+        + 'or Set Property, or on bare canvas to add one.',
     [DragKind.PROPERTY]: 'This node does not name a property. Drop it on a Get or Set '
         + 'Property, or on bare canvas to add one.',
     // An Object with no identity at all — a drag that carried nothing.
@@ -560,6 +559,118 @@ export const RULES = [
                 ...(socket ? { target: socket.id } : {}),
                 component: payload.component,
                 property: payload.property
+            }, target.at, { batch }) ?? null;
+
+            return node ? { node, socket } : null;
+        }
+    },
+
+    {
+        // A FILE FROM THE DESKTOP, STRAIGHT INTO A GRAPH. "I take my file and drop it, and
+        // the node uses it" is the whole sentence, and it used to be four gestures: import
+        // into Project, find the resource, add a `Resource` node, pick it in the field.
+        //
+        // THE THREE CASES ARE TOLD APART BY THE DRAG ITSELF, and no content is ever compared
+        // to guess at duplicates. A resource ALREADY in the project arrives as a RESOURCE
+        // drag and is only referenced (`resource-to-node` / `resource-to-canvas`); a file
+        // from outside arrives as a FILES drag and has no project identity to reuse, so it
+        // is imported. Nothing here can duplicate a resource, because nothing here can even
+        // see one (ADR-0020).
+        //
+        // IMPORT THEN USE, IN ONE BATCH, so a creator who changes their mind takes both
+        // halves back with one undo — the shape `files-to-property` already has.
+        id: 'files-to-node',
+        accepts: (payload, target) => payload.kind === DragKind.FILES
+            && target.zone === DropZone.GRAPH
+            && Boolean(target.node)
+            && target.params?.value?.type === PropertyType.RESOURCE,
+        describe: (payload, target) =>
+            `Import ${countFiles(payload)} and point ${target.label ?? 'this node'} at it`,
+        perform: (payload, target, context) => {
+            // ONE FILE, BECAUSE ONE PARAM HOLDS ONE REFERENCE. The rest would be imported
+            // and then silently dropped, which is worse than not taking them.
+            const batch = createId();
+            const [resource] = importFiles({ ...payload, entries: payload.entries.slice(0, 1) },
+                context.folder ?? null, context);
+            if (!resource) return null;
+
+            context.setNodeParam?.(target.node, 'value', resource.id, { batch });
+            return { imported: [resource], node: target.node };
+        }
+    },
+
+    {
+        // The same gesture on bare canvas: the file becomes a resource of the project, and
+        // a node holding it lands where it was dropped.
+        id: 'files-to-canvas',
+        accepts: (payload, target) => payload.kind === DragKind.FILES
+            && target.zone === DropZone.GRAPH
+            && target.bound === true
+            && !target.node,
+        describe: payload => `Import ${countFiles(payload)} and add it as a value`,
+        perform: (payload, target, context) => {
+            const batch = createId();
+            const [resource] = importFiles({ ...payload, entries: payload.entries.slice(0, 1) },
+                context.folder ?? null, context);
+            if (!resource) return null;
+
+            const node = context.createNode?.('value.resource', { value: resource.id },
+                target.at, { batch }) ?? null;
+            return node ? { imported: [resource], node } : { imported: [resource] };
+        }
+    },
+
+    {
+        // A COMPONENT IS A CONTEXT, AND DROPPING ONE SETS IT. This was removed a tranche ago
+        // and the reason was sound at the time: the Component half of a property was HIDDEN,
+        // so the drop wrote a param nothing could show and the creator's next click
+        // overwrote it. What changed is not the gesture but what a node can SAY — a picker
+        // with its Component set now reads `Transform \u25b8 \u2026` (ADR-0041 \u00a72), so
+        // the drop has a visible effect and one honest question left.
+        //
+        // IT DOES NOT FINISH THE NODE, AND IT CANNOT. Which property is the one thing
+        // dragging a Component does not say; guessing would be the magic this Editor
+        // refuses. What it does is answer two of the three questions.
+        id: 'component-to-node',
+        accepts: (payload, target) => payload.kind === DragKind.COMPONENT
+            && target.zone === DropZone.GRAPH
+            && acceptsProperty(target),
+        describe: (payload, target) =>
+            `Point ${target.label ?? 'this node'} at ${payload.label || payload.type}`,
+        perform: (payload, target, context) => {
+            if (!context.setNodeParams) return null;
+
+            // THE PROPERTY GOES WITH THE OLD COMPONENT. An id picked out of `Sprite` names
+            // nothing on `Transform`, and leaving it behind would be a reference to nothing.
+            context.setNodeParams(target.node, { component: payload.type, property: null });
+            return { node: target.node, component: payload.type };
+        }
+    },
+
+    {
+        // The same offer on bare canvas, through the menu every creation opens: reading and
+        // writing are two intents and a drop cannot tell them apart (ADR-0037 \u00a72.4).
+        id: 'component-to-canvas',
+        accepts: (payload, target) => payload.kind === DragKind.COMPONENT
+            && target.zone === DropZone.GRAPH
+            && target.bound === true
+            && !target.node,
+        describe: (payload, target) => {
+            const named = payload.label || payload.type;
+            return payload.object?.name
+                ? `Add a node for ${payload.object.name}'s ${named}`
+                : `Add a node for ${named}`;
+        },
+        perform: (payload, target, context) => {
+            if (!target.create) return null;
+
+            // ONE BATCH: the socket and the node are one thing the creator did (ADR-0024 \u00a74).
+            const batch = createId();
+            const socket = payload.object ? context.socketFor?.(payload.object, { batch }) : null;
+
+            const node = context.createNode?.(target.create, {
+                ...(socket ? { target: socket.id } : {}),
+                component: payload.type
             }, target.at, { batch }) ?? null;
 
             return node ? { node, socket } : null;

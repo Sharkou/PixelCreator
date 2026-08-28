@@ -21,6 +21,7 @@ import {
 } from '../../core/mod.js';
 import { Behaviors } from './behaviors.js';
 import { createGraphInterpreter, interpretGraph } from './interpreter.js';
+import { validateGraph } from '../../core/graph/validate.js';
 import { Runtime } from '../runtime.js';
 
 const registry = registerStandardNodes(new NodeRegistry());
@@ -977,6 +978,57 @@ test('an unknown node type is still refused, so the migration is a table and not
         error => error instanceof GraphError && error.code === GraphIssueCode.UNKNOWN_NODE_TYPE);
 });
 
+// --- a graph written before the event split (ADR-0041 §3.3) ------------------------------
+
+test('a graph that read Is Down off the old Key node still reads it', () => {
+    // THE HALF THAT IS NOT A MIGRATION AT ALL. `input.key` kept its type name and its `held`
+    // port precisely so this graph would not need one — only the label changed.
+    const it = keyboard();
+
+    it.input.local.press('Space');
+    it.runtime.step();
+
+    assert.equal(it.component.held, true);
+});
+
+test('a wire to a port the split removed is skipped, and the rest of the graph runs', () => {
+    // The honest degradation (ADR-0041 §3.3): a fil naming `pressed` on the state node is
+    // reported by the validator and stepped over by the interpreter, rather than rewritten
+    // into a topology nobody asked for.
+    const file = px();
+    const flag = file.property({ name: 'flag', type: PropertyType.BOOLEAN, default: false });
+    const seen = file.property({ name: 'seen', type: PropertyType.BOOLEAN, default: false });
+
+    const update = file.node('event.update');
+    const key = file.node('input.key', { key: 'Space' });
+    const stale = file.node('property.set', { property: flag.id });
+    const alive = file.node('property.set', { property: seen.id });
+    const yes = file.node('value.boolean', { value: true });
+
+    file.wire([update, 'out'], [stale, 'in']);
+    file.wire([stale, 'out'], [alive, 'in']);
+    file.wire([yes, 'value'], [alive, 'value']);
+
+    // The payload as an older build wrote it: a data wire off a port that is gone.
+    const payload = file.model.serialize();
+    payload.graph.connections.push({
+        id: 'stale',
+        from: { node: key.id, port: 'pressed' },
+        to: { node: stale.id, port: 'value' }
+    });
+
+    const issues = validateGraph(payload.graph, { registry });
+    assert.ok(issues.some(issue => issue.connection === 'stale'), 'the panel is told which wire');
+
+    const Component = defineComponent(payload);
+    const holder = new SceneObject('Hero');
+    holder.addComponent(new Component());
+    const behavior = interpretGraph(payload.graph, { registry })(holder.components[payload.type]);
+
+    assert.doesNotThrow(() => behavior.update(null, {}));
+    assert.equal(holder.components[payload.type].seen, true, 'everything after the stale wire ran');
+});
+
 // --- what an object port will and will not take (ADR-0034 §3.6) -------------------------
 
 /**
@@ -1611,21 +1663,32 @@ function keyboard({ key = 'Space', owner = null } = {}) {
     const params = key === undefined ? {} : { key };
     const file = px();
     const held = file.property({ name: 'held', type: PropertyType.BOOLEAN, default: false });
-    const pressed = file.property({ name: 'pressed', type: PropertyType.BOOLEAN, default: false });
-    const released = file.property({ name: 'released', type: PropertyType.BOOLEAN, default: false });
+    // COUNTERS, NOT FLAGS, because the model changed shape. A moment that fires a flow can
+    // only be observed by counting how many times it ran; a flag would say "it happened at
+    // least once" and could never say "and exactly once" (ADR-0041 §3).
+    const presses = file.property({ name: 'presses', type: PropertyType.NUMBER, default: 0 });
+    const releases = file.property({ name: 'releases', type: PropertyType.NUMBER, default: 0 });
 
+    // THE STATE HALF: read every step, straight into a property.
     const update = file.node('event.update');
     const read = file.node('input.key', params);
     const writeHeld = file.node('property.set', { property: held.id });
-    const writePressed = file.node('property.set', { property: pressed.id });
-    const writeReleased = file.node('property.set', { property: released.id });
-
     file.wire([update, 'out'], [writeHeld, 'in']);
-    file.wire([writeHeld, 'out'], [writePressed, 'in']);
-    file.wire([writePressed, 'out'], [writeReleased, 'in']);
     file.wire([read, 'held'], [writeHeld, 'value']);
-    file.wire([read, 'pressed'], [writePressed, 'value']);
-    file.wire([read, 'released'], [writeReleased, 'value']);
+
+    // THE EVENT HALF: one entry node, two flows, a counter on each. This is the sentence
+    // the old model could not write — no `On Update`, and no `Branch`.
+    const onKey = file.node('input.onKey', params);
+    for (const [port, counter] of [['pressed', presses], ['released', releases]]) {
+        const get = file.node('property.get', { property: counter.id });
+        const one = file.node('value.number', { value: 1 });
+        const add = file.node('math.add');
+        const set = file.node('property.set', { property: counter.id });
+        file.wire([onKey, port], [set, 'in']);
+        file.wire([get, 'value'], [add, 'a']);
+        file.wire([one, 'value'], [add, 'b']);
+        file.wire([add, 'result'], [set, 'value']);
+    }
 
     const payload = file.model.serialize();
     const Component = defineComponent(payload);
@@ -1642,14 +1705,14 @@ function keyboard({ key = 'Space', owner = null } = {}) {
     return { runtime, input: runtime.input, component: object.components[payload.type] };
 }
 
-test('a key nobody is holding reads as false', () => {
+test('a key nobody is holding reads as false, and starts nothing', () => {
     const it = keyboard();
 
     it.runtime.step();
 
     assert.equal(it.component.held, false);
-    assert.equal(it.component.pressed, false);
-    assert.equal(it.component.released, false);
+    assert.equal(it.component.presses, 0);
+    assert.equal(it.component.releases, 0);
 });
 
 test('a graph observes a key that is held', () => {
@@ -1661,34 +1724,62 @@ test('a graph observes a key that is held', () => {
     assert.equal(it.component.held, true);
 });
 
-test('Pressed is true on the step that observes the press, and on no other', () => {
-    // The other half of ADR-0014 §5: `commit()` at the end of a step is what bounds it, so a
-    // key held for a hundred steps is one jump and not a hundred.
+test('Pressed runs on the step that observes the press, and on no other', () => {
+    // THE SENTENCE THE WHOLE SPLIT EXISTS FOR: "when I press Space, jump". One node, one
+    // wire, and it runs once. The other half of ADR-0014 §5 bounds it: `commit()` at the end
+    // of a step is what makes a key held for a hundred steps one jump and not a hundred.
     const it = keyboard();
 
     it.input.local.press('Space');
     it.runtime.step();
-    assert.equal(it.component.pressed, true);
+    assert.equal(it.component.presses, 1);
     assert.equal(it.component.held, true);
 
     it.runtime.step();
-    assert.equal(it.component.pressed, false, 'still held, no longer newly pressed');
-    assert.equal(it.component.held, true);
+    it.runtime.step();
+    assert.equal(it.component.presses, 1, 'still held, and it did not fire again');
+    assert.equal(it.component.held, true, 'but it is still down, which is a different question');
 });
 
-test('Released is true on the step that observes the release, and on no other', () => {
+test('Released runs on the step that observes the release, and on no other', () => {
     const it = keyboard();
 
     it.input.local.press('Space');
     it.runtime.step();
+    assert.equal(it.component.releases, 0);
 
     it.input.local.release('Space');
     it.runtime.step();
-    assert.equal(it.component.released, true);
+    assert.equal(it.component.releases, 1);
     assert.equal(it.component.held, false);
 
     it.runtime.step();
-    assert.equal(it.component.released, false);
+    assert.equal(it.component.releases, 1);
+});
+
+test('a tap too fast to span two steps is not seen at all, and that is ADR-0014, not this node', () => {
+    // MEASURED, NOT ASSUMED. `pressed()` is `down now && !down before`, so a key pressed AND
+    // released between two steps leaves both sets empty and neither transition is visible.
+    // That is a property of the input model (ADR-0014 §5) and it predates the event nodes —
+    // stated here so the limitation is recorded rather than rediscovered, and so a change to
+    // the input model has a test that will notice.
+    const it = keyboard();
+
+    it.input.local.press('Space');
+    it.input.local.release('Space');
+    it.runtime.step();
+
+    assert.equal(it.component.presses, 0, 'the press never spanned a step boundary');
+    assert.equal(it.component.releases, 0);
+
+    // Spread over two steps, both are seen — which is the ordinary case a game produces.
+    it.input.local.press('Space');
+    it.runtime.step();
+    it.input.local.release('Space');
+    it.runtime.step();
+
+    assert.equal(it.component.presses, 1);
+    assert.equal(it.component.releases, 1);
 });
 
 test('a graph reads the input of the owner its Object belongs to', () => {
@@ -1741,7 +1832,10 @@ test('a Key node whose field was emptied answers false rather than refusing', ()
     assert.equal(it.component.held, false);
 });
 
-test('a key drives an existing node: held Space branches, and the branch writes', () => {
+test('holding a key is still a condition, and still costs a Branch', () => {
+    // DELIBERATELY UNCHANGED. "While held" is not an event — it is true on every step until
+    // it is not — and dressing it as one would put a node in the catalogue that fires sixty
+    // times a second while looking exactly like the one that fires once (ADR-0041 §3).
     const file = px();
     const steps = file.property({ name: 'steps', type: PropertyType.NUMBER, default: 0 });
 
@@ -1797,14 +1891,14 @@ test('the same key script replayed reaches the same state, twice', () => {
         for (const down of script) {
             if (down) it.input.local.press('Space'); else it.input.local.release('Space');
             it.runtime.step();
-            seen.push([it.component.held, it.component.pressed, it.component.released]);
+            seen.push([it.component.held, it.component.presses, it.component.releases]);
         }
         return seen;
     };
 
     const first = run();
     assert.deepEqual(first, run());
-    assert.ok(first.some(([, pressed]) => pressed), 'and the keys actually did something');
+    assert.ok(first.some(([, presses]) => presses > 0), 'and the keys actually did something');
 });
 
 // --- where the player is pointing (ADR-0038) --------------------------------------------
@@ -1843,22 +1937,29 @@ function pointing({ owner = null } = {}) {
 function clicking({ button, owner = null } = {}) {
     const file = px();
     const held = file.property({ name: 'held', type: PropertyType.BOOLEAN, default: false });
-    const pressed = file.property({ name: 'pressed', type: PropertyType.BOOLEAN, default: false });
-    const released = file.property({ name: 'released', type: PropertyType.BOOLEAN, default: false });
+    // Counters, for the same reason `keyboard()` uses them: a flow that ran can only be
+    // observed by counting, and a flag could never say "exactly once".
+    const presses = file.property({ name: 'presses', type: PropertyType.NUMBER, default: 0 });
+    const releases = file.property({ name: 'releases', type: PropertyType.NUMBER, default: 0 });
+    const params = button === undefined ? {} : { button };
 
     const update = file.node('event.update');
-    const params = button === undefined ? {} : { button };
     const read = file.node('input.pointerButton', params);
     const writeHeld = file.node('property.set', { property: held.id });
-    const writePressed = file.node('property.set', { property: pressed.id });
-    const writeReleased = file.node('property.set', { property: released.id });
-
     file.wire([update, 'out'], [writeHeld, 'in']);
-    file.wire([writeHeld, 'out'], [writePressed, 'in']);
-    file.wire([writePressed, 'out'], [writeReleased, 'in']);
     file.wire([read, 'held'], [writeHeld, 'value']);
-    file.wire([read, 'pressed'], [writePressed, 'value']);
-    file.wire([read, 'released'], [writeReleased, 'value']);
+
+    const onButton = file.node('input.onPointerButton', params);
+    for (const [port, counter] of [['pressed', presses], ['released', releases]]) {
+        const get = file.node('property.get', { property: counter.id });
+        const one = file.node('value.number', { value: 1 });
+        const add = file.node('math.add');
+        const set = file.node('property.set', { property: counter.id });
+        file.wire([onButton, port], [set, 'in']);
+        file.wire([get, 'value'], [add, 'a']);
+        file.wire([one, 'value'], [add, 'b']);
+        file.wire([add, 'result'], [set, 'value']);
+    }
 
     return runnable(file, owner);
 }
@@ -1930,24 +2031,24 @@ test('a button nobody is holding reads as false', () => {
     it.runtime.step();
 
     assert.equal(it.component.held, false);
-    assert.equal(it.component.pressed, false);
-    assert.equal(it.component.released, false);
+    assert.equal(it.component.presses, 0);
+    assert.equal(it.component.releases, 0);
 });
 
-test('Pressed is true on the step that observes the click, and on no other', () => {
+test('Pressed runs on the step that observes the click, and on no other', () => {
     const it = clicking();
 
     it.input.local.pressButton(0);
     it.runtime.step();
-    assert.equal(it.component.pressed, true);
+    assert.equal(it.component.presses, 1);
     assert.equal(it.component.held, true);
 
     it.runtime.step();
-    assert.equal(it.component.pressed, false, 'still held, no longer newly pressed');
+    assert.equal(it.component.presses, 1, 'still held, and it did not fire again');
     assert.equal(it.component.held, true);
 });
 
-test('Released is true on the step that observes the release, and on no other', () => {
+test('Released runs on the step that observes the release, and on no other', () => {
     const it = clicking();
 
     it.input.local.pressButton(0);
@@ -1955,11 +2056,11 @@ test('Released is true on the step that observes the release, and on no other', 
 
     it.input.local.releaseButton(0);
     it.runtime.step();
-    assert.equal(it.component.released, true);
+    assert.equal(it.component.releases, 1);
     assert.equal(it.component.held, false);
 
     it.runtime.step();
-    assert.equal(it.component.released, false);
+    assert.equal(it.component.releases, 1);
 });
 
 test('a Pointer Button node watches the button it names, and no other', () => {
@@ -1989,17 +2090,15 @@ test('a button drives an existing node: a held click branches, and the branch wr
     const file = px();
     const clicks = file.property({ name: 'clicks', type: PropertyType.NUMBER, default: 0 });
 
-    const update = file.node('event.update');
-    const button = file.node('input.pointerButton');
-    const branch = file.node('flow.branch');
+    // THE SAME GRAPH THE OLD MODEL NEEDED FOUR NODES FOR. `On Update -> Branch` is gone:
+    // counting clicks is what an event output IS (ADR-0041 §3).
+    const button = file.node('input.onPointerButton');
     const get = file.node('property.get', { property: clicks.id });
     const one = file.node('value.number', { value: 1 });
     const add = file.node('math.add');
     const set = file.node('property.set', { property: clicks.id });
 
-    file.wire([update, 'out'], [branch, 'in']);
-    file.wire([button, 'pressed'], [branch, 'condition']);
-    file.wire([branch, 'true'], [set, 'in']);
+    file.wire([button, 'pressed'], [set, 'in']);
     file.wire([get, 'value'], [add, 'a']);
     file.wire([one, 'value'], [add, 'b']);
     file.wire([add, 'result'], [set, 'value']);
@@ -2068,12 +2167,12 @@ test('the same pointer script replayed reaches the same state, twice', () => {
             it.input.local.movePointerInWorld(x, y);
             if (down) it.input.local.pressButton(0); else it.input.local.releaseButton(0);
             it.runtime.step();
-            seen.push([it.component.held, it.component.pressed, it.component.released]);
+            seen.push([it.component.held, it.component.presses, it.component.releases]);
         }
         return seen;
     };
 
     const first = run();
     assert.deepEqual(first, run());
-    assert.ok(first.some(([, pressed]) => pressed), 'and the clicks actually did something');
+    assert.ok(first.some(([, presses]) => presses > 0), 'and the clicks actually did something');
 });
