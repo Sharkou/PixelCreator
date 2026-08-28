@@ -656,51 +656,21 @@ test('a node that names a property is a target; one that does not is not', () =>
         'the canvas beside a node is not a node');
 });
 
-test('a Component dropped on a property node sets the context and clears the old property', () => {
-    // BACK, AND COHERENT THIS TIME. It was removed when the Component half was hidden — the
-    // drop wrote a param nothing could show. A picker now reads `Transform ▸ …` once its
-    // Component is set, so the gesture has a visible effect (ADR-0041 §2).
-    const it = linked();
-    const written = [];
-    const target = nodeTarget(GET_ON_PARAMS, { id: 'n1', type: 'property.get', params: { component: 'res_old', property: 'p_gone' } });
-
-    const verdict = canDrop(componentPayload(it.hero, 'res_link', 'Link'), target);
-    assert.equal(verdict.allowed, true);
-    assert.match(verdict.reason, /Link/);
-
-    performDrop(componentPayload(it.hero, 'res_link', 'Link'), target, {
-        setNodeParams: (node, params) => written.push(params)
-    });
-
-    // THE PROPERTY GOES WITH THE OLD COMPONENT: an id from `res_old` names nothing on
-    // `res_link`, and leaving it would be a reference to nothing.
-    assert.deepEqual(written, [{ component: 'res_link', property: null }]);
-});
-
-test('a Component dropped on a node that works on no property is refused with its reason', () => {
+test('a Component dropped anywhere on a graph is refused, and says what to drag instead', () => {
+    // REACHED TWICE, THE SECOND TIME BY MEASUREMENT (ADR-0041 §6.1). Re-enabled, it wrote
+    // `component` and left `property` open — and the property picker writes BOTH halves, so
+    // the creator's very next action overwrote what the drop had just done. A gesture whose
+    // only effect is replaced by the next one is a gesture that did nothing.
     const it = linked();
     const payload = componentPayload(it.hero, 'res_link', 'Link');
-    const target = nodeTarget(registerStandardNodes(new NodeRegistry()).get('value.number').params);
 
-    const verdict = canDrop(payload, target);
-    assert.equal(verdict.allowed, false);
-    assert.match(verdict.reason, /does not work on a property/);
-    assert.equal(performDrop(payload, target, {}), null);
-});
+    for (const target of [nodeTarget(GET_ON_PARAMS), { zone: DropZone.GRAPH, at: AT.at, bound: true }]) {
+        const verdict = canDrop(payload, target);
 
-test('a Component on bare canvas creates nothing until the creator has chosen Get or Set', () => {
-    const it = linked();
-    const payload = componentPayload(it.hero, 'res_link', 'Link');
-    const at = { x: 12, y: 8 };
-    const made = [];
-    const context = { createNode: (type, params, where) => made.push([type, params, where]) };
-
-    assert.equal(canDrop(payload, { zone: DropZone.GRAPH, at, bound: true }).allowed, true);
-    assert.equal(performDrop(payload, { zone: DropZone.GRAPH, at, bound: true }, context), null);
-    assert.deepEqual(made, [], 'nothing was guessed');
-
-    performDrop(payload, { zone: DropZone.GRAPH, at, bound: true, create: 'property.set' }, context);
-    assert.deepEqual(made, [['property.set', { component: 'res_link' }, at]]);
+        assert.equal(verdict.allowed, false);
+        assert.match(verdict.reason, /properties/, 'the refusal names the gesture that works');
+        assert.equal(performDrop(payload, target, { setNodeParams: () => assert.fail('wrote') }), null);
+    }
 });
 
 test('no scene identity can reach a .px through a graph drop', () => {
@@ -869,6 +839,43 @@ test('a Property carried off a .px card names that .px, and the port takes its t
     assert.equal(port.type, PropertyType.INT, 'the port takes the declared type at once');
 });
 
+test('a property of the .px being edited is stored as its own, not as a type', () => {
+    // FOUND IN CHROME, NOT IN A TEST. Dragging a property off the `.px` you are editing
+    // produced a node whose picker held a raw ResourceId and whose row was marked in error:
+    // the payload names the type the property was DECLARED on, and for your own file that
+    // is "this Component", which the Core stores as no type at all (ADR-0041 §2).
+    const written = [];
+    const target = nodeTarget(GET_ON_PARAMS);
+
+    performDrop(propertyPayload('res_self', 'p_speed', 'speed'), target, {
+        ownType: 'res_self',
+        setNodeParams: (node, params) => written.push(params)
+    });
+
+    assert.deepEqual(written, [{ component: null, property: 'p_speed' }]);
+});
+
+test('a property of ANOTHER Component keeps naming that Component', () => {
+    const written = [];
+
+    performDrop(propertyPayload('res_health', 'p_hp', 'hp'), nodeTarget(GET_ON_PARAMS), {
+        ownType: 'res_self',
+        setNodeParams: (node, params) => written.push(params)
+    });
+
+    assert.deepEqual(written, [{ component: 'res_health', property: 'p_hp' }]);
+});
+
+test('the same normalisation happens on bare canvas, where the node is created', () => {
+    const made = [];
+
+    performDrop(propertyPayload('res_self', 'p_speed', 'speed'),
+        { zone: DropZone.GRAPH, at: { x: 0, y: 0 }, bound: true, create: 'property.get' },
+        { ownType: 'res_self', createNode: (type, params) => made.push(params) });
+
+    assert.deepEqual(made, [{ component: null, property: 'p_speed' }]);
+});
+
 test('a Property dropped on a compatible node configures both halves at once', () => {
     const target = nodeTarget(GET_ON);
     const written = [];
@@ -947,8 +954,10 @@ test('the drags a canvas takes never answer for one another', () => {
     assert.equal(ruleFor(propertyPayload('res_link', 'p_target', 't'), onNode).id, 'property-to-node');
     // A Component reaches the floor of the canvas wherever it is let go: it has a meaning,
     // and the meaning is not here (ADR-0040 §2).
-    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), bare).id, 'component-to-canvas');
-    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), onNode).id, 'component-to-node');
+    // A Component reaches the floor of the canvas wherever it is let go: it has a meaning,
+    // and the meaning is not here.
+    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), bare).id, 'drop-on-graph');
+    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), onNode).id, 'drop-on-graph');
     // AN OBJECT NOW MEANS TWO THINGS, AND THE PLACE DECIDES WHICH — the same rule the other
     // two drags already followed. On bare canvas it declares an input; on a node that acts on
     // an Object it points that node, which is configuration by direct manipulation and not a
@@ -1076,18 +1085,17 @@ test('the socket and the node are one undo entry', () => {
     assert.equal(board.definition.graph.nodes().length, 0);
 });
 
-test('a Component dropped the same way arrives aimed, with only its property left', () => {
-    // THE SAME COMPOSITION AS A PROPERTY DROP, ONE RUNG UP. The Object and the Component are
-    // both known at the moment of the gesture; only which property is not.
+test('a Component dropped the same way builds nothing, and declares no socket either', () => {
+    // A refused drop is inert all the way down: no node, and no property left behind in the
+    // `.px` by a gesture that did not complete.
     const it = linked();
     const board = canvas();
 
     performDrop(componentPayload(it.player, 'Transform', 'Transform'),
         { ...AT, create: 'property.get' }, board.context);
 
-    const [socket] = board.definition.properties();
-    assert.equal(socket.name, 'Player');
-    assert.deepEqual(board.made[0].params, { target: socket.id, component: 'Transform' });
+    assert.deepEqual(board.made, []);
+    assert.deepEqual(board.definition.properties(), []);
 });
 
 test('a property carried with no Object still works, and leaves the target on the wire', () => {
@@ -1225,7 +1233,7 @@ test('the drags a canvas has a meaning for are taken; the others are refused wit
     assert.equal(canDrop(propertyPayload('res_link', 'p_target', 'target'), target).allowed, true);
     assert.equal(canDrop(resourcePayload(asset), target).allowed, true, 'a resource is a value');
 
-    assert.equal(canDrop(componentPayload(it.hero, 'res_link', 'Link'), target).allowed, true);
+    assert.equal(canDrop(componentPayload(it.hero, 'res_link', 'Link'), target).allowed, false);
     // A FILE IS TAKEN NOW TOO, and it is the fifth: it becomes a resource of the project
     // and a node holding it, in one gesture (ADR-0041 §6).
     assert.equal(canDrop(filesPayload([file('hero.png')]), target).allowed, true);

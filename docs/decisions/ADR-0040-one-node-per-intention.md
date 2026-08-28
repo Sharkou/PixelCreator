@@ -1,7 +1,7 @@
 # ADR-0040 — Un nœud par intention : le Component se range, la cible se désigne, le nom ne bouge pas
 
 - **Statut :** **accepté** (2026-08-28)
-- **Amendé par :** ADR-0041 (2026-08-28) — §2 : le Component redevient visible dans le contrôle fermé (`Transform ▸ Rotation`), comme contexte de la propriété et non comme seconde question
+- **Amendé par :** ADR-0041 (2026-08-28) — §2 : le Component redevient visible dans le contrôle fermé (`Transform ▸ Rotation`), comme contexte de la propriété et non comme seconde question. §4 (le dépôt d'un Component dans un graphe) est **confirmé** : réactivé puis retiré une seconde fois, cette fois sur mesure — voir ADR-0041 §6.1
 - **Décide :** combien de nœuds de propriété existent ; si `Component` est une question posée au créateur ; comment un nœud désigne l'Object sur lequel il agit ; ce qu'un Component déposé sur un graphe veut dire ; si un nom de nœud peut changer
 - **Dépend de :** ADR-0007 (schéma d'Inspector), ADR-0021 (identité de Component), ADR-0023 (`PropertyType`), ADR-0024 (undo par ressource), ADR-0027 (modèle de graphe), ADR-0034 (références d'Object), ADR-0036 (frontière `objectref` ↔ `object`), ADR-0037 (un dépôt déclare), ADR-0039 (taxonomie, portée, titres)
 - **Amende :** ADR-0034 §3.2 et §3.3 (deux paires de nœuds deviennent une) ; ADR-0034 §3.2 (l'avertissement « prise Object vide ») ; ADR-0037 §2.4 et ADR-0034 §3.2 (le dépôt d'un **Component** dans un graphe est retiré) ; ADR-0039 §5 (la règle du nom devient absolue : le mécanisme disparaît)

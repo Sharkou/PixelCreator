@@ -428,7 +428,11 @@ export class Menu extends Element {
         }
 
         fill(this.#list, rows);
-        this.#highlight(this.#list.querySelector('button:not([disabled])'));
+        // NOT THE WAY OUT. Walking INTO a category and landing on `All categories` means
+        // Enter takes you straight back out — the one keystroke a creator who just pressed
+        // `→` cannot have meant. The first real entry is what they came for.
+        this.#highlight(this.#list.querySelector('button.line:not(.back):not([disabled])')
+            ?? this.#list.querySelector('button:not([disabled])'));
     }
 
     /**

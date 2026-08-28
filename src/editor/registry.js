@@ -19,12 +19,19 @@
 
 import { componentDefinition, declaredProperties } from '../core/mod.js';
 import { baseNameOf } from '../project/mod.js';
-import { BUILT_IN, registerBuiltIns } from '../runtime/mod.js';
+import { registerBuiltIns } from '../runtime/mod.js';
 
-/** The component types shipped with the engine. */
-// RE-EXPORTED, NOT REDECLARED. The list moved to `runtime/builtins.js` the day the game
-// client needed it too; everything in the Editor that reads it goes on reading it here.
-export { BUILT_IN, registerBuiltIns };
+// RE-EXPORTED, NOT REDECLARED. Installing the shipped types moved to `runtime/builtins.js`
+// the day the game client needed it too (ADR-0042 §2); the Editor goes on offering the same
+// call from the same place it always did.
+//
+// THE LIST ITSELF IS NOT RE-EXPORTED, and that is the correction. `BUILT_IN` used to travel
+// from `runtime/builtins.js` through `runtime/mod.js`, through this file, and out of
+// `editor/mod.js` — four modules to reach nobody: nothing in the repository ever read it.
+// A name that crosses a barrel without a consumer is pure risk, because the only thing it
+// can ever do is fail to link. Whoever needs the list one day imports it from the module
+// that owns it, which is what `nodes.test.js` already does with `STANDARD_NODES`.
+export { registerBuiltIns };
 
 /** Groups, in the order the menu shows them. Anything unclaimed lands in the last one. */
 export const CATEGORIES = ['Rendering', 'Scene', 'Other'];

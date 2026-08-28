@@ -128,7 +128,7 @@ refusée l'est avec une phrase, parce qu'un refus silencieux est la pire répons
 |---|---|---|
 | **Object** (Hierarchy) | **Accepte** — déclare une entrée `objectref` nommée d'après l'Object, et pose un `Get Object` qui la lit. Aucune `ObjectId` n'entre dans le `.px`. | **Accepte** — pointe le nœud sur cet Object, en réutilisant l'entrée si elle existe déjà. |
 | **Property** (Inspector) | **Accepte, après un choix** — menu `Get` / `Set`, puis un nœud **fini** : l'Object, le Component et la propriété étaient tous connus au moment du geste. | **Accepte** — écrit le chemin complet sur le nœud. |
-| **Component** (Inspector) | **Accepte, après un choix** — menu `Get` / `Set`, puis un nœud visé sur l'Object avec son Component réglé ; seule la propriété reste. | **Accepte** — règle le Component et **efface la propriété**, qui appartenait à l'ancien. |
+| **Component** (Inspector) | **Refuse**, avec une phrase — voir §6.1. | **Refuse**, avec la même phrase. |
 | **Resource** (Project) | **Accepte** — un nœud `Resource` tenant son identité. Rien n'est dupliqué : la ressource existe déjà. | **Accepte** si le nœud tient une ressource. |
 | **Fichier** (hors du navigateur) | **Accepte** — importe dans le Project, puis pose un nœud `Resource` dessus. Un seul undo. | **Accepte** si le nœud tient une ressource : importe, puis pointe. |
 | n'importe quoi, canevas sans `.px` ouvert | **Refuse** — « il n'y a pas de Component ouvert sur ce canevas ». | — |
@@ -145,13 +145,40 @@ refusée l'est avec une phrase, parce qu'un refus silencieux est la pire répons
 | Resource | dossier du Project | **Accepte** — déplace. |
 | Fichier | Project / scène / Hierarchy / propriété / contenu | **Accepte** — importe, et fait ensuite ce que la cible veut dire. |
 
+### 6.1 Component → graphe : refusé, et cette fois c'est mesuré
+
+Le geste a été retiré une première fois **par argument** : le Component était caché, donc le
+dépôt écrivait un paramètre que rien ne montrait. Il a été réactivé quand le contrôle s'est
+mis à afficher `Transform ▸ …`, ce qui rendait l'effet visible.
+
+À l'essai, le raisonnement ne tient pas :
+
+> **Le sélecteur de propriété écrit les DEUX moitiés.** Un dépôt de Component règle
+> `component` et laisse `property` ouverte ; la toute première action du créateur — choisir
+> la propriété — réécrit `component`. Le seul effet du geste est remplacé par le geste
+> suivant.
+
+C'est exactement le critère posé pour cette tranche : « sans créer un paramètre qui sera
+immédiatement remplacé par une autre action ». Et il n'existe pas de version « finie » de ce
+geste : quelle propriété est précisément ce qu'un Component ne dit pas, et la deviner serait
+la magie que cet éditeur refuse (ADR-0037 §2.4).
+
+**Un Component garde donc une signification, une seule, et elle est ailleurs :** le donner à
+un Object. Le refus le dit.
+
+| Geste | Ce que le créateur veut | Ce qui est produit |
+|---|---|---|
+| Object → graphe | « travailler sur cet Object » | une entrée nommée + un nœud qui la lit — **fini** |
+| Property → graphe | « lire/écrire cette valeur » | un nœud visé et configuré — **fini** |
+| Component → graphe | — | rien qui survive au clic suivant |
+
 ### Ce qui reste délibérément refusé
 
 | Geste | Pourquoi non |
 |---|---|
 | Fichier → graphe, plusieurs à la fois | Un nœud tient **une** ressource. Les autres seraient importées puis silencieusement perdues, ce qui est pire que ne pas les prendre. |
 | Property → nœud qui ne travaille sur aucune propriété | Il n'y a rien à y écrire ; le refus dit où déposer. |
-| Component → nœud qui ne travaille sur aucune propriété | Idem. |
+| Component → nœud, ou canevas | §6.1 : tout ce qu'il écrit est réécrit par le clic suivant. |
 
 ---
 

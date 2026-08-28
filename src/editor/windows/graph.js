@@ -70,7 +70,7 @@ import '../ui/resource-field.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /** The drags whose meaning on bare canvas is a choice only the creator can make. */
-const CREATES_ON_CANVAS = new globalThis.Set(['property', 'component']);
+const CREATES_ON_CANVAS = new globalThis.Set(['property']);
 
 /** How far a pointer travels before a press on a node becomes a drag. */
 const DRAG_THRESHOLD = 3;
@@ -576,7 +576,12 @@ export class GraphWindow extends Element {
             // and the folder a canvas has no opinion about — so a file dropped on a graph
             // lands at the project root rather than somewhere a graph invented (ADR-0020).
             project: this.#project,
-            folder: null
+            folder: null,
+            // WHICH COMPONENT THIS CANVAS IS. A property carried off THIS `.px` is one of
+            // its own — "This Component" — and must be stored with no type at all; carrying
+            // its ResourceId in would make the node reach for a type through the catalogue
+            // and find nothing (ADR-0041 §2, `resolvedProperty`).
+            ownType: this.#definition?.type ?? null
         };
     }
 

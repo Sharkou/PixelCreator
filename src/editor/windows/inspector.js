@@ -327,6 +327,23 @@ export class Inspector extends Element {
         .row .carry.dragging { opacity: 1; }
         .row .carry.dragging { cursor: grabbing; }
 
+        /* PRESENT AT REST, LOUD ON HOVER. A handle drawn fully transparent is one a creator
+           finds by accident: the gesture it offers — carrying a property into a graph — is
+           the main way a graph gets built, and it cannot be the one thing nothing hints at
+           (ADR-0041 §7). Dim enough not to compete with the value beside it. */
+        .row .carry { opacity: 0.4; }
+        .property header .carry {
+            display: flex;
+            flex: 0 0 auto;
+            color: var(--px-text-dim);
+            cursor: grab;
+            opacity: 0.4;
+            transition: opacity var(--px-duration-fast) var(--px-ease);
+        }
+        .property header:hover .carry,
+        .property header .carry.dragging { opacity: 1; }
+        .property header .carry.dragging { cursor: grabbing; color: var(--px-accent); }
+
         /* Draggable, and it says so — but only where dragging means something.
            px-field decides, and adds the class (ui/field.js). */
         .row > .label.handle {
@@ -983,22 +1000,22 @@ export class Inspector extends Element {
             icon('chevron', 16));
 
         const title = el('span', { class: 'pname', textContent: property.name || 'property' });
-        // THE BADGE IS THE HANDLE, and it costs no column: it already sits on this card and
-        // already says what the property holds. A `.px` property is TWO identities of
-        // project scope — the Component type this file declares, and the property's own id
-        // (ADR-0037 §2.3) — which is exactly what a graph may name, so this is the one row
-        // in the Inspector where carrying a property somewhere else means something.
+        // THE CARD IS THE HANDLE, and the badge went back to being information.
         //
-        // NOT THE LABEL, and not the grip: the label is the scrub handle of every number
-        // (ui/scrub.js) and the grip already means reorder on this very card. One element,
-        // one gesture.
-        const badge = el('span', { class: 'ptype draggable' },
+        // IT USED TO BE THE TYPE BADGE, which was a mistake of exactly the kind this project
+        // keeps finding: the capability existed, and nothing said so. `NUMBER` in a small
+        // grey chip reads as a FACT about the property — a beginner has no reason to try
+        // dragging it, and the only hint was a cursor that changes once you are already on
+        // top of it (ADR-0041 §7).
+        //
+        // SO THE COMMON INTENT GETS THE COMMON GESTURE. Dragging the property is how you use
+        // it; the small grip at the left of this header still reorders, which is the rarer
+        // and more precise act. That is the arrangement a file manager has — drag the thing
+        // to take it somewhere, use a handle to rank it — and it needs no new control.
+        const badge = el('span', { class: 'ptype' },
             el('span', { class: 'glyph' }, icon(iconForPropertyType(property.type), 12)),
             el('span', { textContent: typeLabel(property.type) })
         );
-        badge.title = `${property.name || 'This property'} — drag onto a graph`;
-        this.#makeDragSource(badge, () =>
-            propertyPayload(definition.type, entry.id, property.name || entry.name));
 
         // The header follows the model, so renaming a property in the field below —
         // or from an undo, or from a collaborator — retitles it on the keystroke.
@@ -1017,6 +1034,19 @@ export class Inspector extends Element {
             dataset: { property: entry.id }
         });
 
+        // THE GRIP THAT SAYS "TAKE ME SOMEWHERE", beside the one that says "rank me". Two
+        // handles on one header is a cost, and it is the honest one: a `.px` property really
+        // does have two gestures, and giving them one control each is clearer than giving
+        // one control two meanings. It is the SAME control a component's property row
+        // carries (`#carryHandle`), so a creator learns it once.
+        const carry = el('span', {
+            class: 'carry',
+            title: `Drag ${property.name || 'this property'} onto a graph`,
+            'aria-hidden': 'true'
+        }, icon('grip', 12));
+        this.#makeDragSource(carry, () =>
+            propertyPayload(definition.type, entry.id, property.name || entry.name));
+
         const header = el('header', {
             title: 'Click to fold',
             onclick: event => {
@@ -1030,7 +1060,7 @@ export class Inspector extends Element {
                 block.classList.toggle('open', shown);
                 caret.classList.toggle('open', shown);
             }
-        }, grip, caret, title, badge, remove);
+        }, grip, caret, title, badge, carry, remove);
 
         // ONE WRITER PER FIELD, NAMED BY THE FIELD. A property card is no longer three fixed
         // rows: a Choice declares its options and a List the type of its elements

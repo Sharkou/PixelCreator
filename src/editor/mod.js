@@ -18,7 +18,6 @@ export { start, createEditorCamera } from './editor.js';
 export { Selection } from './selection.js';
 export { Layout } from './layout.js';
 export {
-    BUILT_IN,
     CATEGORIES,
     registerBuiltIns,
     describeType,
