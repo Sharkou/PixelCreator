@@ -15,7 +15,7 @@
 // `owner` each and a transport between them — the two things ADR-0011 and ADR-0014 left
 // open, and neither of them is a change to this file's shape.
 
-import { Scene, components } from '../core/mod.js';
+import { Matrix, components } from '../core/mod.js';
 import { registerStandardNodes } from '../core/mod.js';
 import { loadComponentDefinitions, loadScene } from '../project/mod.js';
 import {
@@ -100,23 +100,45 @@ function run(mount, scene, behaviors) {
     // (ADR-0029 §1); a game client has no such state.
     runtime.running = true;
 
+    // THREE SIZES, AND THEY ARE NOT THE SAME NUMBER — the arrangement the Editor's surface
+    // already uses (`editor/viewport/viewport.js`), transcribed because this page has no
+    // Editor to borrow it from:
+    //
+    //   canvas.width/height   the BACKING STORE, in device pixels
+    //   renderer             the same, because it is what it clears and draws into
+    //   viewport             CSS pixels, so one world unit is one CSS pixel at zoom 1
+    //
+    // and the density is applied ABOVE the view matrix, never inside the viewport.
+    let density = 1;
     const viewport = new Viewport(1, 1);
     const resize = () => {
-        const density = globalThis.devicePixelRatio || 1;
-        const width = Math.max(1, Math.round(canvas.clientWidth * density));
-        const height = Math.max(1, Math.round(canvas.clientHeight * density));
+        density = globalThis.devicePixelRatio || 1;
+        const cssWidth = Math.max(1, canvas.clientWidth);
+        const cssHeight = Math.max(1, canvas.clientHeight);
+        const width = Math.max(1, Math.round(cssWidth * density));
+        const height = Math.max(1, Math.round(cssHeight * density));
         if (canvas.width === width && canvas.height === height) return;
 
         canvas.width = width;
         canvas.height = height;
-        viewport.width = width;
-        viewport.height = height;
+        // THE RENDERER HAS TO BE TOLD, AND NOTHING TOLD IT. `Canvas2DRenderer` keeps the
+        // size it was constructed with — the canvas's default 300 x 150, because this one
+        // is created empty and sized afterwards — and `clear()` erases exactly that box.
+        // Every pixel drawn outside it survived the frame that drew it, so an object moved
+        // by a graph left a copy of itself at every position it had ever been.
+        renderer.resize(width, height);
+        viewport.resize(cssWidth, cssHeight);
     };
 
     // THE CAMERA IS AN OBJECT OF THE SCENE, not a setting of this page (ADR-0013). A scene
     // that ships without one is still playable, centred — `viewMatrix` says so itself.
     const cameraOf = () => scene.objects().find(object => object.getComponent?.('Camera')) ?? null;
-    const view = () => viewMatrix(cameraOf(), viewport);
+    // THE DEVICE SCALE SITS ABOVE THE VIEW, so `zoom` keeps meaning CSS pixels per world
+    // unit and a game looks the same size here as it does in the Editor. Feeding the
+    // viewport device pixels instead drew every scene at 1/density — a 2x display showed a
+    // game at half size, and only the Preview did it.
+    const view = () => Matrix.compose(0, 0, 0, density, density)
+        .multiply(viewMatrix(cameraOf(), viewport));
 
     const input = bindInput(canvas, runtime.input, { view, density: () => globalThis.devicePixelRatio || 1 });
 

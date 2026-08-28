@@ -188,6 +188,19 @@ const PATHS = {
     pause: `<path d="M5 3.4h2.1v9.2H5zM8.9 3.4H11v9.2H8.9z" ${F}/>`,
     stop: `<rect x="4.2" y="4.2" width="7.6" height="7.6" rx="0.6" ${F}/>`,
 
+    // PREVIEW IS NOT A FOURTH TRANSPORT BUTTON, AND ITS GLYPH SAYS SO. Play, Pause and Stop
+    // act on the scene in this window; Preview opens the game somewhere else (ADR-0042 §1).
+    // So it is a surface with a play mark on it and an arrow leaving the corner — outlined,
+    // because it is not a transport, and the two halves say the two things the button does.
+    //
+    // IT WAS DRAWN BY NOBODY UNTIL NOW: the button asked for `window`, which is a key of
+    // `ICON_FAMILIES` and not a glyph, so `icon()` fell through to `PATHS.object` and the
+    // control that opens a game wore the plain Object square.
+    preview: `<path d="M2.5 4.2a1.7 1.7 0 0 1 1.7-1.7h4.1" ${S}/>`
+        + `<path d="M13.5 8.4v3.4a1.7 1.7 0 0 1-1.7 1.7H4.2a1.7 1.7 0 0 1-1.7-1.7V8.4" ${S}/>`
+        + `<path d="M10.4 2.5h3.1v3.1M13.5 2.5 9.6 6.4" ${S}/>`
+        + `<path d="M6.6 7.3 9.4 9l-2.8 1.7z" ${F}/>`,
+
     // States
     eye: `<path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8z" ${S}/>`
         + `<circle cx="8" cy="8" r="1.8" ${S}/>`,

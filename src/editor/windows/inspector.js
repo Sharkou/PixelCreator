@@ -1664,6 +1664,13 @@ export class Inspector extends Element {
         // A filtered panel shows a subset, so the ranks on screen are not the model's.
         if (this.#query.trim() !== '') return;
 
+        // ONE GESTURE AT A TIME, WHICH IS THE RULE THE PRIMITIVE ALREADY STATES (ui/gesture.js)
+        // applied to this panel's own single slot. `onDrag` is installed PER HANDLE, so two
+        // handles can hold two live gestures; `#drag` can hold one. Overwriting it strands the
+        // previous element wearing `.dragging`, with nothing left pointing at it to take the
+        // class off. Ending the old one first is the same discipline, one line.
+        if (this.#drag) this.#cancelDrag();
+
         this.#drag = {
             list,
             element: list.element,

@@ -155,14 +155,12 @@ const shellStyles = sheet(`
 
     .titlebar .transport .stop:hover:not([disabled]) { color: var(--px-danger); }
 
-    /* The one control in this group that opens a window instead of acting on this one. */
-    .titlebar .transport .preview:hover:not([disabled]) { color: var(--px-accent); }
-    .titlebar .transport .divide {
-        width: 1px;
-        align-self: stretch;
-        margin: 3px 2px;
-        background: var(--px-border);
-    }
+    /* PREVIEW SITS WITH SHARE, NOT WITH THE TRANSPORT, and the move is the whole of the
+       fix. Play, Pause and Stop act on the scene in THIS window; Preview and Share both act
+       on the whole GAME and both leave it — one opens it in its own window, the other will
+       publish it (ADR-0042 §1). Inside the transport's well, separated by a hairline, it
+       still read as a fourth transport button that someone had fenced off. */
+    .titlebar .preview:hover:not([disabled]) { color: var(--px-accent); }
 
     .titlebar .transport.running { border-color: var(--px-success); }
     .titlebar .transport[data-state='paused'] { border-color: var(--px-warning); }
@@ -710,6 +708,24 @@ function titlebar(scene, layout, workspace) {
         sync();
     }
 
+    // PREVIEW, BESIDE SHARE, because those two are the pair. Both act on the whole GAME
+    // rather than on the scene in this window, and both take it somewhere else: one opens
+    // it in its own window now, the other publishes it later (ADR-0042 §1). It used to sit
+    // inside the transport's well behind a hairline, which said "a fourth transport button,
+    // fenced off" — the separator was doing the work a position should do.
+    //
+    // THE MACHINE ARRIVES LATER, so the handler asks for it rather than closing over it: the
+    // Runtime the transport drives does not exist until the Viewport connects, which is the
+    // same reason the three transport buttons are filled into a slot below.
+    let machine = null;
+    const preview = el('button', {
+        class: 'ghost preview',
+        type: 'button',
+        title: 'Preview — opens the game in its own window',
+        'aria-label': 'Preview',
+        onclick: () => machine?.preview?.()
+    }, icon('preview'));
+
     // SHARE AND THE PROFILE, as the prototype draws them (design/prototype.js, titlebar).
     // Neither is wired to anything, and both say so when pressed: there is no publishing
     // pipeline and no account system, and inventing a fake one is the kind of lie this
@@ -753,11 +769,18 @@ function titlebar(scene, layout, workspace) {
         el('div', { class: 'spacer' }),
         el('div', { class: 'toggles' }, buttons),
         el('div', { class: 'gap' }),
+        preview,
         share,
         profile
     );
 
-    return { element, transport: machine => fill(slot, transportControls(machine)) };
+    return {
+        element,
+        transport: next => {
+            machine = next;
+            fill(slot, transportControls(next));
+        }
+    };
 }
 
 /**
@@ -800,21 +823,12 @@ function transportControls(transport) {
         onclick: () => transport.stop()
     }, icon('stop'));
 
-    // PREVIEW IS NOT A FOURTH TRANSPORT BUTTON, and it is separated so it does not read as
-    // one. Play, Pause and Stop act on the scene in this window (ADR-0029); Preview opens a
-    // different window, running a snapshot, with no editor around it (ADR-0042 §1). Two
-    // questions — "what is my object doing" and "is my game playable" — and putting them in
-    // one group would say they are the same act.
-    const preview = el('button', {
-        class: 'ghost preview',
-        type: 'button',
-        title: 'Preview — opens the game in its own window',
-        'aria-label': 'Preview',
-        onclick: () => transport.preview?.()
-    }, icon('window'));
-
-    const group = el('div', { class: 'transport' }, play, pause, stop,
-        el('span', { class: 'divide' }), preview);
+    // PREVIEW IS NOT HERE, AND THAT IS THE POINT. Play, Pause and Stop act on the scene in
+    // this window (ADR-0029); Preview opens a different window, running a snapshot, with no
+    // editor around it (ADR-0042 §1). It used to sit in this group behind a hairline, which
+    // answered the question by fencing rather than by placing — it now lives beside Share,
+    // with the other control that acts on the whole game (`chrome()`).
+    const group = el('div', { class: 'transport' }, play, pause, stop);
 
     transport.observe(state => {
         const editing = state === TransportState.EDITING;

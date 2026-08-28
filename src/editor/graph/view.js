@@ -187,11 +187,18 @@ export function nodeRows(ports, controls = []) {
 
     // WHERE A REFUSED PARAM GOES, AND THE ORDER IS THE SENTENCE. A node reads: when it runs,
     // WHAT it acts on, HOW it is configured, then the values that flow through it. So a param
-    // that needs a row of its own lands after the flow rows and after the row naming the
-    // Object — and before the value rows, because a picker that decides a value's TYPE must
-    // be read before that value (appending put it underneath, and a creator read the node
-    // backwards).
-    let at = rows.findIndex(row => !isFlowRow(row) && !namesTarget(row));
+    // that needs a row of its own lands after the row execution ENTERS by and after the row
+    // naming the Object — and before the value rows, because a picker that decides a value's
+    // TYPE must be read before that value (appending put it underneath, and a creator read
+    // the node backwards).
+    //
+    // ENTERS BY, NOT "IS ABOUT EXECUTION". The measure used to be `isFlowRow()`, which is
+    // true of a row carrying flow ports in EITHER direction — and an event node has nothing
+    // but flow OUTPUTS. So `On Key` put its Key picker last, under `Pressed` and `Released`,
+    // and the card read "these two things happen … about which key?". The two moments are
+    // what the node PRODUCES once it knows the key, so the key is read first, exactly as
+    // `Set Property` reads its Object before its value.
+    let at = rows.findIndex(row => !entersFlow(row) && !namesTarget(row));
     if (at === -1) at = rows.length;
 
     for (const control of floating) {
@@ -238,6 +245,22 @@ function namesTarget(row) {
 function isFlowRow(row) {
     const ports = [row?.input, row?.output].filter(Boolean);
     return ports.length > 0 && ports.every(port => port.kind === PortKind.FLOW);
+}
+
+/**
+ * Whether execution ENTERS the node on this row.
+ *
+ * THE HALF OF `isFlowRow()` THAT DECIDES ORDER. A row a flow arrives on is the node's first
+ * line by definition — nothing it is configured with can be read before "this runs". A row
+ * a flow only LEAVES by is the opposite: it is what the node does once it is configured, so
+ * a param belongs above it. `On Key` is the whole difference — two flow outputs, no input —
+ * and reading it with `isFlowRow()` pushed its Key picker below both moments it starts.
+ *
+ * @param {{input: object|null}} row - The row
+ * @returns {boolean} True when a flow port enters here
+ */
+function entersFlow(row) {
+    return row?.input?.kind === PortKind.FLOW;
 }
 
 /**
@@ -593,6 +616,56 @@ export function hitTest(layout, point) {
     }
 
     return { kind: 'canvas' };
+}
+
+/**
+ * The rectangle two corners make, however they are ordered.
+ *
+ * A DRAG HAS NO DIRECTION, AND A RECTANGLE DOES. A creator sweeping up and to the left
+ * produces a negative width; every consumer of a box would then have to remember to
+ * normalise, and the one that forgot would select nothing while showing a rubber band.
+ *
+ * @param {{x: number, y: number}} from - Where the gesture started, in graph space
+ * @param {{x: number, y: number}} to - Where the pointer is now
+ * @returns {{x: number, y: number, width: number, height: number}} The box
+ */
+export function rectBetween(from, to) {
+    const x = Math.min(from.x, to.x);
+    const y = Math.min(from.y, to.y);
+    return { x, y, width: Math.abs(to.x - from.x), height: Math.abs(to.y - from.y) };
+}
+
+/**
+ * The nodes a rectangle catches.
+ *
+ * TOUCHED, NOT ENCLOSED. A band has to catch what it crosses: asking a creator to draw
+ * around a node that is 176 units wide means starting the sweep off-screen whenever two
+ * nodes sit side by side, and every node editor that requires full containment is the one
+ * people complain about. Overlap is also what makes a small deliberate flick — a band drawn
+ * across three nodes' corners — mean what it looks like it means.
+ *
+ * IT SHARES `nodeSize()` WITH THE RENDERER AND WITH `hitTest()`, so a node is caught over
+ * exactly the box a creator can see and click. A second idea of how big a node is would
+ * select things the band never touched.
+ *
+ * @param {Array<{node: object, ports: object, controls: object[]}>} layout - As `hitTest()`
+ *   takes it
+ * @param {{x: number, y: number, width: number, height: number}} rect - The band, in graph
+ *   space
+ * @returns {object[]} The node records it catches, in layout order
+ */
+export function nodesIn(layout, rect) {
+    if (!rect) return [];
+
+    return layout
+        .filter(({ node, ports, controls }) => {
+            const size = nodeSize(ports, controls ?? []);
+            return node.x <= rect.x + rect.width
+                && node.x + size.width >= rect.x
+                && node.y <= rect.y + rect.height
+                && node.y + size.height >= rect.y;
+        })
+        .map(entry => entry.node);
 }
 
 /**

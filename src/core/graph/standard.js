@@ -272,6 +272,12 @@ const targetParam = {
         default: null,
         label: 'Object',
         reference: OBJECT_SOCKET_REFERENCE,
+        // WHAT AN EMPTY ONE MEANS, SAID BY THE PARAM THAT MEANS IT. `targetObject()` falls
+        // back to the Object this Component is attached to, so the picker shows `Self` and
+        // is telling the truth — a default is constated, not chosen (ADR-0040 §3). The word
+        // belongs here rather than on the reference KIND, because `Get Object` uses the same
+        // kind and has no such fallback: with no socket named it hands on nothing.
+        unset: 'Self',
         // IT IS EDITED ON THE PORT'S OWN ROW. The socket and the picker are two ways to say
         // one thing — which Object — so they share a line: connect something and the picker
         // greys out, disconnect and it comes back. Two rows would be two questions.
@@ -808,7 +814,13 @@ export const STANDARD_NODES = [
                 default: null,
                 label: 'Object',
                 reference: OBJECT_SOCKET_REFERENCE,
-                tooltip: 'Which of this Component\u2019s Objects this node hands on'
+                // NO FALLBACK, SO NO `Self` \u2014 and it declares that rather than inheriting a
+                // word meant for another param. With nothing named this node answers null;
+                // reading `Self` there described a node that already exists (`Self`) and not
+                // this one, so a creator who dropped no Object saw a card that looked
+                // configured and handed out nothing.
+                tooltip: 'Which of this Component\u2019s Objects this node hands on. '
+                    + 'Drag an Object from the Hierarchy onto the canvas to declare one'
             }
         },
         outputs: [data('object', OBJECT_TYPE, 'Object')],

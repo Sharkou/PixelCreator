@@ -28,6 +28,8 @@ import {
     hitTest,
     nodeRows,
     nodeSize,
+    nodesIn,
+    rectBetween,
     controlBoxes,
     silencedPorts,
     ROW_HEIGHT,
@@ -580,6 +582,45 @@ test('Set Property says Object, Property and Value once each, in that order', ()
     assert.ok(silenced.has('in:value'), 'and the value socket is spoken for by its own field');
 });
 
+test('an input event names its key before the moments it starts, not after', () => {
+    // WHAT A CREATOR READ BEFORE: `Pressed`, `Released`, and only then `Key [Space]` — a
+    // card that announced two things happening and asked which key afterwards. The two
+    // moments are what the node PRODUCES once it knows the key, so the key is the first
+    // line, exactly as `Set Property` reads its Object before its value (ADR-0041 §3).
+    for (const type of ['input.onKey', 'input.onPointerButton']) {
+        const definition = registry.get(type);
+        const node = { id: 'n', type, x: 0, y: 0, params: {} };
+        const context = { properties: [], components: CATALOGUE };
+        const ports = portsOf(definition, node, context);
+        const rows = nodeRows(ports, paramFields(definition, node, context));
+
+        assert.equal(rows.length, 3, `${type} draws its param and its two moments`);
+        assert.ok(rows[0].control, `${type} reads its param first`);
+        assert.equal(rows[0].input, null, 'and it has a line of its own');
+        assert.equal(rows[0].output, null);
+        assert.deepEqual(
+            rows.slice(1).map(row => row.output?.id ?? null),
+            ['pressed', 'released'],
+            `${type} keeps its two moments in declared order, under the param`
+        );
+        assert.ok(rows.slice(1).every(row => row.control === null),
+            'and no control shares a row with a flow port, which has no name to lose');
+    }
+});
+
+test('a flow row execution ENTERS by still keeps the first line to itself', () => {
+    // THE OTHER HALF OF THE SAME RULE, so making the event node read forwards did not make
+    // `Set Property` read backwards: a row a flow ARRIVES on is the node's first line by
+    // definition — nothing it is configured with can be read before "this runs".
+    const definition = registry.get('property.set');
+    const node = { id: 'n', type: 'property.set', x: 0, y: 0, params: {} };
+    const context = { properties: [], components: CATALOGUE };
+    const rows = nodeRows(portsOf(definition, node, context), paramFields(definition, node, context));
+
+    assert.equal(rows[0].input.kind, PortKind.FLOW);
+    assert.equal(rows[0].control, null, 'the execution line takes no param');
+});
+
 test('the Object picker shares the Object socket row', () => {
     // ONE QUESTION, ONE LINE. The picker and the socket both say which Object, so they sit
     // together: connect something and the picker greys out, disconnect and it answers again.
@@ -793,4 +834,71 @@ test('a degenerate view still produces a drawable grid', () => {
 
     assert.ok(spec.minor > 0);
     assert.ok(spec.major > 0);
+});
+
+// --- the band a sweep draws, and what it catches ----------------------------------------
+
+test('a rectangle is the same rectangle whichever corner the sweep started from', () => {
+    const box = { x: 10, y: 20, width: 30, height: 40 };
+
+    for (const [from, to] of [
+        [{ x: 10, y: 20 }, { x: 40, y: 60 }],
+        [{ x: 40, y: 60 }, { x: 10, y: 20 }],
+        [{ x: 40, y: 20 }, { x: 10, y: 60 }],
+        [{ x: 10, y: 60 }, { x: 40, y: 20 }]
+    ]) {
+        assert.deepEqual(rectBetween(from, to), box, 'a drag has a direction; a rectangle does not');
+    }
+});
+
+test('a sweep of no distance is a rectangle of no size, and catches nothing', () => {
+    const start = place('value.number', 100, 100);
+    const layout = [{ ...start, controls: [] }];
+
+    assert.deepEqual(rectBetween({ x: 0, y: 0 }, { x: 0, y: 0 }), { x: 0, y: 0, width: 0, height: 0 });
+    assert.deepEqual(nodesIn(layout, rectBetween({ x: 0, y: 0 }, { x: 0, y: 0 })), []);
+});
+
+test('a band catches what it crosses, not only what it encloses', () => {
+    // TOUCHED, NOT ENCLOSED. A node is 176 units wide; requiring containment means starting
+    // every sweep off-screen, which is the complaint every editor that does it collects.
+    const node = place('value.number', 0, 0);
+    const layout = [{ ...node, controls: [] }];
+    const size = nodeSize(node.ports, []);
+
+    const clips = rectBetween({ x: -10, y: -10 }, { x: 4, y: 4 });
+    const covers = rectBetween({ x: -10, y: -10 }, { x: size.width + 10, y: size.height + 10 });
+    const misses = rectBetween({ x: size.width + 5, y: 0 }, { x: size.width + 40, y: 40 });
+
+    assert.deepEqual(nodesIn(layout, clips).map(entry => entry.id), [node.node.id], 'a corner is enough');
+    assert.deepEqual(nodesIn(layout, covers).map(entry => entry.id), [node.node.id]);
+    assert.deepEqual(nodesIn(layout, misses), [], 'and a band beside it catches nothing');
+});
+
+test('a band catches over the box a creator can see, controls included', () => {
+    // ONE IDEA OF HOW BIG A NODE IS, shared with `hitTest()` and with the renderer. A node
+    // whose param made a row of its own is TALLER than its ports alone, and a band that
+    // measured the ports would miss the half of the card a creator is aiming at.
+    const bare = place('input.onKey', 0, 0);
+    const controls = paramFields(registry.get('input.onKey'), bare.node, { properties: [] });
+    const grown = nodeSize(bare.ports, controls).height;
+
+    assert.ok(grown > nodeSize(bare.ports, []).height, 'the param adds a row');
+
+    const band = rectBetween({ x: 0, y: grown - 2 }, { x: 10, y: grown - 1 });
+    assert.deepEqual(nodesIn([{ ...bare, controls }], band).map(entry => entry.id), [bare.node.id]);
+    assert.deepEqual(nodesIn([{ ...bare, controls: [] }], band), [], 'and the ports alone stop short');
+});
+
+test('a band answers in layout order, so a group keeps the order it is drawn in', () => {
+    const first = place('value.number', 0, 0);
+    const second = place('value.number', 0, 200);
+    const layout = [{ ...first, controls: [] }, { ...second, controls: [] }];
+
+    const all = rectBetween({ x: -50, y: -50 }, { x: 400, y: 400 });
+    assert.deepEqual(nodesIn(layout, all).map(entry => entry.id), [first.node.id, second.node.id]);
+});
+
+test('there is no band until there is a band', () => {
+    assert.deepEqual(nodesIn([], null), [], 'no rectangle catches nothing, rather than throwing');
 });

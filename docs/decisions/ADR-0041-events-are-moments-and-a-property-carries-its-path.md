@@ -130,7 +130,7 @@ refusée l'est avec une phrase, parce qu'un refus silencieux est la pire répons
 | **Property** (Inspector) | **Accepte, après un choix** — menu `Get` / `Set`, puis un nœud **fini** : l'Object, le Component et la propriété étaient tous connus au moment du geste. | **Accepte** — écrit le chemin complet sur le nœud. |
 | **Component** (Inspector) | **Refuse**, avec une phrase — voir §6.1. | **Refuse**, avec la même phrase. |
 | **Resource** (Project) | **Accepte** — un nœud `Resource` tenant son identité. Rien n'est dupliqué : la ressource existe déjà. | **Accepte** si le nœud tient une ressource. |
-| **Fichier** (hors du navigateur) | **Accepte** — importe dans le Project, puis pose un nœud `Resource` dessus. Un seul undo. | **Accepte** si le nœud tient une ressource : importe, puis pointe. |
+| **Fichier** (hors du navigateur) | **Accepte** — importe dans le Project, puis pose un nœud `Resource` dessus. **Deux annulations**, voir §6.2. | **Accepte** si le nœud tient une ressource : importe, puis pointe. Idem. |
 | n'importe quoi, canevas sans `.px` ouvert | **Refuse** — « il n'y a pas de Component ouvert sur ce canevas ». | — |
 
 ### Ailleurs
@@ -171,6 +171,23 @@ un Object. Le refus le dit.
 | Object → graphe | « travailler sur cet Object » | une entrée nommée + un nœud qui la lit — **fini** |
 | Property → graphe | « lire/écrire cette valeur » | un nœud visé et configuré — **fini** |
 | Component → graphe | — | rien qui survive au clic suivant |
+
+### 6.2 Le dépôt d'un fichier n'est pas une seule annulation, et ne peut pas l'être
+
+Mesuré : un Ctrl+Z retire le nœud, la ressource importée reste dans le Project.
+
+Ce n'est pas un oubli de `batch`. Le geste écrit dans **deux ressources** — le manifeste du
+projet pour l'import, le `.px` pour le nœud — et ADR-0024 donne à chaque ressource sa propre
+pile. Une entrée couvrant les deux serait une annulation inter-ressources, que
+ADR-0034 §3.7 laisse explicitement ouverte.
+
+Le comportement est donc : **le nœud s'annule, la ressource reste**. C'est aussi le moins
+surprenant des deux : une ressource importée est un fait du projet, et la faire disparaître
+parce qu'on annule un nœud serait plus étonnant que de la laisser. Les dépôts qui n'écrivent
+que dans le `.px` — Object, Property — restent, eux, atomiques (`batch`, ADR-0024 §4).
+
+La même remarque vaut pour `Add Component ▸ Custom Component` : créer le `.px` et l'attacher
+sont deux ressources, donc deux annulations.
 
 ### Ce qui reste délibérément refusé
 

@@ -113,6 +113,23 @@ export function createDefinitions({ project, registry, workspace = null, scene =
         });
     }
 
+    // AND THE MODEL IS FOLLOWED THE MOMENT IT EXISTS, NOT ONLY WHEN SOMETHING INSTALLS.
+    //
+    // `install()` could only arm the watch above with a model in hand, and the order the
+    // Editor actually produces is the other one: `Add Component ▸ Custom Component` creates
+    // the `.px`, installs it and attaches it to an Object while nothing is open — so there
+    // was no model — and the creator opens the file afterwards to declare its properties.
+    // Nothing was watching by then, so the Objects already carrying the Component kept the
+    // empty schema: the Inspector drew "No properties", and an `objectref` socket declared
+    // this way could never be pointed at an Object at all (ADR-0031 §4).
+    //
+    // The Workspace announces a model the moment it makes one — attached or open, since a
+    // `.px`'s properties are edited from a selection as well as from its canvas — and the
+    // watch is idempotent, so a `.px` attached twice is followed once.
+    workspace?.on?.('attached', ({ resource, model }) => {
+        if (resource?.kind === ResourceKind.COMPONENT) watch(resource.id, model);
+    });
+
     /**
      * Register the type a `.px` declares, and answer its name.
      *

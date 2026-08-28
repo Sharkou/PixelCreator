@@ -342,6 +342,22 @@ test('a target nobody has chosen reads as Self, not as nothing', () => {
     assert.deepEqual(offered.values, ['p9'], 'and the Objects this .px declares are the choices');
 });
 
+test('Get Object with nothing chosen does not read as Self, because it is not', () => {
+    // THE SAME REFERENCE KIND, THE OPPOSITE FALLBACK. `Set Property`'s target answers the
+    // Object the Component is attached to; `Get Object` answers NOTHING. Both used the
+    // `object-socket` kind, and the kind said `Self` for both — so a node that hands out
+    // null wore the name of the node that hands out itself, and a creator who had declared
+    // no Object read a card that looked finished.
+    const sockets = [{ id: 'p9', name: 'Player', type: PropertyType.OBJECTREF, default: null }];
+
+    const alone = fieldNamed(describeNode(node('reference.object'), { registry, properties }), 'object');
+    const offered = fieldNamed(describeNode(node('reference.object'), { registry, properties: sockets }), 'object');
+
+    assert.equal(alone.placeholder, NOTHING_SELECTED, 'no socket declared: nothing to hand on');
+    assert.equal(offered.placeholder, NOTHING_SELECTED, 'sockets declared, none chosen: still nothing');
+    assert.deepEqual(offered.values, ['p9'], 'and the Objects this .px declares are the choices');
+});
+
 test('a node reads as its type, whatever it has been pointed at', () => {
     // `Get Ground`, `Set Sprite.height`, `Middle Button` — every one of those put a VALUE
     // where the type's name belongs, so the same node had a different name in every graph

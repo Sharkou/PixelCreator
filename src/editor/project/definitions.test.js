@@ -233,3 +233,47 @@ test('a .px with no behaviours host installs all the same', async () => {
     assert.equal(await definitions.install(px.id), px.id);
     assert.deepEqual(await definitions.refresh(), [px.id]);
 });
+
+// --- the model appears AFTER the install, which is the order the Editor works in ---------
+
+test('declaring a property on a .px attached after it was installed reaches the scene', async () => {
+    // THE ORDER A CREATOR ACTUALLY PRODUCES, and the one every test above skips. `Add
+    // Component ▸ Custom Component` installs the `.px` and attaches it to an Object — at
+    // which point NOTHING is open, so `install()` sees no model. The creator then opens the
+    // file and declares a property, and the only thing that could notice is the observer
+    // `install()` arms when it is handed a model. It never was, so the Object went on
+    // carrying the empty schema: the Inspector drew "No properties", and an `objectref`
+    // socket declared this way could never be pointed at anything.
+    const { scene, registry, px, definitions, workspace } = await setup();
+    await definitions.install(px.id);
+    const object = carrier(scene, registry, px.id);
+
+    const model = await workspace.attach(px.id, { registry });
+    model.addProperty({ name: 'target', type: PropertyType.OBJECTREF, default: null });
+
+    // The installer re-reads on a microtask, because a type change is two writes under one
+    // batch and rebuilding between them would install a schema that existed for no one.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.ok('target' in componentSchema(object.getComponent(px.id)),
+        'the Object carrying the Component reports the property, so a panel can draw a row');
+    assert.equal(object.getComponent(px.id).target, null, 'and holds its declared default');
+});
+
+test('a .px opened having never been installed still follows its own schema changes', async () => {
+    // The other order: a creator writes a `.px` first and attaches it afterwards. Nothing
+    // has installed it, so there is no class to keep in step yet — what matters is that the
+    // moment one exists it is the CURRENT schema, not the one the file had when it opened.
+    const { scene, registry, px, definitions, workspace } = await setup();
+
+    const model = await workspace.attach(px.id, { registry });
+    model.addProperty({ name: 'speed', type: PropertyType.NUMBER, default: 5 });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await definitions.install(px.id);
+    const object = carrier(scene, registry, px.id);
+
+    assert.equal(object.getComponent(px.id).speed, 5);
+});

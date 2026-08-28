@@ -384,6 +384,7 @@ export class Workspace {
     /**
      * Subscribe to workspace changes.
      *
+     *   'attached'  { resource, kind, model, scene }  a resource gained a live model
      *   'opened'    { resource, kind, model, scene }  a resource became open
      *   'closed'    { resource, kind, model, scene }  it stopped being open
      *   'dirty'     { resource, dirty }               there is, or is no longer, unsaved work
@@ -568,6 +569,16 @@ export class Workspace {
 
         this.#editors.set(resource.id, editor);
         this.#active = resource.id;
+
+        // ATTACHING IS ITS OWN MOMENT, AND IT IS THE ONE SOMEBODY WAS MISSING. `opened` says
+        // a window is presenting a resource; the model exists before that and can be edited
+        // without it — selecting a `.px` in the Project panel gives it one (`attach()`), and
+        // that is where a creator declares properties. Whoever has to follow a `.px`'s
+        // SCHEMA needs the model, not the window, so the model announces itself: without
+        // this, `project/definitions.js` could only start watching a `.px` that happened to
+        // be attached before something asked to use it, and a property declared afterwards
+        // never reached the Objects already carrying the Component.
+        this.#emitter.emit('attached', this.#payload(editor));
 
         if (open) {
             editor.open = true;

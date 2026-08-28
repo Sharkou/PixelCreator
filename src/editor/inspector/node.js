@@ -238,12 +238,17 @@ const REFERENCES = {
             .filter(property => property.type === PropertyType.OBJECTREF)
             .map(property => ({ value: property.id, label: property.name })),
         // BOTH EMPTIES READ THE SAME, because they ARE the same: whether this `.px` declares
-        // no Object inputs yet or declares some and none is chosen, the node acts on its own
-        // Object. The way to change that — drag an Object onto the node, or wire one in — is
-        // said by the drop ghost and by the row's tooltip, not by a control that lies about
-        // what the node is doing right now.
-        empty: () => SELF_TARGET,
-        unset: () => SELF_TARGET
+        // no Object inputs yet or declares some and none is chosen, the answer is whatever
+        // the node does with no socket named.
+        //
+        // AND ONLY THE PARAM KNOWS WHAT THAT IS. `Set Property`'s target falls back to the
+        // Object the Component is attached to, so its picker says `Self` and tells the truth
+        // (ADR-0040 §3). `Get Object` has no such fallback — with no socket named it hands
+        // on NOTHING — and it wore the same word, so a node that answers null read as a node
+        // that answers itself. The word therefore travels with the param that means it, and
+        // a param that claims no fallback gets the `None` every other unset reference shows.
+        empty: (node, context, descriptor) => descriptor?.unset ?? NOTHING_SELECTED,
+        unset: (node, context, descriptor) => descriptor?.unset ?? NOTHING_SELECTED
     }
 };
 
@@ -474,9 +479,9 @@ function referenceChoice(name, descriptor, node, context) {
         // picker takes the whole row (windows/graph.js), so `None` would be a dropdown that
         // names neither the question nor the answer.
         placeholder: options.length === 0
-            ? reference.empty(node, context)
+            ? reference.empty(node, context, descriptor)
             : (partialPath(descriptor, node, context)
-                ?? reference.unset?.(node, context)
+                ?? reference.unset?.(node, context, descriptor)
                 ?? (descriptor.compound ? CHOOSE_PROPERTY : NOTHING_SELECTED)),
     });
 

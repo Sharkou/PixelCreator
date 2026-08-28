@@ -18,10 +18,23 @@
 // through the pipeline the `.px` owns, which is the same pipeline its properties travel
 // (ADR-0024). Nothing in this file writes to the model directly.
 //
-// WHAT IS DELIBERATELY ABSENT. No marquee selection, no multi-select, no copy and paste, no
-// node comments, no minimap. Each is a real feature and each is a gesture with its own
-// questions; shipping half of one is how a canvas becomes unpredictable. What is here is
-// the loop a creator needs to write a behaviour: place, wire, move, inspect, delete.
+// SEVERAL NODES MAY BE SELECTED, AND ONE MAY BE INSPECTED. A band swept over bare canvas
+// catches what it crosses; the caught nodes move together and delete together, each as ONE
+// entry in the history. What does NOT follow is a second idea of what the Editor's subject
+// is: ADR-0032 says there is one, so a selection of several announces nothing to inspect and
+// a selection of one announces that one. "Select a single node to inspect it" is a rule with
+// no exception, and it is the whole of what a creator has to know.
+//
+// WHY THE BAND IS ON THE LEFT BUTTON AND CONFLICTS WITH NOTHING. Pan is middle and right
+// (below); a press that lands on a port starts a wire and a press that lands on a node
+// carries it, both decided before this by `hitTest()`; and a drag from another window
+// arrives as HTML5 `drop` or through the shell's own router, never as a `pointerdown` here.
+// Left-press on bare canvas was the one gesture that did nothing but deselect, so the band
+// costs no gesture that existed.
+//
+// WHAT IS STILL DELIBERATELY ABSENT. No copy and paste, no node comments, no minimap. Each
+// is a real feature and each is a gesture with its own questions; shipping half of one is
+// how a canvas becomes unpredictable.
 
 import {
     GraphSeverity,
@@ -42,6 +55,7 @@ import { isEditing } from '../ui/focus.js';
 import { describeNode, inputFields, paramWrites } from '../inspector/node.js';
 import { DropZone } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
+import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
 import '../ui/field.js';
 import {
     GRID,
@@ -57,8 +71,10 @@ import {
     toScreen,
     nodeRows,
     nodeSize,
+    nodesIn,
     placePorts,
     portPosition,
+    rectBetween,
     snap,
     toGraph,
     zoomAt
@@ -78,6 +94,10 @@ const DRAG_THRESHOLD = 3;
 export class GraphWindow extends Element {
 
     static styles = sheet(`
+        /* A file is over the canvas and will be taken: the same outline every other surface
+           that accepts one already draws (windows/project.js). */
+        :host(.importing) { outline: 2px dashed var(--px-accent); outline-offset: -2px; }
+
         :host {
             display: block;
             position: relative;
@@ -155,6 +175,21 @@ export class GraphWindow extends Element {
 
         /* Broken beats family: something is wrong here, and that is the more urgent fact. */
         .node.invalid .box { stroke: var(--px-danger) !important; stroke-opacity: 1; }
+
+        /* THE BAND IS A GESTURE, NOT AN OBJECT, so it is the accent and nothing else on the
+           canvas is: a creator sweeping one is doing the only thing happening. Its stroke is
+           in graph units and the view scales it, which is correct here and wrong for the
+           grid — this shape IS on the plane, and its corners have to stay on the coordinates
+           the sweep started from. It takes no pointer events because the pointer is captured
+           and the band must never come between it and a hit test. */
+        .band {
+            fill: var(--px-accent);
+            fill-opacity: 0.1;
+            stroke: var(--px-accent);
+            stroke-width: 1;
+            stroke-dasharray: 4 3;
+            pointer-events: none;
+        }
 
         .node .glyph { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 
@@ -413,6 +448,7 @@ export class GraphWindow extends Element {
     #wires = null;
     #nodesLayer = null;
     #pending = null;
+    #band = null;
     #status = null;
     #empty = null;
     #grid = null;
@@ -421,8 +457,22 @@ export class GraphWindow extends Element {
 
     #view = { x: 0, y: 0, zoom: 1 };
     #watching = false;
+
+    /**
+     * The node the Editor is showing, or null — the ONE subject ADR-0032 allows.
+     *
+     * It is null whenever `#chosen` does not hold exactly one node, which is what keeps the
+     * Inspector honest: with three nodes caught in a band there is no single one it could
+     * be drawing, and picking one of the three would be the canvas deciding on the creator's
+     * behalf which of their nodes they meant.
+     */
     #selected = null;
+
+    /** Every node the canvas acts on: what moves together and deletes together. */
+    #chosen = new globalThis.Set();
+
     #drag = null;
+    #marquee = null;
     #issues = [];
 
     /**
@@ -447,7 +497,9 @@ export class GraphWindow extends Element {
         this.release('graph');
         this.#definition = definition;
         this.#selected = null;
+        this.#chosen = new globalThis.Set();
         this.#drag = null;
+        this.#marquee = null;
         this.#watch();
 
         if (this.isConnected) {
@@ -700,11 +752,56 @@ export class GraphWindow extends Element {
         return this.#selected ? this.#definition?.graph.node(this.#selected) ?? null : null;
     }
 
+    /** A file being carried over the canvas: taken, and said so. */
+    #onDragOver = event => {
+        if (!carriesFiles(event) || !this.#definition) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        this.classList.add('importing');
+    };
+
+    #onDragLeave = () => this.classList.remove('importing');
+
+    /**
+     * A file let go on the canvas.
+     *
+     * READ, THEN ROUTED THROUGH THE SAME RULES AS EVERY OTHER DROP. What decides whether it
+     * becomes a `Resource` node on bare canvas or fills the one under the pointer is the
+     * rule table, not this handler — so the answer is the same one `canDrop()` gives, and
+     * there is no second place where a drop means something.
+     */
+    #onDropFiles = async event => {
+        if (!carriesFiles(event) || !this.#definition) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.classList.remove('importing');
+
+        const payload = await readDroppedFiles(event);
+        if (!payload) return;
+
+        performDrop(payload, this.zoneAt(event.clientX, event.clientY), this.#dropContext());
+    };
+
     connectedCallback() {
         if (this.shadowRoot.childElementCount === 0) this.#build();
 
         globalThis.addEventListener('keydown', this.#onKeyDown);
         this.track(() => globalThis.removeEventListener('keydown', this.#onKeyDown));
+
+        // A FILE FROM OUTSIDE THE BROWSER LANDS HERE TOO. Every other surface that can take
+        // one already listens — the Project panel, the Hierarchy, the scene, a resource
+        // field — and the canvas was the one that did not, so `files-to-canvas` and
+        // `files-to-node` existed in the rule table and could never be reached by a hand.
+        // Bound on the HOST, like the Project panel binds it: events from a shadow root
+        // retarget here, so this is the one place that hears every drop (ADR-0026 §6).
+        this.addEventListener('dragover', this.#onDragOver);
+        this.addEventListener('dragleave', this.#onDragLeave);
+        this.addEventListener('drop', this.#onDropFiles);
+        this.track(() => {
+            this.removeEventListener('dragover', this.#onDragOver);
+            this.removeEventListener('dragleave', this.#onDragLeave);
+            this.removeEventListener('drop', this.#onDropFiles);
+        });
 
         // RE-ESTABLISHED HERE, NOT ONLY IN `bind()`. A disconnect releases everything the
         // element subscribed to (ui/element.js), and re-parenting an element is performed by
@@ -798,7 +895,12 @@ export class GraphWindow extends Element {
         this.#wires = svg('g');
         this.#nodesLayer = svg('g');
         this.#pending = svg('path', { class: 'wire pending' });
-        this.#content = svg('g', {}, this.#wires, this.#pending, this.#nodesLayer);
+        // ON TOP OF THE NODES, because a band is what the creator is doing right now and the
+        // nodes are what it is being done to. It carries the view transform with everything
+        // else, so its corners stay on the graph coordinates the sweep started from however
+        // the canvas is panned or zoomed mid-gesture.
+        this.#band = svg('rect', { class: 'band', display: 'none' });
+        this.#content = svg('g', {}, this.#wires, this.#pending, this.#nodesLayer, this.#band);
 
         // THE SAME GRID THE SCENE DRAWS, in the language the scene draws it in: a fine
         // line every GRID units, an emphasised one every fourth, and an axis at the
@@ -1015,9 +1117,32 @@ export class GraphWindow extends Element {
 
         fill(this.#wires, graph.connections().map(connection => this.#drawWire(connection, byId)).filter(Boolean));
         fill(this.#nodesLayer, layout.map(entry => this.#drawNode(entry)));
+        this.#drawBand();
 
         this.#empty.hidden = layout.length > 0;
         this.#showStatus();
+    }
+
+    /**
+     * The selection band, where the sweep has reached, or nothing when there is no sweep.
+     *
+     * `display`, NOT `hidden`. This is an SVG element, and `hidden` is an HTML attribute the
+     * UA stylesheet turns into `display: none` for HTML elements only — set on a `<rect>` it
+     * is inert, so the band stayed on the canvas after the pointer was released and the next
+     * sweep drew a second one. `display` is a presentation attribute SVG defines itself.
+     */
+    #drawBand() {
+        const band = this.#marquee;
+        if (!band) {
+            this.#band.setAttribute('display', 'none');
+            return;
+        }
+
+        this.#band.removeAttribute('display');
+        for (const [name, value] of [['x', band.x], ['y', band.y],
+            ['width', band.width], ['height', band.height]]) {
+            this.#band.setAttribute(name, value);
+        }
     }
 
     /**
@@ -1111,12 +1236,12 @@ export class GraphWindow extends Element {
         const hue = nodeHue(definition, this.#definition.graph.portsOf(node));
 
         const classes = ['node'];
-        if (node.id === this.#selected) classes.push('selected');
+        if (this.#chosen.has(node.id)) classes.push('selected');
         if (broken) classes.push('invalid');
         // GRABBING WHILE IT IS BEING CARRIED. The rule was written and nothing ever set the
         // class, so a node showed the open hand throughout a drag - the one moment the
         // cursor had something to say.
-        if (this.#drag?.kind === 'node' && this.#drag.node === node.id) classes.push('dragging');
+        if (this.#drag?.kind === 'node' && this.#drag.nodes.has(node.id)) classes.push('dragging');
 
         const group = svg('g', {
             class: classes.join(' '),
@@ -1506,12 +1631,31 @@ export class GraphWindow extends Element {
         }
 
         if (hit.kind === 'node') {
-            this.#select(hit.node.id);
+            // PRESSING WHAT IS ALREADY SELECTED CARRIES THE WHOLE SELECTION; pressing
+            // anything else selects that one and carries it. That is the rule every file
+            // manager and every canvas has, and it is what makes a band worth drawing: the
+            // gesture after it is the one the band was drawn for.
+            //
+            // ADDING TO A SELECTION IS A MODIFIER, and Shift is the one that means "and
+            // also" everywhere else in this Editor's lists.
+            if (event.shiftKey) this.#toggle(hit.node.id);
+            else if (!this.#chosen.has(hit.node.id)) this.#select(hit.node.id);
+
+            const carried = new globalThis.Set(this.#chosen);
+            // A SHIFT-CLICK THAT REMOVED THE NODE UNDER THE POINTER CARRIES NOTHING, and
+            // must not: dragging away from a node one has just deselected would move it.
+            if (!carried.has(hit.node.id)) return;
+
             this.#drag = {
                 kind: 'node',
-                node: hit.node.id,
-                offsetX: point.x - hit.node.x,
-                offsetY: point.y - hit.node.y,
+                nodes: carried,
+                // WHERE EACH ONE WAS WHEN THE GESTURE STARTED. A group moves by a delta, not
+                // to a position: reading each node's live `x` on every pointermove would
+                // compound the rounding `snap()` does, and the shapes would drift apart.
+                origins: new globalThis.Map([...carried]
+                    .map(id => this.#definition.graph.node(id))
+                    .filter(Boolean)
+                    .map(node => [node.id, { x: node.x, y: node.y }])),
                 start: point,
                 moved: false,
                 // ONE BATCH FOR THE WHOLE GESTURE, minted here rather than per step: a drag
@@ -1529,7 +1673,29 @@ export class GraphWindow extends Element {
             return;
         }
 
-        this.#select(null);
+        // BARE CANVAS: A BAND, and it only becomes one once the pointer has travelled. Below
+        // the threshold the gesture is still the click it has always been — deselect — so
+        // nothing a creator already does has changed meaning.
+        this.#drag = {
+            kind: 'marquee',
+            start: point,
+            moved: false,
+            // WHAT THE BAND ADDS TO. Shift keeps what was selected and adds; without it the
+            // band IS the selection. Held for the whole gesture rather than read at the drop,
+            // so releasing Shift mid-sweep does not silently change what the band means.
+            base: event.shiftKey ? new globalThis.Set(this.#chosen) : new globalThis.Set()
+        };
+        capture(this.#svg, event.pointerId);
+    }
+
+    /**
+     * Add a node to the selection, or take it out.
+     * @param {string} id - The node
+     */
+    #toggle(id) {
+        const next = new globalThis.Set(this.#chosen);
+        if (!next.delete(id)) next.add(id);
+        this.#choose(next);
     }
 
     /**
@@ -1610,17 +1776,40 @@ export class GraphWindow extends Element {
             return;
         }
 
+        if (drag.kind === 'marquee') {
+            if (!drag.moved) {
+                const travelled = Math.hypot(point.x - drag.start.x, point.y - drag.start.y);
+                if (travelled < DRAG_THRESHOLD) return;
+                drag.moved = true;
+            }
+
+            this.#marquee = rectBetween(drag.start, point);
+            // LIVE, SO THE BAND ANSWERS WHILE IT IS BEING DRAWN. A creator sweeping across a
+            // canvas is asking "does this catch that one?", and answering only on release
+            // makes the gesture a guess they have to redo.
+            this.#choose([...drag.base, ...nodesIn(this.#layout(), this.#marquee).map(node => node.id)]);
+            this.#draw();
+            return;
+        }
+
         if (drag.kind === 'node') {
             const travelled = Math.hypot(point.x - drag.start.x, point.y - drag.start.y);
             if (!drag.moved && travelled < DRAG_THRESHOLD) return;
             drag.moved = true;
 
-            const moved = this.#definition.graph.moveNode(
-                drag.node,
-                snap(point.x - drag.offsetX),
-                snap(point.y - drag.offsetY),
-                { batch: drag.batch }
-            );
+            // ONE DELTA, SNAPPED ONCE, APPLIED TO EVERY ORIGIN. Snapping each node's own
+            // destination would pull nodes that started off-grid onto it and change the
+            // shape a creator arranged; snapping the MOVEMENT keeps the group rigid and
+            // still lands a node that was on the grid back on it.
+            const dx = snap(point.x - drag.start.x);
+            const dy = snap(point.y - drag.start.y);
+
+            let moved = false;
+            for (const [id, origin] of drag.origins) {
+                moved = this.#definition.graph.moveNode(
+                    id, origin.x + dx, origin.y + dy, { batch: drag.batch }
+                ) || moved;
+            }
             // A node picked up and dragged within one grid cell submits nothing, so nothing
             // would repaint - and the closed hand would appear only once it had travelled.
             if (!moved) this.#draw();
@@ -1635,6 +1824,15 @@ export class GraphWindow extends Element {
             const opensMenu = drag.menu && !drag.moved;
             this.#cancelDrag(event.pointerId);
             if (opensMenu) this.#openNodeMenu(event);
+            return;
+        }
+
+        if (drag.kind === 'marquee') {
+            // A PRESS THAT NEVER TRAVELLED IS THE CLICK IT ALWAYS WAS. Deselect, unless the
+            // creator was holding the modifier that means "and also" — which would then have
+            // thrown away the selection they were adding to.
+            if (!drag.moved && !event.shiftKey) this.#select(null);
+            this.#cancelDrag(event.pointerId);
             return;
         }
 
@@ -1742,6 +1940,9 @@ export class GraphWindow extends Element {
         const derived = this.#drag !== null;
 
         this.#pending.removeAttribute('d');
+        // The band is drawn from this and only this, so letting go erases it. The nodes it
+        // caught stay selected: what the gesture produced is the selection, not the shape.
+        this.#marquee = null;
         this.#svg.classList.remove('panning', 'moving');
         this.#clearWireMarks();
         if (pointerId !== undefined && this.#svg.hasPointerCapture?.(pointerId)) {
@@ -1765,14 +1966,19 @@ export class GraphWindow extends Element {
     }
 
     #onKeyDown = event => {
-        if (!this.isConnected || this.hidden || !this.#definition || !this.#selected) return;
+        if (!this.isConnected || this.hidden || !this.#definition || this.#chosen.size === 0) return;
         if (event.key !== 'Delete' && event.key !== 'Backspace') return;
         if (isEditing()) return;
 
         event.preventDefault();
-        const removed = this.#selected;
+        const removed = [...this.#chosen];
         this.#select(null);
-        this.#definition.graph.removeNode(removed);
+
+        // ONE BATCH FOR THE WHOLE SELECTION, so deleting four nodes is one `Ctrl Z` and not
+        // four — the rule a node drag already lives by (ADR-0024 §4). Their connections go
+        // with them under the same batch, because `removeNode()` takes it down with them.
+        const batch = createId();
+        for (const id of removed) this.#definition.graph.removeNode(id, { batch });
     };
 
     #pointerAt(event) {
@@ -1783,8 +1989,26 @@ export class GraphWindow extends Element {
     // --- selection and creation -----------------------------------------------------------
 
     #select(id) {
-        if (this.#selected === id) return;
-        this.#selected = id;
+        this.#choose(id === null ? [] : [id]);
+    }
+
+    /**
+     * Make these nodes the selection, and say what there is to inspect.
+     *
+     * ONE WRITER FOR BOTH FACTS, so the set the canvas acts on and the subject the Inspector
+     * shows can never disagree. `#selected` is derived here and nowhere else: exactly one
+     * node is a subject, none and several are not (ADR-0032).
+     *
+     * @param {Iterable<string>} ids - The node identities to select
+     */
+    #choose(ids) {
+        const next = new globalThis.Set(ids);
+        const subject = next.size === 1 ? [...next][0] : null;
+
+        if (subject === this.#selected && sameSet(next, this.#chosen)) return;
+
+        this.#chosen = next;
+        this.#selected = subject;
         this.#draw();
 
         // ANNOUNCED, NOT REACHED FOR. The Inspector shows what is selected, and it learns
@@ -2049,6 +2273,22 @@ function humanise(id) {
     return globalThis.String(id ?? '')
         .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
         .replace(/^./, first => first.toUpperCase());
+}
+
+/**
+ * Whether two sets hold the same identities.
+ *
+ * Selecting the same nodes twice must not repaint the canvas or re-announce a subject that
+ * has not changed — the guard `#select()` has always had, widened to a set.
+ *
+ * @param {Set<string>} first - A set
+ * @param {Set<string>} second - Another
+ * @returns {boolean} True when they are equal
+ */
+function sameSet(first, second) {
+    if (first.size !== second.size) return false;
+    for (const value of first) if (!second.has(value)) return false;
+    return true;
 }
 
 /** The whole of a compound choice, for a row too narrow to draw it. */
