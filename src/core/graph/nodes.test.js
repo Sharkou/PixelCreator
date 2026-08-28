@@ -28,7 +28,8 @@ import {
     portValueOf,
     referencedProperty,
     registerStandardNodes,
-    storedValueOf
+    storedValueOf,
+    targetSocket
 } from './standard.js';
 
 // --- the registry ---------------------------------------------------------------------------
@@ -117,6 +118,74 @@ test('shapes that are not each other are refused', () => {
     assert.equal(typesCompatible(PropertyType.BOOLEAN, PropertyType.COLOR), false);
 });
 
+// --- what kind of thing each node is (the taxonomy) -----------------------------------------
+
+test('a node that hands over a reference is not a node that reads a property', () => {
+    // THE SPLIT THIS ASSERTS. Everything reaching outside the Component used to be `Scene`,
+    // so `Self` — which produces an Object handle and takes part in no execution — was
+    // classified with `Get Property On`, which is a property access aimed elsewhere. They
+    // are different acts and the canvas colours them apart (editor/graph/palette.js).
+    const registry = registerStandardNodes(new NodeRegistry());
+    const categoryOf = type => registry.get(type).category;
+
+    for (const type of ['scene.self', 'scene.parent', 'scene.findByTag', 'object.isValid']) {
+        assert.equal(categoryOf(type), 'References', type);
+    }
+    for (const type of ['property.get', 'property.set', 'property.getOn', 'property.setOn']) {
+        assert.equal(categoryOf(type), 'Properties', type);
+    }
+});
+
+test('the two On nodes sit with the property nodes whose semantics they share', () => {
+    // ADR-0034 §3.3: `Get Property On` IS `Get Property` aimed somewhere else — a property
+    // named by identity, a plain write, no Operation. Classifying it by WHERE it points
+    // rather than by WHAT it does is what put it beside `Find By Tag`.
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    assert.equal(registry.get('property.getOn').category, registry.get('property.get').category);
+    assert.equal(registry.get('property.setOn').category, registry.get('property.set').category);
+});
+
+test('every input node is one family, and the events are the other half of it', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    for (const type of ['input.key', 'input.pointer', 'input.pointerButton']) {
+        assert.equal(registry.get(type).category, 'Input', type);
+    }
+    for (const type of ['event.start', 'event.update']) {
+        assert.equal(registry.get(type).category, 'Events', type);
+    }
+});
+
+// --- a node is named for what it does, never for what it is set to -------------------------
+
+test('no node in the catalogue renames itself after what it is configured with', () => {
+    // THE RULE, AND IT IS NOW ABSOLUTE. A node used to read `Middle Button`, `Get Ground`,
+    // `Set Sprite.height` once it was pointed somewhere — every one of those is a VALUE
+    // standing where the TYPE's name belongs. A tutorial has to be able to say "add a Set
+    // Property" and still find that node an hour later; a creator has to be able to match
+    // the header on the canvas to the entry in the menu.
+    //
+    // WHAT IT IS CONFIGURED WITH IS DRAWN INSIDE IT, on rows that can be changed — which is
+    // where a value belongs and where it can be edited (ADR-0039 §5).
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    for (const definition of registry.definitions()) {
+        assert.equal(definition.title, undefined,
+            `${definition.type} carries a title(), so its header can change with its params`);
+    }
+});
+
+test('a node still redraws when a param changes its shape', () => {
+    // Removing the dynamic titles must not cost the redraw: a param that changes the PORTS
+    // still has to repaint, and `shapeDependsOnNode` is what the window asks.
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    for (const type of ['property.get', 'property.set', 'property.getOn', 'property.setOn']) {
+        assert.equal(shapeDependsOnNode(registry.get(type)), true, type);
+    }
+});
+
 // --- the menu ------------------------------------------------------------------------------------
 
 test('node types group by category, in the declared order, with nothing empty', () => {
@@ -125,10 +194,12 @@ test('node types group by category, in the declared order, with nothing empty', 
     const groups = groupNodes(registry);
 
     // `Input` sits beside `Events` because both are the outside world arriving in a graph
-    // (ADR-0014), and `Scene` after the Component's own properties, between what a Component
-    // knows about itself and what it does with it: reaching other Objects (ADR-0034 §3.3).
+    // (ADR-0014). `References` comes before `Properties` because that is the order a
+    // creator works in: reach an Object, then read or write something on it — and the two
+    // are separate groups because handing over a reference and accessing a property are
+    // different acts, which is what the canvas colours apart (ADR-0034 §3.3).
     assert.deepEqual(groups.map(group => group.category).slice(0, 5),
-        ['Events', 'Input', 'Properties', 'Scene', 'Flow']);
+        ['Events', 'Input', 'References', 'Properties', 'Flow']);
     assert.equal(groups.every(group => group.entries.length > 0), true);
     assert.equal(groups.flatMap(group => group.entries).length, STANDARD_NODES.length);
 });
@@ -187,23 +258,22 @@ test('the Key node asks three questions about a key, and all three are booleans'
         assert.equal(port.kind, PortKind.DATA, port.id);
         assert.equal(port.type, PropertyType.BOOLEAN, port.id);
     }
-    assert.deepEqual(outputs.map(port => port.label), ['Held', 'Pressed', 'Released']);
+    // THE LABELS SAY WHEN EACH IS TRUE, because two of the three names read as the same
+    // thing in English: a creator asking "is the key pressed" wants the one that lasts and
+    // reaches for the one that is true for a single step. The IDS are what a wire lands on
+    // and they are untouched, so no graph written before this changes (ADR-0027).
+    assert.deepEqual(outputs.map(port => port.label), ['Is Down', 'Just Pressed', 'Just Released']);
 });
 
-test('a configured Key node says which key, and an empty one keeps its own label', () => {
+test('a Key node keeps its name whatever key it watches', () => {
     const registry = registerStandardNodes(new NodeRegistry());
     const definition = registry.get('input.key');
 
-    // Which is why its shape is a function of the node: typing a key changes what it reads
-    // as, so the window has to redraw it (`shapeDependsOnNode`).
-    assert.equal(shapeDependsOnNode(definition), true);
-
-    assert.equal(definition.title({ params: { key: 'ArrowLeft' } }), 'Key ArrowLeft');
-    // A node nobody has touched READS `Space`, so it says so — the title is what the node
-    // does, and there is nothing missing from it. An EMPTIED field reads nothing, and then
-    // there is nothing to say beyond the type's own label.
-    assert.equal(definition.title({ params: {} }), 'Key Space');
-    assert.equal(definition.title({ params: { key: '' } }), null);
+    // Its PORTS never depend on the key, so nothing about it moves — but the param does
+    // change what it does, and the field showing it is inside the node.
+    assert.equal(definition.label, 'Key');
+    assert.equal(definition.title, undefined);
+    assert.equal(definition.params.key.default, 'Space');
 });
 
 test('the Key node reads the input it is handed and never looks for one', () => {
@@ -289,7 +359,7 @@ test('the Pointer Button node asks the same three questions a key does', () => {
 
     assert.deepEqual(outputs.map(port => port.id), ['held', 'pressed', 'released']);
     for (const port of outputs) assert.equal(port.type, PropertyType.BOOLEAN, port.id);
-    assert.deepEqual(outputs.map(port => port.label), ['Held', 'Pressed', 'Released']);
+    assert.deepEqual(outputs.map(port => port.label), ['Is Down', 'Just Pressed', 'Just Released']);
 });
 
 test('a button is stored as a name, and read as the index the input state uses', () => {
@@ -304,8 +374,10 @@ test('a button is stored as a name, and read as the index the input state uses',
     assert.deepEqual(descriptor.labels, ['Left', 'Middle', 'Right']);
     assert.equal(descriptor.default, 'left');
 
-    assert.equal(definition.title({ params: { button: 'right' } }), 'Right Button');
-    assert.equal(definition.title({ params: {} }), 'Left Button', 'untouched watches the default');
+    // `Right Button` USED TO BE THE WHOLE HEADING, and it dropped the word `Pointer` — the
+    // one word saying which node this is. There is no heading but the type's name now.
+    assert.equal(definition.label, 'Pointer Button');
+    assert.equal(definition.title, undefined);
 });
 
 test('a button a payload names that does not exist falls back rather than reading nothing', () => {

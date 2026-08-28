@@ -63,6 +63,7 @@ batch** : un `Ctrl Z` reprend tout le geste.
 | Object | un **nom** de propriété, et son type `objectref` | projet |
 | Component | son `componentType` dans un param | projet |
 | Property | `componentType` + `property.id` dans deux params | projet |
+| Resource | sa `ResourceId` dans un param — **ajouté par ADR-0039** | projet |
 
 L'invariant 1 d'ADR-0034 est tenu à la lettre : **aucune identité de scène**. Un nom
 d'affichage sert à nommer une propriété — dont le lien reste porté par son `id`, insensible
@@ -83,6 +84,15 @@ créé un second.
 **Atterrir sur un nœud existant n'ouvre aucun menu** : poser ce nœud *était* le choix. Un
 dépôt sur un nœud **configure** ses params ; un dépôt sur toile nue **crée**, après la
 question.
+
+> **Étendu par ADR-0039 §3 — le dépôt crée un nœud FINI, pas un nœud à moitié rempli.**
+> Le dépôt d'une propriété écrivait `component` et `property` et laissait la cible vide : le
+> créateur devait ensuite draguer l'Object depuis la Hierarchy et tirer un fil vers `Target`,
+> alors que l'Inspector affichait déjà cet Object au moment du geste. Le dépôt déclare
+> désormais (ou réutilise) la prise `objectref` de cet Object et vise le nœud dessus, sous
+> **un seul batch**. Ce qui entre dans le `.px` est inchangé : un NOM de prise et deux
+> identités de portée projet — l'`ObjectId` voyage avec le glissement et n'est écrit nulle
+> part (invariant 1 d'ADR-0034).
 
 ### 2.5 Le typage reste la chaîne existante
 
@@ -157,5 +167,5 @@ ADR-0027 §3, §5, §8, §9 ; ADR-0036 ; ADR-0024. **Reste refusé :** le port `
 | Point | Pourquoi |
 |---|---|
 | **Préremplir la valeur d'instance** quand le `.px` n'est attaché qu'à un seul Object | seul endroit où une écriture inter-ressources réapparaîtrait ; à décider avec ADR-0024, pas au détour d'un dépôt |
-| **Le geste de drag d'une ligne de propriété dans l'Inspector** | le libellé d'une ligne est déjà la poignée de scrub d'une propriété numérique (`ui/field.js`) ; lui donner un second sens serait un geste à deux significations. Une poignée dédiée est la piste, c'est une décision de design |
+| ~~**Le geste de drag d'une ligne de propriété dans l'Inspector**~~ | **Tranché (ADR-0039) :** la poignée dédiée que ce point appelait existe — six points sur la ligne, qui arrêtent le `pointerdown` pour que le scrub du libellé ne voie jamais les événements d'un glissement. Une ligne appariée (`Position`) n'en a pas : c'est deux propriétés, et le Core n'a pas de type vecteur (ADR-0023 §2) |
 | **Un type de port `component`** | refusé par ADR-0034 §3.2 ; rien ne le consomme |

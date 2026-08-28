@@ -85,12 +85,15 @@ export {
 export {
     COMPONENT_PROPERTY_REFERENCE,
     COMPONENT_REFERENCE,
+    KEY_REFERENCE,
+    OBJECT_SOCKET_REFERENCE,
     PROPERTY_REFERENCE,
     STANDARD_NODES,
     referencedComponent,
     referencedComponentProperty,
     referencedProperty,
-    registerStandardNodes
+    registerStandardNodes,
+    targetSocket
 } from './graph/standard.js';
 export { GRAPH_VERSION, Graph, createConnection, createNode } from './graph/graph.js';
 export { DEFAULT_PROPERTY_TYPE, ComponentDefinition } from './graph/definition.js';

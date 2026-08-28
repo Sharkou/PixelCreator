@@ -22,7 +22,7 @@
 // never rewritten by a zoom, which is the mistake that makes a graph editor lose its
 // layout.
 
-import { PortKind } from '../../core/mod.js';
+import { OBJECT_TYPE, PortKind } from '../../core/mod.js';
 import { carriesControl } from '../inspector/node.js';
 import { MAJOR_EVERY, adaptiveSpacing } from '../grid.js';
 
@@ -43,9 +43,16 @@ export const HEADER_HEIGHT = 26;
  * that edits one of them, so the thing and the socket it travels through are on the same
  * line by construction rather than by tuning.
  *
- * Tall enough to hold a text field: a 20 px port row is not a box you can type in.
+ * A ROW IS A CONTROL PLUS THE THINNEST GAP THAT STILL SEPARATES TWO, and the second half of
+ * that sentence is a correction. It was 22 — a control squeezed to 18 px — then 28, which
+ * separated the fields and turned every node into a tower: a `Multiply` a third taller for
+ * two sockets nobody was confusing. A canvas is read with dozens of nodes on it, so density
+ * is not a saving here, it is legibility.
+ *
+ * 24 is `--px-control` (22) plus 2. The field stops being squeezed AND the node stops
+ * growing: `Multiply` lands within six pixels of what it was before either change.
  */
-export const ROW_HEIGHT = 22;
+export const ROW_HEIGHT = 24;
 
 /** Space between the header and the first row, and after the last one. */
 export const PORT_PADDING = 8;
@@ -68,7 +75,7 @@ export const PORT_RADIUS = 5;
 export const PORT_HIT_RADIUS = 11;
 
 /** Vertical space taken out of a row so two controls do not touch. */
-export const CONTROL_GAP = 4;
+export const CONTROL_GAP = 2;
 
 /** How far a control is inset from the node's edge when no port shares its side. */
 export const CONTROL_INSET = 8;
@@ -171,23 +178,66 @@ export function nodeRows(ports, controls = []) {
         else if (!control?.port) floating.push(control);
     }
 
+    // A PARAM MAY SPEAK FOR AN OUTPUT ONLY WHEN THERE IS ONE OUTPUT TO SPEAK FOR. On a
+    // literal the param IS what the single socket carries, which is what makes `Number` one
+    // compact row. On a `Key`, three booleans leave by three sockets and the param is none
+    // of them — sharing a row silenced `Is Down`'s label (`silencedPorts`), so the node's
+    // first output had no name at all while the other two did.
+    const speaksForOutput = outputs.filter(isData).length === 1;
+
+    // WHERE A REFUSED PARAM GOES, AND THE ORDER IS THE SENTENCE. A node reads: when it runs,
+    // WHAT it acts on, HOW it is configured, then the values that flow through it. So a param
+    // that needs a row of its own lands after the flow rows and after the row naming the
+    // Object — and before the value rows, because a picker that decides a value's TYPE must
+    // be read before that value (appending put it underneath, and a creator read the node
+    // backwards).
+    let at = rows.findIndex(row => !isFlowRow(row) && !namesTarget(row));
+    if (at === -1) at = rows.length;
+
     for (const control of floating) {
-        const at = rows.findIndex(entry => !entry.control && canBeLabelled(entry));
-        if (at !== -1) {
-            rows[at].control = control;
+        const labelled = rows.findIndex(row => !row.control && canBeLabelled(row, speaksForOutput));
+        if (labelled !== -1) {
+            rows[labelled].control = control;
             continue;
         }
 
-        // A ROW OF ITS OWN, WHERE IT WAS REFUSED, and the position is the point. Appending
-        // put `Set Property On`'s property picker BELOW the value it decides the type of, so
-        // a creator read the node backwards — pick the value, then say what it is for. It
-        // goes in ahead of the row that would not have it, which is where reading order
-        // wanted it in the first place.
-        const refused = rows.findIndex(entry => !entry.control);
-        rows.splice(refused === -1 ? rows.length : refused, 0, { input: null, output: null, control });
+        rows.splice(at, 0, { input: null, output: null, control });
+        at += 1;
     }
 
     return rows;
+}
+
+/**
+ * Whether a row is the one saying WHICH Object the node acts on.
+ *
+ * It leads, just under the flow, because that is the order the sentence is read in: on THIS
+ * Object, set THAT property, to this value. It is recognised by the port's type rather than
+ * by a name, so a second node carrying a target is placed correctly without a word here.
+ *
+ * @param {{input: object|null}} row - The row
+ * @returns {boolean} True when the row carries an Object input
+ */
+function namesTarget(row) {
+    return row?.input?.kind === PortKind.DATA && row.input.type === OBJECT_TYPE;
+}
+
+/**
+ * Whether a row is about execution and nothing else.
+ *
+ * A FLOW ROW TAKES NO CONTROL, and that is the half of the rule the geometry was missing.
+ * `Set Property On` drew its Component picker between the two triangles that carry
+ * execution, so the line that says "this runs, then that runs" also asked a question about
+ * a Component — the reading order of the node broke at its first line. A flow port has no
+ * name to lose, which is why the old rule let a control sit there; what it does have is a
+ * meaning, and a dropdown across it is not that meaning.
+ *
+ * @param {{input: object|null, output: object|null}} row - The row
+ * @returns {boolean} True when the row carries flow ports and no data port
+ */
+function isFlowRow(row) {
+    const ports = [row?.input, row?.output].filter(Boolean);
+    return ports.length > 0 && ports.every(port => port.kind === PortKind.FLOW);
 }
 
 /**
@@ -232,10 +282,15 @@ function reduces(inputs, outputs) {
  * moved this decision into the geometry to prevent.
  *
  * @param {{input: object|null, output: object|null}} row - The row
- * @returns {boolean} True when neither of its ports has to speak for itself
+ * @param {boolean} speaksForOutput - Whether the node has a single data output, and a param
+ *   may therefore stand as its name
+ * @returns {boolean} True when nothing on the row has to speak for itself
  */
-function canBeLabelled(row) {
-    return !namesItself(row?.input) && !namesItself(row?.output);
+function canBeLabelled(row, speaksForOutput) {
+    if (isFlowRow(row)) return false;
+    if (namesItself(row?.input) || namesItself(row?.output)) return false;
+    // An output it may not speak for is an output whose label it would take away.
+    return !row?.output || speaksForOutput;
 }
 
 /**

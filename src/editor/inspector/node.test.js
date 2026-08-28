@@ -288,40 +288,26 @@ test('the Scene nodes all declare a sentence saying what they do', () => {
     }
 });
 
-// --- what a configured node reads as (ADR-0037) ------------------------------------------
+// --- a node is named for what it IS, never for what it holds (ADR-0039 §5) ---------------
 
-test('a node that names nothing reads as its type; one that names something says what it does', () => {
+test('a node reads as its type, whatever it has been pointed at', () => {
+    // `Get Ground`, `Set Sprite.height`, `Middle Button` — every one of those put a VALUE
+    // where the type's name belongs, so the same node had a different name in every graph
+    // and no tutorial could name it. The configuration is drawn inside the node instead.
     const bare = describeNode(node('property.getOn'), { registry, components });
-    assert.equal(bare.title, 'Get Property On', 'half a name is less readable than the type');
-
-    // A COMPONENT CHOSEN AND NO PROPERTY IS ITS OWN STATE, and the title says exactly that:
-    // the half that would follow the dot is the half that is missing.
-    const half = describeNode(node('property.getOn', { component: 'Transform' }), { registry, components });
-    assert.equal(half.title, 'Get Transform');
-
     const named = describeNode(node('property.getOn', { component: 'Transform', property: 't1' }),
         { registry, components });
-    assert.equal(named.title, 'Get Transform.x');
 
-    const written = describeNode(node('property.setOn', { component: 'Health', property: 'h1' }),
-        { registry, components });
-    assert.equal(written.title, 'Set Health.hp', 'Get and Set stay told apart by the node type');
+    assert.equal(bare.title, 'Get Property On');
+    assert.equal(named.title, 'Get Property On', 'configuring it changed nothing about its name');
 });
 
-test('a node reading the Component own property is titled by what it reads', () => {
-    assert.equal(describeNode(node('property.get', { property: 'p1' }), { registry, properties }).title,
-        'Get speed');
-    assert.equal(describeNode(node('property.set', { property: 'p1' }), { registry, properties }).title,
-        'Set speed');
-});
-
-test('an Object socket reads as the thing itself, because that is what it is', () => {
-    // ADR-0037: an `objectref` property IS the reference, so the node a drop declares reads
-    // `Player` rather than `Get Player`. Every other shape is a value the node READS.
+test('an Object socket read is its own node, and that node has a stable name', () => {
     const sockets = [{ id: 'p9', name: 'Player', type: PropertyType.OBJECTREF, default: null }];
+    const described = describeNode(node('reference.object', { object: 'p9' }), { registry, properties: sockets });
 
-    assert.equal(describeNode(node('property.get', { property: 'p9' }), { registry, properties: sockets }).title,
-        'Player');
+    assert.equal(described.title, 'Get Object');
+    assert.equal(described.category, 'References');
 });
 
 test('a node whose reference cannot be resolved keeps its type label', () => {

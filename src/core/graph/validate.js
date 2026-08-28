@@ -27,9 +27,11 @@ import { OBJECT_TYPE, PortDirection, PortKind, nodes as defaultNodes, portsOf, t
 import {
     COMPONENT_PROPERTY_REFERENCE,
     COMPONENT_REFERENCE,
+    OBJECT_SOCKET_REFERENCE,
     PROPERTY_REFERENCE,
     referencedComponent,
-    referencedComponentProperty
+    referencedComponentProperty,
+    targetSocket
 } from './standard.js';
 
 /**
@@ -60,6 +62,15 @@ const REFERENCES = {
         empty: 'No property is selected on this node.',
         missing: 'This node names a property that Component does not declare.',
         resolve: (node, context) => (context.components ? referencedComponentProperty(node, context) : true)
+    },
+    // AN EMPTY TARGET IS NOT A FAULT: the Object may be arriving on the socket beside the
+    // picker, which is a thing the validator cannot see and must not guess at. So only the
+    // MISSING case is reported — a socket deleted or retyped since the node was pointed at
+    // it — and it is reported rather than repaired (ADR-0027 §8).
+    [OBJECT_SOCKET_REFERENCE]: {
+        empty: null,
+        missing: 'This node points at an Object input this Component no longer declares.',
+        resolve: (node, context) => !node?.params?.target || Boolean(targetSocket(node, context))
     }
 };
 
@@ -156,7 +167,10 @@ function checkReferences(node, definition, context) {
         if (!kind) continue;
 
         const id = node.params?.[name] ?? null;
+        // A KIND THAT DECLARES NO `empty` HAS NO EMPTY STATE WORTH REPORTING: an unset target
+        // means the Object comes from the socket, which is not something to warn about.
         if (!id) {
+            if (!kind.empty) continue;
             issues.push(graphIssue({
                 code: GraphIssueCode.MISSING_REFERENCE,
                 severity: GraphSeverity.WARNING,
@@ -209,6 +223,12 @@ function checkObjectInputs({ byId, registry, context, filled }) {
         const definition = registry.get(node.type);
         if (!definition) continue;
 
+        // A NODE THAT NAMES ITS OBJECT HAS ONE, and warning about the empty socket beside the
+        // picker would be the validator ignoring half of what the node says. The socket and
+        // the picker are two ways to answer one question (ADR-0039 §0.3); only when NEITHER
+        // answers is there anything to report.
+        if (targetSocket(node, context)) continue;
+
         for (const port of portsOf(definition, node, context).inputs) {
             if (port.kind !== PortKind.DATA || port.type !== OBJECT_TYPE) continue;
             if (filled.has(`in:${node.id}:${port.id}`)) continue;
@@ -216,7 +236,7 @@ function checkObjectInputs({ byId, registry, context, filled }) {
             issues.push(graphIssue({
                 code: GraphIssueCode.MISSING_REFERENCE,
                 severity: GraphSeverity.WARNING,
-                message: `Nothing is wired to ${port.label}, so this node has no Object to work on.`,
+                message: `No Object is chosen or connected, so this node has nothing to work on.`,
                 node: node.id,
                 port: port.id
             }));

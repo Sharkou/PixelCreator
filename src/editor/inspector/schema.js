@@ -473,6 +473,11 @@ function field(name, property = {}) {
         // like every other menu in the Editor does; a choice whose options have no natural
         // icon simply declares none, and the rows are text as before.
         icons: declared === PropertyType.ENUM && property.icons ? [...property.icons] : null,
+        // AND WHICH HEADING IT SITS UNDER. A choice long enough to need a filter is long
+        // enough to need groups, and the Editor's dropdown has drawn headings since Add
+        // Component (ADR-0026 §10) — the third parallel array beside `labels` and `icons`,
+        // and null for every choice that declares none.
+        groups: declared === PropertyType.ENUM && property.groups ? [...property.groups] : null,
         readonly: Boolean(property.readonly),
         tooltip: property.tooltip ?? null
     };

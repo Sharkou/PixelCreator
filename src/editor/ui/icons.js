@@ -158,6 +158,12 @@ const PATHS = {
     // what these nodes read is a key by name, which is the one thing the state holds.
     'node-input': `<rect x="2.6" y="3" width="10.8" height="7.2" rx="1.4" ${S}/>`
         + `<path d="M5.4 6.6h5.2" ${S}/><path d="M4.6 13h6.8" ${S}/>`,
+    // A POINTER IS NOT A KEYBOARD, and drawing both with the keycap made the three Input
+    // nodes one picture in the menu — the family was legible and the members were not.
+    // An arrow with a small button beside it: what a pointer IS, and the thing these two
+    // nodes read off it. `Pointer` and `Pointer Button` share it because they read the same
+    // device; the keycap stays with `Key`, which is the category's own glyph.
+    'node-pointer': `<path d="M4.4 2.6 11.6 8.2l-3 0.6 1.7 3.5-1.6 0.8-1.7-3.5-2.2 2.1z" ${S}/>`,
     'node-flow': `<path d="M2.6 8h6.6" ${S}/><path d="M8.4 4.8 12.4 8l-4 3.2z" ${S}/>`,
     'node-property': `<path d="M8.6 2.4H13v4.4l-6.2 6.2a1.2 1.2 0 0 1-1.7 0L2.4 10.3a1.2 1.2 0 0 1 0-1.7z" ${S}/>`
         + `<circle cx="10.7" cy="5.3" r="1" ${F}/>`,
@@ -372,12 +378,15 @@ export function iconForPropertyType(type) {
  * anticipated falls back to the generic node glyph rather than to nothing, which is what
  * keeps the picker readable when a new group appears.
  */
-const NODE_CATEGORY_ICONS = {
+export const NODE_CATEGORY_ICONS = {
     Events: 'node-event',
     Input: 'node-input',
     Flow: 'node-flow',
     Properties: 'node-property',
-    Scene: 'node-scene',
+    // The category a node reaching ANOTHER Object belongs to. It was called `Scene` while
+    // it also held the property nodes; the glyph is unchanged because what it draws — an
+    // object framed and aimed at — is exactly what a reference is (ADR-0034 §3.2).
+    References: 'node-scene',
     Values: 'node-value',
     Math: 'node-math',
     Compare: 'node-compare',

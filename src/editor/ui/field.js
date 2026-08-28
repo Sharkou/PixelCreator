@@ -413,11 +413,19 @@ export class Field extends Element {
             disabled: descriptor.readonly,
             onclick: () => openMenu(
                 button,
-                descriptor.values.map(option => ({
-                    id: option,
-                    label: labelOf(option),
-                    icon: iconOf(option)
-                })),
+                // HEADINGS WHERE THE OPTIONS DECLARE THEM. A heading is inserted where the
+                // group changes rather than by sorting, so the order the descriptor gives is
+                // the order shown — a key picker puts the ones a game binds first at the top
+                // and the punctuation nobody hunts for at the bottom, which alphabetising
+                // would undo. A choice with no groups produces no headings and draws exactly
+                // as it always did.
+                descriptor.values.flatMap((option, index) => {
+                    const group = descriptor.groups?.[index] ?? null;
+                    const entry = { id: option, label: labelOf(option), icon: iconOf(option) };
+                    return group && group !== descriptor.groups?.[index - 1]
+                        ? [{ heading: group }, entry]
+                        : [entry];
+                }),
                 option => this.#push(option),
                 // A filter earns its row once the list is longer than a glance.
                 { search: descriptor.values.length > 8, label: descriptor.label.toLowerCase() }

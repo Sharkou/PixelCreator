@@ -24,11 +24,8 @@
 // the loop a creator needs to write a behaviour: place, wire, move, inspect, delete.
 
 import {
-    ANY_TYPE,
     GraphSeverity,
-    OBJECT_TYPE,
     PropertyType,
-    baseTypeOf,
     compatibleTargets,
     createId,
     groupNodes,
@@ -65,6 +62,9 @@ import {
     toGraph,
     zoomAt
 } from '../graph/view.js';
+import { FLOW_HUE, nodeHue, typeHue } from '../graph/palette.js';
+import { FieldKind } from '../inspector/schema.js';
+import '../ui/resource-field.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -405,6 +405,7 @@ export class GraphWindow extends Element {
 
     #definition = null;
     #components = null;
+    #project = null;
     #framed = null;
     #svg = null;
     #content = null;
@@ -431,10 +432,15 @@ export class GraphWindow extends Element {
      * @param {Function} [options.components] - () => the project's Component types, read by
      *   the nodes that name one (ADR-0034 §3.3). Asked on every draw rather than held, so a
      *   `.px` installed while the canvas is open is offered without a subscription.
+     * @param {object} [options.project] - The Project a `resource` param is picked from and
+     *   resolved against. A ResourceId is of PROJECT scope like the `.px` itself (ADR-0020),
+     *   so a node may hold one — but an identity is unreadable, and the control that shows
+     *   what it points at needs the manifest to say so (`ui/resource-field.js`).
      * @returns {GraphWindow} This element
      */
-    bind(definition, { components = null } = {}) {
+    bind(definition, { components = null, project = null } = {}) {
         this.#components = components;
+        this.#project = project;
         if (this.#definition === definition) return this;
 
         this.release('graph');
@@ -560,11 +566,41 @@ export class GraphWindow extends Element {
      */
     #dropContext() {
         return {
-            setNodeParam: (node, name, value) => this.#writeParam(node, name, value),
+            setNodeParam: (node, name, value, options) => this.#writeParam(node, name, value, options),
             setNodeParams: (node, params) => this.#writeParams(node, params),
-            createNode: (type, params, at) => this.#createNode(type, params, at),
-            declareReference: (payload, target) => this.#declareReference(payload, target)
+            createNode: (type, params, at, options) => this.#createNode(type, params, at, options),
+            declareReference: (payload, target) => this.#declareReference(payload, target),
+            socketFor: (object, options) => this.#socketFor(object, options)
         };
+    }
+
+    /**
+     * The `objectref` socket standing for an Object, declared if this `.px` has none.
+     *
+     * REUSED BY NAME, AND THAT IS THE DIFFERENCE FROM DROPPING THE OBJECT ITSELF. Dropping an
+     * Object on the canvas IS the gesture "declare an input", so two of them declare two
+     * (`Player`, `Player 2` — ADR-0037's contract). Dropping `Player.Transform.rotation` is
+     * the gesture "aim at this property"; the socket is a means, not the request, so asking
+     * for three properties of Player must not leave three sockets behind for a creator to
+     * fill in three times.
+     *
+     * WHAT ENTERS THE `.px` IS A NAME. The `ObjectId` reaches this method and stops here — it
+     * is what the Inspector was showing, not what the file records (ADR-0034 invariant 1).
+     *
+     * @param {{name: string}} object - The Object the socket stands for
+     * @param {object} [options] - `{ batch }`, so the socket joins the gesture that asked
+     * @returns {object|null} The socket's descriptor
+     */
+    #socketFor(object, { batch } = {}) {
+        const definition = this.#definition;
+        if (!definition) return null;
+
+        const name = object?.name || 'Object';
+        const existing = definition.properties()
+            .find(property => property.type === PropertyType.OBJECTREF && property.name === name);
+        if (existing) return existing;
+
+        return definition.addProperty({ name, type: PropertyType.OBJECTREF }, { batch });
     }
 
     /**
@@ -597,9 +633,13 @@ export class GraphWindow extends Element {
         // create menu uses: two nodes at one place look like one, and a creator who dropped
         // twice would think the second drop did nothing.
         const spot = this.#freeSpot(target.at ?? { x: 0, y: 0 });
+        // `Get Object`, NOT `Get Property`. Reading an `objectref` input through the property
+        // node was true and unreadable: a card headed `Get Property` handing out an Object
+        // tells a creator nothing about what they just dragged. The reference node reads the
+        // same socket through the same boundary and says what it is (ADR-0039 §5).
         const node = definition.graph.addNode({
-            type: 'property.get',
-            params: { property: property.id },
+            type: 'reference.object',
+            params: { object: property.id },
             x: spot.x,
             y: spot.y
         }, { batch });
@@ -616,11 +656,14 @@ export class GraphWindow extends Element {
      * @param {{x: number, y: number}} [at] - Where it landed, in graph space
      * @returns {object|null} The node
      */
-    #createNode(type, params, at = { x: 0, y: 0 }) {
+    #createNode(type, params, at = { x: 0, y: 0 }, { batch } = {}) {
         if (!this.#definition) return null;
 
         const spot = this.#freeSpot(at);
-        const node = this.#definition.graph.addNode({ type, params, x: spot.x, y: spot.y });
+        // THE BATCH TRAVELS, so a drop that declares a socket AND places a node aimed at it
+        // is one entry in the history: a creator takes back the gesture they made, not the
+        // half of it the Editor happened to perform last (ADR-0024 §4).
+        const node = this.#definition.graph.addNode({ type, params, x: spot.x, y: spot.y }, { batch });
 
         if (node) this.#select(node.id);
         return node;
@@ -882,8 +925,16 @@ export class GraphWindow extends Element {
     }
 
     #controlsOf(node, ports) {
+        // A CONTROL THAT SITS ON A PORT IS GREYED WHEN THAT PORT IS FED, whether it edits the
+        // port's value or a param beside it. That single fact is what lets the Object picker
+        // and the Object socket be one question: connect something and the picker visibly
+        // stops answering; disconnect and it answers again. Nobody is asked to pick a mode.
+        const connected = field => (field.port
+            ? { ...field, connected: Boolean(this.#definition.graph.incoming(node.id, field.port)) }
+            : field);
+
         return [
-            ...(describeNode(node, this.#nodeContext())?.fields ?? []),
+            ...(describeNode(node, this.#nodeContext())?.fields ?? []).map(connected),
             ...this.#inputRows(node, ports)
         ];
     }
@@ -1038,9 +1089,13 @@ export class GraphWindow extends Element {
             issue => issue.node === node.id && issue.severity === GraphSeverity.ERROR
         );
         const definition = this.#definition.registry.get(node.type);
-        // WHAT THIS NODE READS AS, which is what it NAMES once it names something — declared
-        // by the node type itself (core/graph/standard.js), never decided here.
-        const label = definition?.title?.(node, this.#nodeContext()) || definition?.label || node.type;
+        // THE HEADER IS THE NODE'S NAME, AND ONLY ITS NAME (ADR-0039 §5). A configured node
+        // used to rename itself — `Middle Button`, `Get Ground`, `Set Sprite.height` — and
+        // every one of those is a VALUE wearing the place a TYPE belongs. A tutorial has to
+        // be able to say "add a Set Property" and have that node still be called that an hour
+        // later; a creator has to be able to find it in the menu by the name they read on the
+        // canvas. What it is configured with is drawn inside it, on rows that can be changed.
+        const label = definition?.label || node.type;
         const category = definition?.category ?? 'Other';
         const hue = nodeHue(definition, this.#definition.graph.portsOf(node));
 
@@ -1094,6 +1149,7 @@ export class GraphWindow extends Element {
         // and the picker already shows it — but a creator reads it once, while choosing, and
         // then meets the node again on a canvas with no way to ask. A `<title>` is the whole
         // of the fix, and the ports' own titles still win where they overlap.
+        //
         if (definition?.tooltip) {
             group.prepend(svg('title', {}, document.createTextNode(definition.tooltip)));
         }
@@ -1149,8 +1205,14 @@ export class GraphWindow extends Element {
         // input value is what THIS node holds on a port nothing is wired to (ADR-0031 §1).
         // They are read and written through different fields of the node, and they look
         // and behave identically, which is the point.
-        const record = descriptor.port ? 'inputs' : 'params';
-        const key = descriptor.port ?? descriptor.name;
+        // TWO RECORDS, AND WHICH ONE IS NOT DECIDED BY THE ROW. A control usually writes the
+        // thing it sits beside — a port's input value — but the Object picker sits ON the
+        // Object port and writes a PARAM, because what it names is a socket of this `.px` and
+        // an identity may never be stored in a port's value (ADR-0034 §3.6). So the catalogue
+        // says where a control is drawn (`port`) and what it writes (`param`), separately.
+        const asParam = descriptor.param || !descriptor.port;
+        const record = asParam ? 'params' : 'inputs';
+        const key = asParam ? descriptor.name : descriptor.port;
 
         // Falls back to what the TYPE declares, not to nothing: an untouched value is not
         // an empty one, it is one still holding the default the interpreter will read.
@@ -1162,11 +1224,18 @@ export class GraphWindow extends Element {
             if (view[descriptor.name] !== value) view[descriptor.name] = value;
         }), 'graph');
 
-        const field = el('px-field').bind(view, { ...descriptor, label: descriptor.label }, {
-            write: (value, options) => (descriptor.port
-                ? this.#definition.graph.setInput(node.id, descriptor.port, value, options)
-                : this.#writeParam(node, descriptor.name, value, options))
-        });
+        const write = (value, options) => (asParam
+            ? this.#writeParam(node, descriptor.name, value, options)
+            : this.#definition.graph.setInput(node.id, descriptor.port, value, options));
+
+        // A RESOURCE IS AN IDENTITY, AND A TEXT BOX OVER ONE IS A DEBUGGER. The panel made
+        // this decision already and `ui/resource-field.js` is the control it made it with —
+        // it shows what the reference points at, and offers pick, drop and clear. Reaching
+        // for it here rather than letting `px-field` fall through is the same rule the
+        // Inspector follows (ADR-0030 §1), applied on the canvas.
+        const field = descriptor.kind === FieldKind.RESOURCE
+            ? el('px-resource').bind(view, descriptor, { project: this.#project, write })
+            : el('px-field').bind(view, { ...descriptor, label: descriptor.label }, { write });
 
         // A CONNECTED PORT SHOWS ITS FALLBACK, GREYED. The wire is what runs; this is what
         // would run without it, and hiding it would make unwiring a surprise.
@@ -1216,6 +1285,7 @@ export class GraphWindow extends Element {
         for (const write of paramWrites(definition, node, name, value, this.#nodeContext())) {
             this.#definition.graph.setParam(node.id, write.name, write.value, { ...options, batch });
         }
+
     }
 
     #drawPort(node, placed, { silent = false } = {}) {
@@ -1633,7 +1703,14 @@ export class GraphWindow extends Element {
     }
 
     #cancelDrag(pointerId) {
-        const wasRegrab = this.#drag?.kind === 'wire' && this.#drag.regrab;
+        // WHAT THE NODES ARE DRAWN FROM IS ABOUT TO STOP BEING TRUE. `.dragging` is derived
+        // from `#drag` inside `#drawNode()`, and the last repaint of a node drag happens on
+        // the last pointermove — while the gesture is still on. Clearing `#drag` without
+        // re-deriving left the carried node wearing `dragging`, so the closed hand survived
+        // the release and every later hover over that node showed `grabbing`. A class read
+        // off a field is only as fresh as the last draw; the field changing here is exactly
+        // when it has to be read again.
+        const derived = this.#drag !== null;
 
         this.#pending.removeAttribute('d');
         this.#svg.classList.remove('panning', 'moving');
@@ -1643,9 +1720,9 @@ export class GraphWindow extends Element {
         }
         this.#drag = null;
 
-        // Nothing was written, so putting the wire back is a repaint. Abandoning a
-        // re-route is free, which is what makes trying one safe (ADR-0028 2).
-        if (wasRegrab) this.#draw();
+        // Nothing was written, so putting a re-routed wire back is a repaint too. Abandoning
+        // one is free, which is what makes trying it safe (ADR-0028 §2).
+        if (derived) this.#draw();
     }
 
     #onWheel(event) {
@@ -1837,24 +1914,41 @@ export class GraphWindow extends Element {
         return spot;
     }
 
-    /** Put the whole graph in view, once, when there is nothing else to look at. */
+    /**
+     * Put the whole graph in view, once, when it is first looked at.
+     *
+     * TWO REASONS TO DECLINE, AND ONLY ONE OF THEM IS AN ANSWER — which is the whole of the
+     * bug this shape fixes. A canvas that cannot be measured has not answered the question
+     * and must be asked again; a canvas with nothing on it HAS answered it, because the view
+     * a creator already has is the right one to keep. Treating the second like the first
+     * left every new `.px` permanently unframed, so the first node added — which makes the
+     * resource dirty, which makes the workbench call `wake()` — was framed on arrival and
+     * slammed the canvas to 2.5x on a single card.
+     *
+     * ADDING A NODE IS NOT A CAMERA MOVE. Nothing here runs again once the question has been
+     * answered; `Frame all` passes `force` and is the only way back in.
+     */
     #frame(force = false) {
         if (!this.#definition) return;
-
-        const layout = this.#layout();
-        if (layout.length === 0 || (!force && this.#framed === this.#definition)) return;
+        if (!force && this.#framed === this.#definition) return;
 
         // A CANVAS THAT IS NOT ON SCREEN HAS NOTHING TO FRAME INTO. The workbench keeps one
         // instance per open `.px` and hides the ones whose tab is not showing, so this runs
         // on a zero-sized box every time a second graph is opened. `fitView()` answers the
         // identity view for an empty viewport, which is a correct answer to a meaningless
-        // question — and remembering it would mean the graph never got framed at all. So
-        // the attempt is declined instead, and `wake()` is what tries again.
+        // question — so the attempt is declined WITHOUT being recorded, and `wake()` is what
+        // tries again.
         const box = this.getBoundingClientRect();
         if (box.width <= 0 || box.height <= 0) return;
 
-        this.#view = fitView(layout, { width: box.width, height: box.height });
+        // Measured, so the question is settled either way. An empty graph keeps the view it
+        // has, and keeps it for good.
         this.#framed = this.#definition;
+
+        const layout = this.#layout();
+        if (layout.length === 0) return;
+
+        this.#view = fitView(layout, { width: box.width, height: box.height });
     }
 
     #report(reason) {
@@ -1863,110 +1957,6 @@ export class GraphWindow extends Element {
         this.#status.classList.add('problem');
         fill(this.#status, el('span', { textContent: reason }));
     }
-}
-
-/**
- * A category's colour, and a value type's — from ONE palette of six (ui/styles.js).
- *
- * THE CODE MUST BE READABLE, WHICH MEANS IT MUST BE SMALL. A hue per category is twenty
- * colours and no meaning: nothing is learned, and the canvas becomes a carnival. Six hues,
- * reused between "what kind of node is this" and "what travels along this wire", give a
- * creator one palette to learn and one to recognise — a Math node and a `number` port are
- * deliberately the same blue.
- *
- * They are read as custom properties rather than as literals because a shadow root sees
- * custom properties and sees nothing else of the document's sheets.
- */
-const CATEGORY_HUES = {
-    Events: 'var(--px-accent)',
-    Flow: 'var(--px-hue-flow)',
-    Properties: 'var(--px-hue-reference)',
-    // THE SAME VIOLET, AND THAT IS THE STATEMENT. A Scene node deals in references to other
-    // Objects the way a Properties node deals in references to properties — one idea, and
-    // the palette is six hues rather than one per category for exactly this reason. It is
-    // also the colour its own `object` ports wear below, so a `Self` node and the socket it
-    // feeds are visibly the same kind of thing (ADR-0030 §4, ADR-0034 §3.2).
-    Scene: 'var(--px-hue-reference)',
-    Math: 'var(--px-hue-number)',
-    Compare: 'var(--px-hue-number)',
-    Logic: 'var(--px-hue-boolean)',
-    Debug: 'var(--px-hue-any)'
-};
-
-/**
- * The category whose nodes ARE values, and therefore have no colour of their own.
- *
- * The one place ADR-0030 4's rule needed a second look: a `Number` node wearing the green
- * of `Values` while its own port wore the blue of `number` is the single object in the
- * palette that got two colours - in the very category a creator learns the vocabulary from
- * (ADR-0033 4).
- */
-const LITERAL_CATEGORY = 'Values';
-
-const TYPE_HUES = {
-    [PropertyType.NUMBER]: 'var(--px-hue-number)',
-    [PropertyType.INT]: 'var(--px-hue-number)',
-    [PropertyType.BOOLEAN]: 'var(--px-hue-boolean)',
-    [PropertyType.STRING]: 'var(--px-hue-text)',
-    [PropertyType.COLOR]: 'var(--px-hue-reference)',
-    [PropertyType.ENUM]: 'var(--px-hue-reference)',
-    [PropertyType.RESOURCE]: 'var(--px-hue-reference)',
-    [PropertyType.ARRAY]: 'var(--px-hue-any)',
-    // A HANDLE TO AN OBJECT IS A POINTER, so it wears what every other pointer wears. It
-    // used to fall through to `any` — the absence of a type — which said the opposite of
-    // what an `object` port is: the most constrained data port on the canvas, compatible
-    // with itself and with nothing else (ADR-0034 §3.2).
-    [OBJECT_TYPE]: 'var(--px-hue-reference)',
-    [ANY_TYPE]: 'var(--px-hue-any)'
-};
-
-/** Execution order is not a value, so it has a hue of its own. */
-const FLOW_HUE = 'var(--px-hue-flow)';
-
-/**
- * The colour a node wears.
- *
- * A NODE THAT IS A VALUE WEARS THAT VALUE'S COLOUR; everything else wears its category's
- * (ADR-0030 4, amended by ADR-0033 4). It is not a convenient exception: the hue says what
- * a thing IS, and for a literal, what it is IS its type.
- *
- * @param {object|null} definition - The node type
- * @param {{inputs: object[], outputs: object[]}} [ports] - Its ports right now
- * @returns {string} A CSS colour
- */
-function nodeHue(definition, ports = null) {
-    const category = definition?.category ?? 'Other';
-
-    if (category === LITERAL_CATEGORY) {
-        const produced = (ports?.outputs ?? []).find(port => port.kind !== 'flow');
-        return typeHue(produced?.type);
-    }
-
-    return categoryHue(category);
-}
-
-/**
- * The colour a node category wears.
- * @param {string} category - The declared category
- * @returns {string} A CSS colour
- */
-function categoryHue(category) {
-    return CATEGORY_HUES[category] ?? 'var(--px-hue-any)';
-}
-
-/**
- * The colour a data type wears.
- * A PARAMETERISED TYPE WEARS ITS BASE TYPE'S HUE, and the palette gains no row for it. A
- * `List<Number>` is a list — what makes it blue rather than green would be what it HOLDS,
- * and a hue per element type is a table that grows with the Core's type list and says
- * nothing a creator can read off six colours. `baseTypeOf()` is the Core's own way of
- * asking, so this table stays the eight shapes ADR-0023 names and no more.
- *
- * @param {string} type - A port type, as `portTypeOf()` produces one
- * @returns {string} A CSS colour
- */
-function typeHue(type) {
-    return TYPE_HUES[baseTypeOf(type)] ?? 'var(--px-hue-any)';
 }
 
 /**

@@ -1,6 +1,7 @@
 # ADR-0030 — Une référence se choisit, un rang est deux opérations, une recherche se note, et une palette répond à deux questions
 
 - **Statut :** **accepté** (2026-08-18)
+- **Amendé par :** ADR-0039 (2026-08-27) — la palette de §4 passe de six à sept teintes, parce que « rendre une référence » et « accéder à une propriété » ne pouvaient pas être distinguées avec six
 - **Dépend de :** ADR-0007 (schéma d'Inspector), ADR-0018 (ordre structurel), ADR-0019 (Operations structurelles), ADR-0020 (Resources), ADR-0023 (types de propriétés), ADR-0024 (Undo/Redo), ADR-0026 (drag & drop transverse), ADR-0027 (modèle de graphe), ADR-0028 (reflow et feedback), ADR-0029 (transport)
 - **Amende :** ADR-0023 (`resource` n'était pas éditable), ADR-0029 §7 (le Core gagne `restoreScene()`)
 

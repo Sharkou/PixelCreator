@@ -21,6 +21,7 @@
 import {
     COMPONENT_PROPERTY_REFERENCE,
     COMPONENT_REFERENCE,
+    OBJECT_SOCKET_REFERENCE,
     Object as SceneObject,
     PropertyType,
     Transform,
@@ -138,7 +139,9 @@ const REFUSED_ON_GRAPH = {
         + 'Set Property On, or on bare canvas to add one.',
     // An Object with no identity at all — a drag that carried nothing.
     [DragKind.OBJECT]: 'There is no Object in this drag.',
-    [DragKind.RESOURCE]: 'A resource is not a node. Add one from the canvas menu instead.',
+    // Only reachable for a drop ONTO a node that holds no resource: bare canvas takes one
+    // now (`resource-to-canvas`), and a node that declares a `resource` param takes it too.
+    [DragKind.RESOURCE]: 'This node does not hold a resource. Drop it on bare canvas to add one.',
     [DragKind.FILES]: 'Files are imported into the Project panel, never onto a graph.'
 };
 
@@ -417,12 +420,43 @@ export const RULES = [
         // ADR-0034 §3.7 parked does not arise — the property, the node and the wire travel
         // one pipeline and one stack (ADR-0027 §5), under one batch.
         id: 'object-to-graph',
+        // BARE CANVAS MEANS NO NODE — the guard every other canvas rule carries. Without it
+        // this shadowed `object-to-node`, so letting an Object go ON a node declared a second
+        // socket and left the node untouched: first match wins, so "anywhere on the canvas"
+        // is never what a rule beside a more specific one should say.
         accepts: (payload, target) => payload.kind === DragKind.OBJECT
             && target.zone === DropZone.GRAPH
             && target.bound === true
+            && !target.node
             && Boolean(payload.id),
         describe: payload => `Declare ${payload.name || 'this Object'} as an input of this Component`,
         perform: (payload, target, context) => context.declareReference?.(payload, target) ?? null
+    },
+
+    {
+        // AN OBJECT LET GO ON A NODE THAT ACTS ON ONE POINTS IT THERE. The same sentence as
+        // every other drop onto a node: a drop CONFIGURES, it never creates (ADR-0037 §2.4).
+        // What it configures here is the picker beside the Object socket — so a creator can
+        // aim an existing node by dragging, exactly as they aimed it when they made it.
+        //
+        // The socket is declared or reused first, so what lands in the `.px` is a NAME and
+        // the `ObjectId` stops at the gesture (ADR-0034 invariant 1).
+        id: 'object-to-node',
+        accepts: (payload, target) => payload.kind === DragKind.OBJECT
+            && target.zone === DropZone.GRAPH
+            && Boolean(payload.id)
+            && Boolean(target.node)
+            && target.params?.target?.reference === OBJECT_SOCKET_REFERENCE,
+        describe: (payload, target) =>
+            `Point ${target.label ?? 'this node'} at ${payload.name || 'this Object'}`,
+        perform: (payload, target, context) => {
+            const batch = createId();
+            const socket = context.socketFor?.({ name: payload.name }, { batch });
+            if (!socket) return null;
+
+            context.setNodeParam?.(target.node, 'target', socket.id, { batch });
+            return { node: target.node, socket };
+        }
     },
 
     {
@@ -443,6 +477,46 @@ export const RULES = [
     },
 
     {
+        // A RESOURCE IS A LITERAL A `.px` MAY HOLD, and this is the gesture that says so.
+        //
+        // IT WAS REFUSED FOR A RULE THAT IS NOT ABOUT RESOURCES. ADR-0034 keeps identities
+        // out of a `.px` because an ObjectId names something in ONE SCENE while a `.px`
+        // serves many — the mismatch is SCOPE, not identity. A ResourceId is of PROJECT
+        // scope, exactly like the `.px` that would hold it (ADR-0020), so none of that
+        // reasoning reaches it. Applying it anyway is what left a creator unable to swap a
+        // sprite from a graph without writing JavaScript.
+        //
+        // NO MENU, BECAUSE THERE IS NOTHING TO CHOOSE. A property drop asks Get or Set
+        // because reading and writing are two intents (ADR-0037 §2.4); a resource has one
+        // meaning — this value — so asking would be ceremony.
+        id: 'resource-to-canvas',
+        accepts: (payload, target) => payload.kind === DragKind.RESOURCE
+            && target.zone === DropZone.GRAPH
+            && target.bound === true
+            && !target.node
+            && !isFolder(payload.resource),
+        describe: payload => `Add ${payload.resource.name || 'this resource'} as a value`,
+        perform: (payload, target, context) => context.createNode?.(
+            'value.resource', { value: payload.resource.id }, target.at
+        ) ?? null
+    },
+
+    {
+        // A resource let go ON a node that holds one configures it, exactly as a Component
+        // dropped on a node naming one does. A drop configures; it never creates.
+        id: 'resource-to-node',
+        accepts: (payload, target) => payload.kind === DragKind.RESOURCE
+            && target.zone === DropZone.GRAPH
+            && Boolean(target.node)
+            && !isFolder(payload.resource)
+            && target.params?.value?.type === PropertyType.RESOURCE,
+        describe: (payload, target) =>
+            `Point ${target.label ?? 'this node'} at ${payload.resource.name || 'this resource'}`,
+        perform: (payload, target, context) =>
+            context.setNodeParam?.(target.node, 'value', payload.resource.id) ?? null
+    },
+
+    {
         // ON BARE CANVAS THE CREATOR CHOOSES, AT THE POINT OF THE DROP. ADR-0027 §11 refused
         // this gesture because reading and writing are two different intents and picking one
         // is magic — and it said the refusal would lift "le jour où un geste non ambigu sera
@@ -459,13 +533,37 @@ export const RULES = [
             && target.zone === DropZone.GRAPH
             && target.bound === true
             && !target.node,
-        describe: payload => `Add a node for ${payload.label || payload.property}`,
-        perform: (payload, target, context) => (target.create
-            ? context.createNode?.(target.create, {
+        describe: (payload, target) => {
+            const named = payload.label || payload.property;
+            return payload.object?.name
+                ? `Add a node for ${payload.object.name}.${named}`
+                : `Add a node for ${named}`;
+        },
+        // ONE GESTURE PRODUCES A NODE THAT IS FINISHED, and that is the whole of D+. The
+        // Inspector knew the Object, the Component and the property; the drop used to write
+        // two of the three and leave the creator to drag the Object separately and pull a
+        // wire to the Target port. It now declares (or reuses) the socket for that Object and
+        // aims the node at it, so what lands on the canvas reads `Set Player.Transform.x` and
+        // needs nothing further (ADR-0039 §3).
+        //
+        // ONE BATCH: the socket and the node are one thing the creator did (ADR-0024 §4).
+        perform: (payload, target, context) => {
+            if (!target.create) return null;
+
+            const batch = createId();
+            const socket = payload.object ? context.socketFor?.(payload.object, { batch }) : null;
+
+            const node = context.createNode?.(target.create, {
+                // ABSENT RATHER THAN `FROM_WIRE` WHEN THERE IS NO OBJECT: a param nobody set
+                // is what every graph written before this already carries, and it means the
+                // wire — so the two states stay one state.
+                ...(socket ? { target: socket.id } : {}),
                 component: payload.component,
                 property: payload.property
-            }, target.at) ?? null
-            : null)
+            }, target.at, { batch }) ?? null;
+
+            return node ? { node, socket } : null;
+        }
     },
 
     {
@@ -478,10 +576,29 @@ export const RULES = [
             && target.zone === DropZone.GRAPH
             && target.bound === true
             && !target.node,
-        describe: payload => `Add a node for ${payload.label || payload.type}`,
-        perform: (payload, target, context) => (target.create
-            ? context.createNode?.(target.create, { component: payload.type }, target.at) ?? null
-            : null)
+        describe: (payload, target) => {
+            const named = payload.label || payload.type;
+            return payload.object?.name
+                ? `Add a node for ${payload.object.name}.${named}`
+                : `Add a node for ${named}`;
+        },
+        // THE SAME COMPOSITION AS A PROPERTY DROP, ONE RUNG UP. A Component says WHOSE and
+        // WHICH type; only the property is left, and it is the one thing the gesture could
+        // not know. So the node arrives aimed, with a single picker still to answer — which
+        // is the difference between "three dropdowns" and "one".
+        perform: (payload, target, context) => {
+            if (!target.create) return null;
+
+            const batch = createId();
+            const socket = payload.object ? context.socketFor?.(payload.object, { batch }) : null;
+
+            const node = context.createNode?.(target.create, {
+                ...(socket ? { target: socket.id } : {}),
+                component: payload.type
+            }, target.at, { batch }) ?? null;
+
+            return node ? { node, socket } : null;
+        }
     },
 
     {

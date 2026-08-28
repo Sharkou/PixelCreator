@@ -283,6 +283,13 @@ Rien ne régresse en attendant — il n'existe aujourd'hui aucune zone de dépô
 >
 > Les refus de Component, Property, Resource, Scene et `.px` **sur toile nue** deviennent des
 > gestes explicites au point du dépôt (ADR-0037 §2.4) ou restent refusés avec leur phrase.
+>
+> **Amendé par ADR-0039 (2026-08-27) — le dépôt d'une Resource est autorisé.** Le refus
+> ci-dessus rangeait la `ResourceId` avec l'`ObjectId`, alors que l'invariant 1 ne parle pas
+> d'identités en général : il parle d'identités de portée **scène**, parce qu'un `.px` sert
+> plusieurs scènes. Une `ResourceId` est de portée **projet** — la portée du `.px` lui-même
+> (ADR-0020) — donc rien de ce raisonnement ne l'atteint. Un nœud `value.resource` la porte
+> comme un littéral, et l'invariant 1 est intact : aucune identité de scène n'entre nulle part.
 
 ---
 
@@ -341,7 +348,7 @@ Rien ne régresse en attendant — il n'existe aujourd'hui aucune zone de dépô
 
 | Alternative | Pourquoi non |
 |---|---|
-| Un mode de ciblage en paramètre sur chaque nœud de propriété | Incomposable — « le parent de mon parent » est inexprimable — et le vocabulaire de ciblage dupliqué sur chaque nœud |
+| Un mode de ciblage en paramètre sur chaque nœud de propriété | Incomposable — « le parent de mon parent » est inexprimable — et le vocabulaire de ciblage dupliqué sur chaque nœud. **Réhabilité sous condition par ADR-0039 §0.1 :** l'objection portait sur un param qui REMPLACE le port, donc sur un MODE. Le param retenu n'en est pas un — la prise reste toujours là, le sélecteur est à côté, et une connexion l'emporte simplement en existant. « Le parent de mon parent » reste donc exprimable exactement comme avant, et le fil disparaît du seul cas qui n'a rien à calculer : une cible que le créateur peut désigner |
 | Un type de port `component` | Rien ne le consommerait ; additif plus tard sans rien casser |
 | `Get Component` puis `Get Property` scindés | Le second nœud ignore de quel type il tient un composant : plus de typage, plus de sélecteur |
 | Inférer le type d'un port à travers les connexions | Les ports deviendraient fonction de la topologie du graphe et non du seul nœud |

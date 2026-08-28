@@ -65,12 +65,32 @@ export const OBJECT_TYPE = 'object';
 /**
  * Groups the node menu shows, in the order it shows them.
  *
+ * A CATEGORY ANSWERS ONE QUESTION: *what kind of thing is this node?* It is what the menu
+ * groups by, what the canvas takes a colour and a glyph from, and the only place that
+ * question is answered — so a node that is hard to classify here is a node that will be
+ * hard to recognise on the canvas.
+ *
  * `Input` sits next to `Events` because both are the outside world arriving in a graph:
  * one as a moment, the other as a state that is true while it lasts. Neither reaches for
- * that world — the runtime hands both over on the step context (ADR-0014).
+ * that world — the runtime hands both over on the step context (ADR-0014). They are one
+ * family to the eye and two rows in the menu, which is why they share a hue and keep
+ * separate groups.
+ *
+ * `References` AND `Properties` ARE TWO IDEAS, AND THEY USED TO BE ONE. Everything that
+ * reaches outside this Component was called `Scene`, so `Self` — which hands over an
+ * Object — sat beside `Get Property On` — which reads a value off one. The first produces
+ * a REFERENCE and takes part in no execution; the second is a property ACCESS that happens
+ * to be aimed elsewhere. Splitting them is what lets the canvas colour them apart, and it
+ * puts the two `On` nodes where they always belonged: with the other two property nodes,
+ * whose semantics they share exactly (ADR-0034 §3.3).
+ *
+ * A CATEGORY IS PRESENTATION AND IS NEVER SERIALIZED. A node record carries its `type`, its
+ * params and its position; what family that type belongs to is read from the catalogue at
+ * load. So renaming one costs no migration, and no graph written before this line changes
+ * meaning (ADR-0027).
  */
 export const NODE_CATEGORIES = [
-    'Events', 'Input', 'Properties', 'Scene', 'Flow', 'Values', 'Math', 'Compare', 'Logic', 'Debug'
+    'Events', 'Input', 'References', 'Properties', 'Flow', 'Values', 'Math', 'Compare', 'Logic', 'Debug'
 ];
 
 /**

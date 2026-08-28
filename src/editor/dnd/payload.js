@@ -101,13 +101,27 @@ export function componentPayload(object, type, label) {
  * (ADR-0034 invariant 1). The Object the Inspector happened to be showing is of SCENE scope
  * and is deliberately absent: nothing downstream needs it, so nothing carries it.
  *
+ * AND THE OBJECT IT WAS READ OFF, AS A NAME. The Inspector knows which Object it is showing,
+ * and a creator dragging `Transform.rotation` off Player means Player's rotation — so the
+ * gesture carries it, and the drop can aim the node without a second drag and a wire
+ * (ADR-0039 §3). It is the same shape `objectPayload()` uses and for the same reason: what
+ * travels is a name and an identity, what LANDS in the `.px` is a socket named after it. The
+ * `ObjectId` is carried for the length of the drag and written nowhere (ADR-0034 §1).
+ *
  * @param {string} component - The Component type declaring the property
  * @param {string} property - The property's stable id
  * @param {string} [label] - What a creator reads; a `ResourceId` is not one
+ * @param {object} [object] - The Object the property was read off, when there is one
  * @returns {object} The payload
  */
-export function propertyPayload(component, property, label) {
-    return { kind: DragKind.PROPERTY, component, property, label: label ?? null };
+export function propertyPayload(component, property, label, object = null) {
+    return {
+        kind: DragKind.PROPERTY,
+        component,
+        property,
+        label: label ?? null,
+        object: object ? { id: object.id, name: object.name ?? '' } : null
+    };
 }
 
 /**

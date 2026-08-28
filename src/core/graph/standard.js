@@ -28,31 +28,6 @@ import { ANY_TYPE, OBJECT_TYPE, PortKind, nodes as defaultNodes, portTypeOf } fr
 import { declaredProperties } from '../definition.js';
 import { GraphError, GraphIssueCode } from './errors.js';
 
-/**
- * `Get Health.hp`, once a node naming another Object's property knows what it names.
- *
- * Null until BOTH halves are chosen: half a name is less readable than the node type's own,
- * because it says a thing is settled when it is not.
- *
- * @param {string} verb - `Get` or `Set`
- * @param {object} node - The node
- * @param {object} context - `{ components }`
- * @returns {string|null} What a creator reads, or null to keep the type's label
- */
-function titleOfTarget(verb, node, context) {
-    const component = referencedComponent(node, context);
-    if (!component) return null;
-
-    // A LADDER, SO WHAT IS MISSING IS WHAT IS ABSENT FROM THE TITLE. `Get Health.hp` is
-    // settled; `Get Health` says the Component is chosen and the property is not — which a
-    // creator reads without being told, because the half that would follow the dot is the
-    // half that is not there. Nothing at all falls back to the type's own label.
-    const property = referencedComponentProperty(node, context);
-    const named = `${verb} ${component.label ?? component.type}`;
-
-    return property ? `${named}.${property.name}` : named;
-}
-
 /** The param that names a Component property, so the Editor knows to offer a picker. */
 export const PROPERTY_REFERENCE = 'property';
 
@@ -72,6 +47,70 @@ export const COMPONENT_REFERENCE = 'component';
  * the graph belongs to, and this one against the properties of the type being reached.
  */
 export const COMPONENT_PROPERTY_REFERENCE = 'component-property';
+
+/**
+ * The param that names a KEY of the machine a player is sitting at (ADR-0014 §2).
+ *
+ * THE CORE STILL HOLDS NO LIST, AND THIS IS WHAT LETS IT NOT HAVE TO. A key name is opaque
+ * here on purpose — a server replaying names off the network never sees a keyboard event to
+ * read one from — but "opaque" was being paid for by the creator, who had to type
+ * `ArrowLeft` correctly into a text box and got a node that answered false for ever if they
+ * did not. Naming the KIND of thing the param holds costs the Core nothing and lets whoever
+ * does have a keyboard offer the list: the Editor resolves it beside the adapter that
+ * produces the very same names (`editor/keys.js`).
+ *
+ * It is the same mechanism `COMPONENT_REFERENCE` uses — the Core says what is named, the
+ * Editor says what exists — so it is a row in a table and not a second vocabulary.
+ */
+export const KEY_REFERENCE = 'key';
+
+/**
+ * The param that names WHICH Object a property node acts on — one of this `.px`'s own
+ * `objectref` sockets, or the wire.
+ *
+ * WHY A PARAM AND NOT ONLY A PORT. A target a creator can point at is *known*, and a known
+ * thing belongs in the node rather than at the end of a wire: `Set Player.Transform.rotation`
+ * is one card that says what it does, where the same statement used to be two nodes, three
+ * dropdowns and a connection the creator had to draw. The port has not gone — a target the
+ * graph COMPUTES (`Find By Tag`, `Parent`) can only arrive on a wire — it is what this param
+ * answers when nothing is connected.
+ *
+ * IT NAMES A SOCKET, NEVER AN OBJECT. What is stored is the id of a property this `.px`
+ * declares, which is of project scope like everything else in the file (ADR-0027 §4). The
+ * ObjectId stays where ADR-0034 §3.5 puts it: in the value each attached Object carries.
+ * A `.px` with a static target is still reusable in fifty scenes, and says so in the
+ * Inspector — one row per socket, one value per instance.
+ *
+ * IT IS ABSENT FROM EVERY GRAPH WRITTEN BEFORE IT, and that is the migration: no param
+ * means nothing is pointed at, and the socket answers — which is exactly what those
+ * graphs already do.
+ */
+export const OBJECT_SOCKET_REFERENCE = 'object-socket';
+
+/**
+ * The Object a node is pointed at, or null when it is pointed at none.
+ *
+ * THERE IS NO MODE, AND THAT IS THE POINT. A node does not ask a creator whether its target
+ * is "static" or "from a wire" — those are words about the implementation, not about the
+ * game. It has an Object socket that is always there to connect to, and a picker beside it:
+ * connect something and the connection is the target, leave it empty and the picker is. The
+ * creator states an intention with a gesture, and the node reads it (ADR-0039 §0.3).
+ *
+ * DECLARED, NEVER GUESSED. The param must name a property this `.px` actually declares AND
+ * that property must be an `objectref`: anything else is not somewhere an Object can come
+ * from, so it answers null rather than resolving something it was not pointed at.
+ *
+ * @param {object} node - The node
+ * @param {object} [context] - `{ properties }`
+ * @returns {object|null} The socket's descriptor, or null
+ */
+export function targetSocket(node, context = {}) {
+    const id = node?.params?.target ?? null;
+    if (!id) return null;
+
+    return (context.properties ?? [])
+        .find(property => property.id === id && property.type === PropertyType.OBJECTREF) ?? null;
+}
 
 /**
  * The property a node refers to, resolved from the context it runs in.
@@ -172,6 +211,30 @@ const componentParam = {
         label: 'Component',
         reference: COMPONENT_REFERENCE,
         tooltip: 'The Component type this node reads or writes, by identity'
+    }
+};
+
+/**
+ * The param naming WHICH Object the node acts on (ADR-0039 §3, amending ADR-0034 §7).
+ *
+ * ADR-0034 §7 rejected "un mode de ciblage en paramètre" because it was *incomposable*: with
+ * only a param, "the parent of my parent" could not be said. That objection is answered
+ * rather than ignored — the port is ALWAYS there, so "the parent of my parent" stays exactly
+ * as expressible as it was. What the param adds is a way to answer the same question without
+ * drawing a wire, for the case that has nothing to compute: a target a creator can point at.
+ * The two never compete: a connection wins, and the picker says so by greying out.
+ */
+const targetParam = {
+    target: {
+        type: PropertyType.STRING,
+        default: null,
+        label: 'Object',
+        reference: OBJECT_SOCKET_REFERENCE,
+        // IT IS EDITED ON THE PORT'S OWN ROW. The socket and the picker are two ways to say
+        // one thing — which Object — so they share a line: connect something and the picker
+        // greys out, disconnect and it comes back. Two rows would be two questions.
+        port: 'object',
+        tooltip: 'Which Object this node acts on'
     }
 };
 
@@ -311,10 +374,33 @@ export function storedValueOf(property, value) {
     return value;
 }
 
-/** The Component on the Object a node was handed, or null when there is neither. */
+/**
+ * The Object a property node acts on: the socket it names, or whatever the wire brought.
+ *
+ * THE STATIC TARGET IS NOT A NEW WAY TO RESOLVE AN IDENTITY — it is exactly the one ADR-0036
+ * §2 authorises. That section draws the line at PROVENANCE: a graph value is refused without
+ * inspection, while "une valeur d'instance dont le schéma déclare le type `objectref`" is
+ * resolved, because only the Component's own schema can declare one. A socket IS such a
+ * property, so reading it goes through `portValueOf()` — the same pair `property.get` has
+ * always used — and nothing here turns a string into an Object that was not declared to be
+ * one.
+ *
+ * @param {object} io - What the node was handed
+ * @returns {object|null} The Object, or null
+ */
+function targetObject(io) {
+    // A CONNECTION WINS, AND IT WINS BY EXISTING. Not by producing a non-null Object: a
+    // `Find By Tag` that finds nobody must write to nobody, not fall through to whatever the
+    // picker happens to name. The two sources are ordered, never merged.
+    if (io.wired?.('object')) return io.input('object');
+
+    const socket = targetSocket(io.node, { properties: io.properties });
+    return socket ? portValueOf(socket, io.component?.[socket.name], io.ctx?.scene) : null;
+}
+
+/** The Component on the Object a node acts on, or null when there is neither. */
 function targetComponent(io) {
-    const target = io.input('object');
-    return target?.getComponent?.(io.node?.params?.component) ?? null;
+    return targetObject(io)?.getComponent?.(io.node?.params?.component) ?? null;
 }
 
 /**
@@ -418,23 +504,29 @@ export const STANDARD_NODES = [
                 type: PropertyType.STRING,
                 default: DEFAULT_KEY,
                 label: 'Key',
-                // OPAQUE, AND DELIBERATELY SO (ADR-0014 §2). A browser adapter writes
-                // `KeyboardEvent.code` values in, so that is what a creator types here; the
-                // Core has no list of keys and would be wrong to grow one, because a server
-                // replaying names off the network never produces an event to read them from.
-                tooltip: 'The key, as the browser names it: Space, KeyW, ArrowLeft, ShiftLeft'
+                // STILL AN OPAQUE STRING IN THE MODEL, AND NOW A PICKED ONE IN THE EDITOR.
+                // What is stored is a `KeyboardEvent.code` exactly as before, so every graph
+                // written until now reads unchanged; what the param gained is a statement of
+                // WHAT KIND of name it holds, which is all the Editor needs to offer the
+                // list instead of a text box (`KEY_REFERENCE` above).
+                reference: KEY_REFERENCE,
+                tooltip: 'The key this node watches, as the browser names it'
             }
         },
-        // A CONFIGURED NODE SAYS WHICH KEY, like `Get speed` says which property. The label
-        // alone is what a node nobody has pointed anywhere reads as.
-        title: node => {
-            const key = node?.params?.key ?? DEFAULT_KEY;
-            return key ? `Key ${key}` : null;
-        },
+        // THREE OUTPUTS, AND THE NAMES ARE THE WHOLE DIFFICULTY. `Held`, `Pressed` and
+        // `Released` are three words for three real states of `InputState`, and two of them
+        // read as the same thing in English: a creator asking "is the key pressed" wants
+        // `Held` and reaches for `Pressed`, which is true for exactly one step and then
+        // never again. So the labels say WHEN each one is true rather than what it is
+        // called, which is the only thing that tells them apart at a glance.
+        //
+        // THE IDS ARE UNTOUCHED. A label is presentation and the interpreter never sees one
+        // (core/graph/nodes.js), so every wire in every graph written until now still lands
+        // where it did.
         outputs: [
-            data('held', PropertyType.BOOLEAN),
-            data('pressed', PropertyType.BOOLEAN),
-            data('released', PropertyType.BOOLEAN)
+            data('held', PropertyType.BOOLEAN, 'Is Down'),
+            data('pressed', PropertyType.BOOLEAN, 'Just Pressed'),
+            data('released', PropertyType.BOOLEAN, 'Just Released')
         ],
         // A KEY IS A LITERAL, NOT A REFERENCE, so an empty one answers false rather than
         // refusing. `property.get` throws because it NAMES something that must exist and no
@@ -461,6 +553,10 @@ export const STANDARD_NODES = [
         type: 'input.pointer',
         label: 'Pointer',
         category: 'Input',
+        // THE CATEGORY'S GLYPH IS A KEYCAP, which is right for `Key` and wrong for the two
+        // nodes that read a mouse: all three drew one picture, so the family was legible in
+        // the menu and its members were not (editor/ui/icons.js).
+        icon: 'node-pointer',
         keywords: ['input', 'mouse', 'cursor', 'touch', 'position', 'aim', 'x', 'y'],
         // IN WORLD COORDINATES, AND THAT IS THE WHOLE POINT (ADR-0038). A graph has no
         // camera, no viewport and no zoom, and must not be given any: what it is handed is
@@ -483,6 +579,7 @@ export const STANDARD_NODES = [
         type: 'input.pointerButton',
         label: 'Pointer Button',
         category: 'Input',
+        icon: 'node-pointer',
         keywords: ['input', 'mouse', 'click', 'press', 'held', 'released', 'touch', 'tap'],
         params: {
             button: {
@@ -494,18 +591,14 @@ export const STANDARD_NODES = [
                 tooltip: 'Which pointer button this node watches'
             }
         },
-        title: node => {
-            const named = BUTTON_LABELS[buttonOf(node)];
-            return named ? `${named} Button` : null;
-        },
         // THE SAME THREE QUESTIONS A KEY ANSWERS, and deliberately the same three words:
         // `InputState` already distinguishes a button held from one that went down and one
         // that came up, bounded to a single step by the same `commit()` (ADR-0014 §5). A
         // second vocabulary for the same idea would be a second thing to learn.
         outputs: [
-            data('held', PropertyType.BOOLEAN),
-            data('pressed', PropertyType.BOOLEAN),
-            data('released', PropertyType.BOOLEAN)
+            data('held', PropertyType.BOOLEAN, 'Is Down'),
+            data('pressed', PropertyType.BOOLEAN, 'Just Pressed'),
+            data('released', PropertyType.BOOLEAN, 'Just Released')
         ],
         evaluate: io => {
             const button = buttonOf(io.node);
@@ -529,18 +622,6 @@ export const STANDARD_NODES = [
         category: 'Properties',
         keywords: ['read', 'variable', 'field'],
         params: propertyParam,
-        // WHAT A CREATOR READS ONCE IT NAMES SOMETHING. `Get Property` says what the node
-        // type is; a node that has been pointed at `speed` should say what THIS one does.
-        //
-        // AN OBJECT REFERENCE IS TITLED BY ITS NAME ALONE, and that is not a flourish: a
-        // property of any other shape is a value this node READS, so `Get speed` is what it
-        // does — while an `objectref` property IS the reference (ADR-0037), so the node is
-        // `Player` and reads as the thing itself.
-        title: (node, context) => {
-            const property = referencedProperty(node, context);
-            if (!property) return null;
-            return property.type === PropertyType.OBJECTREF ? property.name : `Get ${property.name}`;
-        },
         outputs: (node, context) => {
             const property = referencedProperty(node, context);
             return [data('value', portTypeOf(property), property?.name ?? 'Value')];
@@ -560,10 +641,6 @@ export const STANDARD_NODES = [
         category: 'Properties',
         keywords: ['write', 'assign', 'variable', 'field'],
         params: propertyParam,
-        title: (node, context) => {
-            const property = referencedProperty(node, context);
-            return property ? `Set ${property.name}` : null;
-        },
         inputs: (node, context) => {
             const property = referencedProperty(node, context);
             return [
@@ -595,7 +672,7 @@ export const STANDARD_NODES = [
     {
         type: 'scene.self',
         label: 'Self',
-        category: 'Scene',
+        category: 'References',
         keywords: ['this', 'me', 'owner', 'object'],
         outputs: [data('object', OBJECT_TYPE)],
         evaluate: io => ({ object: io.self ?? null }),
@@ -603,9 +680,42 @@ export const STANDARD_NODES = [
     },
 
     {
+        // WHAT A CREATOR GETS WHEN THEY DRAG AN OBJECT ONTO THE CANVAS, and it says what it
+        // is rather than what it happens to hold: `Get Object`, with `Player` in a field.
+        // The drop used to make a `Get Property` reading an `objectref` input — true, and
+        // unreadable: a card headed `Get Property` handing out an Object explains nothing,
+        // and titling it `Get Player` traded the node's name for one of its values.
+        //
+        // IT IS NOT A SECOND MECHANISM. It reads the very same socket `Get Property` would,
+        // through the very same boundary (`portValueOf`, ADR-0036) — what it adds is a name
+        // and a shape a beginner can recognise.
+        type: 'reference.object',
+        label: 'Get Object',
+        category: 'References',
+        keywords: ['object', 'reference', 'target', 'player', 'entity', 'get'],
+        params: {
+            object: {
+                type: PropertyType.STRING,
+                default: null,
+                label: 'Object',
+                reference: OBJECT_SOCKET_REFERENCE,
+                tooltip: 'Which of this Component\u2019s Objects this node hands on'
+            }
+        },
+        outputs: [data('object', OBJECT_TYPE, 'Object')],
+        evaluate: io => {
+            const socket = (io.properties ?? []).find(property => property.id === io.param('object'));
+            return {
+                object: socket ? portValueOf(socket, io.component?.[socket.name], io.ctx?.scene) : null
+            };
+        },
+        tooltip: 'Hands on one of the Objects this Component was given'
+    },
+
+    {
         type: 'scene.parent',
         label: 'Parent',
-        category: 'Scene',
+        category: 'References',
         keywords: ['above', 'hierarchy', 'owner', 'object'],
         inputs: [data('object', OBJECT_TYPE)],
         outputs: [data('parent', OBJECT_TYPE)],
@@ -619,7 +729,7 @@ export const STANDARD_NODES = [
     {
         type: 'scene.findByTag',
         label: 'Find By Tag',
-        category: 'Scene',
+        category: 'References',
         keywords: ['search', 'lookup', 'find', 'tag', 'object'],
         // THE EMPTY BOX SAYS SO, because what it means is not what a creator would guess.
         // An empty tag finds NOTHING rather than anything, for the reason stated below the
@@ -645,7 +755,7 @@ export const STANDARD_NODES = [
     {
         type: 'object.isValid',
         label: 'Is Valid',
-        category: 'Scene',
+        category: 'References',
         keywords: ['exists', 'null', 'empty', 'check', 'object'],
         inputs: [data('object', OBJECT_TYPE)],
         outputs: [data('result', PropertyType.BOOLEAN, 'Result')],
@@ -673,21 +783,20 @@ export const STANDARD_NODES = [
     {
         type: 'property.getOn',
         label: 'Get Property On',
-        category: 'Scene',
+        category: 'Properties',
         keywords: ['read', 'other', 'remote', 'foreign', 'component', 'field'],
         tooltip: 'Reads a property of a Component on another Object',
-        title: (node, context) => titleOfTarget('Get', node, context),
-        params: { ...componentParam, ...componentPropertyParam },
-        // "ON WHAT", NOT "AN OBJECT". The node is named `Get Property On` and reads as
-        // `Get Health.hp`; the socket that says WHICH Object it reads from is the missing
-        // half of that sentence, and calling it `Object` named the port's type instead of
-        // its job. `Target` is the only thing on the row that can say it — an `object` port
-        // carries no control and never will (ADR-0034 §3.2), so its label is all it has.
+        params: { ...targetParam, ...componentParam, ...componentPropertyParam },
+        // THE PORT IS WHAT THE PARAM DOES NOT COVER. A target the creator can point at lives
+        // in the node; a target the graph COMPUTES arrives here. Only one of the two is ever
+        // drawn, so a card never asks the same question twice (ADR-0039 §3).
         //
         // THE LABEL, NEVER THE ID. `object` remains the port's identity, so no graph that
         // names it changes and no wire moves (core/graph/nodes.js): a label is presentation,
         // and the interpreter never sees one.
-        inputs: [data('object', OBJECT_TYPE, 'Target')],
+        // ALWAYS DRAWN, because a socket a creator cannot see is a socket they cannot
+        // connect to — and connecting is how the other half of the target is stated.
+        inputs: [data('object', OBJECT_TYPE, 'Object')],
         outputs: (node, context) => {
             const property = referencedComponentProperty(node, context);
             return [data('value', portTypeOf(property), property?.name ?? 'Value')];
@@ -711,20 +820,17 @@ export const STANDARD_NODES = [
     {
         type: 'property.setOn',
         label: 'Set Property On',
-        category: 'Scene',
+        category: 'Properties',
         keywords: ['write', 'assign', 'other', 'remote', 'foreign', 'component'],
         tooltip: 'Writes a property of a Component on another Object',
-        title: (node, context) => titleOfTarget('Set', node, context),
-        params: { ...componentParam, ...componentPropertyParam },
+        params: { ...targetParam, ...componentParam, ...componentPropertyParam },
         inputs: (node, context) => {
             const property = referencedComponentProperty(node, context);
-            return [
-                flow('in'),
-                // See `property.getOn`: the socket says which Object is written to, and it
-                // is the only thing on its row that can (ADR-0034 §3.2).
-                data('object', OBJECT_TYPE, 'Target'),
-                data('value', portTypeOf(property), property?.name ?? 'Value', property?.default)
-            ];
+            const value = data('value', portTypeOf(property), property?.name ?? 'Value', property?.default);
+
+            // THE VALUE IS TYPED FROM `(component, property)`, which live in the node — so it
+            // is exact however the Object arrives, and never a function of what is wired.
+            return [flow('in'), data('object', OBJECT_TYPE, 'Object'), value];
         },
         outputs: [flow('out')],
         execute: io => {
@@ -805,6 +911,41 @@ export const STANDARD_NODES = [
         params: { value: { type: PropertyType.STRING, default: '', label: 'Value' } },
         outputs: [data('value', PropertyType.STRING)],
         evaluate: io => ({ value: globalThis.String(io.param('value') ?? '') })
+    },
+
+    {
+        // A RESOURCE IS A LITERAL A `.px` MAY HOLD, and that is the whole argument for this
+        // node. ADR-0034 forbids an ObjectId in a `.px` because an ObjectId belongs to ONE
+        // SCENE and a `.px` serves many; a ResourceId belongs to the PROJECT, which is the
+        // very scope a `.px` already has (ADR-0020). The two identities are not the same
+        // kind of thing, and the rule that governs one was being applied to the other —
+        // which is why dropping an image on a canvas was refused with "a resource is not a
+        // node" while a `Text` node holding an arbitrary string was fine.
+        //
+        // WHAT IT UNLOCKS. `Sprite.source` is a `resource` property, so `Set Property On`
+        // types its value port `resource` (portTypeOf) — and a creator can now swap a
+        // sprite from a graph: pick up a powerup, set the texture. That was JavaScript-only
+        // before, and no node produced a value the port could take.
+        //
+        // NOTHING RESOLVES IT HERE. The Core never reaches storage (ADR-0020): what travels
+        // is the identity, and whoever draws or loads it does the resolving — exactly as
+        // `Sprite.source` has always worked.
+        type: 'value.resource',
+        label: 'Resource',
+        category: 'Values',
+        icon: 'type-resource',
+        keywords: ['asset', 'image', 'texture', 'sound', 'file', 'literal', 'reference'],
+        params: {
+            value: {
+                type: PropertyType.RESOURCE,
+                default: null,
+                label: 'Resource',
+                tooltip: 'The resource this node hands on, by identity'
+            }
+        },
+        outputs: [data('value', PropertyType.RESOURCE)],
+        evaluate: io => ({ value: io.param('value') ?? null }),
+        tooltip: 'A resource of this project, as a value a property can take'
     },
 
     // --- arithmetic --------------------------------------------------------------------

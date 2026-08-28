@@ -25,6 +25,8 @@ import {
     ANY_TYPE,
     COMPONENT_PROPERTY_REFERENCE,
     COMPONENT_REFERENCE,
+    KEY_REFERENCE,
+    OBJECT_SOCKET_REFERENCE,
     OBJECT_TYPE,
     PROPERTY_REFERENCE,
     PortKind,
@@ -33,6 +35,7 @@ import {
     portsOf,
     referencedComponent
 } from '../../core/mod.js';
+import { keyOptions } from '../keys.js';
 import { fieldFor } from './schema.js';
 
 /**
@@ -101,7 +104,13 @@ export function paramFields(definition, node = null, context = {}) {
     const fields = [];
 
     for (const [name, descriptor] of globalThis.Object.entries(definition.params ?? {})) {
-        fields.push(referenceChoice(name, descriptor, node, context) ?? fieldFor(name, descriptor));
+        const field = referenceChoice(name, descriptor, node, context) ?? fieldFor(name, descriptor);
+
+        // A PARAM MAY ASK TO BE DRAWN ON A PORT'S ROW. The Object picker and the Object
+        // socket are two ways to say one thing, so they share a line rather than asking the
+        // same question twice — and `param` is what tells the canvas that this control still
+        // writes a param, not the port's value (windows/graph.js).
+        fields.push(descriptor.port ? { ...field, port: descriptor.port, param: true } : field);
     }
 
     return fields;
@@ -150,6 +159,31 @@ const REFERENCES = {
             : 'Choose a Component first'),
         /** Resolved against whatever the param carrying THIS reference names. */
         dependsOn: COMPONENT_REFERENCE
+    },
+    // THE FOURTH KIND, AND IT COST A ROW. A key is named by a string the Core refuses to
+    // enumerate and the Editor can, because the Editor is the thing with a keyboard
+    // attached (`editor/keys.js`, ADR-0014 §2). It resolves against nothing in the project,
+    // so it takes no context and can never be empty — which is why it declares no
+    // `dependsOn` and its `empty` is unreachable rather than absent.
+    [KEY_REFERENCE]: {
+        options: () => keyOptions(),
+        empty: () => 'No keys'
+    },
+    // WHICH OBJECT A NODE ACTS ON — one of the Objects this Component has been given.
+    //
+    // THERE IS NO "FROM WIRE" ROW, AND THERE MUST NOT BE. Whether the target comes from the
+    // picker or from the socket beside it is not a question to put to a creator: it is
+    // answered by whether they connected something. A dropdown offering a mode would be the
+    // node explaining its own implementation (ADR-0039 §0.3).
+    //
+    // ONLY `objectref` PROPERTIES ARE OFFERED. A socket is where an Object arrives; a number
+    // is not, and offering one would let a creator point a node at something that can never
+    // be an Object.
+    [OBJECT_SOCKET_REFERENCE]: {
+        options: (node, context) => (context.properties ?? [])
+            .filter(property => property.type === PropertyType.OBJECTREF)
+            .map(property => ({ value: property.id, label: property.name })),
+        empty: () => 'Drag an Object here from the Hierarchy'
     }
 };
 
@@ -290,6 +324,12 @@ function referenceChoice(name, descriptor, node, context) {
         type: PropertyType.ENUM,
         values: options.map(option => option.value),
         labels: options.map(option => option.label),
+        // A LONG LIST IS A LIST WITH HEADINGS. Ninety-nine keys in one column is not
+        // something a creator reads, and the Editor's dropdown has grouped and filtered
+        // since Add Component (ADR-0026 §10) — so an option may say which group it belongs
+        // to, and every reference that has no groups passes `null` and draws as it always
+        // did.
+        groups: options.some(option => option.group) ? options.map(option => option.group ?? '') : null,
         placeholder: options.length === 0 ? reference.empty(node, context) : NOTHING_SELECTED
     });
 }

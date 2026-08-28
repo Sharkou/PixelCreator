@@ -263,7 +263,14 @@ function io(compiled, node, state, frame, visiting) {
         properties: state.properties,
         log: state.log,
         param: name => node.params?.[name],
-        input: portId => readInput(compiled, node, portId, state, frame, visiting)
+        input: portId => readInput(compiled, node, portId, state, frame, visiting),
+        // WHETHER SOMETHING IS ACTUALLY CONNECTED, which is not the same question as whether
+        // the value read is null. A node that can take its Object from a socket OR from a
+        // connection has to tell "nothing is wired" from "a wire brought nothing": falling
+        // back to the picker because a `Find By Tag` found no one would write to the wrong
+        // Object, silently. This answers the structural question, so the fallback is a rule
+        // rather than a guess (ADR-0039 §0.3).
+        wired: portId => compiled.data.has(portKey(node.id, portId))
     };
 }
 

@@ -821,10 +821,23 @@ function transportControls(transport) {
  */
 function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hierarchy, inspector, project, definitions }) {
     // THE CANVAS IS NOW ONE OF SEVERAL, so it is asked for rather than held. Each open `.px`
-    // has its own `<px-graph>`, and up to TWO of them are on screen at once — one per area.
-    // `graphs()` answers which, and the pointer decides between them the same way it decides
-    // between any two windows: by which one it is actually inside.
-    const canvases = typeof graph === 'function' ? graph : () => [graph].filter(Boolean);
+    // has its own `<px-graph>`, and the workbench answers which one a pointer could be over.
+    // The pointer decides the same way it decides between any two windows: by which one it
+    // is actually inside.
+    //
+    // NORMALISED HERE, BECAUSE THE ANSWER CAME IN TWO SHAPES AND ONE OF THEM THREW. The
+    // supplier returns a single element or null (`docs.graph`); this loop wanted a list, and
+    // iterating an element raises `not iterable` — inside a drag listener, where it aborted
+    // the whole resolution and left every drop on a canvas doing nothing. It was invisible
+    // for as long as the branch above it claimed the pointer first, which is what made this
+    // look like "the rules do not work" rather than like an exception nobody saw.
+    //
+    // One function, one shape, whatever it is handed.
+    const canvases = () => {
+        const answer = typeof graph === 'function' ? graph() : graph;
+        if (!answer) return [];
+        return globalThis.Array.isArray(answer) ? answer.filter(Boolean) : [answer];
+    };
     const context = () => ({
         scene,
         project: workspace.project,
@@ -885,7 +898,21 @@ function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hi
         const found = inspector.zoneAt(payload, clientX, clientY);
         if (found) return { target: found.zone, element: inspector };
 
-        if (viewport.containsClient(clientX, clientY)) {
+        // ONE TEST FOR "WHICH WINDOW IS THE POINTER IN", AND EVERY WINDOW TAKES IT. The
+        // viewport used to answer with `containsClient()`, which is its own question — it
+        // maps a page point into the SCENE, from the rectangle it caches for that purpose
+        // and refreshes when a gesture starts. Asked while the viewport was HIDDEN behind a
+        // graph tab, it answered from the rectangle it held when it was last on screen: a
+        // surface that is not displayed claimed every drop in the workbench, and the graph
+        // below was never reached. Nothing dropped on a canvas worked — not an Object, not a
+        // Component, not a property, not a resource — while every rule and every test about
+        // them passed, because the rules were never asked.
+        //
+        // `within()` reads a LIVE box, so a hidden surface is 0x0 and matches nothing. It is
+        // the test the Hierarchy, the Project panel and each canvas already take, and taking
+        // it here is what makes "hidden windows cannot be dropped on" true by construction
+        // rather than by each window remembering to check.
+        if (within(viewport, clientX, clientY)) {
             const point = viewport.worldAt(clientX, clientY);
             return { target: { zone: DropZone.SCENE, x: point.x, y: point.y }, element: viewport };
         }
@@ -1144,7 +1171,10 @@ function documentArea({ workspace, viewport }) {
             canvas = el('px-graph');
             canvases.set(view.id, canvas);
             canvas.bind(workspace.attached(view.id), {
-                components: () => componentCatalogue(components, { project: workspace.project })
+                components: () => componentCatalogue(components, { project: workspace.project }),
+                // A ResourceId is of project scope like the `.px` itself, so a node may hold
+                // one — and the control that shows WHICH resource needs the manifest.
+                project: workspace.project
             });
         }
         return canvas;

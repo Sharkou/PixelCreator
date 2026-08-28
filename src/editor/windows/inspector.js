@@ -30,7 +30,7 @@
 // value and twice the panel to read. The object's id is not shown at all — a creator does
 // not need it, and a panel that opens with a random string looks like a debugger.
 
-import { isMissingComponent, makeReactive, observe } from '../../core/mod.js';
+import { declaredProperties, isMissingComponent, makeReactive, observe } from '../../core/mod.js';
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { icon, iconForComponent, iconForObject, iconForPropertyType, iconForResource } from '../ui/icons.js';
@@ -287,6 +287,33 @@ export class Inspector extends Element {
             -webkit-user-select: none;
             user-select: none;
         }
+
+        /* A PROPERTY OF A COMPONENT CAN BE CARRIED, and this is the handle that carries it.
+           ADR-0037 §6 left the gesture open with the reason it was open: the label is
+           already the scrub handle of every number (ui/field.js), and one element with two
+           meanings is a gesture a creator cannot aim. So the label keeps the scrub and the
+           carry gets six dots of its own — the same grip that reorders a Component two rows
+           up, which is what a creator has already learned means "take this".
+
+           IT STOPS THE PRESS (see #makeDragSource), so a scrub never sees the events that
+           belong to a drag, and the two gestures cannot race for the same pointer. */
+        /* IT SITS WITH THE VALUE, NOT WITH THE LABEL. Six dots in the label column cost 18
+           of its 62 px, and that column is the one part of this panel that cannot spare
+           them: Rotation became Rotati… and Line Width became Line …. The value column is
+           minmax(0, 1fr) and gives the same handle up for almost nothing — and beside the
+           value is where "carry this property" reads anyway. */
+        .row .carry {
+            display: flex;
+            flex: 0 0 auto;
+            color: var(--px-text-dim);
+            cursor: grab;
+            opacity: 0;
+            transition: opacity var(--px-duration-fast) var(--px-ease);
+        }
+
+        .row:hover .carry,
+        .row .carry.dragging { opacity: 1; }
+        .row .carry.dragging { cursor: grabbing; }
 
         /* Draggable, and it says so — but only where dragging means something.
            px-field decides, and adds the class (ui/field.js). */
@@ -1452,7 +1479,7 @@ export class Inspector extends Element {
                 const fields = describeComponent(component);
                 return fields.length === 0
                     ? [el('div', { class: 'none', textContent: 'No properties' })]
-                    : this.#renderRows(component, fields);
+                    : this.#renderRows(component, fields, type);
             })()
         });
 
@@ -1687,6 +1714,44 @@ export class Inspector extends Element {
      * @param {HTMLElement} handle - The element to press
      * @param {Function} payloadOf - () => the payload this handle carries
      */
+    /**
+     * The six dots that carry one property of one Component out of this panel.
+     *
+     * TWO IDENTITIES OF PROJECT SCOPE, AND NOTHING OF A SCENE. What travels is the Component
+     * TYPE and the property's own stable id — exactly what a `.px` may name (ADR-0037 §2.3),
+     * and exactly what `property-to-canvas` and `property-to-node` already know what to do
+     * with. The Object the panel happens to be showing is of scene scope and is deliberately
+     * absent from the payload (dnd/payload.js).
+     *
+     * THE ID, NOT THE NAME. A `.px` property carries an id a rename cannot invalidate, and a
+     * shipped class has none — so `declaredProperties()` answers the id where there is one
+     * and the name where there is not, which is the same answer the node catalogue resolves
+     * against (core/definition.js). Reading the name here would work for a Transform and
+     * break for every Component a creator writes.
+     *
+     * @param {object} target - The component instance the row belongs to
+     * @param {object} descriptor - The field descriptor being drawn
+     * @param {string} component - The Component type
+     * @returns {HTMLElement} The handle
+     */
+    #carryHandle(target, descriptor, component) {
+        const grip = el('span', {
+            class: 'carry',
+            title: `Drag ${descriptor.label} onto a graph`,
+            'aria-hidden': 'true'
+        }, icon('grip', 12));
+
+        const identity = declaredProperties(target)
+            .find(property => property.name === descriptor.name)?.id ?? descriptor.name;
+
+        // THE OBJECT TRAVELS TOO, so the drop can aim the node it creates at the Object this
+        // panel is showing — the context is already on screen, and making the creator say it
+        // again with a second drag and a wire is the friction this gesture exists to remove.
+        this.#makeDragSource(grip, () =>
+            propertyPayload(component, identity, descriptor.label, this.#selection?.object ?? null));
+        return grip;
+    }
+
     #makeDragSource(handle, payloadOf) {
         handle.addEventListener('pointerdown', event => {
             if (event.button > 0) return;
@@ -1989,15 +2054,30 @@ export class Inspector extends Element {
         });
     }
 
-    #renderRows(target, fields) {
+    /**
+     * @param {object} target - The record the rows read and write
+     * @param {object[]} fields - Field descriptors
+     * @param {string|null} [component] - The Component TYPE these properties belong to, when
+     *   they belong to one. It is what makes a row carryable: a graph may name a Component
+     *   type and a property id, both of project scope, and nothing else (ADR-0037 §2.3). The
+     *   Object's own fields — name, tag, layer, active — belong to no Component and get no
+     *   handle, because there is no node that could read them.
+     */
+    #renderRows(target, fields, component = null) {
         return rows(fields).map(row => (row.fields.length === 1
-            ? this.#renderRow(target, row.fields[0])
+            ? this.#renderRow(target, row.fields[0], component)
+            // A PAIRED ROW IS TWO PROPERTIES, NOT ONE. `Position` is how this panel shows
+            // `x` and `y` side by side (inspector/schema.js); the Core has no vector type
+            // and ADR-0023 §2 removed the idea deliberately. So there is nothing single for
+            // a handle here to carry, and the two halves are dragged from their own rows
+            // when a creator needs one.
             : this.#renderPair(target, row)));
     }
 
-    #renderRow(target, descriptor) {
+    #renderRow(target, descriptor, component = null) {
         const field = this.#control(target, descriptor);
         const label = el('span', { class: 'label', textContent: descriptor.label });
+        const carry = component ? this.#carryHandle(target, descriptor, component) : null;
         this.#makeDroppable(field, {
             zone: DropZone.PROPERTY,
             component: target,
@@ -2016,9 +2096,15 @@ export class Inspector extends Element {
         // needs the label at the top of it.
         const tall = descriptor.kind === FieldKind.LIST;
 
+        // A NUMERIC ROW ALREADY RESERVED THIS SPACE. `.fields.single` keeps a spacer so a
+        // plain number does not stretch across the panel; the handle takes that place and
+        // costs nothing at all. Every other row gives up the handle's width from a control
+        // that has it to spare.
         return el('div', { class: `row${tall ? ' tall' : ''}` },
             label,
-            el('div', { class: `fields${single ? ' single' : ''}` }, field, single ? el('span') : null)
+            el('div', { class: `fields${single ? ' single' : ''}` },
+                field,
+                carry ?? (single ? el('span') : null))
         );
     }
 

@@ -176,8 +176,23 @@ const tokens = sheet(`
         --px-hue-number: #4fa8f5;  /* number, int — arithmetic and comparison */
         --px-hue-boolean: #f5b544; /* boolean — a decision */
         --px-hue-text: #3dd68c;    /* string — a literal a creator typed */
-        --px-hue-reference: #b07ce8; /* a property, a resource — a pointer */
+        --px-hue-reference: #b07ce8; /* an Object, a resource — a pointer */
         --px-hue-any: #949aa8;     /* unconstrained — the absence of a type */
+
+        /* THE ONE HUE THAT NAMES A FAMILY OF NODES AND NO SHAPE OF VALUE, and it
+           is here because the six above could not tell two ideas apart. A
+           reference and a property ACCESS were both violet, so Self — which
+           hands over an Object — and Get Property On — which reads a value off
+           one — were the same colour on a canvas whose whole job is to say what a
+           node is before its title is read. Violet stays with what it always
+           meant: a pointer, and the object port a pointer travels through.
+           Reading and writing a property is the other idea, and it gets this.
+
+           SEVEN, AND NOT EIGHT. The argument for six was against twenty — a hue
+           per category, which teaches nothing. A seventh for a seventh idea is
+           not that, and it is the last one: any further category takes a hue that
+           already exists (ADR-0030 §4). */
+        --px-hue-property: #2fbfc9; /* reading or writing a property */
 
         /* ─── Grid ────────────────────────────────────────────────────────
            ONE GRID LANGUAGE, TWO SURFACES. The scene and the graph canvas are
