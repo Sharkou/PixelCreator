@@ -1,6 +1,8 @@
 # ADR-0034 — Un graphe atteint d'autres Objects par un handle, jamais par une identité de scène
 
 - **Statut :** **accepté** (2026-08-21)
+- **Amendé par :** ADR-0039 (2026-08-27) — §7 (une cible désignée redevient un paramètre), §3.7 (le dépôt d'une Resource est autorisé)
+- **Amendé par :** ADR-0040 (2026-08-28) — §3.3 : `Get`/`Set Property On` fusionnent avec `Get`/`Set Property` ; §3.2 : l'avertissement « prise Object vide » ne vaut que pour un port qu'aucun paramètre ne peut remplir, et le dépôt d'un **Component** dans un graphe est retiré
 - **Décide :** ce qu'un graphe `.px` peut atteindre en dehors de son propre Component
 - **Dépend de :** ADR-0010 (identité par ID), ADR-0015 (un graphe est le comportement d'un type), ADR-0018 (ordre structurel), ADR-0021 (identité de Component), ADR-0023 (`PropertyType`), ADR-0026 (`.px` = une ressource, drag & drop), ADR-0027 (modèle de graphe), ADR-0030 (références), ADR-0031 (valeurs autorisées), ADR-0033 (rangées et gestes)
 - **Amende :** ADR-0023 §2, ADR-0027 §2 et §11, ADR-0031 §1

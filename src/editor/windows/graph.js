@@ -69,7 +69,7 @@ import '../ui/resource-field.js';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /** The drags whose meaning on bare canvas is a choice only the creator can make. */
-const CREATES_ON_CANVAS = new globalThis.Set(['component', 'property']);
+const CREATES_ON_CANVAS = new globalThis.Set(['property']);
 
 /** How far a pointer travels before a press on a node becomes a drag. */
 const DRAG_THRESHOLD = 3;
@@ -526,16 +526,16 @@ export class GraphWindow extends Element {
         if (!zone.node && CREATES_ON_CANVAS.has(payload?.kind) && canDrop(payload, zone).allowed) {
             openMenu(pointAnchor(clientX, clientY), [
                 {
-                    id: 'property.getOn',
+                    id: 'property.get',
                     label: 'Get',
-                    icon: iconForNode('Scene'),
-                    tooltip: 'Read this Component\u2019s property'
+                    icon: iconForNode('Properties'),
+                    tooltip: 'Read this property'
                 },
                 {
-                    id: 'property.setOn',
+                    id: 'property.set',
                     label: 'Set',
-                    icon: iconForNode('Scene'),
-                    tooltip: 'Change this Component\u2019s property'
+                    icon: iconForNode('Properties'),
+                    tooltip: 'Change this property'
                 }
             ], create => performDrop(payload, { ...zone, create }, this.#dropContext()),
             { label: 'operations' });
@@ -1216,7 +1216,13 @@ export class GraphWindow extends Element {
 
         // Falls back to what the TYPE declares, not to nothing: an untouched value is not
         // an empty one, it is one still holding the default the interpreter will read.
-        const held = source => (source?.[key] === undefined ? descriptor.default ?? null : source[key]);
+        // A COMPOUND CONTROL SHOWS THE PAIR IT ASKS ABOUT, not the half filed under its own
+        // name: the property picker's options are keyed by (Component, property), so the
+        // value it is bound to has to be too (`referenceChoice`, inspector/node.js).
+        const held = source => {
+            if (descriptor.held !== undefined) return descriptor.held;
+            return source?.[key] === undefined ? descriptor.default ?? null : source[key];
+        };
 
         const view = makeReactive({ [descriptor.name]: held(node[record]) });
         this.track(observe(node, record, change => {

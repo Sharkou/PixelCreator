@@ -102,8 +102,6 @@ export const NODE_CATEGORIES = [
  * @property {string} [category] - Menu group; `Other` when absent
  * @property {string[]} [keywords] - What else a creator might type when looking for it
  * @property {string} [icon] - Glyph name, honoured by the Editor over its category's
- * @property {Function} [title] - (node, context) => what a CONFIGURED node reads as,
- *   or null to keep `label`. Presentation, like `label`: the interpreter never sees it
  * @property {Array|Function} [inputs] - Input ports, or (node, context) => ports
  * @property {Array|Function} [outputs] - Output ports, or (node, context) => ports
  * @property {object} [params] - Param descriptors, in the ADR-0007 property shape
@@ -219,10 +217,15 @@ export function createPort(port) {
 /**
  * Whether a node's DRAWN SHAPE is a function of the node record, or fixed by its type.
  *
- * THE CATALOGUE ALREADY SAYS IT, AND THIS ONLY READS THE ANSWER. A port list or a title
- * declared as a function is one that depends on the node — its params, mostly — and a port
- * list declared as an array is one no param can move. There is no second table saying which
- * params matter, because a second table is a thing to keep in step with the first.
+ * THE CATALOGUE ALREADY SAYS IT, AND THIS ONLY READS THE ANSWER. A port list declared as a
+ * function is one that depends on the node — its params, mostly — and a port list declared
+ * as an array is one no param can move. There is no second table saying which params
+ * matter, because a second table is a thing to keep in step with the first.
+ *
+ * A NAME IS NOT ON THE LIST, AND CANNOT BE. A node type has a `label` and nothing else that
+ * reads as its name, so no param can change what a node is called (ADR-0040 §5). The shape
+ * a creator sees move when they configure a node is its PORTS; its name is the one thing
+ * that holds still.
  *
  * WHAT READS IT, AND WHY IT IS WORTH A NAME. A window redrawing on every write rebuilt the
  * very box a creator was typing in, and took the caret with it — one character per click.
@@ -235,8 +238,7 @@ export function createPort(port) {
  */
 export function shapeDependsOnNode(definition) {
     return typeof definition?.inputs === 'function'
-        || typeof definition?.outputs === 'function'
-        || typeof definition?.title === 'function';
+        || typeof definition?.outputs === 'function';
 }
 
 /**

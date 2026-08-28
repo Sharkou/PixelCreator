@@ -39,6 +39,7 @@ import {
     PortDirection,
     PortKind,
     declaredProperties,
+    migrateNode,
     nodes as defaultNodes,
     portOf,
     portsOf
@@ -137,7 +138,12 @@ function compile(graph, registry) {
     const definitions = new Map();
     const entries = new Map();
 
-    for (const node of graph.nodes ?? []) {
+    for (const record of graph.nodes ?? []) {
+        // BROUGHT UP TO THIS BUILD'S CATALOGUE FIRST. The Runtime compiles the payload a
+        // `.px` carries, without ever building a Graph — so the rename the Editor applies on
+        // load has to be applied here too, or a saved project would open and then refuse to
+        // run (core/graph/graph.js).
+        const node = migrateNode(record);
         const definition = registry.get(node.type);
         if (!definition) {
             throw new GraphError(
@@ -365,6 +371,18 @@ function defaultOf(compiled, node, portId, state) {
     return port?.default ?? null;
 }
 
+/**
+ * The key one port is indexed under, for the compiled flow and data maps.
+ *
+ * A NUL SEPARATES THE TWO HALVES because it is the one character an identifier cannot
+ * hold, so no pair of ids can collide by containing the separator themselves.
+ *
+ * IT IS WRITTEN AS AN ESCAPE, AND MUST STAY ONE. Typed literally it is still a valid
+ * template character and the same string at run time — but the file stops being text:
+ * grep reports "Binary file … matches" instead of the line, `git diff` refuses to show
+ * the hunk, and every tool that scans sources skips it silently. This module hid an
+ * `import { migrateNode }` from a repository-wide search that way.
+ */
 function portKey(nodeId, portId) {
-    return `${nodeId} ${portId}`;
+    return `${nodeId}\u0000${portId}`;
 }

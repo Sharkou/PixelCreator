@@ -25,12 +25,11 @@ import { GraphIssueCode, GraphSeverity, graphIssue } from './errors.js';
 import { GRAPH_VERSION } from './graph.js';
 import { OBJECT_TYPE, PortDirection, PortKind, nodes as defaultNodes, portsOf, typesCompatible } from './nodes.js';
 import {
-    COMPONENT_PROPERTY_REFERENCE,
     COMPONENT_REFERENCE,
     OBJECT_SOCKET_REFERENCE,
     PROPERTY_REFERENCE,
     referencedComponent,
-    referencedComponentProperty,
+    resolvedProperty,
     targetSocket
 } from './standard.js';
 
@@ -47,21 +46,26 @@ import {
  * is not a reference that is wrong.
  */
 const REFERENCES = {
+    // ONE KIND FOR ONE QUESTION. There were two — one resolving against this Component's own
+    // properties, one against the properties of a type a sibling param named — because there
+    // were two nodes. There is one node now, and a creator picking `Transform ▸ Rotation`
+    // out of a list is doing the same thing as picking `speed`: naming a property. So the
+    // pair collapses into the kind that was always named after the question (ADR-0040 §2).
     [PROPERTY_REFERENCE]: {
         empty: 'No property is selected on this node.',
-        missing: 'This node refers to a property the Component no longer declares.',
+        missing: 'This node refers to a property that no longer exists.',
+        // NAMING A TYPE NOBODY CAN LOOK UP IS NOT NAMING A TYPE THAT IS WRONG: a headless
+        // check has no catalogue of Component types, so the reference is left unjudged rather
+        // than failed. Resolution itself stays strict, and stays in the Core's own resolver.
         resolve: (node, context) =>
-            (context.properties ?? []).some(property => property.id === node.params?.property)
+            (node.params?.component && !context.components) || Boolean(resolvedProperty(node, context))
     },
+    // NO `empty`: a property node with no Component named is reading THIS Component, which is
+    // the ordinary case and not a gap (ADR-0040 §2). Only a type that has since gone is said.
     [COMPONENT_REFERENCE]: {
-        empty: 'No Component is selected on this node.',
+        empty: null,
         missing: 'This node names a Component type this project does not declare.',
         resolve: (node, context) => (context.components ? referencedComponent(node, context) : true)
-    },
-    [COMPONENT_PROPERTY_REFERENCE]: {
-        empty: 'No property is selected on this node.',
-        missing: 'This node names a property that Component does not declare.',
-        resolve: (node, context) => (context.components ? referencedComponentProperty(node, context) : true)
     },
     // AN EMPTY TARGET IS NOT A FAULT: the Object may be arriving on the socket beside the
     // picker, which is a thing the validator cannot see and must not guess at. So only the
@@ -223,14 +227,19 @@ function checkObjectInputs({ byId, registry, context, filled }) {
         const definition = registry.get(node.type);
         if (!definition) continue;
 
-        // A NODE THAT NAMES ITS OBJECT HAS ONE, and warning about the empty socket beside the
-        // picker would be the validator ignoring half of what the node says. The socket and
-        // the picker are two ways to answer one question (ADR-0039 §0.3); only when NEITHER
-        // answers is there anything to report.
-        if (targetSocket(node, context)) continue;
+        // A NODE THAT ASKS WHICH OBJECT HAS ALREADY BEEN ANSWERED. A port with a target picker
+        // on its row has three legal answers — a wire, a socket, or nothing, which means Self
+        // (ADR-0040 §3) — and "nothing" is a creator saying *this* Object, not a creator
+        // forgetting. Warning there would be warning about the commonest graph there is.
+        //
+        // A BARE `object` PORT IS THE OTHER CASE and still reported: `Is Valid` asks for an
+        // Object and offers no other way to give it one, so an empty port is a real gap. The
+        // difference is in the definition, not in a list of node types (ADR-0034 §3.2).
+        const pointed = pointedPorts(definition);
 
         for (const port of portsOf(definition, node, context).inputs) {
             if (port.kind !== PortKind.DATA || port.type !== OBJECT_TYPE) continue;
+            if (pointed.has(port.id)) continue;
             if (filled.has(`in:${node.id}:${port.id}`)) continue;
 
             issues.push(graphIssue({
@@ -244,6 +253,19 @@ function checkObjectInputs({ byId, registry, context, filled }) {
     }
 
     return issues;
+}
+
+/**
+ * The input ports a node's own params can answer, so an empty one is not a gap.
+ * @param {object} definition - The node definition
+ * @returns {Set<string>} Port ids carrying a target picker
+ */
+function pointedPorts(definition) {
+    const named = globalThis.Object.values(definition.params ?? {})
+        .filter(descriptor => descriptor?.reference === OBJECT_SOCKET_REFERENCE && descriptor.port)
+        .map(descriptor => descriptor.port);
+
+    return new Set(named);
 }
 
 function checkConnection(connection, { byId, registry, context, filled }) {

@@ -124,14 +124,28 @@ test('an Object port that is fed is not reported', () => {
 });
 
 test('it is the port TYPE that is checked, not a list of node types', () => {
-    // Every node carrying a handle port answers the same way when nothing feeds it, so one
-    // rule covers the four that exist and the fifth that does not exist yet.
-    for (const type of ['object.isValid', 'scene.parent', 'property.getOn', 'property.setOn']) {
+    // Every node carrying a handle port and no other way to answer for it says the same
+    // thing when nothing feeds it, so one rule covers the two that exist and the third that
+    // does not exist yet.
+    for (const type of ['object.isValid', 'scene.parent']) {
         const issues = check(graph({ nodes: [node(type, type)] }));
         const found = issues.filter(issue => issue.port === 'object');
 
         assert.equal(found.length, 1, `${type} reports its empty Object port`);
         assert.equal(found[0].severity, GraphSeverity.WARNING);
+    }
+});
+
+test('a node that can answer for itself is not asked: an empty target means Self', () => {
+    // THE COMMONEST GRAPH THERE IS. `Set Property` with nothing on its Object port acts on
+    // the Object the Component is attached to (ADR-0040 §3) — a creator saying *this* one,
+    // not a creator forgetting. Warning there was warning about the default.
+    const properties = [{ id: 'p1', name: 'speed', type: PropertyType.NUMBER, default: 1 }];
+
+    for (const type of ['property.get', 'property.set']) {
+        const issues = check(graph({ nodes: [node('n1', type, { property: 'p1' })] }), properties);
+
+        assert.deepEqual(issues, [], `${type} reported something about acting on itself`);
     }
 });
 

@@ -104,6 +104,54 @@ export function createConnection({ from, to, id }) {
     });
 }
 
+/**
+ * What a node written by an older build becomes when it is read.
+ *
+ * `Get Property On` AND `Set Property On` NO LONGER EXIST. They were `Get Property` and
+ * `Set Property` aimed at another Object — the Core's distinction between "a property of this
+ * Component" and "a property of that one", which a creator experiences as one act (ADR-0040
+ * §1). The merged nodes read the same params, and the one they lacked — `component` — was
+ * already absent on the local pair and meant the same thing there: this Component.
+ *
+ * IT IS A RENAME AND NOTHING ELSE. No param moves, no value changes shape, and a graph saved
+ * afterwards is the graph that was loaded with two type names swapped — so a project written
+ * against the old catalogue keeps running, and stops mentioning nodes this build has never
+ * heard of.
+ *
+ * APPLIED AT BOTH DOORS, WHICH IS WHY IT LIVES HERE AND NOT IN `Graph`. The Editor loads a
+ * graph by building a model; the Runtime never builds one at all — it compiles the raw `.px`
+ * payload. A migration that ran only where a model is made would rename nodes in the editor
+ * and leave every published game refusing to run a type it has never heard of.
+ */
+const RENAMED = { 'property.getOn': 'property.get', 'property.setOn': 'property.set' };
+
+/**
+ * Bring one node record up to the catalogue this build ships.
+ *
+ * EXPORTED, BECAUSE A PAYLOAD REACHES THE ENGINE BY TWO DOORS AND ONLY ONE OF THEM IS HERE.
+ * The Editor builds a model through `deserialize()`; the Runtime compiles the `.px` payload
+ * as it stands (`componentGraph()` → `interpretGraph()`), never building a Graph at all. A
+ * migration applied only here would fix every graph on screen and none of the graphs that
+ * actually run — which is the half nobody would notice until a published game stopped.
+ *
+ * PER NODE, AND THERE IS NO PAYLOAD-LEVEL TWIN. There was one — `migrateGraph(payload)` —
+ * and nothing ever called it: both doors walk their nodes anyway, so each one applies this
+ * where it already has a record in hand. A wrapper whose only caller is its own test is a
+ * second thing to keep in step with `RENAMED` for no reader's benefit.
+ *
+ * A RECORD THAT NEEDS NOTHING IS RETURNED AS IT WAS, not copied. That is what lets a door
+ * call this on every node of every graph without allocating a new payload for the ordinary
+ * case, which is the whole reason the payload-level version thought it needed a fast path.
+ *
+ * @param {object} node - A node record, as plain data
+ * @returns {object} The record, renamed when this build knows it by another name
+ */
+export function migrateNode(node) {
+    const renamed = RENAMED[node?.type];
+    return renamed ? { ...node, type: renamed } : node;
+}
+
+
 export class Graph {
 
     #registry;
@@ -588,7 +636,7 @@ export class Graph {
             throw new Error(`Graph.deserialize: unsupported graph version ${data.version}`);
         }
 
-        for (const node of data.nodes ?? []) graph.declare(node);
+        for (const node of data.nodes ?? []) graph.declare(migrateNode(node));
         for (const entry of data.connections ?? []) graph.declareConnection(entry);
         return graph;
     }

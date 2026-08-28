@@ -23,8 +23,6 @@
 
 import {
     ANY_TYPE,
-    COMPONENT_PROPERTY_REFERENCE,
-    COMPONENT_REFERENCE,
     KEY_REFERENCE,
     OBJECT_SOCKET_REFERENCE,
     OBJECT_TYPE,
@@ -77,11 +75,13 @@ export function describeNode(node, { registry, properties = [], components = [],
     const context = { properties, components };
 
     return {
-        // WHAT A CONFIGURED NODE READS AS. The type's label says what a node IS; once it
-        // names something, what it DOES is more useful — and the node type is the only thing
-        // that knows how to say it, so it declares it rather than being branched on here
-        // (ADR-0037). Absent or unresolved, the label stands.
-        title: definition.title?.(node, context) || definition.label,
+        // THE TYPE'S LABEL, AND NOTHING ELSE. A node used to be able to rename itself once
+        // it named something — `Get Ground`, `Set Sprite.height`, `Middle Button` — which
+        // read well in the one graph it was written in and nowhere else: the same node type
+        // had a different name in every project, so no tutorial, no menu entry and no search
+        // could say what to look for. A name says what a node IS; what it has been pointed
+        // at is drawn inside it, where a creator can also change it (ADR-0039 §5).
+        title: definition.label,
         type: node.type,
         category: definition.category ?? 'Other',
         known: true,
@@ -104,6 +104,12 @@ export function paramFields(definition, node = null, context = {}) {
     const fields = [];
 
     for (const [name, descriptor] of globalThis.Object.entries(definition.params ?? {})) {
+        // A PARAM THE CREATOR NEVER MEETS IS NOT DRAWN. `hidden` is ADR-0007's word for it,
+        // and a Component named by the property picker is exactly that: stored, because the
+        // Core needs it, and never asked, because asking it was the abstraction leaking
+        // (ADR-0040 §2). The Inspector's own schema pass has honoured it all along.
+        if (descriptor?.hidden) continue;
+
         const field = referenceChoice(name, descriptor, node, context) ?? fieldFor(name, descriptor);
 
         // A PARAM MAY ASK TO BE DRAWN ON A PORT'S ROW. The Object picker and the Object
@@ -118,6 +124,20 @@ export function paramFields(definition, node = null, context = {}) {
 
 /** What an unset reference reads, when there is something to choose and nothing chosen. */
 export const NOTHING_SELECTED = 'None';
+
+/**
+ * What a target picker reads when nothing has been chosen.
+ *
+ * `None` WAS A LIE, AND IT WAS THE COMMONEST STATE ON THE CANVAS. A property node with no
+ * Object named and nothing wired acts on the Object its Component is attached to — the
+ * default a beginner writes without knowing they wrote it (ADR-0040 §3). Reading `None`
+ * there said the node had nothing to work on, which is the opposite of the truth.
+ *
+ * IT IS SHOWN RATHER THAN IMPLIED, so nothing hides behind the empty state: the picker says
+ * `Self`, and choosing an Object replaces it. A creator never has to know a convention to
+ * read what a node does.
+ */
+export const SELF_TARGET = 'Self';
 
 /**
  * Where each kind of reference finds the things a creator may pick, and what to say when
@@ -140,25 +160,38 @@ export const NOTHING_SELECTED = 'None';
  * been named yet, and what was named declares nothing.
  */
 const REFERENCES = {
+    // WHICH PROPERTY, AS ONE QUESTION. A creator wants "the Player's rotation"; they met two
+    // dropdowns and had to know that rotation belongs to a Component before they could reach
+    // it. `Component` is an abstraction of the engine, and standing between a creator and
+    // their intention is not what it is for (ADR-0040 §2).
+    //
+    // ONE GROUPED LIST, and the groups ARE the Components — so the idea is still visible,
+    // as structure rather than as a question. `Transform ▸ Rotation` is read in one glance,
+    // and the dropdown has grouped and filtered since Add Component (ADR-0026 §10).
+    //
+    // THE VALUE CARRIES BOTH IDENTITIES, joined; `paramWrites()` splits them back into the
+    // two params the Core stores, so nothing on disk changes.
+    //
+    // THERE IS NO SECOND ROW FOR A COMPONENT. There was one, offering the project's types
+    // for a param of its own; the param is still stored and is no longer asked, so a table
+    // row answering a question nobody puts is a row that would only drift.
     [PROPERTY_REFERENCE]: {
-        options: (node, context) =>
-            (context.properties ?? []).map(property => ({ value: property.id, label: property.name })),
+        options: (node, context) => [
+            // THIS COMPONENT FIRST, because a `.px`'s own fields are what its graph reaches
+            // for most — and because they used to need a different node entirely.
+            ...(context.properties ?? []).map(property => ({
+                value: joinPath(null, property.id),
+                label: property.name,
+                group: 'This Component'
+            })),
+            ...(context.components ?? []).flatMap(entry =>
+                (entry.properties ?? []).map(property => ({
+                    value: joinPath(entry.type, property.id),
+                    label: property.name,
+                    group: entry.label ?? entry.type
+                })))
+        ],
         empty: () => 'This Component declares no properties'
-    },
-    [COMPONENT_REFERENCE]: {
-        options: (node, context) =>
-            (context.components ?? []).map(entry => ({ value: entry.type, label: entry.label ?? entry.type })),
-        empty: () => 'No Component types'
-    },
-    [COMPONENT_PROPERTY_REFERENCE]: {
-        options: (node, context) =>
-            (referencedComponent(node, context)?.properties ?? [])
-                .map(property => ({ value: property.id, label: property.name })),
-        empty: (node, context) => (referencedComponent(node, context)
-            ? 'This Component declares no properties'
-            : 'Choose a Component first'),
-        /** Resolved against whatever the param carrying THIS reference names. */
-        dependsOn: COMPONENT_REFERENCE
     },
     // THE FOURTH KIND, AND IT COST A ROW. A key is named by a string the Core refuses to
     // enumerate and the Editor can, because the Editor is the thing with a keyboard
@@ -174,7 +207,7 @@ const REFERENCES = {
     // THERE IS NO "FROM WIRE" ROW, AND THERE MUST NOT BE. Whether the target comes from the
     // picker or from the socket beside it is not a question to put to a creator: it is
     // answered by whether they connected something. A dropdown offering a mode would be the
-    // node explaining its own implementation (ADR-0039 §0.3).
+    // node explaining its own implementation (ADR-0039 §0.1).
     //
     // ONLY `objectref` PROPERTIES ARE OFFERED. A socket is where an Object arrives; a number
     // is not, and offering one would let a creator point a node at something that can never
@@ -183,7 +216,13 @@ const REFERENCES = {
         options: (node, context) => (context.properties ?? [])
             .filter(property => property.type === PropertyType.OBJECTREF)
             .map(property => ({ value: property.id, label: property.name })),
-        empty: () => 'Drag an Object here from the Hierarchy'
+        // BOTH EMPTIES READ THE SAME, because they ARE the same: whether this `.px` declares
+        // no Object inputs yet or declares some and none is chosen, the node acts on its own
+        // Object. The way to change that — drag an Object onto the node, or wire one in — is
+        // said by the drop ghost and by the row's tooltip, not by a control that lies about
+        // what the node is doing right now.
+        empty: () => SELF_TARGET,
+        unset: () => SELF_TARGET
     }
 };
 
@@ -210,6 +249,16 @@ const REFERENCES = {
  * @returns {Array<{name: string, value: any}>} The writes, the asked-for one first
  */
 export function paramWrites(definition, node, name, value, context = {}) {
+    // ONE CONTROL, TWO IDENTITIES. The property picker asks a single question — which
+    // property — and the Core stores the answer as the pair it has always stored: the type
+    // that declares it, and the property's own id (ADR-0027 §4). Splitting here is what lets
+    // the interface drop `Component` as a question without the format changing at all.
+    const compound = definition?.params?.[name]?.compound ?? null;
+    if (compound) {
+        const parts = splitPath(value);
+        return compound.map(field => ({ name: field, value: parts[field] ?? null }));
+    }
+
     const writes = [{ name, value }];
 
     const changed = definition?.params?.[name]?.reference ?? null;
@@ -303,6 +352,38 @@ export function inputFields(ports) {
     return fields;
 }
 
+/** The separator joining a Component type to one of its property identities. */
+const PATH = '\u0000';
+
+/**
+ * The two identities of a property, as the one value a picker offers.
+ *
+ * A NUL BYTE, BECAUSE IT CANNOT OCCUR IN EITHER HALF. A `ResourceId` is base36 and a property
+ * id is base36 or a JavaScript identifier; a printable separator would have been a guess
+ * about what a name can never contain, and this is not one. It never reaches a payload:
+ * `paramWrites()` splits the pair before anything is stored.
+ *
+ * @param {string|null} component - The Component type, or null for this one
+ * @param {string} property - The property's identity
+ * @returns {string} The joined value
+ */
+export function joinPath(component, property) {
+    return `${component ?? ''}${PATH}${property}`;
+}
+
+/**
+ * The pair a joined value carries.
+ * @param {string} value - A value from the property picker
+ * @returns {{component: string|null, property: string}} The two identities
+ */
+export function splitPath(value) {
+    const at = globalThis.String(value ?? '').indexOf(PATH);
+    if (at === -1) return { component: null, property: value ?? null };
+
+    const component = value.slice(0, at);
+    return { component: component === '' ? null : component, property: value.slice(at + 1) };
+}
+
 /**
  * A param that names something, as a choice whose values are identities.
  *
@@ -318,8 +399,13 @@ function referenceChoice(name, descriptor, node, context) {
     if (!reference) return null;
 
     const options = reference.options(node, context);
+    // WHAT THE CONTROL SHOWS IS THE PAIR, not the half stored under this name — otherwise a
+    // node holding `Transform` + `rotation` would find nothing in a list keyed by both.
+    const held = descriptor.compound
+        ? joinPath(node?.params?.[descriptor.compound[0]] ?? null, node?.params?.[name] ?? '')
+        : null;
 
-    return fieldFor(name, {
+    const field = fieldFor(name, {
         ...descriptor,
         type: PropertyType.ENUM,
         values: options.map(option => option.value),
@@ -330,6 +416,12 @@ function referenceChoice(name, descriptor, node, context) {
         // to, and every reference that has no groups passes `null` and draws as it always
         // did.
         groups: options.some(option => option.group) ? options.map(option => option.group ?? '') : null,
-        placeholder: options.length === 0 ? reference.empty(node, context) : NOTHING_SELECTED
+        placeholder: options.length === 0
+            ? reference.empty(node, context)
+            : reference.unset?.(node, context) ?? NOTHING_SELECTED,
     });
+
+    // `fieldFor()` answers a fixed shape, so the joined value rides beside it rather than
+    // through it: a descriptor field the canvas reads instead of the raw param.
+    return held === null ? field : { ...field, held };
 }

@@ -366,9 +366,9 @@ test('one value in and one value out still share a row', () => {
 
 test('flow ports keep their place in the zip, whatever the values do', () => {
     // A node's entry and its exit are the same height, and moving them apart would say they
-    // were different things. `Set Property On` takes two values and produces none, so there
+    // were different things. `Set Property` takes two values and produces none, so there
     // is no result to move — and its two triangles stay on one line.
-    const set = place('property.setOn', 0, 0, { component: 'Transform', property: 'p_x' });
+    const set = place('property.set', 0, 0, { component: 'Transform', property: 'p_x' });
     const rows = nodeRows(set.ports, []);
 
     assert.equal(rows[0].input.kind, PortKind.FLOW);
@@ -476,7 +476,7 @@ test('a param speaks for both ports on its row, and takes the room back', () => 
     assert.ok(box.x + box.width > node.x + NODE_WIDTH - 40);
 });
 
-// A ROW A PARAM CANNOT SPEAK FOR IS A ROW IT IS NEVER GIVEN. `Set Property On` used to put
+// A ROW A PARAM CANNOT SPEAK FOR IS A ROW IT IS NEVER GIVEN. `Set Property` used to put
 // its property picker on the row carrying the Object socket it writes THROUGH, and both were
 // drawn: `Object Property [x]`, one line saying two things — the defect ADR-0033 1 was
 // written against, reappearing through the half of its rule that had not been written down.
@@ -489,7 +489,7 @@ test('a param never lands on a row whose port has to speak for itself', () => {
     const silenced = silencedPorts(rows);
 
     // AND IT LANDS AFTER IT, because the Object row leads: a node reads "on THIS, do that"
-    // (ADR-0039 §0.3). What this test protects is that the param never SHARES that row —
+    // (ADR-0039 §0.1). What this test protects is that the param never SHARES that row —
     // an object socket has no field and its label is all it has.
     assert.equal(rows.length, 2, 'it takes a row of its own rather than that one');
     assert.equal(rows[0].input.id, 'object', 'the Object it acts on comes first');
@@ -510,7 +510,7 @@ test('an `any` socket is as unspeakable-for as an object one', () => {
 });
 
 test('a row a param makes for itself goes in where it was refused, not at the end', () => {
-    // READING ORDER IS THE WHOLE POINT. Appending put `Set Property On`'s property picker
+    // READING ORDER IS THE WHOLE POINT. Appending put `Set Property`'s property picker
     // BELOW the value whose type it decides, so a creator read the node backwards.
     const ports = {
         inputs: [
@@ -527,7 +527,7 @@ test('a row a param makes for itself goes in where it was refused, not at the en
     ]);
 
     // THE ORDER IS THE SENTENCE: when it runs, WHAT it acts on, HOW it is set, then the
-    // value that flows through it (ADR-0039 §0.3).
+    // value that flows through it (ADR-0039 §0.1).
     assert.deepEqual(
         rows.map(row => row.control?.name ?? null),
         [null, null, 'component', 'property', 'value'],
@@ -538,7 +538,7 @@ test('a row a param makes for itself goes in where it was refused, not at the en
 });
 
 test('the Scene nodes draw their object sockets with their names on', () => {
-    for (const type of ['scene.parent', 'object.isValid', 'property.getOn', 'property.setOn']) {
+    for (const type of ['scene.parent', 'object.isValid', 'property.get', 'property.set']) {
         const { ports } = place(type, 0, 0);
         const params = globalThis.Object.keys(registry.get(type).params ?? {})
             .map(name => ({ name }));
@@ -553,12 +553,12 @@ test('the Scene nodes draw their object sockets with their names on', () => {
 
 // THE TWO NODES THE ROW RULE WAS COMPLETED FOR, AGAINST THE REAL CATALOGUE. A fixture can
 // be made to pass; these read the layout a creator actually gets (ADR-0034 3.3).
-test('Set Property On says Object, Property and Value once each, in that order', () => {
+test('Set Property says Object, Property and Value once each, in that order', () => {
     const node = {
-        id: 'n', type: 'property.setOn', x: 0, y: 0,
+        id: 'n', type: 'property.set', x: 0, y: 0,
         params: { component: 'Transform', property: 'x' }
     };
-    const definition = registry.get('property.setOn');
+    const definition = registry.get('property.set');
     const ports = portsOf(definition, node, { properties: [], components: CATALOGUE });
 
     const value = ports.inputs.find(port => port.id === 'value');
@@ -570,10 +570,11 @@ test('Set Property On says Object, Property and Value once each, in that order',
     const rows = nodeRows(ports, [...paramFields(definition, node, context), ...inputFields(ports)]);
     const silenced = silencedPorts(rows);
 
-    // THE ORDER IS THE SENTENCE: when it runs, WHAT it acts on, HOW it is set, then the
-    // value that flows through it (ADR-0039 §0.3).
+    // THE ORDER IS THE SENTENCE: when it runs, WHAT it acts on, WHICH property, then the
+    // value that flows through it (ADR-0039 §0.1). THREE ROWS AND NOT FOUR: the Component
+    // half of the property is stored and never asked, so it takes no line (ADR-0040 §2).
     assert.deepEqual(rows.map(row => row.control?.name ?? null),
-        [null, 'target', 'component', 'property', 'value']);
+        [null, 'target', 'property', 'value']);
     assert.equal(rows[1].input.id, 'object', 'the Object row leads, carrying its picker');
     assert.ok(silenced.has('in:object'), 'the picker speaks for the socket it shares a row with');
     assert.ok(silenced.has('in:value'), 'and the value socket is spoken for by its own field');
@@ -582,12 +583,12 @@ test('Set Property On says Object, Property and Value once each, in that order',
 test('the Object picker shares the Object socket row', () => {
     // ONE QUESTION, ONE LINE. The picker and the socket both say which Object, so they sit
     // together: connect something and the picker greys out, disconnect and it answers again.
-    // Neither ever disappears, so there is no mode for a creator to learn (ADR-0039 0.3).
+    // Neither ever disappears, so there is no mode for a creator to learn (ADR-0039 §0.1).
     const node = {
-        id: 'n', type: 'property.setOn', x: 0, y: 0,
+        id: 'n', type: 'property.set', x: 0, y: 0,
         params: { target: 'p_player', component: 'Transform', property: 'x' }
     };
-    const definition = registry.get('property.setOn');
+    const definition = registry.get('property.set');
     const context = { properties: SOCKETS, components: CATALOGUE };
     const ports = portsOf(definition, node, context);
 
@@ -601,24 +602,24 @@ test('the Object picker shares the Object socket row', () => {
     assert.ok(silencedPorts(rows).has('in:object'), 'and speaks for it, so nothing is said twice');
 });
 
-test('Get Property On keeps its object socket off the pickers\' rows too', () => {
+test('Get Property keeps its object socket off the pickers\' rows too', () => {
     const node = {
-        id: 'n', type: 'property.getOn', x: 0, y: 0,
+        id: 'n', type: 'property.get', x: 0, y: 0,
         params: { component: 'Transform', property: 'y' }
     };
-    const definition = registry.get('property.getOn');
+    const definition = registry.get('property.get');
     const ports = portsOf(definition, node, { properties: [], components: CATALOGUE });
     const rows = nodeRows(ports, paramFields(definition, node, { properties: [], components: CATALOGUE }));
 
-    assert.deepEqual(rows.map(row => row.control?.name ?? null), ['target', 'component', 'property']);
+    assert.deepEqual(rows.map(row => row.control?.name ?? null), ['target', 'property']);
     assert.equal(rows[0].input.id, 'object', 'the Object row leads, carrying its picker');
     assert.equal(rows[0].output.id, 'value');
 });
 
 test('a value port a creator can type into gets a field once its type is known', () => {
-    const definition = registry.get('property.setOn');
-    const unset = { id: 'a', type: 'property.setOn', x: 0, y: 0, params: {} };
-    const known = { id: 'b', type: 'property.setOn', x: 0, y: 0, params: { component: 'Transform', property: 'x' } };
+    const definition = registry.get('property.set');
+    const unset = { id: 'a', type: 'property.set', x: 0, y: 0, params: {} };
+    const known = { id: 'b', type: 'property.set', x: 0, y: 0, params: { component: 'Transform', property: 'x' } };
 
     const context = { properties: [], components: CATALOGUE };
     assert.deepEqual(inputFields(portsOf(definition, unset, context)), [],

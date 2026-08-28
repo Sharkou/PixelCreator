@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PropertyType } from '../properties/types.js';
 import { invert } from '../operations/invert.js';
-import { GRAPH_VERSION, Graph, createConnection, createNode } from './graph.js';
+import { GRAPH_VERSION, Graph, createConnection, createNode, migrateNode } from './graph.js';
 import { NodeRegistry, PortDirection, PortKind } from './nodes.js';
 import { GraphIssueCode } from './errors.js';
 import { registerStandardNodes } from './standard.js';
@@ -365,6 +365,55 @@ test('an empty payload deserializes into an empty graph', () => {
     const restored = Graph.deserialize(null, { registry: catalogue() });
 
     assert.deepEqual(restored.serialize(), { version: GRAPH_VERSION, nodes: [], connections: [] });
+});
+
+// --- a graph written before the merge (ADR-0040 §2) ---------------------------------------
+//
+// FOUR NODES BECAME TWO, AND NOTHING ON DISK IS LOST FOR IT. `Get Property On` and `Set
+// Property On` differed from `Get Property` and `Set Property` only in where they looked for
+// the property — an engine distinction the creator was made to choose between. The merged
+// node reads exactly the params the old one wrote, so the migration is a rename and the
+// graph that comes back is the graph that went in.
+
+test('a graph naming the nodes the merge removed loads as the nodes that replaced them', () => {
+    const payload = {
+        version: GRAPH_VERSION,
+        nodes: [
+            { id: 'a', type: 'property.getOn', x: 1, y: 2, params: { component: 'Transform', property: 'x' } },
+            { id: 'b', type: 'property.setOn', x: 3, y: 4, params: { component: 'Transform', property: 'y' } }
+        ],
+        connections: []
+    };
+
+    const restored = Graph.deserialize(payload, { registry: catalogue() });
+
+    assert.deepEqual(restored.nodes().map(node => node.type), ['property.get', 'property.set']);
+    // THE PARAMS ARE UNTOUCHED, which is what makes this a rename and not a conversion: the
+    // old node stored a Component type and a property of it, and so does the new one.
+    assert.deepEqual(restored.node('a').params, { component: 'Transform', property: 'x' });
+    assert.deepEqual(restored.node('b').params, { component: 'Transform', property: 'y' });
+});
+
+test('a migrated graph is a graph, so it validates and serializes under the new names', () => {
+    const payload = {
+        version: GRAPH_VERSION,
+        nodes: [{ id: 'a', type: 'property.getOn', x: 0, y: 0, params: {} }],
+        connections: []
+    };
+
+    const written = Graph.deserialize(payload, { registry: catalogue() }).serialize();
+
+    assert.equal(written.nodes[0].type, 'property.get');
+    assert.equal(JSON.stringify(written).includes('property.getOn'), false, 'the old name is gone');
+});
+
+test('a node that names nothing renamed is handed back as it was', () => {
+    // THE COMMON CASE MUST NOT ALLOCATE. Both doors call this on every node of every graph
+    // they load, so a record that needs nothing is returned rather than copied.
+    const node = { id: 'a', type: 'event.update', x: 0, y: 0, params: {} };
+
+    assert.equal(migrateNode(node), node);
+    assert.equal(migrateNode(null), null, 'and nothing at all is not a crash');
 });
 
 // --- replication -------------------------------------------------------------------------

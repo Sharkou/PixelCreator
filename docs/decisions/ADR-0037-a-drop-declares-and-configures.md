@@ -1,6 +1,8 @@
 # ADR-0037 — Un dépôt déclare, configure, et ne devine jamais
 
 - **Statut :** **accepté** (2026-08-22)
+- **Amendé par :** ADR-0039 (2026-08-27) — §2.4 (un dépôt produit un nœud fini), §2.3 (la Resource est déposable)
+- **Amendé par :** ADR-0040 (2026-08-28) — §2.4 : le dépôt d'un **Component** dans un graphe est retiré ; un Component a une signification, et elle est de se donner à un Object
 - **Décide :** ce qu'un glisser-déposer venu de l'Editor peut faire dans un graphe `.px`
 - **Dépend de :** ADR-0010 (identité par ID), ADR-0016 / ADR-0026 (un `.px` est **une** ressource), ADR-0021 (identité de Component), ADR-0023 (`PropertyType`), ADR-0024 (undo par ressource), ADR-0027 (modèle de graphe), ADR-0034 (références d'Object), ADR-0036 (frontière `objectref` ↔ `object`)
 - **Amende :** ADR-0027 §11 ; ADR-0034 §3.7 (ligne *Object*) et son tableau « ne décide pas »

@@ -83,7 +83,6 @@ export {
     typesCompatible
 } from './graph/nodes.js';
 export {
-    COMPONENT_PROPERTY_REFERENCE,
     COMPONENT_REFERENCE,
     KEY_REFERENCE,
     OBJECT_SOCKET_REFERENCE,
@@ -95,7 +94,7 @@ export {
     registerStandardNodes,
     targetSocket
 } from './graph/standard.js';
-export { GRAPH_VERSION, Graph, createConnection, createNode } from './graph/graph.js';
+export { GRAPH_VERSION, Graph, createConnection, createNode, migrateNode } from './graph/graph.js';
 export { DEFAULT_PROPERTY_TYPE, ComponentDefinition } from './graph/definition.js';
 export { GraphError, GraphIssueCode, GraphSeverity, firstError, graphIssue } from './graph/errors.js';
 export { runnable, validateGraph } from './graph/validate.js';

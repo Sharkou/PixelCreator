@@ -123,7 +123,7 @@ test('shapes that are not each other are refused', () => {
 test('a node that hands over a reference is not a node that reads a property', () => {
     // THE SPLIT THIS ASSERTS. Everything reaching outside the Component used to be `Scene`,
     // so `Self` — which produces an Object handle and takes part in no execution — was
-    // classified with `Get Property On`, which is a property access aimed elsewhere. They
+    // classified with `Get Property`, which is a property access aimed elsewhere. They
     // are different acts and the canvas colours them apart (editor/graph/palette.js).
     const registry = registerStandardNodes(new NodeRegistry());
     const categoryOf = type => registry.get(type).category;
@@ -131,19 +131,19 @@ test('a node that hands over a reference is not a node that reads a property', (
     for (const type of ['scene.self', 'scene.parent', 'scene.findByTag', 'object.isValid']) {
         assert.equal(categoryOf(type), 'References', type);
     }
-    for (const type of ['property.get', 'property.set', 'property.getOn', 'property.setOn']) {
+    for (const type of ['property.get', 'property.set', 'property.get', 'property.set']) {
         assert.equal(categoryOf(type), 'Properties', type);
     }
 });
 
 test('the two On nodes sit with the property nodes whose semantics they share', () => {
-    // ADR-0034 §3.3: `Get Property On` IS `Get Property` aimed somewhere else — a property
+    // ADR-0034 §3.3: `Get Property` IS `Get Property` aimed somewhere else — a property
     // named by identity, a plain write, no Operation. Classifying it by WHERE it points
     // rather than by WHAT it does is what put it beside `Find By Tag`.
     const registry = registerStandardNodes(new NodeRegistry());
 
-    assert.equal(registry.get('property.getOn').category, registry.get('property.get').category);
-    assert.equal(registry.get('property.setOn').category, registry.get('property.set').category);
+    assert.equal(registry.get('property.get').category, registry.get('property.get').category);
+    assert.equal(registry.get('property.set').category, registry.get('property.set').category);
 });
 
 test('every input node is one family, and the events are the other half of it', () => {
@@ -167,7 +167,7 @@ test('no node in the catalogue renames itself after what it is configured with',
     // the header on the canvas to the entry in the menu.
     //
     // WHAT IT IS CONFIGURED WITH IS DRAWN INSIDE IT, on rows that can be changed — which is
-    // where a value belongs and where it can be edited (ADR-0039 §5).
+    // where a value belongs and where it can be edited (ADR-0040 §5).
     const registry = registerStandardNodes(new NodeRegistry());
 
     for (const definition of registry.definitions()) {
@@ -181,7 +181,7 @@ test('a node still redraws when a param changes its shape', () => {
     // still has to repaint, and `shapeDependsOnNode` is what the window asks.
     const registry = registerStandardNodes(new NodeRegistry());
 
-    for (const type of ['property.get', 'property.set', 'property.getOn', 'property.setOn']) {
+    for (const type of ['property.get', 'property.set', 'property.get', 'property.set']) {
         assert.equal(shapeDependsOnNode(registry.get(type)), true, type);
     }
 });
@@ -750,7 +750,7 @@ test('the type a port carries is the declared type, translated in exactly one pl
     assert.equal(portTypeOf({}), ANY_TYPE);
 });
 
-test('Get Property On and Set Property On take the shape of the property they name', () => {
+test('Get Property and Set Property take the shape of the property they name', () => {
     const registry = registerStandardNodes(new NodeRegistry());
     const components = [{
         type: 'res_health',
@@ -775,13 +775,13 @@ test('Get Property On and Set Property On take the shape of the property they na
     for (const [property, expected] of globalThis.Object.entries(shapes)) {
         const params = { component: 'res_health', property };
 
-        const read = portsOf(registry.get('property.getOn'), { id: 'g', type: 'property.getOn', params },
+        const read = portsOf(registry.get('property.get'), { id: 'g', type: 'property.get', params },
             { components }).outputs.find(port => port.id === 'value');
-        const write = portsOf(registry.get('property.setOn'), { id: 's', type: 'property.setOn', params },
+        const write = portsOf(registry.get('property.set'), { id: 's', type: 'property.set', params },
             { components }).inputs.find(port => port.id === 'value');
 
-        assert.equal(read.type, expected, `Get Property On mistypes ${property}`);
-        assert.equal(write.type, expected, `Set Property On mistypes ${property}`);
+        assert.equal(read.type, expected, `Get Property mistypes ${property}`);
+        assert.equal(write.type, expected, `Set Property mistypes ${property}`);
         // READ AND WRITE AGREE, which is what lets a creator wire one into the other.
         assert.equal(read.type, write.type);
     }
@@ -789,11 +789,11 @@ test('Get Property On and Set Property On take the shape of the property they na
 
 test('a property nobody has named yet is honestly untyped, and says so on both nodes', () => {
     const registry = registerStandardNodes(new NodeRegistry());
-    const bare = { id: 'n', type: 'property.getOn', params: {} };
+    const bare = { id: 'n', type: 'property.get', params: {} };
 
-    assert.equal(portsOf(registry.get('property.getOn'), bare, { components: [] })
+    assert.equal(portsOf(registry.get('property.get'), bare, { components: [] })
         .outputs.find(port => port.id === 'value').type, ANY_TYPE);
-    assert.equal(portsOf(registry.get('property.setOn'), { ...bare, type: 'property.setOn' }, { components: [] })
+    assert.equal(portsOf(registry.get('property.set'), { ...bare, type: 'property.set' }, { components: [] })
         .inputs.find(port => port.id === 'value').type, ANY_TYPE);
 });
 
@@ -959,7 +959,7 @@ test('a node type says for itself whether its shape depends on the node', () => 
     const registry = registerStandardNodes(new NodeRegistry());
 
     // Dynamic: the port is typed by the property the node names, so picking one retypes it.
-    for (const type of ['property.get', 'property.set', 'property.getOn', 'property.setOn']) {
+    for (const type of ['property.get', 'property.set', 'property.get', 'property.set']) {
         assert.equal(shapeDependsOnNode(registry.get(type)), true, type);
     }
 
@@ -969,8 +969,24 @@ test('a node type says for itself whether its shape depends on the node', () => 
     }
 });
 
-test('a title that reads the node counts, even when the ports do not', () => {
-    assert.equal(shapeDependsOnNode({ inputs: [], outputs: [], title: node => node.id }), true);
-    assert.equal(shapeDependsOnNode({ inputs: [], outputs: [], title: 'Fixed' }), false);
+test('a fixed port list depends on nothing, and neither does a name', () => {
+    assert.equal(shapeDependsOnNode({ inputs: [], outputs: [] }), false);
     assert.equal(shapeDependsOnNode(null), false, 'a type nothing resolves reshapes nothing');
+});
+
+// --- a node is named for what it IS (ADR-0040 §5) ------------------------------------------
+
+test('no node type in the catalogue can rename itself', () => {
+    // THE RULE IS ABSOLUTE, so it is checked as a rule and not node by node. A definition
+    // has a `label` and no other way to say what it is called: the mechanism that let one
+    // compute a name from its params is gone, so `Get Ground` cannot come back by being
+    // added rather than by being argued for.
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    for (const definition of registry.definitions()) {
+        assert.equal(typeof definition.label, 'string', `${definition.type} has no name`);
+        assert.ok(definition.label.length > 0, `${definition.type} is named with nothing`);
+        assert.equal('title' in definition, false,
+            `${definition.type} declares a title, which is a name that moves`);
+    }
 });

@@ -104,7 +104,7 @@ export function componentPayload(object, type, label) {
  * AND THE OBJECT IT WAS READ OFF, AS A NAME. The Inspector knows which Object it is showing,
  * and a creator dragging `Transform.rotation` off Player means Player's rotation — so the
  * gesture carries it, and the drop can aim the node without a second drag and a wire
- * (ADR-0039 §3). It is the same shape `objectPayload()` uses and for the same reason: what
+ * (ADR-0040 §3). It is the same shape `objectPayload()` uses and for the same reason: what
  * travels is a name and an identity, what LANDS in the `.px` is a socket named after it. The
  * `ObjectId` is carried for the length of the drag and written nowhere (ADR-0034 §1).
  *

@@ -503,7 +503,7 @@ test('unsaved work is answered per editor, not only for the active one', async (
 
 // WHOEVER ATTACHES FIRST MUST NOT DECIDE WHAT THE MODEL CAN RESOLVE. Selecting a `.px`
 // attaches it (the Inspector edits its properties that way); opening it attaches it too.
-// Only the second used to carry a registry, so a `Set Property On` in a `.px` that had been
+// Only the second used to carry a registry, so a `Set Property` in a `.px` that had been
 // SELECTED before it was opened could never resolve a Component type — its value port stayed
 // `any`, and no later open() repaired it, because the model already existed (ADR-0034 §3.3).
 test('a `.px` resolves Component types however it was attached', async () => {
@@ -517,7 +517,7 @@ test('a `.px` resolves Component types however it was attached', async () => {
     // Attached the way a SELECTION does it: no registry in sight.
     const model = await workspace.attach(px.id);
     const node = model.graph.addNode({
-        type: 'property.setOn',
+        type: 'property.set',
         params: { component: 'Transform', property: 'x' }
     });
 
@@ -532,7 +532,7 @@ test('a workspace given no components still opens a `.px`', async () => {
     const px = createResourceOfKind(workspace.project, ResourceKind.COMPONENT, { parent: null });
 
     const model = await workspace.attach(px.id);
-    const node = model.graph.addNode({ type: 'property.setOn', params: { component: 'Transform' } });
+    const node = model.graph.addNode({ type: 'property.set', params: { component: 'Transform' } });
 
     // Nothing to resolve against, so the port says so rather than guessing (ADR-0034 §3.3).
     assert.equal(model.graph.portsOf(node).inputs.find(port => port.id === 'value').type, 'any');

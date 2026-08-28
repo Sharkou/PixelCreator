@@ -19,8 +19,7 @@
 // general ones. Adding a kind of drop is adding a row.
 
 import {
-    COMPONENT_PROPERTY_REFERENCE,
-    COMPONENT_REFERENCE,
+    PROPERTY_REFERENCE,
     OBJECT_SOCKET_REFERENCE,
     Object as SceneObject,
     PropertyType,
@@ -131,12 +130,13 @@ function buildInstance(rule, resource, { scene }) {
 const NOTHING_OPEN = 'There is no Component open on this canvas to declare anything in.';
 
 const REFUSED_ON_GRAPH = {
-    // Only reachable now for a drop ONTO a node that names neither: ADR-0037 gave both a
-    // meaning on bare canvas, so what is left is a node this means nothing to.
-    [DragKind.COMPONENT]: 'This node does not name a Component. Drop it on a Get or Set '
-        + 'Property On, or on bare canvas to add one.',
-    [DragKind.PROPERTY]: 'This node does not name a Component property. Drop it on a Get or '
-        + 'Set Property On, or on bare canvas to add one.',
+    // A COMPONENT IS NOT SOMETHING A GRAPH HOLDS, and saying so is the honest answer rather
+    // than a gap. A graph reads and writes PROPERTIES; a Component is what a property is
+    // filed under, and it has one gesture of its own — giving it to an Object (ADR-0040 §2).
+    [DragKind.COMPONENT]: 'A graph works on properties, not on Components. Drag one of its '
+        + 'properties here, or drop it on an Object to add it.',
+    [DragKind.PROPERTY]: 'This node does not name a property. Drop it on a Get or Set '
+        + 'Property, or on bare canvas to add one.',
     // An Object with no identity at all — a drag that carried nothing.
     [DragKind.OBJECT]: 'There is no Object in this drag.',
     // Only reachable for a drop ONTO a node that holds no resource: bare canvas takes one
@@ -467,7 +467,7 @@ export const RULES = [
         id: 'property-to-node',
         accepts: (payload, target) => payload.kind === DragKind.PROPERTY
             && target.zone === DropZone.GRAPH
-            && acceptsComponentProperty(target),
+            && acceptsProperty(target),
         describe: (payload, target) =>
             `Point ${target.label ?? 'this node'} at ${payload.label || payload.property}`,
         perform: (payload, target, context) => context.setNodeParams?.(target.node, {
@@ -544,7 +544,7 @@ export const RULES = [
         // two of the three and leave the creator to drag the Object separately and pull a
         // wire to the Target port. It now declares (or reuses) the socket for that Object and
         // aims the node at it, so what lands on the canvas reads `Set Player.Transform.x` and
-        // needs nothing further (ADR-0039 §3).
+        // needs nothing further (ADR-0040 §3).
         //
         // ONE BATCH: the socket and the node are one thing the creator did (ADR-0024 §4).
         perform: (payload, target, context) => {
@@ -563,77 +563,6 @@ export const RULES = [
             }, target.at, { batch }) ?? null;
 
             return node ? { node, socket } : null;
-        }
-    },
-
-    {
-        // The same offer for a Component, whose property is left for the picker on the node.
-        id: 'component-to-canvas',
-        // BARE CANVAS MEANS NO NODE. Without this the rule would also match a drop ONTO
-        // one and shadow the rule that configures it — first match wins, so "anywhere on
-        // the canvas" is never what a rule beside a more specific one should say.
-        accepts: (payload, target) => payload.kind === DragKind.COMPONENT
-            && target.zone === DropZone.GRAPH
-            && target.bound === true
-            && !target.node,
-        describe: (payload, target) => {
-            const named = payload.label || payload.type;
-            return payload.object?.name
-                ? `Add a node for ${payload.object.name}.${named}`
-                : `Add a node for ${named}`;
-        },
-        // THE SAME COMPOSITION AS A PROPERTY DROP, ONE RUNG UP. A Component says WHOSE and
-        // WHICH type; only the property is left, and it is the one thing the gesture could
-        // not know. So the node arrives aimed, with a single picker still to answer — which
-        // is the difference between "three dropdowns" and "one".
-        perform: (payload, target, context) => {
-            if (!target.create) return null;
-
-            const batch = createId();
-            const socket = payload.object ? context.socketFor?.(payload.object, { batch }) : null;
-
-            const node = context.createNode?.(target.create, {
-                ...(socket ? { target: socket.id } : {}),
-                component: payload.type
-            }, target.at, { batch }) ?? null;
-
-            return node ? { node, socket } : null;
-        }
-    },
-
-    {
-        // A DROP CONFIGURES; IT NEVER CREATES. That one sentence is what makes this gesture
-        // legal where every other drop onto a canvas is not.
-        //
-        // ADR-0027 §11 refuses a drop that would have to CHOOSE for the creator — a property
-        // let go on bare canvas could mean Get or Set, and picking one is the magic this
-        // Editor avoids. Landing on a node that already exists carries no such choice: the
-        // creator made it when they placed the node. So nothing is created, and nothing is
-        // guessed.
-        //
-        // ADR-0034 §3.2 is satisfied for the same reason it was written: a Component is
-        // named by its TYPE, "identité de portée projet, dans un paramètre". That is exactly
-        // what is written here — no port carries a Component, nothing circulates, and the
-        // value that lands in the `.px` belongs to the project like the `.px` itself.
-        //
-        // ONE RESOURCE, ONE OPERATION, ONE UNDO. The write is a `setParam` on the graph's own
-        // pipeline (ADR-0024): the inter-resource undo question ADR-0034 §3.7 parks for an
-        // Object simply does not arise, because nothing outside this `.px` is touched.
-        id: 'component-to-node',
-        accepts: (payload, target) => payload.kind === DragKind.COMPONENT
-            && target.zone === DropZone.GRAPH
-            && acceptsComponent(target),
-        describe: (payload, target) =>
-            `Point ${target.label ?? 'this node'} at ${payload.label || payload.type}`,
-        perform: (payload, target, context) => {
-            if (!context.setNodeParam) return null;
-
-            // WHICH SIBLINGS THE CHANGE TAKES WITH IT IS NOT DECIDED HERE. A property picked
-            // out of the old Component may not exist on the new one; the canvas already
-            // answers that, under one batch, for the picker and for this drop alike
-            // (`paramWrites`, editor/inspector/node.js).
-            context.setNodeParam(target.node, 'component', payload.type);
-            return { node: target.node, component: payload.type };
         }
     },
 
@@ -767,35 +696,23 @@ export function acceptsObject(target) {
 }
 
 /**
- * Whether a node would take a Component type in one of its params.
+ * Whether a node would take a property in one of its params.
  *
- * DECLARED, NEVER GUESSED, like `acceptsResource()` and `acceptsObject()` before it — and
- * here the declaration is the node type's own: a param says it REFERENCES a Component
- * (ADR-0027 §4, ADR-0034 §3.3), and that is the only thing that makes a node a target. A
- * node with no such param is not "not yet supported", it is a node this means nothing to.
+ * DECLARED, NEVER GUESSED. The declaration is the node type's own: a param says it
+ * REFERENCES a property (ADR-0027 §4), and that is the only thing that makes a node a
+ * target. A node with no such param is not "not yet supported", it is a node this means
+ * nothing to.
  *
- * @param {object} target - A GRAPH target carrying `node` and its type's `params`
- * @returns {boolean} True when the node names a Component type
- */
-export function acceptsComponent(target) {
-    if (!target?.node) return false;
-    return target.params?.component?.reference === COMPONENT_REFERENCE;
-}
-
-/**
- * Whether a node names both a Component type and a property OF that type.
- *
- * The pair is what makes a property droppable on it: filling only one half would leave the
- * node in the state the picker already lets a creator reach, and filling a property whose
- * Component the node does not name would be a reference to nothing.
+ * ONE PARAM, NOT A PAIR. It used to check two — a Component type AND a property of it —
+ * because reaching another Object's property was a different node from reading your own.
+ * One node asks one question now, and the answer carries both halves (ADR-0040 §2).
  *
  * @param {object} target - A GRAPH target carrying `node` and its type's `params`
- * @returns {boolean} True when the node names a Component property
+ * @returns {boolean} True when the node names a property
  */
-export function acceptsComponentProperty(target) {
+export function acceptsProperty(target) {
     if (!target?.node) return false;
-    return target.params?.component?.reference === COMPONENT_REFERENCE
-        && target.params?.property?.reference === COMPONENT_PROPERTY_REFERENCE;
+    return target.params?.property?.reference === PROPERTY_REFERENCE;
 }
 
 /**

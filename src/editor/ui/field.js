@@ -419,9 +419,21 @@ export class Field extends Element {
                 // and the punctuation nobody hunts for at the bottom, which alphabetising
                 // would undo. A choice with no groups produces no headings and draws exactly
                 // as it always did.
+                //
+                // AND THE GROUP TRAVELS ON THE ENTRY, not only on the heading above it. The
+                // headings are what a creator reads while browsing; the moment they type,
+                // the menu ranks across every group and the headings are gone — so a search
+                // for `rot` answered a bare `rotation` with no way to tell WHOSE. `category`
+                // is the field the menu already draws as the quiet second column, and the
+                // one the scorer already reads, so one property carries both.
                 descriptor.values.flatMap((option, index) => {
                     const group = descriptor.groups?.[index] ?? null;
-                    const entry = { id: option, label: labelOf(option), icon: iconOf(option) };
+                    const entry = {
+                        id: option,
+                        label: labelOf(option),
+                        icon: iconOf(option),
+                        ...(group ? { category: group } : {})
+                    };
                     return group && group !== descriptor.groups?.[index - 1]
                         ? [{ heading: group }, entry]
                         : [entry];

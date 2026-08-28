@@ -249,7 +249,7 @@ function wireCounter(model) {
     const self = graph.addNode({ type: 'scene.self' });
     const readAgain = graph.addNode({ type: 'property.get', params: { property: count.id } });
     const move = graph.addNode({
-        type: 'property.setOn',
+        type: 'property.set',
         params: { component: 'Transform', property: 'x' }
     });
 

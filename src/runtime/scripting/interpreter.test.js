@@ -780,14 +780,14 @@ function reaching(build, { attached = true, tag = 'enemy' } = {}) {
 
 /** A `.px` that reads `hp` off whatever the Find node produced. */
 const reads = (sheet, { find }) => {
-    const get = sheet.node('property.getOn', { component: 'res_health', property: 'p_hp' });
+    const get = sheet.node('property.get', { component: 'res_health', property: 'p_hp' });
     sheet.wire([find, 'object'], [get, 'object']);
     return [get, 'value'];
 };
 
 /** A `.px` that writes a number into `hp` on whatever the Find node produced. */
 const writes = value => (sheet, { update, find }) => {
-    const set = sheet.node('property.setOn', { component: 'res_health', property: 'p_hp' });
+    const set = sheet.node('property.set', { component: 'res_health', property: 'p_hp' });
     const literal = sheet.node('value.number', { value });
     sheet.wire([update, 'out'], [set, 'in']);
     sheet.wire([find, 'object'], [set, 'object']);
@@ -795,7 +795,7 @@ const writes = value => (sheet, { update, find }) => {
     return null;
 };
 
-test('Get Property On reads the property of a Component on another Object', () => {
+test('Get Property reads the property of a Component on another Object', () => {
     const it = reaching(reads);
     it.health().hp = 7;
 
@@ -804,7 +804,7 @@ test('Get Property On reads the property of a Component on another Object', () =
     assert.equal(it.written[0], 7);
 });
 
-test('Get Property On answers the declared default when there is nothing to read', () => {
+test('Get Property answers the declared default when there is nothing to read', () => {
     // A TARGET THAT IS GONE IS A STATE OF THE SCENE, NOT A FAULT (ADR-0034 §3.4). All three
     // shapes of absence answer the same way, and none of them reports an error.
     const missing = reaching(reads, { tag: 'nobody' });
@@ -824,7 +824,7 @@ test('Get Property On answers the declared default when there is nothing to read
     assert.equal(removed.written[1], 3, 'the Object was deleted between two steps');
 });
 
-test('Set Property On writes onto the Component of another Object', () => {
+test('Set Property writes onto the Component of another Object', () => {
     const it = reaching(writes(12));
 
     it.step();
@@ -832,7 +832,7 @@ test('Set Property On writes onto the Component of another Object', () => {
     assert.equal(it.health().hp, 12);
 });
 
-test('Set Property On does nothing when there is nothing to write to', () => {
+test('Set Property does nothing when there is nothing to write to', () => {
     const missing = reaching(writes(12), { tag: 'nobody' });
     assert.doesNotThrow(() => missing.step());
     assert.equal(missing.health().hp, 3, 'the target was never found, so nothing moved');
@@ -870,13 +870,111 @@ test('a node naming a Component type nothing declares refuses, with the reason',
     // A reference a design-time check COULD resolve and cannot is a fault (ADR-0034 §3.4),
     // and it is told apart from a target that simply is not there.
     const it = reaching((sheet, { find }) => {
-        const get = sheet.node('property.getOn', { component: 'res_ghost', property: 'p_hp' });
+        const get = sheet.node('property.get', { component: 'res_ghost', property: 'p_hp' });
         sheet.wire([find, 'object'], [get, 'object']);
         return [get, 'value'];
     });
 
     assert.throws(() => it.step(), error => error instanceof GraphError
         && error.code === GraphIssueCode.MISSING_PROPERTY);
+});
+
+// --- one node, whichever Object it acts on (ADR-0040 §2, §3) -----------------------------
+//
+// FOUR NODES BECAME TWO. `Get Property On` existed because the Core looks in two places for
+// a property — this Component's own declarations, or those of a type named in a param — and
+// the creator was made to choose between them by picking a NODE. That is an engine
+// distinction, and it was never the creator's question: they want a value, and where it is
+// filed is the answer's shape.
+//
+// SO THE MERGED NODE ANSWERS ALL THREE CASES, and the tests are the three: this Component's
+// own property, another Component on the SAME Object (nothing wired, nothing pointed at —
+// Self), and a Component on another Object (a wire). Nothing about the node changes but the
+// answer to its one picker.
+
+test('an empty Object port means Self, so a node reaches its own Object\'s other Components', () => {
+    // THE COMMONEST SENTENCE A BEGINNER WRITES: "turn me". It used to need `Get Property On`
+    // plus a `Self` node plus a wire; it is now one node with nothing connected (ADR-0040 §3).
+    const file = px();
+    const update = file.node('event.update');
+    const set = file.node('property.set', { component: 'Transform', property: 'x' });
+    const literal = file.node('value.number', { value: 42 });
+    file.wire([update, 'out'], [set, 'in']);
+    file.wire([literal, 'value'], [set, 'value']);
+
+    const payload = file.model.serialize();
+    const Behaviour = defineComponent(payload);
+    const catalogue = new ComponentRegistry();
+    catalogue.register(Transform);
+    const scene = new Scene('Main', { registry: catalogue });
+    const holder = scene.add(new SceneObject('Hero'));
+    holder.addComponent(new Transform());
+    holder.addComponent(new Behaviour());
+
+    const behavior = interpretGraph(payload.graph, { registry })(holder.components[payload.type]);
+    behavior.update(holder, { time: 0, deltaTime: 0.016, scene });
+
+    assert.equal(holder.components.Transform.x, 42, 'no wire, no picker, and it found itself');
+});
+
+test('the same node with nothing named at all still reads this Component\'s own property', () => {
+    // The case that used to be a DIFFERENT node type. No Component named means this one.
+    const file = px();
+    const speed = file.property({ name: 'speed', type: PropertyType.NUMBER, default: 5 });
+    const update = file.node('event.update');
+    const get = file.node('property.get', { property: speed.id });
+    const log = file.node('debug.log');
+    file.wire([update, 'out'], [log, 'in']);
+    file.wire([get, 'value'], [log, 'value']);
+
+    const written = [];
+    const { behavior } = behaviourFor(file.model, { log: value => written.push(value) });
+    behavior.update(null, {});
+
+    assert.deepEqual(written, [5]);
+});
+
+// --- a graph written before the merge (ADR-0040 §2) --------------------------------------
+//
+// THE SECOND DOOR. `Graph.deserialize` migrates what the Editor loads; the Runtime never
+// builds a `Graph` at all — it compiles the raw payload straight off the `.px` — so a
+// migration that lived only in the model would rename nodes in the editor and leave every
+// published game refusing to run. Both doors, one table.
+
+test('a published graph naming the removed node types still runs', () => {
+    const file = px();
+    const speed = file.property({ name: 'speed', type: PropertyType.NUMBER, default: 5 });
+    const update = file.node('event.update');
+    const get = file.node('property.get', { property: speed.id });
+    const log = file.node('debug.log');
+    file.wire([update, 'out'], [log, 'in']);
+    file.wire([get, 'value'], [log, 'value']);
+
+    // The payload as a `.px` published before the merge holds it: the old name, on disk.
+    const payload = file.model.serialize();
+    payload.graph.nodes.find(node => node.type === 'property.get').type = 'property.getOn';
+
+    const written = [];
+    const Behaviour = defineComponent(payload);
+    const holder = new SceneObject('Hero');
+    holder.addComponent(new Behaviour());
+
+    const behavior = interpretGraph(payload.graph, {
+        registry,
+        log: value => written.push(value)
+    })(holder.components[payload.type]);
+    behavior.update(null, {});
+
+    assert.deepEqual(written, [5], 'the old name compiled as the node that replaced it');
+});
+
+test('an unknown node type is still refused, so the migration is a table and not a shrug', () => {
+    const file = px();
+    const payload = file.model.serialize();
+    payload.graph.nodes.push({ id: 'x', type: 'property.getSideways', x: 0, y: 0, params: {} });
+
+    assert.throws(() => interpretGraph(payload.graph, { registry }),
+        error => error instanceof GraphError && error.code === GraphIssueCode.UNKNOWN_NODE_TYPE);
 });
 
 // --- what an object port will and will not take (ADR-0034 §3.6) -------------------------
@@ -967,7 +1065,7 @@ test('a payload written by hand cannot smuggle an Object into a port either', ()
  * A scene where a `.px` reads and writes references — its own, and another Object's.
  *
  * `Link` carries nothing but a reference, declared exactly as §3.5 declares one, so both
- * `Get Property` (the graph's own Component) and `Get Property On` (someone else's) can be
+ * `Get Property` (the graph's own Component) and `Get Property` (someone else's) can be
  * aimed at the same shape of value.
  *
  * @param {Function} build - (sheet, parts) => [node, port] to observe, or nothing
@@ -1048,7 +1146,7 @@ const ownParent = (sheet, { mine }) => {
 const foreignRead = observer => (sheet, parts) => {
     const find = sheet.node('scene.findByTag');
     sheet.model.graph.setInput(find.id, 'tag', 'enemy');
-    const get = sheet.node('property.getOn', { component: 'res_link', property: 'p_target' });
+    const get = sheet.node('property.get', { component: 'res_link', property: 'p_target' });
     sheet.wire([find, 'object'], [get, 'object']);
 
     const node = sheet.node(observer);
@@ -1077,7 +1175,7 @@ test('a live reference of ANOTHER Object\'s Component is read as a handle too', 
 
     const parent = referencing(foreignRead('scene.parent'), { linked: ({ player }) => player.id });
     parent.step();
-    assert.equal(parent.written[0]?.name, 'Root', 'Get Property On crosses the same boundary');
+    assert.equal(parent.written[0]?.name, 'Root', 'Get Property crosses the same boundary');
 });
 
 test('a reference whose target was deleted is nothing, and never the old identity', () => {
@@ -1105,7 +1203,7 @@ test('a reference whose target was deleted is nothing, and never the old identit
         remove: ({ player }) => player
     });
     foreign.step();
-    assert.equal(foreign.written[0], false, 'and the same holds through Get Property On');
+    assert.equal(foreign.written[0], false, 'and the same holds through Get Property');
 });
 
 test('an empty reference is nothing', () => {
@@ -1132,7 +1230,7 @@ const writeSelfOn = (sheet, { update }) => {
     const self = sheet.node('scene.self');
     const find = sheet.node('scene.findByTag');
     sheet.model.graph.setInput(find.id, 'tag', 'enemy');
-    const set = sheet.node('property.setOn', { component: 'res_link', property: 'p_target' });
+    const set = sheet.node('property.set', { component: 'res_link', property: 'p_target' });
     sheet.wire([update, 'out'], [set, 'in']);
     sheet.wire([find, 'object'], [set, 'object']);
     sheet.wire([self, 'object'], [set, 'value']);
@@ -1934,7 +2032,7 @@ test('the pointer drives an existing node: aiming moves a Transform', () => {
     const update = file.node('event.update');
     const pointer = file.node('input.pointer');
     const self = file.node('scene.self');
-    const setX = file.node('property.setOn', { component: 'Transform', property: 'x' });
+    const setX = file.node('property.set', { component: 'Transform', property: 'x' });
 
     file.wire([update, 'out'], [setX, 'in']);
     file.wire([self, 'object'], [setX, 'object']);

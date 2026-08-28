@@ -1,6 +1,7 @@
 # ADR-0039 — Une cible qu'on désigne est un paramètre ; une catégorie dit ce qu'un nœud EST ; une identité entre selon sa PORTÉE
 
 - **Statut :** **accepté** (2026-08-27)
+- **Amendé par :** ADR-0040 (2026-08-28) — §5 devient absolu : le mécanisme de titre dynamique disparaît du contrat au lieu d'être seulement inutilisé
 - **Décide :** comment un nœud de propriété désigne l'Object sur lequel il agit ; la taxonomie des nœuds et ce qu'elle alimente ; quelles identités un `.px` peut contenir ; où un nœud configuré se lit
 - **Dépend de :** ADR-0020 (Resources), ADR-0023 (`PropertyType`), ADR-0027 (modèle de graphe), ADR-0030 (§4, la palette), ADR-0033 (rangées), ADR-0034 (références d'Object), ADR-0037 (un dépôt déclare)
 - **Amende :** ADR-0034 §7 (le « mode de ciblage en paramètre » est réhabilité sous condition) ; ADR-0037 §2.4 (un dépôt produit un nœud fini) et §6 (la poignée de propriété est tranchée) ; ADR-0030 §4 (six teintes deviennent sept) ; ADR-0034 §3.7 et ADR-0037 §2.3 (le refus du dépôt d'une **Resource** est levé)
@@ -264,9 +265,11 @@ Le catalogue ne déclare donc **plus aucun `title()`**, et un test y tient toute
 définitions. `NodeDefinition.identity`, qui existait pour encadrer l'exception, disparaît avec
 elle : une règle sans exception n'a pas besoin d'être bornée.
 
-`title(node, context)` reste au catalogue et garde son rôle d'ADR-0037 §5 (`Get Health.hp`) : il
-alimente le `<title>` du nœud, où une phrase longue ne coûte rien. Et il commence **toujours** par
-le label du type — vérifié pour tout le catalogue par un test, pas par une liste tenue à la main.
+> **Amendé par ADR-0040 §5 (2026-08-28).** `title` restait déclarable au contrat
+> `NodeDefinition`, pour alimenter le `<title>` du nœud. Une règle absolue tenue par la
+> discipline finit par être négociée : le mécanisme a été retiré du contrat, de
+> `shapeDependsOnNode()` et de `describeNode()`. Un type de nœud a un `label` et aucun autre
+> moyen de dire comment il s'appelle, et un test parcourt le catalogue pour le tenir.
 
 ---
 
@@ -281,7 +284,7 @@ le label du type — vérifié pour tout le catalogue par un test, pas par une l
 | Un `.px` ne contient aucune `ObjectId` | le payload sérialisé, après un dépôt d'Object réel |
 | Un `.px` **peut** contenir une `ResourceId` | le param de `value.resource` après un dépôt |
 | Une ressource se relie à `Sprite.source` | `typesCompatible(sortie, portTypeOf(Sprite.schema.source))` |
-| Un titre configuré commence par le label du type | tout le catalogue, `nodes.test.js` |
+| Aucun type de nœud ne peut se renommer | tout le catalogue, `nodes.test.js` |
 | Un import nommé désigne un export réel | `tools/check-exports.js`, sur `src/` et `tools/` |
 
 ---

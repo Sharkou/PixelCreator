@@ -28,7 +28,16 @@ import { ANY_TYPE, OBJECT_TYPE, PortKind, nodes as defaultNodes, portTypeOf } fr
 import { declaredProperties } from '../definition.js';
 import { GraphError, GraphIssueCode } from './errors.js';
 
-/** The param that names a Component property, so the Editor knows to offer a picker. */
+/**
+ * The param that names a property, so the Editor knows to offer a picker.
+ *
+ * ONE KIND, WHATEVER THE PROPERTY BELONGS TO. There were two — this one for the properties
+ * of the Component being edited, `COMPONENT_PROPERTY_REFERENCE` for the properties of a
+ * type a sibling param named — because there were two nodes to declare them on. There is
+ * one node now (ADR-0040 §2), and a creator picking `Transform ▸ Rotation` out of a
+ * grouped list is doing what a creator picking `speed` does: naming a property. Which
+ * Component declares it is the answer's shape, not a second question.
+ */
 export const PROPERTY_REFERENCE = 'property';
 
 /**
@@ -39,14 +48,6 @@ export const PROPERTY_REFERENCE = 'property';
  * belonging to a scene is named here.
  */
 export const COMPONENT_REFERENCE = 'component';
-
-/**
- * The param that names a property OF the Component type a sibling param names.
- *
- * It is not `PROPERTY_REFERENCE`: that one resolves against the properties of the Component
- * the graph belongs to, and this one against the properties of the type being reached.
- */
-export const COMPONENT_PROPERTY_REFERENCE = 'component-property';
 
 /**
  * The param that names a KEY of the machine a player is sitting at (ADR-0014 §2).
@@ -94,7 +95,7 @@ export const OBJECT_SOCKET_REFERENCE = 'object-socket';
  * is "static" or "from a wire" — those are words about the implementation, not about the
  * game. It has an Object socket that is always there to connect to, and a picker beside it:
  * connect something and the connection is the target, leave it empty and the picker is. The
- * creator states an intention with a gesture, and the node reads it (ADR-0039 §0.3).
+ * creator states an intention with a gesture, and the node reads it (ADR-0039 §0.1).
  *
  * DECLARED, NEVER GUESSED. The param must name a property this `.px` actually declares AND
  * that property must be an `objectref`: anything else is not somewhere an Object can come
@@ -155,6 +156,31 @@ export function referencedComponentProperty(node, context = {}) {
         .find(property => property.id === id) ?? null;
 }
 
+/**
+ * The property a Get/Set node reads or writes — from whichever Component declares it.
+ *
+ * ONE NODE, TWO SOURCES, AND THE CREATOR SEES NEITHER. `component` absent means "the
+ * Component this graph belongs to", whose properties are the fields a creator declared on
+ * the `.px` itself; present, it names another type and the property is one of that type's.
+ * They used to be two node types — `Get Property` and `Get Property On` — which is the Core's
+ * distinction wearing a creator's clothes: to someone who does not program they are one act,
+ * "read a property", differing only in whose (ADR-0040 §1).
+ *
+ * @param {object} node - The node
+ * @param {object} [context] - `{ properties, components }`
+ * @returns {object|null} The descriptor, or null when it names nothing that exists
+ */
+export function resolvedProperty(node, context = {}) {
+    const id = node?.params?.property ?? null;
+    if (!id) return null;
+
+    const declared = node?.params?.component
+        ? referencedComponent(node, context)?.properties ?? []
+        : context.properties ?? [];
+
+    return declared.find(property => property.id === id) ?? null;
+}
+
 const flow = (id, label) => ({ id, kind: PortKind.FLOW, label: label ?? '' });
 const data = (id, type, label, fallback, placeholder) => ({
     id,
@@ -191,31 +217,47 @@ const BUTTON_LABELS = ['Left', 'Middle', 'Right'];
 /** The button a `Pointer Button` node watches before a creator has chosen one. */
 const DEFAULT_BUTTON = 'left';
 
-/** The reference param every property node carries. */
-const propertyParam = {
+/**
+ * WHICH PROPERTY, AS ONE QUESTION — stored as two identities, asked as one.
+ *
+ * A creator wants "the Player's rotation". The engine needs to know that rotation belongs to
+ * Transform, and it stores that: `component` names the type, `property` names the field, both
+ * of PROJECT scope (ADR-0027 §4). What changed is that they are no longer TWO CONTROLS. A
+ * creator met `Component [ Transform ]` above `Property [ Rotation ]` and had to know that a
+ * Component is a thing an Object is made of before they could read a number — an abstraction
+ * of the engine, standing between them and their intention (ADR-0040 §2).
+ *
+ * The Editor offers one grouped picker (`Transform ▸ Rotation`) and writes both. The Core
+ * stores what it always stored, so nothing on disk changes and no graph needs migrating.
+ *
+ * `component` ABSENT MEANS THIS COMPONENT — the `.px` being edited, whose properties are the
+ * fields a creator declared on it. That is what `Get Property` always read, and it is now one
+ * group in the same list rather than a second node.
+ */
+const propertyPathParam = {
+    component: {
+        type: PropertyType.STRING,
+        default: null,
+        // NO LABEL AND NO ROW OF ITS OWN: it is written by the picker below, never shown.
+        // A param the creator never meets is a param that does not need a name in the UI.
+        hidden: true,
+        reference: COMPONENT_REFERENCE,
+        tooltip: 'The Component type declaring the property, by identity'
+    },
     property: {
         type: PropertyType.STRING,
         default: null,
         label: 'Property',
-        /** Read by the Editor to offer the component's own properties (editor/inspector/node.js). */
         reference: PROPERTY_REFERENCE,
-        tooltip: 'The Component property this node reads or writes, by identity'
-    }
-};
-
-/** The param naming the Component type a node reaches for. */
-const componentParam = {
-    component: {
-        type: PropertyType.STRING,
-        default: null,
-        label: 'Component',
-        reference: COMPONENT_REFERENCE,
-        tooltip: 'The Component type this node reads or writes, by identity'
+        // ONE CONTROL WRITES BOTH. The value a creator picks carries the pair; the Editor
+        // splits it (`paramWrites`, editor/inspector/node.js).
+        compound: ['component', 'property'],
+        tooltip: 'Which property this node reads or writes'
     }
 };
 
 /**
- * The param naming WHICH Object the node acts on (ADR-0039 §3, amending ADR-0034 §7).
+ * The param naming WHICH Object the node acts on (ADR-0040 §3, amending ADR-0034 §7).
  *
  * ADR-0034 §7 rejected "un mode de ciblage en paramètre" because it was *incomposable*: with
  * only a param, "the parent of my parent" could not be said. That objection is answered
@@ -234,65 +276,10 @@ const targetParam = {
         // one thing — which Object — so they share a line: connect something and the picker
         // greys out, disconnect and it comes back. Two rows would be two questions.
         port: 'object',
-        tooltip: 'Which Object this node acts on'
+        tooltip: 'Which Object this node acts on. Empty means this one; drag an Object here to change it'
     }
 };
 
-/** The param naming a property of that type, kept apart from the one above (ADR-0027 §4). */
-const componentPropertyParam = {
-    property: {
-        type: PropertyType.STRING,
-        default: null,
-        label: 'Property',
-        reference: COMPONENT_PROPERTY_REFERENCE,
-        tooltip: 'The property of that Component this node reads or writes, by identity'
-    }
-};
-
-/**
- * The property a node aims at on another Object, read off the TYPE it names.
- *
- * THE DECLARATION COMES FROM THE REGISTRY, THE VALUE FROM THE INSTANCE. Reading the schema
- * off whatever component happens to be attached would leave the node with nothing to say
- * when the target does not carry one — and `.px` types live in the Scene's own registry,
- * which is exactly where a type is looked up everywhere else (core/scene.js).
- *
- * A reference that cannot be resolved AT ALL is a design-time fault and refuses loudly; a
- * target that simply is not there is a state of the running scene and does not (ADR-0034
- * §3.4). That is the whole of the asymmetry, and it lives here.
- */
-function requireTargetProperty(io) {
-    const type = io.node?.params?.component ?? null;
-    const id = io.node?.params?.property ?? null;
-
-    if (!type || !id) {
-        throw new GraphError(
-            GraphIssueCode.MISSING_REFERENCE,
-            'This node has no Component and property selected.',
-            { node: io.node?.id, property: id }
-        );
-    }
-
-    const Component = io.ctx?.scene?.registry?.get?.(type) ?? null;
-    if (!Component) {
-        throw new GraphError(
-            GraphIssueCode.MISSING_PROPERTY,
-            'This node names a Component type this project does not declare.',
-            { node: io.node?.id }
-        );
-    }
-
-    const property = declaredProperties(Component).find(entry => entry.id === id) ?? null;
-    if (!property) {
-        throw new GraphError(
-            GraphIssueCode.MISSING_PROPERTY,
-            'This node names a property that Component no longer declares.',
-            { node: io.node?.id, property: id }
-        );
-    }
-
-    return property;
-}
 
 /**
  * The value a stored property becomes on the port that carries it.
@@ -391,16 +378,62 @@ export function storedValueOf(property, value) {
 function targetObject(io) {
     // A CONNECTION WINS, AND IT WINS BY EXISTING. Not by producing a non-null Object: a
     // `Find By Tag` that finds nobody must write to nobody, not fall through to whatever the
-    // picker happens to name. The two sources are ordered, never merged.
+    // picker happens to name. The three sources are ordered, never merged.
     if (io.wired?.('object')) return io.input('object');
 
     const socket = targetSocket(io.node, { properties: io.properties });
-    return socket ? portValueOf(socket, io.component?.[socket.name], io.ctx?.scene) : null;
+    if (socket) return portValueOf(socket, io.component?.[socket.name], io.ctx?.scene);
+
+    // SELF, AND IT IS THE DEFAULT BECAUSE IT IS THE COMMON CASE. ADR-0034 §7 refused "un port
+    // `object` non connecté valant Self" as implicit magic, and it was right about a bare
+    // port: nothing on the node said so. The picker beside it says `Self` in words, so the
+    // creator reads the answer instead of having to know it.
+    return io.self ?? null;
 }
 
-/** The Component on the Object a node acts on, or null when there is neither. */
+/**
+ * The Component instance a node reads or writes on.
+ *
+ * `component` ABSENT MEANS "THIS ONE". On the node's own Object that is the very instance the
+ * graph is running as, which is what `Get Property` always did; pointed elsewhere it is that
+ * Object's instance of the same type, which is what a creator means by "the other Player's
+ * speed".
+ */
 function targetComponent(io) {
-    return targetObject(io)?.getComponent?.(io.node?.params?.component) ?? null;
+    const named = io.node?.params?.component ?? null;
+    const pointed = io.wired?.('object') || Boolean(targetSocket(io.node, { properties: io.properties }));
+
+    // NOTHING NAMED AND NOTHING POINTED AT: this Component, on its own Object. It is already
+    // in hand — asking the scene would answer the same thing more slowly, and would need a
+    // `self` that a headless caller is not obliged to supply. This is the case `Get Property`
+    // has always served, and it stays the shortest path through the node.
+    if (!named && !pointed) return io.component ?? null;
+
+    return targetObject(io)?.getComponent?.(named ?? ownType(io)) ?? null;
+}
+
+/**
+ * What a running graph knows about the Component type a node names.
+ *
+ * THE DECLARATION COMES FROM THE REGISTRY, THE VALUE FROM THE INSTANCE. Reading the schema off
+ * whatever component happens to be attached would leave the node with nothing to say when the
+ * target does not carry one — and `.px` types live in the Scene's own registry, which is
+ * where a type is looked up everywhere else (core/scene.js).
+ *
+ * @param {object} io - What the node was handed
+ * @returns {object[]|null} A one-entry catalogue for the type this node names
+ */
+function catalogueOf(io) {
+    const type = io.node?.params?.component ?? null;
+    if (!type) return null;
+
+    const Component = io.ctx.scene.registry.get?.(type) ?? null;
+    return Component ? [{ type, properties: declaredProperties(Component) }] : [];
+}
+
+/** The type of the Component this graph is the behaviour of. */
+function ownType(io) {
+    return io.component?.constructor?.type ?? null;
 }
 
 /**
@@ -411,7 +444,10 @@ function targetComponent(io) {
  * spreads through the graph and shows up as a component that quietly stopped moving.
  */
 function requireProperty(io) {
-    const property = referencedProperty(io.node, { properties: io.properties });
+    const property = resolvedProperty(io.node, {
+        properties: io.properties,
+        components: io.ctx?.scene?.registry ? catalogueOf(io) : null
+    });
     if (property) return property;
 
     const id = io.node?.params?.property ?? null;
@@ -620,10 +656,17 @@ export const STANDARD_NODES = [
         type: 'property.get',
         label: 'Get Property',
         category: 'Properties',
-        keywords: ['read', 'variable', 'field'],
-        params: propertyParam,
+        keywords: ['read', 'variable', 'field', 'get', 'property', 'component', 'other'],
+        tooltip: 'Reads a property of an Object',
+        // ONE NODE WHERE THERE WERE TWO. `Get Property On` was the same act aimed elsewhere,
+        // and the difference between them was the Core's — a property of this Component
+        // versus a property of another one. A creator reading a value does not experience
+        // those as two things, and having to know which node to reach for was a question
+        // about the engine rather than about their game (ADR-0040 §1).
+        params: { ...targetParam, ...propertyPathParam },
+        inputs: [data('object', OBJECT_TYPE, 'Object')],
         outputs: (node, context) => {
-            const property = referencedProperty(node, context);
+            const property = resolvedProperty(node, context);
             return [data('value', portTypeOf(property), property?.name ?? 'Value')];
         },
         // THE VALUE CROSSES THE SAME BOUNDARY ITS TYPE DOES. The port was typed by
@@ -631,7 +674,16 @@ export const STANDARD_NODES = [
         // the identity it is stored as (ADR-0034 §3.5).
         evaluate: io => {
             const property = requireProperty(io);
-            return { value: portValueOf(property, io.component?.[property.name], io.ctx?.scene) };
+            const component = targetComponent(io);
+
+            // A TARGET THAT IS GONE IS A STATE OF THE SCENE, NOT A FAULT (ADR-0034 §3.4): the
+            // node answers what a fresh instance would hold, so a graph reading the health of
+            // an enemy that just died reads its declared value rather than failing per frame.
+            return {
+                value: component
+                    ? portValueOf(property, component[property.name], io.ctx?.scene)
+                    : defaultForProperty(property)
+            };
         }
     },
 
@@ -639,56 +691,48 @@ export const STANDARD_NODES = [
         type: 'property.set',
         label: 'Set Property',
         category: 'Properties',
-        keywords: ['write', 'assign', 'variable', 'field'],
-        params: propertyParam,
+        keywords: ['write', 'assign', 'variable', 'field', 'set', 'property', 'component'],
+        tooltip: 'Changes a property of an Object',
+        params: { ...targetParam, ...propertyPathParam },
         inputs: (node, context) => {
-            const property = referencedProperty(node, context);
+            const property = resolvedProperty(node, context);
             return [
                 flow('in'),
+                data('object', OBJECT_TYPE, 'Object'),
+                // THE VALUE IS TYPED FROM THE PROPERTY, which lives in this node — so it is
+                // exact however the Object arrives, and never a function of what is wired.
                 data('value', portTypeOf(property), property?.name ?? 'Value', property?.default)
             ];
         },
         outputs: [flow('out')],
         execute: io => {
             const property = requireProperty(io);
-            // A PLAIN WRITE, deliberately: this is a simulation output, not an authored
-            // intent, so it produces a Change and no Operation (ADR-0003, CONVENTIONS.md).
-            // What is written is the IDENTITY, never the handle that arrived (§3.5).
-            if (io.component) {
-                io.component[property.name] = storedValueOf(property, io.input('value'));
-            }
+            const component = targetComponent(io);
+
+            // A PLAIN WRITE: a behaviour running inside `update()` is a simulation output and
+            // not an authored intent, so it produces a Change and no Operation (ADR-0003,
+            // ADR-0027 §6). Writing on a target that is gone does nothing, and says nothing —
+            // §3.4 again. And what is written is the IDENTITY, never the handle (§3.5).
+            if (component) component[property.name] = storedValueOf(property, io.input('value'));
             return 'out';
         }
     },
-
-    // --- the scene around this component ----------------------------------------------
-    //
-    // WHAT TRAVELS THESE PORTS IS A HANDLE, NEVER AN IDENTIFIER (ADR-0034 §3.2). A node here
-    // reads `io.self` and `io.ctx.scene`, both of which the interpreter already hands over,
-    // and yields the reactive Proxy the Scene holds. Nothing stores it, nothing serializes
-    // it, and nothing turns it back into an ObjectId — which is what keeps a `.px` free of
-    // any identity belonging to a scene, and therefore usable in more than one of them.
 
     {
         type: 'scene.self',
         label: 'Self',
         category: 'References',
         keywords: ['this', 'me', 'owner', 'object'],
-        outputs: [data('object', OBJECT_TYPE)],
+        outputs: [data('object', OBJECT_TYPE, 'Object')],
         evaluate: io => ({ object: io.self ?? null }),
+        // STILL WORTH A NODE, THOUGH THE PROPERTY NODES NO LONGER NEED ONE. Their Object
+        // picker reads `Self` by default, so reading your own rotation costs no node at all
+        // — but `Self` still has to be passable to everything else a graph does with an
+        // Object: its parent, whether it is still there, another Component's socket.
         tooltip: 'The Object this Component is attached to'
     },
 
     {
-        // WHAT A CREATOR GETS WHEN THEY DRAG AN OBJECT ONTO THE CANVAS, and it says what it
-        // is rather than what it happens to hold: `Get Object`, with `Player` in a field.
-        // The drop used to make a `Get Property` reading an `objectref` input — true, and
-        // unreadable: a card headed `Get Property` handing out an Object explains nothing,
-        // and titling it `Get Player` traded the node's name for one of its values.
-        //
-        // IT IS NOT A SECOND MECHANISM. It reads the very same socket `Get Property` would,
-        // through the very same boundary (`portValueOf`, ADR-0036) — what it adds is a name
-        // and a shape a beginner can recognise.
         type: 'reference.object',
         label: 'Get Object',
         category: 'References',
@@ -779,72 +823,6 @@ export const STANDARD_NODES = [
     // port would fall back to `any` and its property picker would have nothing to offer.
     // Carrying both, the node resolves the declaration itself, so the port is typed exactly
     // and a bad wire is refused at the moment of the gesture rather than at run time.
-
-    {
-        type: 'property.getOn',
-        label: 'Get Property On',
-        category: 'Properties',
-        keywords: ['read', 'other', 'remote', 'foreign', 'component', 'field'],
-        tooltip: 'Reads a property of a Component on another Object',
-        params: { ...targetParam, ...componentParam, ...componentPropertyParam },
-        // THE PORT IS WHAT THE PARAM DOES NOT COVER. A target the creator can point at lives
-        // in the node; a target the graph COMPUTES arrives here. Only one of the two is ever
-        // drawn, so a card never asks the same question twice (ADR-0039 §3).
-        //
-        // THE LABEL, NEVER THE ID. `object` remains the port's identity, so no graph that
-        // names it changes and no wire moves (core/graph/nodes.js): a label is presentation,
-        // and the interpreter never sees one.
-        // ALWAYS DRAWN, because a socket a creator cannot see is a socket they cannot
-        // connect to — and connecting is how the other half of the target is stated.
-        inputs: [data('object', OBJECT_TYPE, 'Object')],
-        outputs: (node, context) => {
-            const property = referencedComponentProperty(node, context);
-            return [data('value', portTypeOf(property), property?.name ?? 'Value')];
-        },
-        evaluate: io => {
-            const property = requireTargetProperty(io);
-            const component = targetComponent(io);
-            // A TARGET THAT IS GONE IS A STATE OF THE SCENE, NOT A FAULT (ADR-0034 §3.4).
-            // The node answers with what a fresh instance of that Component would hold, so a
-            // graph reading the health of an enemy that just died reads its declared value
-            // rather than failing every frame for the rest of the game. That default is
-            // already `null` for an `objectref`, which is what a handle's absence looks like.
-            return {
-                value: component
-                    ? portValueOf(property, component[property.name], io.ctx?.scene)
-                    : defaultForProperty(property)
-            };
-        }
-    },
-
-    {
-        type: 'property.setOn',
-        label: 'Set Property On',
-        category: 'Properties',
-        keywords: ['write', 'assign', 'other', 'remote', 'foreign', 'component'],
-        tooltip: 'Writes a property of a Component on another Object',
-        params: { ...targetParam, ...componentParam, ...componentPropertyParam },
-        inputs: (node, context) => {
-            const property = referencedComponentProperty(node, context);
-            const value = data('value', portTypeOf(property), property?.name ?? 'Value', property?.default);
-
-            // THE VALUE IS TYPED FROM `(component, property)`, which live in the node — so it
-            // is exact however the Object arrives, and never a function of what is wired.
-            return [flow('in'), data('object', OBJECT_TYPE, 'Object'), value];
-        },
-        outputs: [flow('out')],
-        execute: io => {
-            const property = requireTargetProperty(io);
-            const component = targetComponent(io);
-            // A PLAIN WRITE, exactly as `Set Property` does: a behaviour running inside
-            // `update()` is a simulation output and not an authored intent, so it produces a
-            // Change and no Operation (ADR-0003, ADR-0027 §6). Writing on a target that is
-            // gone does nothing, and says nothing — §3.4 again. And what is written is the
-            // IDENTITY, never the handle that arrived (§3.5).
-            if (component) component[property.name] = storedValueOf(property, io.input('value'));
-            return 'out';
-        }
-    },
 
     // --- flow control ----------------------------------------------------------------
 
