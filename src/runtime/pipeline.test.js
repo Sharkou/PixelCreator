@@ -308,34 +308,36 @@ test('the Object own properties a graph writes reach the scene, and the renderer
 
 // --- the three moments of a key, as behaviour (ADR-0045 §4) -------------------------------
 
-test('Key Down runs on every step the key is held, and On Key runs once', () => {
-    // THE DIFFERENCE A CREATOR HAS TO SEE, measured over the same four steps. `On Key` is a
-    // moment; `Key Down` is a state, once per step; and the second used to cost `On Update`
-    // + `Key Is Down` + `Branch`.
-    const held = game({
-        version: 1,
-        nodes: [
-            { id: 'key', type: 'input.keyDown', x: 0, y: 0, params: { key: 'Space' } },
-            { id: 'move', type: 'transform.translate', x: 0, y: 0, params: {}, inputs: { x: 1, y: 0 } }
-        ],
-        connections: [{ id: 'c', from: { node: 'key', port: 'down' }, to: { node: 'move', port: 'in' } }]
-    });
-    const once = game(nudgeOnSpace(1));
-
-    for (const it of [held, once]) {
-        it.runtime.input.local.press('Space');
-        for (let step = 0; step < 4; step++) it.runtime.step();
-    }
-
-    assert.equal(held.hero.getComponent('Transform').x, 4, 'four steps held, four moves');
-    assert.equal(once.hero.getComponent('Transform').x, 1, 'and Pressed is still a moment');
-});
-
-test('Key Down stops on the step the key comes up, and starts on the step it goes down', () => {
+test('the Down port runs on every step the key is held, and Pressed runs once', () => {
+    // ONE NODE, TWO PORTS, TWO SEMANTICS — the whole point of the recomposition (ADR-0046
+    // §6). Both wires come off the SAME card, so the difference is read side by side rather
+    // than remembered between two entries of a menu.
     const it = game({
         version: 1,
         nodes: [
-            { id: 'key', type: 'input.keyDown', x: 0, y: 0, params: { key: 'Space' } },
+            { id: 'key', type: 'input.onKey', x: 0, y: 0, params: { key: 'Space' } },
+            { id: 'held', type: 'transform.translate', x: 0, y: 0, params: {}, inputs: { x: 1, y: 0 } },
+            { id: 'once', type: 'transform.translate', x: 0, y: 0, params: {}, inputs: { x: 0, y: 100 } }
+        ],
+        connections: [
+            { id: 'c1', from: { node: 'key', port: 'down' }, to: { node: 'held', port: 'in' } },
+            { id: 'c2', from: { node: 'key', port: 'pressed' }, to: { node: 'once', port: 'in' } }
+        ]
+    });
+
+    it.runtime.input.local.press('Space');
+    for (let step = 0; step < 5; step++) it.runtime.step();
+
+    const transform = it.hero.getComponent('Transform');
+    assert.equal(transform.x, 5, 'Down ran on all five steps');
+    assert.equal(transform.y, 100, 'Pressed ran on exactly one of them');
+});
+
+test('Down stops on the step the key comes up, and starts on the step it goes down', () => {
+    const it = game({
+        version: 1,
+        nodes: [
+            { id: 'key', type: 'input.onKey', x: 0, y: 0, params: { key: 'Space' } },
             { id: 'move', type: 'transform.translate', x: 0, y: 0, params: {}, inputs: { x: 1, y: 0 } }
         ],
         connections: [{ id: 'c', from: { node: 'key', port: 'down' }, to: { node: 'move', port: 'in' } }]
@@ -354,11 +356,31 @@ test('Key Down stops on the step the key comes up, and starts on the step it goe
     assert.equal(it.hero.getComponent('Transform').x, 1, 'and it stops when the key does');
 });
 
-test('Pointer Button Down is the same three moments, in the same words', () => {
+test('Released runs once, on the way up, and never while the key is held', () => {
     const it = game({
         version: 1,
         nodes: [
-            { id: 'button', type: 'input.pointerButtonDown', x: 0, y: 0, params: { button: 'left' } },
+            { id: 'key', type: 'input.onKey', x: 0, y: 0, params: { key: 'Space' } },
+            { id: 'move', type: 'transform.translate', x: 0, y: 0, params: {}, inputs: { x: 7, y: 0 } }
+        ],
+        connections: [{ id: 'c', from: { node: 'key', port: 'released' }, to: { node: 'move', port: 'in' } }]
+    });
+
+    it.runtime.input.local.press('Space');
+    for (let step = 0; step < 4; step++) it.runtime.step();
+    assert.equal(it.hero.getComponent('Transform').x, 0, 'holding is not releasing');
+
+    it.runtime.input.local.release('Space');
+    it.runtime.step();
+    it.runtime.step();
+    assert.equal(it.hero.getComponent('Transform').x, 7, 'once, on the step it came up');
+});
+
+test('a pointer button has the same three moments on the same card', () => {
+    const it = game({
+        version: 1,
+        nodes: [
+            { id: 'button', type: 'input.onPointerButton', x: 0, y: 0, params: { button: 'left' } },
             { id: 'move', type: 'transform.translate', x: 0, y: 0, params: {}, inputs: { x: 2, y: 0 } }
         ],
         connections: [{ id: 'c', from: { node: 'button', port: 'down' }, to: { node: 'move', port: 'in' } }]
@@ -378,7 +400,7 @@ test('a key nobody is holding starts nothing, and reports nothing', () => {
     const it = game({
         version: 1,
         nodes: [
-            { id: 'key', type: 'input.keyDown', x: 0, y: 0, params: { key: 'Space' } },
+            { id: 'key', type: 'input.onKey', x: 0, y: 0, params: { key: 'Space' } },
             { id: 'move', type: 'transform.translate', x: 0, y: 0, params: {}, inputs: { x: 1, y: 0 } }
         ],
         connections: [{ id: 'c', from: { node: 'key', port: 'down' }, to: { node: 'move', port: 'in' } }]

@@ -350,6 +350,41 @@ export function toDisplay(descriptor, value) {
 }
 
 /**
+ * The kinds whose control needs the whole value column.
+ *
+ * TWO WIDTHS, AND THE MEASURE IS THE NUMBER'S (ADR-0046 §7). The value column is two equal
+ * cells: a short value takes one, a wide one takes both. What decides is not taste but what
+ * the control has to SHOW — a file name, an Object's name, a slider's travel and a list of
+ * rows all run out of room in half a column, while a number, a switch, a swatch, a word and
+ * a chosen option do not.
+ *
+ * A COLOUR IS SHORT, AND THAT IS THE CORRECTION. It was given the full column for being "a
+ * value like any other", which made `Color` the one row whose right edge sat past every
+ * number above it — the exact mismatch this rule exists to remove.
+ */
+const WIDE_KINDS = new globalThis.Set([
+    FieldKind.RESOURCE,
+    FieldKind.OBJECT,
+    FieldKind.RANGE,
+    FieldKind.LIST,
+    FieldKind.READONLY
+]);
+
+/**
+ * Whether this control needs both cells of the value column.
+ *
+ * DECLARED ONCE, READ BY EVERY SURFACE. The Inspector and the graph draw the same controls
+ * from the same descriptors, so the width they get cannot be a decision either one makes on
+ * its own — that is how `Color` ended up one width in a panel and another in a node.
+ *
+ * @param {object} descriptor - A field descriptor
+ * @returns {boolean} True when it should span the whole value column
+ */
+export function isWide(descriptor) {
+    return WIDE_KINDS.has(descriptor?.kind);
+}
+
+/**
  * Whether a descriptor holds a number.
  * @param {object} descriptor - A field descriptor
  * @returns {boolean} True for number, int and range

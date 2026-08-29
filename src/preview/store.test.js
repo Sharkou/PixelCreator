@@ -101,3 +101,30 @@ test('the client reads the id back out of the fragment it was opened with', () =
     assert.equal(idFromHash(''), null);
     assert.equal(idFromHash(undefined), null);
 });
+
+test('an identifier with digits in it survives the whole round trip', () => {
+    // THE PREMISE THIS TEST EXISTS TO PIN DOWN. `createId()` draws from Crockford base32 —
+    // ten digits and twenty-two letters — so a project id starting with a digit is ordinary,
+    // not exotic. Nothing in this engine narrows it to letters, and this asserts that the
+    // four places an id passes through keep it intact (ADR-0046 §8).
+    const where = storage();
+
+    for (const id of ['0abc123def456', '9', 'k0hv89cv4dbr', '00000000000z']) {
+        assert.equal(putPreview(id, { format: 1, id }, where), true, `stored ${id}`);
+        assert.equal(idFromHash(previewUrl(id).slice(previewUrl(id).indexOf('#'))), id,
+            `${id} came back out of its own URL`);
+    }
+});
+
+test('a preview URL round-trips an id through its fragment, whatever it contains', () => {
+    // A FRAGMENT IS PARSED BY US, not by a server, so the only rule is that what we write
+    // is what we read. `idFromHash` takes everything after `#p/` and stops there.
+    for (const id of ['abc', '0123456789ab', 'z0z0z0z0z0z0']) {
+        const url = previewUrl(id);
+        assert.equal(url, `../preview/index.html#p/${id}`);
+        assert.equal(idFromHash(`#p/${id}`), id);
+    }
+
+    assert.equal(idFromHash('#p/'), null, 'and an empty one names nothing');
+    assert.equal(idFromHash(''), null);
+});

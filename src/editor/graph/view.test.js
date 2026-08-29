@@ -598,14 +598,14 @@ test('an input event names its key before the moments it starts, not after', () 
         const ports = portsOf(definition, node, context);
         const rows = nodeRows(ports, paramFields(definition, node, context));
 
-        assert.equal(rows.length, 3, `${type} draws its param and its two moments`);
+        assert.equal(rows.length, 4, `${type} draws its param and its three moments`);
         assert.ok(rows[0].control, `${type} reads its param first`);
         assert.equal(rows[0].input, null, 'and it has a line of its own');
         assert.equal(rows[0].output, null);
         assert.deepEqual(
             rows.slice(1).map(row => row.output?.id ?? null),
-            ['pressed', 'released'],
-            `${type} keeps its two moments in declared order, under the param`
+            ['pressed', 'released', 'down'],
+            `${type} keeps its three moments in declared order, under the param`
         );
         assert.ok(rows.slice(1).every(row => row.control === null),
             'and no control shares a row with a flow port, which has no name to lose');
@@ -914,4 +914,37 @@ test('a band answers in layout order, so a group keeps the order it is drawn in'
 
 test('there is no band until there is a band', () => {
     assert.deepEqual(nodesIn([], null), [], 'no rectangle catches nothing, rather than throwing');
+});
+
+test('a node draws every control from one left edge', () => {
+    // WHAT A CREATOR SAW: `Get Property` carries an Object socket on its first row and none
+    // on the two below, so the three controls started at two different x — eight pixels,
+    // which is not much to see and is exactly enough to read as ragged. A column of fields
+    // is read down its left edge (ADR-0046 §7).
+    const definition = registry.get('property.get');
+    const node = { id: 'n', type: 'property.get', x: 0, y: 0, params: {} };
+    const context = { properties: [], components: CATALOGUE };
+    const rows = nodeRows(portsOf(definition, node, context), paramFields(definition, node, context));
+    const boxes = controlBoxes(node, rows);
+
+    assert.ok(boxes.length >= 3, 'it has three questions to draw');
+    assert.equal(new Set(boxes.map(box => box.x)).size, 1, 'and they all start at one x');
+
+    // THE RIGHT EDGE IS STILL EACH ROW'S OWN, because a port that prints its label really
+    // does occupy that space — forcing the widest of those on every row would take thirty
+    // pixels from fields with none to spare.
+    for (const box of boxes) assert.ok(box.width > 0, 'and no row is squeezed to nothing');
+});
+
+test('a control still keeps clear of a port label that is really drawn', () => {
+    // The left edge is shared; the right edge is not, and this is the case that says why.
+    const definition = registry.get('math.clamp');
+    const node = { id: 'n', type: 'math.clamp', x: 0, y: 0, params: {} };
+    const context = { properties: [], components: CATALOGUE };
+    const rows = nodeRows(portsOf(definition, node, context), paramFields(definition, node, context));
+    const boxes = controlBoxes(node, rows);
+
+    for (const box of boxes) {
+        assert.ok(box.x + box.width <= node.x + NODE_WIDTH, 'nothing runs past the card');
+    }
 });

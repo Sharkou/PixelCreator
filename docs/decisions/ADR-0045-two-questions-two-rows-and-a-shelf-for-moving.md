@@ -3,6 +3,7 @@
 - **Statut :** **accepté** (2026-08-29)
 - **Décide :** la forme des nœuds de propriété ; ce qu'un événement d'entrée continu s'appelle ; les catégories du catalogue ; ce qu'un champ de l'Inspector mesure ; ce qu'une propriété peut porter jusqu'au graphe
 - **Dépend de :** ADR-0002 (espaces), ADR-0016 (un `.px` est un type), ADR-0023 §2 (pas de type vecteur), ADR-0026 (une frappe est une entrée d'historique), ADR-0031 (propriétés déclarées), ADR-0034 (portée des identités), ADR-0036 (frontière `objectref`), ADR-0039 (taxonomie), ADR-0043 (l'Object répond de lui-même)
+- **Amendé par :** ADR-0046 (2026-08-29) — §4 : les trois moments d'une touche deviennent trois PORTS d'un seul nœud, ce qui règle l'objection d'ADR-0041 §3.2 mieux que trois noms. §9 : une couleur redevient un contrôle court. §10 : la poignée d'une propriété est celle du réordonnancement, et il n'y en a plus deux.
 - **Amende :** ADR-0040 §2 et §4 (le Component redevient une question posée), ADR-0041 §3.2 (un événement continu existe, sous un autre nom), §6.1 (un Component peut être lâché sur un nœud), §2 (le chemin fusionné redevient deux lignes)
 - **Ne décide pas :** l'unité d'un port en général — voir §11.4 ; `Destroy`, `Spawn`, `Random`, `Delay` — voir §11.5.
 

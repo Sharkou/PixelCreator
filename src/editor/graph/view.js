@@ -434,29 +434,43 @@ export function controlBoxes(node, rows) {
 
     const silenced = silencedPorts(rows);
 
+    // THREE WIDTHS, AND THE MIDDLE ONE IS THE ONE THAT WAS MISSING. A side with no port
+    // gives the control everything; a side whose port label the control speaks for gives it
+    // everything but the socket; a side that STILL PRINTS a label has to keep room for it —
+    // without which `Add` drew its field straight through the word "Result" and left a
+    // single letter showing.
+    const room = (port, direction) => {
+        if (!port) return CONTROL_INSET;
+        if (!port.label || silenced.has(`${direction}:${port.id}`)) return CONTROL_PORT_INSET;
+        return CONTROL_LABEL_INSET;
+    };
+
+    // ONE LEFT EDGE FOR THE WHOLE CARD (ADR-0046 §7). Each row used to be measured on its
+    // own, so `Get Property` — whose first row carries an Object socket and whose next two
+    // do not — drew three controls starting at two different x. Eight pixels is not much
+    // to see and it is exactly enough to read as ragged, because a column of fields is read
+    // down its left edge.
+    //
+    // THE RIGHT EDGE IS STILL EACH ROW'S OWN, and that is not an inconsistency: a port that
+    // PRINTS its label really does occupy that space, and forcing every row to the widest
+    // of those would take thirty pixels from fields that have none to spare in a 176 px
+    // card. The left edge costs at most eight and buys the column.
+    const inset = rows.reduce(
+        (widest, row) => (row.control ? Math.max(widest, room(row.input, 'in')) : widest),
+        CONTROL_INSET
+    );
+
     rows.forEach((row, index) => {
         if (!row.control) return;
 
-        // THREE WIDTHS, AND THE MIDDLE ONE IS THE ONE THAT WAS MISSING. A side with no port
-        // gives the control everything; a side whose port label the control speaks for
-        // gives it everything but the socket; a side that STILL PRINTS a label has to keep
-        // room for it — without which `Add` drew its field straight through the word
-        // "Result" and left a single letter showing.
-        const room = (port, direction) => {
-            if (!port) return CONTROL_INSET;
-            if (!port.label || silenced.has(`${direction}:${port.id}`)) return CONTROL_PORT_INSET;
-            return CONTROL_LABEL_INSET;
-        };
-
-        const left = room(row.input, 'in');
         const right = room(row.output, 'out');
 
         boxes.push({
             index,
             control: row.control,
-            x: node.x + left,
+            x: node.x + inset,
             y: node.y + HEADER_HEIGHT + PORT_PADDING + index * ROW_HEIGHT + CONTROL_GAP / 2,
-            width: NODE_WIDTH - left - right,
+            width: NODE_WIDTH - inset - right,
             height: ROW_HEIGHT - CONTROL_GAP
         });
     });

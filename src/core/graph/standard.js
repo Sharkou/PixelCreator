@@ -579,8 +579,13 @@ export const STANDARD_NODES = [
     {
         type: 'input.onKey',
         label: 'On Key',
-        category: 'Input',
-        keywords: ['input', 'keyboard', 'key', 'press', 'pressed', 'released', 'when', 'event'],
+        // AN EVENT, AND SHELVED WITH THE EVENTS (ADR-0046 §6). `Input` now holds the nodes
+        // that ANSWER a question — is this key down, where is the pointer — and `Events`
+        // holds the ones that START a flow. A creator looking for "when the player presses
+        // jump" looks under Events, which is where every other "when" already lives.
+        category: 'Events',
+        keywords: ['input', 'keyboard', 'key', 'press', 'pressed', 'released', 'hold', 'held',
+            'while', 'down', 'when', 'event'],
         event: 'update',
         params: {
             key: {
@@ -591,17 +596,35 @@ export const STANDARD_NODES = [
                 tooltip: 'The key this node watches'
             }
         },
-        // TWO MOMENTS, TWO OUTPUTS, AND NEITHER IS BEHIND A DROPDOWN. Pressing and releasing
-        // are both things a game reacts to — a jump on the way down, a charged shot on the
-        // way up — and a mode param would hide one of them behind a choice made before the
-        // creator knows they want it.
+        // THREE MOMENTS, THREE OUTPUTS, ONE CARD (ADR-0046 §6). They were three node types
+        // — `On Key`, `Key Down`, `Key Is Down` — and the first two were the same question
+        // asked of the same key, which meant a creator had to KNOW the difference before
+        // they could pick the card that would tell them. Three ports on one card put the
+        // difference where it is read: side by side, in the node they already placed.
+        //
+        // AND IT SETTLES ADR-0041 §3.2 PROPERLY. That section refused a continuous event
+        // because it "would look identical to the one-shot"; two cards that look alike is a
+        // problem one card does not have.
+        //
+        // NONE OF THEM IS BEHIND A DROPDOWN. Pressing, releasing and holding are all things
+        // a game reacts to — a jump on the way down, a charged shot on the way up, a walk
+        // while held — and a mode param would hide two of them behind a choice made before
+        // the creator knows they want them.
         outputs: [
             flow('pressed', 'Pressed', 'The moment the key goes down — runs once per press'),
-            flow('released', 'Released', 'The moment the key comes back up — runs once per release')
+            flow('released', 'Released', 'The moment the key comes back up — runs once per release'),
+            flow('down', 'Down', 'Runs on EVERY step the key is held — sixty times a second, not once')
         ],
         // WHICH FLOWS FIRED THIS STEP, answered through the contract every flow node uses
-        // (`interpreter.js`, `continuationsOf`). Both can be true on one step — a key tapped
-        // inside a single frame — and both then run, in declared order.
+        // (`interpreter.js`, `continuationsOf`). More than one can be true on one step — the
+        // step a key goes down is both `Pressed` and `Down` — and each then runs, in declared
+        // order. That is not a quirk to hide: "on the press, and every step after" is what
+        // holding a key IS.
+        //
+        // THE THREE SEMANTICS ARE THE RUNTIME'S, NOT THIS NODE'S. `InputState` already
+        // answers all three, and `commit()` bounds the two transitions to exactly one step
+        // whatever the frame rate — so a server replaying inputs computes the same three
+        // answers (ADR-0011, ADR-0014 §5). Nothing here is a boolean wearing an event's name.
         execute: io => {
             const key = io.param('key') ?? DEFAULT_KEY;
             const state = key ? io.ctx?.input?.of?.(io.self?.owner ?? null) : null;
@@ -610,53 +633,10 @@ export const STANDARD_NODES = [
             const fired = [];
             if (state.pressed(key)) fired.push('pressed');
             if (state.released(key)) fired.push('released');
+            if (state.isDown(key)) fired.push('down');
             return fired;
         },
-        tooltip: 'Runs when this key goes down, and when it comes back up'
-    },
-
-    {
-        // A THIRD MOMENT, AND IT IS THE ONE A BEGINNER WRITES FIRST (ADR-0045 §4).
-        //
-        // "Tant que je tiens Droite, avance" cost `On Update` + `Key Is Down` + `Branch`
-        // before this node: three cards and two wires, and the middle one asks a creator to
-        // have understood that a keypress is a value tested every frame rather than a thing
-        // that happens. ADR-0041 §3.2 refused exactly this node, and its reason was sound —
-        // "un nœud qui se déclenche soixante fois par seconde en ressemblant exactement à
-        // celui qui se déclenche une fois". What answers it is not a weaker argument, it is
-        // a different NAME: `On Key` is a moment and says `On`, this is a state and says
-        // `Down`, and the two are separate cards a creator picks between by reading them.
-        //
-        // `Key Is Down` STAYS, AND IS NOT REDUNDANT. A flow says WHEN to act; a boolean is
-        // something to ASK inside a condition — "jump only if grounded AND Space is down" is
-        // unwritable with a flow. Two models, two uses, and neither replaces the other.
-        type: 'input.keyDown',
-        label: 'Key Down',
-        category: 'Input',
-        keywords: ['input', 'keyboard', 'key', 'hold', 'held', 'while', 'down', 'continuous', 'event'],
-        event: 'update',
-        params: {
-            key: {
-                type: PropertyType.STRING,
-                default: DEFAULT_KEY,
-                label: 'Key',
-                reference: KEY_REFERENCE,
-                tooltip: 'The key this node watches'
-            }
-        },
-        outputs: [flow('down', 'Down',
-            'Runs on EVERY step the key is held — sixty times a second, not once')],
-        // THE SEMANTICS, EXACTLY: it fires on every step for which `isDown` is true,
-        // starting with the step the key goes down and ending with the step before it comes
-        // up. Not "after a delay", not "on repeat" — the state of the key, once per step,
-        // which is the only definition that stays true on a server replaying inputs
-        // (ADR-0011).
-        execute: io => {
-            const key = io.param('key') ?? DEFAULT_KEY;
-            const state = key ? io.ctx?.input?.of?.(io.self?.owner ?? null) : null;
-            return state?.isDown(key) ? 'down' : [];
-        },
-        tooltip: 'Runs on every step, for as long as this key is held'
+        tooltip: 'Runs when this key goes down, when it comes back up, and while it is held'
     },
 
     {
@@ -727,9 +707,10 @@ export const STANDARD_NODES = [
     {
         type: 'input.onPointerButton',
         label: 'On Pointer Button',
-        category: 'Input',
+        category: 'Events',
         icon: 'node-pointer',
-        keywords: ['input', 'mouse', 'click', 'clicked', 'press', 'released', 'tap', 'when', 'event'],
+        keywords: ['input', 'mouse', 'click', 'clicked', 'press', 'released', 'tap', 'hold',
+            'held', 'drag', 'while', 'down', 'when', 'event'],
         event: 'update',
         params: {
             button: {
@@ -741,13 +722,14 @@ export const STANDARD_NODES = [
                 tooltip: 'Which pointer button this node watches'
             }
         },
-        // THE SAME TWO MOMENTS A KEY HAS, and deliberately the same two words: `InputState`
-        // draws the same distinction for a button as for a key, bounded to a single step by
-        // the same `commit()` (ADR-0014 5). A second vocabulary for one idea would be a
-        // second thing to learn.
+        // THE SAME THREE MOMENTS A KEY HAS, and deliberately the same three words:
+        // `InputState` draws the same distinctions for a button as for a key, bounded to a
+        // single step by the same `commit()` (ADR-0014 §5). A second vocabulary for one idea
+        // would be a second thing to learn.
         outputs: [
             flow('pressed', 'Pressed', 'The moment the button goes down — runs once per press'),
-            flow('released', 'Released', 'The moment the button comes back up — runs once per release')
+            flow('released', 'Released', 'The moment the button comes back up — runs once per release'),
+            flow('down', 'Down', 'Runs on EVERY step the button is held — a drag, not a click')
         ],
         execute: io => {
             const button = buttonOf(io.node);
@@ -757,38 +739,10 @@ export const STANDARD_NODES = [
             const fired = [];
             if (state.buttonPressed(button)) fired.push('pressed');
             if (state.buttonReleased(button)) fired.push('released');
+            if (state.isButtonDown(button)) fired.push('down');
             return fired;
         },
-        tooltip: 'Runs when this pointer button goes down, and when it comes back up'
-    },
-
-    {
-        // THE SAME THIRD MOMENT FOR A BUTTON, and deliberately the same word: a creator who
-        // has learned `Key Down` has learned this one (ADR-0045 §4).
-        type: 'input.pointerButtonDown',
-        label: 'Pointer Button Down',
-        category: 'Input',
-        icon: 'node-pointer',
-        keywords: ['input', 'mouse', 'hold', 'held', 'while', 'drag', 'down', 'continuous', 'event'],
-        event: 'update',
-        params: {
-            button: {
-                type: PropertyType.ENUM,
-                values: BUTTON_NAMES,
-                labels: BUTTON_LABELS,
-                default: DEFAULT_BUTTON,
-                label: 'Button',
-                tooltip: 'Which pointer button this node watches'
-            }
-        },
-        outputs: [flow('down', 'Down',
-            'Runs on EVERY step the button is held — sixty times a second, not once')],
-        execute: io => {
-            const button = buttonOf(io.node);
-            const state = io.ctx?.input?.of?.(io.self?.owner ?? null);
-            return state?.isButtonDown(button) ? 'down' : [];
-        },
-        tooltip: 'Runs on every step, for as long as this pointer button is held'
+        tooltip: 'Runs when this pointer button goes down, when it comes back up, and while it is held'
     },
 
     {

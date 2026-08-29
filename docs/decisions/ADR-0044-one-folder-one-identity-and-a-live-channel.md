@@ -3,6 +3,7 @@
 - **Statut :** **accepté** (2026-08-29)
 - **Décide :** où vit le Preview dans l'arborescence ; ce qui l'identifie ; comment une modification de l'éditeur atteint un Preview déjà ouvert
 - **Dépend de :** ADR-0011 (autorité et arbitrage), ADR-0016 §7 (relier un graphe remplace le comportement), ADR-0019 (réplication), ADR-0027 (un `Operation` est une intention d'auteur), ADR-0042 (le Preview est un client de runtime adressé par identifiant)
+- **Confirmé par :** ADR-0046 §1 (2026-08-29) — le mécanisme legacy (`window.open` + partage de références) a été retrouvé et analysé ; il n'est pas un transport et ne prépare rien. Le canal reste celui décidé ici.
 - **Amende :** ADR-0042 §2 (les deux dossiers deviennent un), §3 (le préfixe `prv_` disparaît), §4 (ce que le magasin garde), §7 (les contrats de couches)
 - **Ne décide pas :** le sens inverse (Preview → Editor), le multijoueur, la résolution de conflits, la persistance côté serveur. Voir §6.
 

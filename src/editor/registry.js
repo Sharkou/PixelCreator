@@ -70,6 +70,12 @@ const SHIPPED = {
  * authored elsewhere may carry one; renaming the file then leaves it alone, which is what
  * having two fields means.
  *
+ * AND AN IDENTITY IS NEVER A NAME (ADR-0021, ADR-0046 §5). A `.px` is keyed by its own
+ * ResourceId, so falling through to the type is falling through to a twelve-character
+ * string a creator has never seen — which is exactly what a deleted file produced: the
+ * Component stayed on the Object and its section was titled `ffs2qex9nw0v`. A type nothing
+ * can name is reported as missing, because that is what it is.
+ *
  * @param {string} type - The component type name
  * @param {object} [registry] - Registry to resolve the class in
  * @param {object} [options] - Options
@@ -85,10 +91,43 @@ export function describeType(type, registry = defaultRegistry, { project = null 
         label: componentDefinition(ComponentClass)?.label
             || resourceName(type, project)
             || shipped?.label
-            || ComponentClass?.label
-            || type,
+            || classLabel(ComponentClass, type)
+            || (isFile(ComponentClass) ? MISSING_LABEL : type),
         category: ComponentClass?.category ?? shipped?.category ?? 'Other'
     };
+}
+
+/** What a Component whose file cannot be found is called, since its name lived in the file. */
+export const MISSING_LABEL = 'Missing Component';
+
+/**
+ * Whether this class came from a `.px` rather than from the engine.
+ *
+ * `static definition` is what `defineComponent()` stamps on a class it builds from a
+ * project payload; a shipped Component declares `static schema` and no definition. That is
+ * the only honest way to ask "is this type's name supposed to come from a file", and it is
+ * what separates a deleted `.px` from a hand-written class whose type name reads fine.
+ *
+ * @param {Function|null} ComponentClass - The class, when there is one
+ * @returns {boolean} True when the type is a project resource
+ */
+function isFile(ComponentClass) {
+    return Boolean(componentDefinition(ComponentClass));
+}
+
+/**
+ * The name a class gives itself, when it is a name and not its own identity.
+ *
+ * A `.px` installed with no label of its own is stamped with its ResourceId
+ * (project/definitions.js), so `label === type` means "nobody has named this".
+ *
+ * @param {Function|null} ComponentClass - The class, when there is one
+ * @param {string} type - The type name it is registered under
+ * @returns {string|null} Its label, or null when it has none worth showing
+ */
+function classLabel(ComponentClass, type) {
+    const label = ComponentClass?.label ?? null;
+    return label && label !== type ? label : null;
 }
 
 /**

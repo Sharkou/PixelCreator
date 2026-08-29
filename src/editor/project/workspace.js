@@ -84,6 +84,21 @@ export class Workspace {
     /** ResourceId -> `{ resource, kind, model, history, unsubscribe, open, dirty }`. */
     #editors = new Map();
 
+    /**
+     * ResourceId -> the `#attach` still in flight for it.
+     *
+     * ONE RESOURCE, ONE MODEL, EVEN WHEN TWO CALLERS ASK AT ONCE (ADR-0046 §9). `#attach`
+     * awaits a load, so two callers arriving in the same tick both saw "no editor yet" and
+     * both built one: two `ComponentDefinition`s over one payload, two histories, and the
+     * second silently replacing the first in the map — after the first caller had already
+     * captured it. `open()` then flipped `open` on a record nobody held any more, announced
+     * it, and no window ever drew the document.
+     *
+     * It is reachable from a single gesture: creating a Custom Component OPENS the `.px` and
+     * SELECTS it, and selecting attaches. Sharing the promise is what makes those one model.
+     */
+    #attaching = new Map();
+
     /** The editor a window is presenting and the shortcuts act on, or null. */
     #active = null;
 
@@ -522,10 +537,20 @@ export class Workspace {
         for (const id of [...this.#editors.keys()]) this.close(id);
     }
 
-    async #attach(id, { registry } = {}) {
+    async #attach(id, options = {}) {
         const existing = this.#editors.get(id);
         if (existing) return existing;
 
+        // Whoever asked first is loading it; everybody else waits for that one.
+        const inFlight = this.#attaching.get(id);
+        if (inFlight) return inFlight;
+
+        const pending = this.#load(id, options).finally(() => this.#attaching.delete(id));
+        this.#attaching.set(id, pending);
+        return pending;
+    }
+
+    async #load(id, { registry } = {}) {
         const resource = this.#project.get(id);
         if (!resource) return null;
 

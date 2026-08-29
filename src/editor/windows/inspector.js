@@ -30,7 +30,7 @@
 // value and twice the panel to read. The object's id is not shown at all — a creator does
 // not need it, and a panel that opens with a random string looks like a debugger.
 
-import { declaredProperties, isMissingComponent, makeReactive, observe } from '../../core/mod.js';
+import { OBJECT_COMPONENT, declaredProperties, isMissingComponent, makeReactive, observe } from '../../core/mod.js';
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { icon, iconForComponent, iconForObject, iconForPropertyType, iconForResource } from '../ui/icons.js';
@@ -48,7 +48,7 @@ import { DropZone, componentPayload, propertyPayload } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
 import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
 import { describeType, groupTypes } from '../registry.js';
-import { FieldKind, describeComponent, isNumeric, objectFields, rows } from '../inspector/schema.js';
+import { FieldKind, describeComponent, isWide, objectFields, rows } from '../inspector/schema.js';
 import '../ui/window.js';
 import '../ui/field.js';
 import '../ui/resource-field.js';
@@ -854,7 +854,13 @@ export class Inspector extends Element {
                 ? this.#renderSection({
                     name: 'Object',
                     glyph: 'object',
-                    body: this.#renderRows(object, objectFields())
+                    // NAME, TAG, LAYER AND ACTIVE ARE CARRIED LIKE ANY OTHER PROPERTY, and
+                    // it took one argument because ADR-0043 had already done the work: the
+                    // Object answers for itself under its own namespace, so these four are
+                    // addressable by a graph exactly as `Transform ▸ X` is. Passing no
+                    // Component here was the whole of the omission — the four rows a
+                    // beginner meets FIRST were the four with no grip (ADR-0046 §2).
+                    body: this.#renderRows(object, objectFields(), OBJECT_COMPONENT)
                 })
                 : null,
             shown.map(type => this.#renderComponent(object, components[type], type)),
@@ -1033,7 +1039,10 @@ export class Inspector extends Element {
 
         const grip = el('span', {
             class: 'grip',
-            title: `Drag to reorder ${entry.name}`,
+            // ONE GESTURE, TWO DESTINATIONS, AND THE TOOLTIP SAYS BOTH. A grip that only
+            // claimed to reorder was a grip nobody would try dragging onto a canvas
+            // (ADR-0046 §3).
+            title: `Drag ${entry.name} to reorder it, or onto a graph to use it`,
             'aria-hidden': 'true'
         }, icon('grip', 16));
 
@@ -1075,19 +1084,6 @@ export class Inspector extends Element {
             dataset: { property: entry.id }
         });
 
-        // THE GRIP THAT SAYS "TAKE ME SOMEWHERE", beside the one that says "rank me". Two
-        // handles on one header is a cost, and it is the honest one: a `.px` property really
-        // does have two gestures, and giving them one control each is clearer than giving
-        // one control two meanings. It is the SAME control a component's property row
-        // carries (`#carryHandle`), so a creator learns it once.
-        const carry = el('span', {
-            class: 'carry',
-            title: `Drag ${property.name || 'this property'} onto a graph`,
-            'aria-hidden': 'true'
-        }, icon('grip', 12));
-        this.#makeDragSource(carry, () =>
-            propertyPayload(definition.type, entry.id, property.name || entry.name));
-
         const header = el('header', {
             title: 'Click to fold',
             onclick: event => {
@@ -1101,7 +1097,7 @@ export class Inspector extends Element {
                 block.classList.toggle('open', shown);
                 caret.classList.toggle('open', shown);
             }
-        }, grip, caret, title, badge, carry, remove);
+        }, grip, caret, title, badge, remove);
 
         // ONE WRITER PER FIELD, NAMED BY THE FIELD. A property card is no longer three fixed
         // rows: a Choice declares its options and a List the type of its elements
@@ -1144,12 +1140,19 @@ export class Inspector extends Element {
 
         block.append(header, body);
 
-        // The same reorder gesture the components use, told a different list (ADR-0028 §1).
+        // ONE GRIP, TWO DESTINATIONS — the arrangement a Component section has had all
+        // along (`payload` below, ADR-0046 §3). Two grips on one header was the honest cost
+        // of two gestures, and it was the wrong trade: a creator has ONE intention, "take
+        // this property", and where they let go says what it means. Inside the list it
+        // ranks; carried out, it is a property the graph may name. The primitive already
+        // draws the line — "a gesture with no payload never leaves" — so this is the
+        // payload arriving, not a second mechanism.
         this.#makeDraggable(grip, header, {
             element: block,
             siblings: () => this.#orderedProperties(),
             rank: () => definition.indexOf(entry.id),
-            commit: rank => definition.moveProperty(entry.id, rank)
+            commit: rank => definition.moveProperty(entry.id, rank),
+            payload: () => propertyPayload(definition.type, entry.id, property.name || entry.name)
         });
 
         return block;
@@ -1173,9 +1176,12 @@ export class Inspector extends Element {
             });
         }
 
-        return el('div', { class: 'row' },
+        // THE SAME RULE AS EVERY OTHER ROW. A property card's Name, Type and Default are
+        // fields in a column of fields, and they were the one group still sized by whatever
+        // their control happened to be (ADR-0046 §7).
+        return el('div', { class: `row` },
             label,
-            el('div', { class: 'fields' }, field, extra)
+            el('div', { class: `fields${isWide(descriptor) ? '' : ' single'}` }, field, extra)
         );
     }
 
@@ -1244,7 +1250,7 @@ export class Inspector extends Element {
 
         return el('div', { class: 'row' },
             label,
-            el('div', { class: 'fields' },
+            el('div', { class: `fields${isWide(descriptor) ? '' : ' single'}` },
                 field,
                 extension ? el('span', { class: 'suffix', textContent: extension }) : null
             )
@@ -1685,7 +1691,7 @@ export class Inspector extends Element {
         // Six dots, before the caret: the one part of the header that means "carry me".
         const grip = el('span', {
             class: 'grip',
-            title: `Drag to reorder ${this.#titleOf(type)}`,
+            title: `Drag ${this.#titleOf(type)} to reorder it, or onto a graph to use it`,
             'aria-hidden': 'true'
         }, icon('grip', 16));
         header.prepend(grip);
@@ -2250,9 +2256,10 @@ export class Inspector extends Element {
         // something, and owns every line of the value logic behind it.
         field.bindLabel?.(label);
 
-        // A plain number is a value in a column of values; a slider, a colour or a
-        // string is content and takes the width it needs.
-        const single = isNumeric(descriptor) && descriptor.kind !== FieldKind.RANGE;
+        // ONE CELL OR TWO, AND THE DESCRIPTOR ANSWERS (ADR-0046 §7). This row used to decide
+        // for itself — "a plain number is short, everything else is content" — which is how
+        // a colour swatch came to be twice as wide as the number above it.
+        const single = !isWide(descriptor);
         // A list is the one control that is taller than its label, so it is the one that
         // needs the label at the top of it.
         const tall = descriptor.kind === FieldKind.LIST;
@@ -2400,6 +2407,19 @@ export class Inspector extends Element {
             bubbles: true,
             composed: true
         }));
+
+        // AND THIS PANEL FOLLOWS IT (ADR-0046 §4). Opening the canvas and leaving the
+        // Inspector on the Object was the workflow stopping one step short: the empty `.px`
+        // a creator has just made needs PROPERTIES before its graph can say anything, and
+        // `Add property` lives here. It is the same selection the Project panel makes when
+        // a tile is clicked — one state, reached from a second place, so nothing new is
+        // shown and no second document is opened.
+        //
+        // THROUGH THE ARBITER, NEVER THROUGH THE HOLDER. An Object and a Resource are
+        // mutually exclusive subjects and `Subject` is the one place that keeps them so
+        // (editor/subject.js); writing to the Workspace directly would leave the Object
+        // selected underneath and the two holders disagreeing.
+        this.#subject?.resource(created.id);
     }
 }
 

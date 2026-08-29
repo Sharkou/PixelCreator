@@ -146,48 +146,49 @@ test('the two On nodes sit with the property nodes whose semantics they share', 
     assert.equal(registry.get('property.set').category, registry.get('property.set').category);
 });
 
-test('every input node is one family, whichever half of the model it belongs to', () => {
-    // A CREATOR LOOKING FOR "KEYBOARD" LOOKS UNDER Input, AND FINDS ALL OF IT (ADR-0045 §3).
-    // The split between a moment and a state is real and the node NAMES say it — `On Key`,
-    // `Key Down`, `Key Is Down` — but it is a distinction the engine draws, and filing the
-    // halves under two headings made a creator hunt for the other one.
+test('what STARTS a flow is an Event; what ANSWERS a question is an Input', () => {
+    // THE LINE IS THE MODEL'S, AND IT IS THE ONE A CREATOR ALREADY READS (ADR-0046 §6).
+    // Filing every device node under `Input` put "when the player presses jump" somewhere
+    // other than where every other "when" lives; the split that survives is between a node
+    // that hands on a flow and a node that hands on a value.
     const registry = registerStandardNodes(new NodeRegistry());
 
-    for (const type of [
-        'input.onKey', 'input.keyDown', 'input.key',
-        'input.pointer', 'input.onPointerButton', 'input.pointerButtonDown', 'input.pointerButton'
-    ]) {
-        assert.equal(registry.get(type).category, 'Input', type);
+    for (const type of ['event.start', 'event.update', 'input.onKey', 'input.onPointerButton']) {
+        assert.equal(registry.get(type).category, 'Events', type);
     }
 
-    // `Events` KEEPS THE TWO THAT ARE NOT ABOUT A DEVICE: the simulation starting, and the
-    // simulation ticking.
-    for (const type of ['event.start', 'event.update']) {
-        assert.equal(registry.get(type).category, 'Events', type);
+    for (const type of ['input.key', 'input.pointer', 'input.pointerButton']) {
+        assert.equal(registry.get(type).category, 'Input', type);
     }
 });
 
-test('the three moments of a key are three nodes, and each says which it is', () => {
-    // `On Key` IS A MOMENT, `Key Down` IS EVERY STEP OF A STATE, `Key Is Down` IS A QUESTION.
-    // ADR-0041 §3.2 refused the middle one because a node firing sixty times a second must
-    // not LOOK like one that fires once; what answers that is the name and the port, so both
-    // are asserted here (ADR-0045 §4).
+test('the three moments of a key are three ports of one node', () => {
+    // THEY WERE THREE NODE TYPES, AND THAT WAS THE MISTAKE. `On Key` and `Key Down` asked
+    // the same question of the same key, so a creator had to know the difference BEFORE
+    // they could pick the card that would have told them. One card puts the three side by
+    // side, which also settles ADR-0041 §3.2 outright: two cards that look alike is a
+    // problem one card does not have (ADR-0046 §6).
     const registry = registerStandardNodes(new NodeRegistry());
-    const flowsOf = type => portsOf(registry.get(type), { id: 'n', type, params: {} }, {})
-        .outputs.filter(port => port.kind === PortKind.FLOW).map(port => port.label);
+    const portsFor = type => portsOf(registry.get(type), { id: 'n', type, params: {} }, {});
+    const flowsOf = type => portsFor(type).outputs
+        .filter(port => port.kind === PortKind.FLOW).map(port => port.label);
 
-    assert.deepEqual(flowsOf('input.onKey'), ['Pressed', 'Released']);
-    assert.deepEqual(flowsOf('input.keyDown'), ['Down']);
+    assert.deepEqual(flowsOf('input.onKey'), ['Pressed', 'Released', 'Down']);
+    assert.deepEqual(flowsOf('input.onPointerButton'), ['Pressed', 'Released', 'Down'],
+        'a button splits exactly as a key does, and into the same three words');
     assert.deepEqual(flowsOf('input.key'), [], 'a question has no flow at all');
 
-    assert.equal(registry.get('input.keyDown').label, 'Key Down');
     assert.equal(registry.get('input.key').label, 'Key Is Down');
-    assert.match(
-        portsOf(registry.get('input.keyDown'), { id: 'n', type: 'input.keyDown', params: {} }, {})
-            .outputs[0].tooltip,
-        /every step/i,
-        'and the port says outright that it repeats'
-    );
+    assert.equal(registry.get('input.onKey').label, 'On Key');
+
+    // The port that repeats says so, because it is the one a creator can wire by accident.
+    const down = portsFor('input.onKey').outputs.find(port => port.id === 'down');
+    assert.match(down.tooltip, /every step/i);
+
+    // AND THE TWO REMOVED TYPES ARE GONE, not left as aliases: a second way to say one
+    // thing is the duplication this recomposition exists to remove.
+    assert.equal(registry.has('input.keyDown'), false);
+    assert.equal(registry.has('input.pointerButtonDown'), false);
 });
 
 // --- a node is named for what it does, never for what it is set to -------------------------
@@ -281,9 +282,9 @@ test('a key is an EVENT and a STATE, and they are two nodes', () => {
 
     const event = registry.get('input.onKey');
     const { outputs: fired } = portsOf(event, { type: 'input.onKey', params: {} }, {});
-    assert.deepEqual(fired.map(port => port.id), ['pressed', 'released']);
+    assert.deepEqual(fired.map(port => port.id), ['pressed', 'released', 'down']);
     for (const port of fired) assert.equal(port.kind, PortKind.FLOW, port.id);
-    assert.deepEqual(fired.map(port => port.label), ['Pressed', 'Released']);
+    assert.deepEqual(fired.map(port => port.label), ['Pressed', 'Released', 'Down']);
     assert.equal(event.event, 'update', 'an entry node, run every step');
     assert.equal(typeof event.execute, 'function', 'and it says which of its flows fired');
     assert.equal(event.evaluate, undefined, 'a moment produces no value');
@@ -298,20 +299,31 @@ test('a key is an EVENT and a STATE, and they are two nodes', () => {
     assert.equal(state.execute, undefined);
 });
 
-test('On Key fires only on the step the key moved, and can fire twice at once', () => {
+test('On Key fires exactly the moments that happened, and can fire more than one', () => {
     const definition = registerStandardNodes(new NodeRegistry()).get('input.onKey');
-    const firing = (pressed, released) => definition.execute({
+    const firing = (pressed, released, down) => definition.execute({
         node: { params: { key: 'Space' } },
         param: () => 'Space',
         self: null,
-        ctx: { input: { of: () => ({ pressed: () => pressed, released: () => released }) } }
+        ctx: {
+            input: {
+                of: () => ({
+                    pressed: () => pressed,
+                    released: () => released,
+                    isDown: () => down
+                })
+            }
+        }
     });
 
-    assert.deepEqual(firing(false, false), [], 'a key nobody touched starts nothing');
-    assert.deepEqual(firing(true, false), ['pressed']);
-    assert.deepEqual(firing(false, true), ['released']);
-    // A TAP INSIDE ONE FRAME IS BOTH, and both run — in declared order, like `Sequence`.
-    assert.deepEqual(firing(true, true), ['pressed', 'released']);
+    assert.deepEqual(firing(false, false, false), [], 'a key nobody touched starts nothing');
+    // THE STEP A KEY GOES DOWN IS BOTH, and that is not a quirk to hide: "on the press, and
+    // every step after" is what holding a key IS. Declared order, like `Sequence`.
+    assert.deepEqual(firing(true, false, true), ['pressed', 'down']);
+    assert.deepEqual(firing(false, false, true), ['down'], 'and every step after it, alone');
+    assert.deepEqual(firing(false, true, false), ['released'], 'the step it comes up is only that');
+    // A tap inside one frame is a press and a release, and the key is no longer down.
+    assert.deepEqual(firing(true, true, false), ['pressed', 'released']);
 });
 
 test('On Key with no input on the context fires nothing rather than throwing', () => {
@@ -406,12 +418,12 @@ test('the Pointer node reads the world position of its own Object\'s owner', () 
     assert.deepEqual(read, { x: 12, y: -34 }, 'the world point, never the screen one');
 });
 
-test('a pointer button splits the same way a key does, and into the same two words', () => {
+test('a pointer button splits the same way a key does, and into the same three words', () => {
     const registry = registerStandardNodes(new NodeRegistry());
 
     const { outputs: fired } = portsOf(registry.get('input.onPointerButton'),
         { type: 'input.onPointerButton', params: {} }, {});
-    assert.deepEqual(fired.map(port => port.id), ['pressed', 'released']);
+    assert.deepEqual(fired.map(port => port.id), ['pressed', 'released', 'down']);
     for (const port of fired) assert.equal(port.kind, PortKind.FLOW, port.id);
 
     const { outputs: read } = portsOf(registry.get('input.pointerButton'),
@@ -462,7 +474,15 @@ test('a button a payload names that does not exist falls back rather than readin
     event.execute({
         node: { params: { button: 'thumb' } },
         self: null,
-        ctx: { input: { of: () => ({ buttonPressed: b => (fired.push(b), false), buttonReleased: () => false }) } }
+        ctx: {
+            input: {
+                of: () => ({
+                    buttonPressed: b => (fired.push(b), false),
+                    buttonReleased: () => false,
+                    isButtonDown: () => false
+                })
+            }
+        }
     });
     assert.deepEqual(fired, [0]);
 });
