@@ -26,6 +26,7 @@
 import { PropertyType, defaultForProperty, elementOf } from '../properties/types.js';
 import { ANY_TYPE, OBJECT_TYPE, PortKind, nodes as defaultNodes, portTypeOf } from './nodes.js';
 import { declaredProperties } from '../definition.js';
+import { OBJECT_COMPONENT, objectProperties } from '../object.js';
 import { GraphError, GraphIssueCode } from './errors.js';
 
 /**
@@ -181,14 +182,15 @@ export function resolvedProperty(node, context = {}) {
     return declared.find(property => property.id === id) ?? null;
 }
 
-const flow = (id, label) => ({ id, kind: PortKind.FLOW, label: label ?? '' });
-const data = (id, type, label, fallback, placeholder) => ({
+const flow = (id, label, tooltip) => ({ id, kind: PortKind.FLOW, label: label ?? '', tooltip: tooltip ?? null });
+const data = (id, type, label, fallback, placeholder, tooltip) => ({
     id,
     kind: PortKind.DATA,
     type,
     label: label ?? null,
     default: fallback ?? null,
-    placeholder: placeholder ?? null
+    placeholder: placeholder ?? null,
+    tooltip: tooltip ?? null
 });
 
 /**
@@ -407,6 +409,14 @@ function targetObject(io) {
  */
 function targetComponent(io) {
     const named = io.node?.params?.component ?? null;
+
+    // THE OBJECT ANSWERS FOR ITSELF. `Object ▸ Name` names no component and never will:
+    // what holds `name` is the Object, so what is handed back IS the Object — the same
+    // reactive Proxy the Scene keeps, so a write from a graph is the ordinary observable
+    // write every other property gets (ADR-0043). Placed before the shortcut below because
+    // the shortcut answers `io.component`, and this node is not asking about a component.
+    if (named === OBJECT_COMPONENT) return targetObject(io);
+
     const pointed = io.wired?.('object') || Boolean(targetSocket(io.node, { properties: io.properties }));
 
     // NOTHING NAMED AND NOTHING POINTED AT: this Component, on its own Object. It is already
@@ -432,6 +442,12 @@ function targetComponent(io) {
 function catalogueOf(io) {
     const type = io.node?.params?.component ?? null;
     if (!type) return null;
+
+    // THE OBJECT'S OWN FOUR, DECLARED BY THE CORE AND NOT BY A REGISTRY (ADR-0043). Asking
+    // the registry for `Object` answers nothing, because nothing registers it — so a node
+    // reading `Object ▸ Name` would raise MISSING_PROPERTY on a property that is right
+    // there. One declaration, and this is the reader the interpreter uses.
+    if (type === OBJECT_COMPONENT) return [{ type, properties: objectProperties() }];
 
     const Component = io.ctx.scene.registry.get?.(type) ?? null;
     return Component ? [{ type, properties: declaredProperties(Component) }] : [];
@@ -578,7 +594,10 @@ export const STANDARD_NODES = [
         // are both things a game reacts to — a jump on the way down, a charged shot on the
         // way up — and a mode param would hide one of them behind a choice made before the
         // creator knows they want it.
-        outputs: [flow('pressed', 'Pressed'), flow('released', 'Released')],
+        outputs: [
+            flow('pressed', 'Pressed', 'The moment the key goes down — runs once per press'),
+            flow('released', 'Released', 'The moment the key comes back up — runs once per release')
+        ],
         // WHICH FLOWS FIRED THIS STEP, answered through the contract every flow node uses
         // (`interpreter.js`, `continuationsOf`). Both can be true on one step — a key tapped
         // inside a single frame — and both then run, in declared order.
@@ -617,7 +636,8 @@ export const STANDARD_NODES = [
         // THE PORT ID IS UNCHANGED, and that is the migration. This node kept the type name
         // `input.key`, so every graph that read `held` off it still reads `held` off it —
         // only the label and the two ports that were really events have gone.
-        outputs: [data('held', PropertyType.BOOLEAN, 'Is Down')],
+        outputs: [data('held', PropertyType.BOOLEAN, 'Is Down', null, null,
+            'True for as long as the key is held — ask it every step, with On Update')],
         // A KEY IS A LITERAL, NOT A REFERENCE, so an empty one answers false rather than
         // refusing. `property.get` throws because it NAMES something that must exist and no
         // longer does — a design-time fault. A key nobody typed is an empty `Number` node,
@@ -680,7 +700,10 @@ export const STANDARD_NODES = [
         // draws the same distinction for a button as for a key, bounded to a single step by
         // the same `commit()` (ADR-0014 5). A second vocabulary for one idea would be a
         // second thing to learn.
-        outputs: [flow('pressed', 'Pressed'), flow('released', 'Released')],
+        outputs: [
+            flow('pressed', 'Pressed', 'The moment the button goes down — runs once per press'),
+            flow('released', 'Released', 'The moment the button comes back up — runs once per release')
+        ],
         execute: io => {
             const button = buttonOf(io.node);
             const state = io.ctx?.input?.of?.(io.self?.owner ?? null);
@@ -712,7 +735,8 @@ export const STANDARD_NODES = [
         },
         // THE PORT ID IS UNCHANGED, like `Key Is Down` above and for the same reason: a
         // graph that read `held` goes on reading `held`.
-        outputs: [data('held', PropertyType.BOOLEAN, 'Is Down')],
+        outputs: [data('held', PropertyType.BOOLEAN, 'Is Down', null, null,
+            'True for as long as the button is held — ask it every step, with On Update')],
         evaluate: io => {
             const button = buttonOf(io.node);
             const state = io.ctx?.input?.of?.(io.self?.owner ?? null);
@@ -785,6 +809,59 @@ export const STANDARD_NODES = [
             // ADR-0027 §6). Writing on a target that is gone does nothing, and says nothing —
             // §3.4 again. And what is written is the IDENTITY, never the handle (§3.5).
             if (component) component[property.name] = storedValueOf(property, io.input('value'));
+            return 'out';
+        }
+    },
+
+    // --- what a creator MEANT, where four nodes said how ---------------------------------
+    //
+    // ONE NODE PER INTENTION, AND "MOVE" IS AN INTENTION (ADR-0040). Nudging an object along
+    // X cost `Get Property ▸ x` + `Add` + `Set Property ▸ x` — three nodes, two wires and two
+    // trips through the property picker — and doing it in both axes cost six. None of those
+    // nodes is about moving; they are about how moving is computed, which is the engine's
+    // business and not the creator's.
+    //
+    // IT IS NOT `Set Position`, AND THE DIFFERENCE IS THE WHOLE POINT. `Set Property ▸ x`
+    // states where the object IS; this states how far it MOVES. Both stay: the low-level one
+    // is what an absolute placement needs, and putting a creator through a Get and an Add to
+    // express "a bit further right" was making them write the subtraction themselves.
+    //
+    // TWO NUMBERS, NOT A VECTOR. The Core has no vector type and ADR-0023 §2 removed the idea
+    // deliberately; `x` and `y` are two numbers everywhere else in this engine — in Transform,
+    // in the Inspector's paired row, in `Pointer` — and inventing a type for one node would be
+    // the abstraction this catalogue exists without.
+    //
+    // LOCAL, LIKE THE TRANSFORM IT WRITES. `Transform.x` is a position in the parent's space
+    // (ADR-0002), so moving by 10 moves 10 in that same space. A world-space move would need
+    // the inverse of the parent's matrix and would quietly disagree with the number the
+    // Inspector shows for the very same object.
+    {
+        type: 'transform.translate',
+        label: 'Translate',
+        // THE SAME FAMILY AS Get/Set PROPERTY, because it is the same act: changing what an
+        // Object holds. A seventh category for one node would give it a colour of its own and
+        // say it was a different kind of thing (ADR-0030 §4).
+        category: 'Properties',
+        keywords: ['move', 'translate', 'position', 'nudge', 'offset', 'walk', 'shift', 'x', 'y'],
+        tooltip: 'Moves an Object, relative to where it already is',
+        params: { ...targetParam },
+        inputs: [
+            flow('in'),
+            data('object', OBJECT_TYPE, 'Object'),
+            data('x', PropertyType.NUMBER, 'X', 0),
+            data('y', PropertyType.NUMBER, 'Y', 0)
+        ],
+        outputs: [flow('out')],
+        execute: io => {
+            // A TARGET WITH NO TRANSFORM IS A STATE OF THE SCENE, NOT A FAULT (ADR-0034 §3.4):
+            // an Object that carries no Transform has no position to move, and a graph asking
+            // it to move is not an authoring error the way a deleted property is. It does
+            // nothing, says nothing, and the next node still runs.
+            const transform = targetObject(io)?.getComponent?.('Transform') ?? null;
+            if (transform) {
+                transform.x += io.input('x') ?? 0;
+                transform.y += io.input('y') ?? 0;
+            }
             return 'out';
         }
     },

@@ -400,6 +400,61 @@ export const RULES = [
         }
     },
 
+    {
+        // A FILE LET GO ON AN OBJECT'S COMPONENT LIST — the one square of the matrix that was
+        // empty for no reason. A resource ALREADY in the project attaches what shows it (the
+        // rule above); the very same picture dragged in from the desktop did nothing, so a
+        // creator had to import it first, find it in the Project panel, and drag it a second
+        // time. Every other target has had the two-step version since `files-to-property`:
+        // import, then do what the target means.
+        //
+        // NOTHING NEW IS DECIDED HERE. What an image becomes is still the INSTANTIABLE
+        // table's one sentence, and what attaching means is still `resource-to-components` —
+        // this row is the import in front of it, and it refuses exactly what that one
+        // refuses, before importing anything (ADR-0026 §6).
+        //
+        // TWO RESOURCES, TWO UNDO STACKS (ADR-0041 §6.2): the component is taken back by the
+        // scene's `Ctrl Z`, the imported asset stays in the Project. That is the same answer
+        // a file dropped on a graph gives, and the least surprising of the two.
+        id: 'files-to-components',
+        accepts: (payload, target) => payload.kind === DragKind.FILES
+            && target.zone === DropZone.COMPONENTS
+            && Boolean(target.object)
+            && instantiatorForFiles(payload) !== null,
+        refuses: (payload, target) => {
+            const consumes = instantiatorForFiles(payload)?.consumes;
+            if (!consumes || !target.object.hasComponent(consumes.Component.type)) return null;
+
+            return `${target.object.name} already has a ${consumes.Component.type}. `
+                + `Drop the file on its ${humanise(consumes.property)} instead.`;
+        },
+        describe: (payload, target) => {
+            const consumes = instantiatorForFiles(payload).consumes;
+            return `Import ${countFiles(payload)} and add a ${consumes.Component.type} `
+                + `showing it to ${target.object.name}`;
+        },
+        perform: (payload, target, context) => {
+            // ONE FILE, BECAUSE ONE COMPONENT SHOWS ONE RESOURCE. The rest would be imported
+            // and then silently dropped, which is worse than not taking them.
+            const [resource] = importFiles({ ...payload, entries: payload.entries.slice(0, 1) },
+                context.folder ?? null, context);
+            if (!resource) return null;
+
+            const { Component, property, values } = instantiator(resource).consumes;
+            const batch = createId();
+
+            const component = context.addComponent?.(target.object, Component.type, { batch });
+            if (!component) return null;
+
+            component.setProperty(property, resource.id, { batch });
+            for (const [name, value] of globalThis.Object.entries(values ?? {})) {
+                component.setProperty(name, value, { batch });
+            }
+
+            return { imported: [resource], component, type: Component.type, assigned: resource.id };
+        }
+    },
+
     // --- refusals that are worth stating -------------------------------------------
 
     {
@@ -417,9 +472,13 @@ export const RULES = [
         // The creator sees `[Player]`; the file holds "a socket called Player"; each Object
         // carrying the Component says in the Inspector where its own socket points.
         //
-        // NOTHING OUTSIDE THE `.px` IS TOUCHED, so the inter-resource undo question
-        // ADR-0034 §3.7 parked does not arise — the property, the node and the wire travel
-        // one pipeline and one stack (ADR-0027 §5), under one batch.
+        // THE `.px` GETS A NAME; THE SCENE GETS THE IDENTITY (ADR-0043). The property, the
+        // node and the wire travel this file's one pipeline under one batch (ADR-0027 §5),
+        // and the ObjectId is written where it has always been legal — into the value each
+        // attached component holds, in the scene being edited. That is two resources and so
+        // two undo stacks, which ADR-0024 gives and ADR-0041 §6.2 already states the rule
+        // for: the canvas takes back its half, the scene keeps pointing where it was told.
+        // Invariant 1 is untouched — no identity of a scene enters the file.
         id: 'object-to-graph',
         // BARE CANVAS MEANS NO NODE — the guard every other canvas rule carries. Without it
         // this shadowed `object-to-node`, so letting an Object go ON a node declared a second
@@ -452,7 +511,10 @@ export const RULES = [
             `Point ${target.label ?? 'this node'} at ${payload.name || 'this Object'}`,
         perform: (payload, target, context) => {
             const batch = createId();
-            const socket = context.socketFor?.({ name: payload.name }, { batch });
+            // THE IDENTITY TRAVELS WITH THE NAME. The `.px` stores only the name; the
+            // ObjectId is what the scene's instances are pointed at, and dropping the name
+            // alone was the half-gesture that left every socket empty (ADR-0043).
+            const socket = context.socketFor?.({ id: payload.id, name: payload.name }, { batch });
             if (!socket) return null;
 
             context.setNodeParam?.(target.node, 'target', socket.id, { batch });
@@ -834,6 +896,23 @@ function componentClause(target) {
 function assignReference(target, id) {
     if (target.assign) target.assign(id);
     else target.component.setProperty(target.prop, id);
+}
+
+/**
+ * Which INSTANTIABLE row the first dropped file would fall under, before it is imported.
+ *
+ * ASKED OF THE FILE, NOT OF A RESOURCE, so a rule can refuse without leaving a stray asset
+ * behind — the discipline `acceptsFiles()` already applies one scope down. The manifest
+ * entry a file becomes is `{ kind: ASSET, mime }`, and that is exactly what a row inspects.
+ *
+ * @param {object} payload - The files being carried
+ * @returns {object|null} The row, or null when nothing would consume it
+ */
+function instantiatorForFiles(payload) {
+    const entry = payload.entries?.[0];
+    if (!entry) return null;
+
+    return instantiator({ kind: ResourceKind.ASSET, mime: entry.mime ?? '' });
 }
 
 /**

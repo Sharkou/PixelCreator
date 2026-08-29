@@ -1451,3 +1451,71 @@ test('every rule announces what it would do, so a panel can say it', () => {
     );
     assert.match(canDrop(resourcePayload(asset), { zone: DropZone.SCENE }).reason, /hero\.png/);
 });
+
+// --- a file straight onto an object's component list (ADR-0043 §5) -----------------------
+
+test('a file dropped on an object imports it and attaches what shows it', () => {
+    // THE SQUARE OF THE MATRIX THAT WAS EMPTY FOR NO REASON. A resource already in the
+    // project attached a Sprite; the same picture dragged in from the desktop did nothing,
+    // so a creator had to import it, find it, and drag it again.
+    const ctx = context();
+    const object = ctx.scene.add(new SceneObject('Hero'));
+
+    const result = performDrop(
+        filesPayload([file('hero.png')]),
+        { zone: DropZone.COMPONENTS, object },
+        attaching(ctx)
+    );
+
+    const sprite = object.getComponent('Sprite');
+    assert.ok(sprite, 'the Component that shows an image is attached');
+    assert.equal(sprite.source, result.imported[0].id, 'and pointed at what was imported');
+    assert.ok(sprite.width > 0 && sprite.height > 0, 'and it is visible');
+    assert.equal(ctx.project.resources(ResourceKind.ASSET).length, 1, 'exactly one import');
+});
+
+test('a file the object already has a Component for is refused before anything is imported', () => {
+    // A REFUSAL THAT LEAVES A STRAY RESOURCE BEHIND IS NOT A REFUSAL. The verdict is reached
+    // from the FILE, so nothing has been created by the time it is given.
+    const ctx = context();
+    const object = ctx.scene.add(new SceneObject('Hero'));
+    addComponent(object, 'Sprite', ctx.scene.registry);
+
+    const verdict = canDrop(filesPayload([file('hero.png')]), { zone: DropZone.COMPONENTS, object });
+
+    assert.equal(verdict.allowed, false);
+    assert.match(verdict.reason, /already has a Sprite/);
+    assert.equal(ctx.project.resources(ResourceKind.ASSET).length, 0, 'and nothing was imported');
+});
+
+test('a file nothing consumes is not attachable, and nothing is imported trying', () => {
+    // The same absence that refuses a SOUND already in the project refuses one from the
+    // desktop, and it is reached from the file rather than from a resource — so the refusal
+    // costs the project nothing. (The components list states no sentence for a refusal yet;
+    // that is the panel's gap, not this row's, and it is the same for a resource.)
+    const ctx = context();
+    const object = ctx.scene.add(new SceneObject('Hero'));
+
+    const verdict = canDrop(
+        filesPayload([{ name: 'song.mp3', mime: 'audio/mpeg', payload: 'data:audio/mpeg;base64,AA' }]),
+        { zone: DropZone.COMPONENTS, object }
+    );
+
+    assert.equal(verdict.allowed, false);
+    assert.equal(ctx.project.resources(ResourceKind.ASSET).length, 0);
+    assert.equal(object.componentTypes().length, 0);
+});
+
+test('only the first file is taken, because one Component shows one resource', () => {
+    const ctx = context();
+    const object = ctx.scene.add(new SceneObject('Hero'));
+
+    performDrop(
+        filesPayload([file('hero.png'), file('villain.png')]),
+        { zone: DropZone.COMPONENTS, object },
+        attaching(ctx)
+    );
+
+    assert.equal(ctx.project.resources(ResourceKind.ASSET).length, 1,
+        'the rest are not imported and then silently lost');
+});

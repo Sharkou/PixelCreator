@@ -26,8 +26,62 @@ import {
     instantiateComponent,
     components as defaultRegistry
 } from './component.js';
+import { PropertyType } from './properties/types.js';
 
 const STATE = globalThis.Symbol('pixelcreator.object.state');
+
+/**
+ * The name a graph refers to the Object's OWN properties by (ADR-0043).
+ *
+ * AN OBJECT IS NOT A COMPONENT, AND THIS DOES NOT MAKE IT ONE. `name`, `tag`, `layer` and
+ * `active` belong to the Object itself (ADR-0001) — nothing declares them, no component
+ * carries them, and no `getComponent()` will ever answer with one. But a creator asking for
+ * "the name of that object" is asking the same question as "the rotation of that object",
+ * and the only reason the second was answerable was that a Component happened to hold it.
+ *
+ * So this is a NAMESPACE the property picker and the interpreter agree on, not a type in
+ * any registry: `component: 'Object'` in a `.px` resolves to the Object rather than to one
+ * of its components. It is of project scope like `'Transform'` — a fixed engine word, not
+ * an identity — so nothing about ADR-0034 invariant 1 changes.
+ *
+ * IT CANNOT BE SHADOWED, and that is a test rather than a hope: no shipped class is called
+ * `Object`, a `.px` is identified by its ResourceId, and `nodes.test.js` fails if a
+ * registered component type ever takes this name.
+ */
+export const OBJECT_COMPONENT = 'Object';
+
+/**
+ * What an Object declares about itself, in the shape a Component's schema has.
+ *
+ * ONE DECLARATION, THREE READERS: the property picker (editor/registry.js), the Inspector's
+ * own header rows (editor/inspector/schema.js) and the interpreter (core/graph/standard.js).
+ * The Inspector used to hand-write this list and the graph could not see it at all, which
+ * is exactly how `active` came to be editable in one place and invisible in the other.
+ *
+ * `lock` AND `owner` ARE ABSENT, DELIBERATELY. `lock` is an editing convenience the
+ * Hierarchy owns and the simulation never reads; `owner` names a player and belongs to the
+ * multiplayer vocabulary, which has no creator-facing story yet. Neither is a property of
+ * the game, so neither is offered as one.
+ */
+const OBJECT_PROPERTIES = globalThis.Object.freeze({
+    name: { type: PropertyType.STRING, default: '' },
+    tag: { type: PropertyType.STRING, default: '' },
+    layer: { type: PropertyType.INT, default: 0 },
+    active: { type: PropertyType.BOOLEAN, default: true }
+});
+
+/**
+ * The Object's own properties, in the shape `declaredProperties()` answers in.
+ *
+ * The id IS the name, like every shipped component: these four are fixed by the engine and
+ * cannot be renamed, so there is no identity a rename could invalidate (ADR-0027 §4).
+ *
+ * @returns {Array<{id: string, name: string, type: string, default: any}>} The descriptors
+ */
+export function objectProperties() {
+    return globalThis.Object.entries(OBJECT_PROPERTIES)
+        .map(([name, descriptor]) => ({ ...descriptor, id: name, name }));
+}
 
 export class Object {
 

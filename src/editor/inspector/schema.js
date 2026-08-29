@@ -23,7 +23,7 @@
 // parseInt, colours guessed from whether a string happens to start with '#', a hard-coded
 // blacklist of field names, and four dead `TODO Range` style branches.
 
-import { PropertyType, componentSchema, elementOf } from '../../core/mod.js';
+import { PropertyType, componentSchema, elementOf, objectProperties } from '../../core/mod.js';
 
 /**
  * Field kinds the Inspector knows how to render.
@@ -173,28 +173,40 @@ export function describeComponent(component) {
 }
 
 /**
+ * What each of the Object's own fields is FOR, in words — the one thing a type cannot say.
+ *
+ * The list and the types come from the Core (`objectProperties()`); this adds the sentence
+ * a creator reads on hover, which is presentation and belongs here.
+ */
+const OBJECT_TOOLTIPS = {
+    tag: 'One free-form tag, used by findByTag()',
+    layer: 'Draw order: higher draws later',
+    // The same value the Hierarchy's eye writes: one flag, two controls, no drift
+    // (ADR-0026 §13).
+    active: 'Simulated and drawn — the Hierarchy eye'
+};
+
+/**
  * Describe the fields of the Object itself, above its components.
  *
- * Fixed and hand-written, unlike a component's: these are the Object's own contract, not
- * user data, so there is nothing to discover and nothing that can drift.
+ * DERIVED FROM THE CORE'S OWN DECLARATION, NOT HAND-WRITTEN A SECOND TIME (ADR-0043). These
+ * four are the Object's contract, and the Core states it — which is what lets the property
+ * picker offer `Object ▸ Layer` to a graph and this panel draw the very same row. Written
+ * out twice, the two would drift the first time a fifth field arrived, and a creator would
+ * meet a property in one place and not the other.
  *
  * `lock` is absent on purpose — the Hierarchy row carries it, where it is one click away
- * for every object at once instead of one at a time. `active` IS here as well as in the
- * row, because they are the same field: the checkbox and the eye read and write one value
- * (ADR-0026 §13). `id` is absent because a creator never needs it and showing it makes the
- * panel look like a debugger.
+ * for every object at once instead of one at a time, and the Core does not declare it as a
+ * property of the game. `id` is absent because a creator never needs it and showing it makes
+ * the panel look like a debugger.
  *
  * @returns {object[]} Field descriptors
  */
 export function objectFields() {
-    return [
-        field('name', { type: FieldKind.STRING }),
-        field('tag', { type: FieldKind.STRING, tooltip: 'One free-form tag, used by findByTag()' }),
-        field('layer', { type: FieldKind.INT, tooltip: 'Draw order: higher draws later' }),
-        // The same value the Hierarchy's eye writes: one flag, two controls, no drift
-        // (ADR-0026 §13).
-        field('active', { type: FieldKind.BOOLEAN, tooltip: 'Simulated and drawn — the Hierarchy eye' })
-    ];
+    return objectProperties().map(property => field(property.name, {
+        ...property,
+        tooltip: OBJECT_TOOLTIPS[property.name] ?? null
+    }));
 }
 
 /**

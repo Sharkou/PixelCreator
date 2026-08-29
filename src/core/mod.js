@@ -46,7 +46,7 @@ export { invert, invertible } from './operations/invert.js';
 export { Operations } from './operations/operations.js';
 export { AllowAllAuthority, PredicateAuthority, allow, deny } from './operations/authority.js';
 
-export { Object } from './object.js';
+export { Object, OBJECT_COMPONENT, objectProperties } from './object.js';
 export { Scene, hierarchyOrder } from './scene.js';
 export {
     ComponentRegistry,

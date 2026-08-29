@@ -655,6 +655,15 @@ export class Inspector extends Element {
         if (this.shadowRoot.childElementCount === 0) {
             this.#body = el('div');
 
+            // A FILE LET GO ANYWHERE ON AN OBJECT'S PANEL ATTACHES WHAT SHOWS IT — the same
+            // sentence a resource dragged out of the Project panel already says here, from
+            // the other transport (ADR-0043 §5). Bound ONCE, on the surface that outlives
+            // every redraw, and it asks which Object it is showing rather than closing over
+            // one: `#componentsZone` is rebuilt on each render, and a listener per render
+            // would stack up one drop per repaint. A row that wants the file stops the event
+            // first, so `source` still assigns rather than attaching a second Sprite.
+            this.#makeDroppable(this.#body, () => this.#componentsZone);
+
             // The same two actions the Hierarchy carries, in the same order and built from
             // the same primitives: find what is already there, then add. A creator who has
             // learned one header has learned both.
@@ -1302,15 +1311,28 @@ export class Inspector extends Element {
      * @param {string} [options.accept] - Mime prefix for files, when the zone narrows it
      */
     #makeDroppable(element, zone, { accept = '' } = {}) {
+        // A ZONE MAY BE A FACT OR A QUESTION. A row's zone is fixed the moment it is drawn;
+        // the panel's own is whichever Object it is showing right now, and the panel outlives
+        // its contents — so the persistent surface asks, and a row still just tells.
+        const zoneOf = () => (typeof zone === 'function' ? zone() : zone);
+
         element.addEventListener('dragover', event => {
-            if (!carriesFiles(event)) return;
+            if (!carriesFiles(event) || !zoneOf()) return;
             event.preventDefault();
+            // THE INNERMOST TARGET CLAIMS THE FILE, and says so alone. The panel itself is a
+            // target now (see `connectedCallback`), so a file held over `source` would light
+            // up the row AND everything behind it — two answers to one question. The drop
+            // already stops here; the mark has to as well.
+            event.stopPropagation();
             event.dataTransfer.dropEffect = 'copy';
             element.classList.add('drop');
         });
         element.addEventListener('dragleave', () => element.classList.remove('drop'));
         element.addEventListener('drop', async event => {
             if (!carriesFiles(event)) return;
+            const landing = zoneOf();
+            if (!landing) return;
+
             event.preventDefault();
             event.stopPropagation();
             element.classList.remove('drop');
@@ -1319,7 +1341,7 @@ export class Inspector extends Element {
             const payload = await readDroppedFiles(event, { accept: wanted });
             if (!payload) return;
 
-            performDrop(payload, zone, this.#dropContext());
+            performDrop(payload, landing, this.#dropContext());
             this.#render();
         });
 

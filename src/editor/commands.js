@@ -392,3 +392,45 @@ function localPlacement(world, parent) {
 
     return parentWorld.invert().multiply(world).decompose();
 }
+
+/**
+ * Point every instance of a Component type at an Object, through one of its sockets.
+ *
+ * THE HALF OF THE GESTURE THAT LIVES IN THE SCENE (ADR-0043). Dropping an Object on a graph
+ * declares an `objectref` INPUT on the `.px` and a node that reads it — and stops there,
+ * because a `.px` is of project scope and an ObjectId is of scene scope (ADR-0034 invariant
+ * 1). What it left the creator to do by hand was the other half: select each Object carrying
+ * the Component and choose the target in the Inspector. Nothing said so, the node looked
+ * finished, and the graph did nothing — the commonest way this feature failed.
+ *
+ * The identity therefore goes where it is already legal: into the VALUE each attached
+ * component holds, in the scene being edited. The `.px` still holds only a socket name, and
+ * the same file dropped into another scene points at nothing until that scene says so.
+ *
+ * ONLY WHERE NOTHING IS SET. A creator who aimed door #3 at a different Player keeps it: a
+ * gesture that names a default must not overwrite an answer somebody already gave.
+ *
+ * @param {object} scene - The scene whose instances are pointed
+ * @param {object} socket - The `objectref` property descriptor, carrying its `name`
+ * @param {object} options - Options
+ * @param {string} options.type - The Component type the socket belongs to
+ * @param {string} options.object - The ObjectId to point at
+ * @param {string} [options.batch] - Groups the writes with the gesture that asked
+ * @param {string} [options.actor] - Who is authoring
+ * @returns {object[]} The components that were pointed
+ */
+export function pointSocketAt(scene, socket, { type, object, batch, actor } = {}) {
+    if (!scene || !socket?.name || !type || !object) return [];
+
+    const pointed = [];
+    for (const candidate of scene.objects()) {
+        const component = candidate.getComponent?.(type) ?? null;
+        // `??` AND NOT `||`: an empty string is not a value this property can hold, but a
+        // falsy value of some other type would be — and only "no answer yet" may be filled.
+        if (!component || (component[socket.name] ?? null) !== null) continue;
+
+        component.setProperty(socket.name, object, { batch, actor });
+        pointed.push(component);
+    }
+    return pointed;
+}

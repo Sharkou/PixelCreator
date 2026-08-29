@@ -11,7 +11,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ComponentRegistry, Transform } from '../core/mod.js';
+import { ComponentRegistry, OBJECT_COMPONENT, Transform } from '../core/mod.js';
 import * as runtime from './mod.js';
 import * as builtins from './builtins.js';
 import { BUILT_IN, registerBuiltIns } from './builtins.js';
@@ -59,4 +59,18 @@ test('the runtime barrel publishes the registrar and NOT the list', () => {
     assert.equal(typeof runtime.registerBuiltIns, 'function');
     assert.equal('BUILT_IN' in runtime, false, 'the ingredient list is not public API');
     assert.equal('BUILT_IN' in builtins, true, 'it stays reachable from the module that owns it');
+});
+
+test('nothing the engine ships is called Object, which is the name the graph reserves', () => {
+    // THE ONE RISK THE `Object` NAMESPACE CARRIES, AND IT IS A TEST RATHER THAN A HOPE
+    // (ADR-0043). `component: 'Object'` in a `.px` resolves to the Object itself, so a
+    // registered class taking that name would silently steal every `Object ▸ Name` in every
+    // graph. A `.px` is named by its own ResourceId and can never claim it; a shipped class
+    // could, and this is what says it may not.
+    const registry = new ComponentRegistry();
+    registerBuiltIns(registry);
+
+    assert.equal(registry.has(OBJECT_COMPONENT), false,
+        `a shipped Component is registered as "${OBJECT_COMPONENT}"`);
+    assert.ok(registry.types().length > 0, 'and the registry really was filled');
 });

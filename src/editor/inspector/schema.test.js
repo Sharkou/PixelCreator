@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Transform, defineComponent } from '../../core/mod.js';
 import { Camera, RectangleRenderer } from '../../runtime/mod.js';
-import { PropertyType, propertyTypes } from '../../core/mod.js';
+import { PropertyType, objectProperties, propertyTypes } from '../../core/mod.js';
 import {
     FieldKind,
     fieldFor,
@@ -530,3 +530,15 @@ test('a list declared read-only stays read-only, whatever its elements say', () 
     assert.equal(descriptor.readonly, true, 'the flag survives');
 });
 
+
+test('the Object rows come from the Core, so the panel and the graph cannot disagree', () => {
+    // ONE DECLARATION, TWO READERS (ADR-0043). This panel used to hand-write the four; the
+    // graph's picker could not see them at all, and the day a fifth arrived only one of the
+    // two would have grown it.
+    const rows = objectFields();
+
+    assert.deepEqual(rows.map(field => field.name), objectProperties().map(property => property.name));
+    assert.deepEqual(rows.map(field => field.kind),
+        [FieldKind.STRING, FieldKind.STRING, FieldKind.INT, FieldKind.BOOLEAN]);
+    assert.ok(rows.find(field => field.name === 'layer').tooltip, 'and each still says what it is for');
+});

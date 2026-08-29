@@ -55,6 +55,7 @@ import { isEditing } from '../ui/focus.js';
 import { describeNode, inputFields, paramWrites } from '../inspector/node.js';
 import { DropZone } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
+import { pointSocketAt } from '../commands.js';
 import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
 import '../ui/field.js';
 import {
@@ -442,6 +443,7 @@ export class GraphWindow extends Element {
     #definition = null;
     #components = null;
     #project = null;
+    #scene = null;
     #framed = null;
     #svg = null;
     #content = null;
@@ -487,11 +489,15 @@ export class GraphWindow extends Element {
      *   resolved against. A ResourceId is of PROJECT scope like the `.px` itself (ADR-0020),
      *   so a node may hold one — but an identity is unreadable, and the control that shows
      *   what it points at needs the manifest to say so (`ui/resource-field.js`).
+     * @param {object} [options.scene] - The scene being edited, so a drop that names an
+     *   Object can put that identity where it is legal: in the value each attached component
+     *   holds (ADR-0043). Nothing of the scene is ever read INTO the `.px`.
      * @returns {GraphWindow} This element
      */
-    bind(definition, { components = null, project = null } = {}) {
+    bind(definition, { components = null, project = null, scene = null } = {}) {
         this.#components = components;
         this.#project = project;
+        this.#scene = scene;
         if (this.#definition === definition) return this;
 
         this.release('graph');
@@ -650,7 +656,7 @@ export class GraphWindow extends Element {
      * WHAT ENTERS THE `.px` IS A NAME. The `ObjectId` reaches this method and stops here — it
      * is what the Inspector was showing, not what the file records (ADR-0034 invariant 1).
      *
-     * @param {{name: string}} object - The Object the socket stands for
+     * @param {{id: string, name: string}} object - The Object the socket stands for
      * @param {object} [options] - `{ batch }`, so the socket joins the gesture that asked
      * @returns {object|null} The socket's descriptor
      */
@@ -661,9 +667,34 @@ export class GraphWindow extends Element {
         const name = object?.name || 'Object';
         const existing = definition.properties()
             .find(property => property.type === PropertyType.OBJECTREF && property.name === name);
-        if (existing) return existing;
+        const socket = existing
+            ?? definition.addProperty({ name, type: PropertyType.OBJECTREF }, { batch });
 
-        return definition.addProperty({ name, type: PropertyType.OBJECTREF }, { batch });
+        this.#pointInstancesAt(socket, object?.id ?? null, batch);
+        return socket;
+    }
+
+    /**
+     * Put the ObjectId the gesture named into the scene, where it is legal (ADR-0043).
+     *
+     * THE `.px` GETS A NAME, THE SCENE GETS THE IDENTITY — the split ADR-0034 §3.5 already
+     * draws, performed by one gesture instead of by a gesture and then a hunt. Without this,
+     * declaring the socket was all a drop did: the node read `Player`, every instance held
+     * `null`, and the graph moved nothing.
+     *
+     * TWO RESOURCES, TWO UNDO STACKS, and that is stated rather than hidden (ADR-0024,
+     * ADR-0041 §6.2): `Ctrl Z` on the canvas takes the socket and its node back, and the
+     * values the scene gained are undone on the scene's own stack. It is the shape the file
+     * drop already has, and the least surprising of the two — a scene keeps pointing at the
+     * Object a creator picked even when they change their mind about the node.
+     *
+     * @param {object|null} socket - The `objectref` descriptor
+     * @param {string|null} id - The ObjectId, when the gesture named one
+     * @param {string} [batch] - Groups the scene's writes with each other
+     */
+    #pointInstancesAt(socket, id, batch) {
+        if (!socket || !id || !this.#scene || !this.#definition?.type) return;
+        pointSocketAt(this.#scene, socket, { type: this.#definition.type, object: id, batch });
     }
 
     /**
@@ -706,6 +737,10 @@ export class GraphWindow extends Element {
             x: spot.x,
             y: spot.y
         }, { batch });
+
+        // AND THE SCENE LEARNS WHICH OBJECT IT IS, so the gesture produces a graph that runs
+        // rather than one that is merely wired (ADR-0043).
+        this.#pointInstancesAt(property, payload.id ?? null, batch);
 
         if (node) this.#select(node.id);
         return { property, node };
@@ -1483,9 +1518,15 @@ export class GraphWindow extends Element {
 
         // The tooltip falls back to the port's identity when the label was left blank on
         // purpose: a hidden label is a drawing decision, not a port without a name.
+        //
+        // AND THE PORT MAY SAY WHAT IT MEANS. `Pressed`, `Released` and `Is Down` are the
+        // three words a creator has to tell apart before their first jump works, and the
+        // catalogue is where that sentence belongs — not in a window that would then own an
+        // opinion about what a node's ports are for (ADR-0041 §3).
         const named = placed.port.label || humanise(placed.port.id);
+        const typed = `${named}${placed.port.kind === 'flow' ? '' : ` (${placed.port.type})`}`;
         shape.append(svg('title', {}, document.createTextNode(
-            `${named}${placed.port.kind === 'flow' ? '' : ` (${placed.port.type})`}`
+            placed.port.tooltip ? `${typed} — ${placed.port.tooltip}` : typed
         )));
 
         const text = silent ? null : svg('text', {
@@ -1638,7 +1679,7 @@ export class GraphWindow extends Element {
             //
             // ADDING TO A SELECTION IS A MODIFIER, and Shift is the one that means "and
             // also" everywhere else in this Editor's lists.
-            if (event.shiftKey) this.#toggle(hit.node.id);
+            if (adding(event)) this.#toggle(hit.node.id);
             else if (!this.#chosen.has(hit.node.id)) this.#select(hit.node.id);
 
             const carried = new globalThis.Set(this.#chosen);
@@ -1683,7 +1724,7 @@ export class GraphWindow extends Element {
             // WHAT THE BAND ADDS TO. Shift keeps what was selected and adds; without it the
             // band IS the selection. Held for the whole gesture rather than read at the drop,
             // so releasing Shift mid-sweep does not silently change what the band means.
-            base: event.shiftKey ? new globalThis.Set(this.#chosen) : new globalThis.Set()
+            base: adding(event) ? new globalThis.Set(this.#chosen) : new globalThis.Set()
         };
         capture(this.#svg, event.pointerId);
     }
@@ -1831,7 +1872,7 @@ export class GraphWindow extends Element {
             // A PRESS THAT NEVER TRAVELLED IS THE CLICK IT ALWAYS WAS. Deselect, unless the
             // creator was holding the modifier that means "and also" — which would then have
             // thrown away the selection they were adding to.
-            if (!drag.moved && !event.shiftKey) this.#select(null);
+            if (!drag.moved && !adding(event)) this.#select(null);
             this.#cancelDrag(event.pointerId);
             return;
         }
@@ -1967,8 +2008,18 @@ export class GraphWindow extends Element {
 
     #onKeyDown = event => {
         if (!this.isConnected || this.hidden || !this.#definition || this.#chosen.size === 0) return;
-        if (event.key !== 'Delete' && event.key !== 'Backspace') return;
         if (isEditing()) return;
+
+        // ESCAPE LETS GO, and it is the one key a creator already tries. A band swept a
+        // little too wide is undone by pressing it rather than by hunting for empty canvas —
+        // which, on a graph that fills the view, may not be reachable without panning first.
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            this.#select(null);
+            return;
+        }
+
+        if (event.key !== 'Delete' && event.key !== 'Backspace') return;
 
         event.preventDefault();
         const removed = [...this.#chosen];
@@ -2273,6 +2324,21 @@ function humanise(id) {
     return globalThis.String(id ?? '')
         .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
         .replace(/^./, first => first.toUpperCase());
+}
+
+/**
+ * Whether this gesture means "and also" rather than "instead".
+ *
+ * THREE KEYS FOR ONE IDEA, because three platforms spell it differently and a creator
+ * should not have to know which one this Editor picked. Shift is the list convention every
+ * panel here already uses; Ctrl is what a Windows and Linux hand reaches for; Cmd is what a
+ * Mac hand reaches for, and reading `metaKey` costs nothing.
+ *
+ * @param {PointerEvent} event - The gesture
+ * @returns {boolean} True when the selection is being added to
+ */
+function adding(event) {
+    return Boolean(event.shiftKey || event.ctrlKey || event.metaKey);
 }
 
 /**

@@ -17,7 +17,7 @@
 // and grouping is the whole of the change. It does NOT say an Object has one renderer:
 // several renderers on one Object still work and still all draw.
 
-import { componentDefinition, declaredProperties } from '../core/mod.js';
+import { OBJECT_COMPONENT, componentDefinition, declaredProperties, objectProperties } from '../core/mod.js';
 import { baseNameOf } from '../project/mod.js';
 import { registerBuiltIns } from '../runtime/mod.js';
 
@@ -118,11 +118,24 @@ function resourceName(type, project) {
  * @returns {Array<{type: string, label: string, properties: object[]}>} The catalogue
  */
 export function componentCatalogue(registry = defaultRegistry, { project = null } = {}) {
-    return registry.types().map(type => ({
-        type,
-        label: describeType(type, registry, { project }).label,
-        properties: declaredProperties(registry.get(type))
-    }));
+    return [
+        // THE OBJECT ITSELF, FIRST, AND IT IS NOT IN THE REGISTRY (ADR-0043). `name`, `tag`,
+        // `layer` and `active` belong to the Object rather than to any component, so nothing
+        // registers them and the property picker could not see them at all — the four fields
+        // a beginner meets FIRST, in the Inspector's own header, were the four a graph could
+        // not touch. It leads the list because it is the outermost thing a creator points at:
+        // `Object ▸ Name`, then `Transform ▸ X`, then whatever the object is made of.
+        //
+        // IT IS A CATALOGUE ENTRY AND NEVER A REGISTRY ONE, which is what keeps it out of Add
+        // Component: `availableComponents()` reads the registry, and an Object is not
+        // something you can give to an Object.
+        { type: OBJECT_COMPONENT, label: OBJECT_COMPONENT, properties: objectProperties() },
+        ...registry.types().map(type => ({
+            type,
+            label: describeType(type, registry, { project }).label,
+            properties: declaredProperties(registry.get(type))
+        }))
+    ];
 }
 
 /**

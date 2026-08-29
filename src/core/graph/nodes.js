@@ -210,7 +210,12 @@ export function createPort(port) {
         type: kind === PortKind.FLOW ? null : port.type ?? ANY_TYPE,
         label: port.label ?? humanisePort(port.id),
         default: port.default ?? null,
-        placeholder: port.placeholder ?? null
+        placeholder: port.placeholder ?? null,
+        // WHAT THE PORT MEANS, WHEN ITS NAME CANNOT SAY IT. `Pressed`, `Released` and
+        // `Is Down` are three words a creator has to tell apart before their first jump
+        // works, and no amount of shortening the labels teaches the difference — a sentence
+        // does (ADR-0041 §3). Optional, so every port that reads for itself declares none.
+        tooltip: port.tooltip ?? null
     });
 }
 

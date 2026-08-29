@@ -2176,3 +2176,106 @@ test('the same pointer script replayed reaches the same state, twice', () => {
     assert.deepEqual(first, run());
     assert.ok(first.some(([, presses]) => presses > 0), 'and the clicks actually did something');
 });
+
+/** A registry holding the shipped types plus the `.px` under test. */
+function componentsFor(file) {
+    const types = new ComponentRegistry();
+    types.register(Transform);
+    types.register(defineComponent(file.model.serialize()));
+    return types;
+}
+
+// --- Translate: one node where the creator had written a subtraction (ADR-0043) -----------
+
+test('Translate moves relative to where the object already is', () => {
+    const file = px();
+    const start = file.node('event.start');
+    const move = file.node('transform.translate');
+    file.wire([start, 'out'], [move, 'in']);
+    file.model.graph.setInput(move.id, 'x', 4);
+    file.model.graph.setInput(move.id, 'y', -2);
+
+    const { object, behavior } = behaviourFor(file.model);
+    object.addComponent(new Transform());
+    object.getComponent('Transform').x = 100;
+
+    behavior.update(object, {});
+
+    assert.equal(object.getComponent('Transform').x, 104, 'added, not assigned');
+    assert.equal(object.getComponent('Transform').y, -2);
+});
+
+test('Translate run twice moves twice, which is what makes it not Set Position', () => {
+    const file = px();
+    const tick = file.node('event.update');
+    const move = file.node('transform.translate');
+    file.wire([tick, 'out'], [move, 'in']);
+    file.model.graph.setInput(move.id, 'x', 5);
+
+    const { object, behavior } = behaviourFor(file.model);
+    object.addComponent(new Transform());
+
+    behavior.update(object, {});
+    behavior.update(object, {});
+    behavior.update(object, {});
+
+    assert.equal(object.getComponent('Transform').x, 15);
+});
+
+test('Translate on an Object with no Transform does nothing, and says nothing', () => {
+    // A state of the scene, not an authoring fault (ADR-0034 §3.4): the flow carries on.
+    const file = px();
+    const tick = file.node('event.update');
+    const move = file.node('transform.translate');
+    const flag = file.property({ name: 'ran', type: PropertyType.BOOLEAN, default: false });
+    const after = file.node('property.set', { property: flag.id });
+    const yes = file.node('value.boolean', { value: true });
+    file.wire([tick, 'out'], [move, 'in']);
+    file.wire([move, 'out'], [after, 'in']);
+    file.wire([yes, 'value'], [after, 'value']);
+
+    const { object, component, behavior } = behaviourFor(file.model);
+
+    assert.doesNotThrow(() => behavior.update(object, {}));
+    assert.equal(component.ran, true, 'and the node after it still ran');
+});
+
+test('Translate is one node where Get, Add and Set were three', () => {
+    // THE MEASURE THAT JUSTIFIES THE ROW (ADR-0040): the same sentence, written both ways,
+    // reaching the same state.
+    const byHand = px();
+    const tickA = byHand.node('event.update');
+    const read = byHand.node('property.get', { component: 'Transform', property: 'x' });
+    const add = byHand.node('math.add');
+    const write = byHand.node('property.set', { component: 'Transform', property: 'x' });
+    const step = byHand.node('value.number', { value: 3 });
+    byHand.wire([tickA, 'out'], [write, 'in']);
+    byHand.wire([read, 'value'], [add, 'a']);
+    byHand.wire([step, 'value'], [add, 'b']);
+    byHand.wire([add, 'result'], [write, 'value']);
+
+    const shorthand = px();
+    const tickB = shorthand.node('event.update');
+    const move = shorthand.node('transform.translate');
+    shorthand.wire([tickB, 'out'], [move, 'in']);
+    shorthand.model.graph.setInput(move.id, 'x', 3);
+
+    assert.equal(byHand.model.graph.nodes().length, 5);
+    assert.equal(shorthand.model.graph.nodes().length, 2);
+
+    const results = [byHand, shorthand].map(file => {
+        const scene = new Scene('L', { registry: componentsFor(file) });
+        const object = scene.add(new SceneObject('Hero'));
+        object.addComponent(new Transform());
+        const payload = file.model.serialize();
+        object.addComponent(new (defineComponent(payload))());
+        const behaviors = new Behaviors(createGraphInterpreter({ registry }));
+        behaviors.bind(payload.type, payload.graph);
+        const runtime = new Runtime(scene, { behaviors });
+        runtime.step();
+        runtime.step();
+        return object.getComponent('Transform').x;
+    });
+
+    assert.deepEqual(results, [6, 6], 'two ways to say it, one result');
+});

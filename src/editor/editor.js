@@ -466,7 +466,7 @@ export function start(mount = document.body) {
     // the Timeline sits under that row — which is why the Project stops at the seam when
     // the Timeline is open and reaches the floor when it is closed, with no rule saying so.
     // That is L4 exactly as D8 settled it (design/README.md).
-    const docs = documentArea({ workspace, viewport });
+    const docs = documentArea({ workspace, viewport, scene });
 
     const stack = el('div', { class: 'stack' },
         el('div', { class: 'work' }, columnLeft, leftSplit, docs.element),
@@ -1180,10 +1180,12 @@ function bindShortcuts({ scene, selection, subject, viewport, history, workspace
  * exists whether or not anything is open, and because the shell has already given it its
  * tools and its runtime.
  *
- * @param {object} context - The workspace and the Scene's surface
+ * @param {object} context - The workspace, the Scene's surface, and the Scene itself — the
+ *   last of them for one write and one only: an Object dropped on a canvas points this
+ *   scene's instances at it (ADR-0043).
  * @returns {object} `{ element, graph, sync }`
  */
-function documentArea({ workspace, viewport }) {
+function documentArea({ workspace, viewport, scene }) {
     const tabs = el('div', { class: 'stage-tabs', role: 'tablist' });
     const body = el('div', { class: 'stage-body' }, viewport);
     const element = el('div', { class: 'stage' }, tabs, body);
@@ -1216,7 +1218,11 @@ function documentArea({ workspace, viewport }) {
                 components: () => componentCatalogue(components, { project: workspace.project }),
                 // A ResourceId is of project scope like the `.px` itself, so a node may hold
                 // one — and the control that shows WHICH resource needs the manifest.
-                project: workspace.project
+                project: workspace.project,
+                // AND THE SCENE, FOR ONE WRITE AND ONE ONLY: an Object dropped on the canvas
+                // declares a socket in the `.px` and points this scene's instances at that
+                // Object (ADR-0043). Nothing of the scene is ever read into the file.
+                scene
             });
         }
         return canvas;

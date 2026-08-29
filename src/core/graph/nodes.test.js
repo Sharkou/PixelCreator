@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { PropertyType, propertyTypes } from '../properties/types.js';
 import { ComponentRegistry } from '../component.js';
 import { declaredProperties, defineComponent } from '../definition.js';
-import { Object as SceneObject } from '../object.js';
+import { OBJECT_COMPONENT, Object as SceneObject, objectProperties } from '../object.js';
 import { Scene } from '../scene.js';
 import {
     ANY_TYPE,
@@ -1030,5 +1030,42 @@ test('no node type in the catalogue can rename itself', () => {
         assert.ok(definition.label.length > 0, `${definition.type} is named with nothing`);
         assert.equal('title' in definition, false,
             `${definition.type} declares a title, which is a name that moves`);
+    }
+});
+
+// --- the Object's own properties are a namespace, not a Component (ADR-0043) --------------
+
+test('the Object declares exactly the four fields a creator meets in the Inspector', () => {
+    const declared = objectProperties();
+
+    assert.deepEqual(declared.map(property => property.name), ['name', 'tag', 'layer', 'active']);
+    // The id IS the name: these are fixed by the engine, so there is no rename to survive.
+    assert.ok(declared.every(property => property.id === property.name));
+    assert.ok(declared.every(property => propertyTypes().includes(property.type)),
+        'every one of them is a shape the Core already knows how to store and validate');
+});
+
+test('a port may carry a sentence, and one that declares none carries null', () => {
+    // `Pressed`, `Released` and `Is Down` are three words a beginner has to tell apart, and
+    // no shortening of the labels teaches the difference (ADR-0041 §3).
+    const explained = createPort({ id: 'pressed', kind: PortKind.FLOW, label: 'Pressed', tooltip: 'Once, on the way down' });
+    const plain = createPort({ id: 'value', type: PropertyType.NUMBER });
+
+    assert.equal(explained.tooltip, 'Once, on the way down');
+    assert.equal(plain.tooltip, null);
+});
+
+test('the input nodes say what each of their ports means', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    for (const [type, portId] of [
+        ['input.onKey', 'pressed'], ['input.onKey', 'released'],
+        ['input.onPointerButton', 'pressed'], ['input.onPointerButton', 'released'],
+        ['input.key', 'held'], ['input.pointerButton', 'held']
+    ]) {
+        const definition = registry.get(type);
+        const port = portsOf(definition, { id: 'n', type, params: {} }, {})
+            .outputs.find(entry => entry.id === portId);
+        assert.ok(port?.tooltip, `${type} ▸ ${portId} explains itself nowhere`);
     }
 });

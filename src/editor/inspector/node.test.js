@@ -11,6 +11,8 @@ import {
     GraphSeverity,
     portsOf
 } from '../../core/mod.js';
+import { ComponentRegistry, Transform } from '../../core/mod.js';
+import { componentCatalogue } from '../registry.js';
 import { FieldKind } from './schema.js';
 import { CHOOSE_PROPERTY, NOTHING_SELECTED, PATH_ARROW, describeNode, inputFields, joinPath, paramFields, paramWrites, splitPath } from './node.js';
 
@@ -408,4 +410,35 @@ test('a parameterised port reaches the control mapping as the type it is a param
         assert.equal(value.port, 'value');
         assert.equal(value.kind, FieldKind.READONLY, `${property.type} drew a control it cannot fill`);
     }
+});
+
+// --- the Object's own properties, offered like any other (ADR-0043) ----------------------
+
+test('the property picker leads with the Object, and its four fields read as a group', () => {
+    // THE FOUR A BEGINNER MEETS FIRST — the rows at the top of the Inspector — were the four
+    // a graph could not touch, because nothing registers them as a Component.
+    const types = new ComponentRegistry();
+    types.register(Transform);
+    const catalogue = componentCatalogue(types);
+
+    const field = fieldNamed(describeNode(node('property.set'), { registry, components: catalogue }), 'property');
+    const shown = field.values.map((value, at) => ({
+        group: field.groups[at],
+        label: field.labels[at],
+        path: field.paths[at]
+    }));
+    const own = shown.filter(entry => entry.group === 'Object');
+
+    assert.deepEqual(own.map(entry => entry.label), ['name', 'tag', 'layer', 'active']);
+    assert.equal(own[0].path, `Object ${PATH_ARROW} name`, 'read with its context, like any other');
+    assert.equal(shown[0].group, 'Object', 'the outermost thing a creator points at comes first');
+    assert.ok(shown.some(entry => entry.group === 'Transform'), 'and the real Components follow');
+});
+
+test('choosing an Object field stores the namespace and the field, like any other pair', () => {
+    const definition = registry.get('property.set');
+    const writes = paramWrites(definition, node('property.set'), 'property',
+        joinPath('Object', 'active'), { properties: [], components });
+
+    assert.deepEqual(writes, [{ name: 'component', value: 'Object' }, { name: 'property', value: 'active' }]);
 });

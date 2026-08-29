@@ -3,6 +3,7 @@
 - **Statut :** **accepté** (2026-08-22)
 - **Amendé par :** ADR-0039 (2026-08-27) — §2.4 (un dépôt produit un nœud fini), §2.3 (la Resource est déposable)
 - **Amendé par :** ADR-0040 (2026-08-28) — §2.4 : le dépôt d'un **Component** dans un graphe est retiré ; un Component a une signification, et elle est de se donner à un Object
+- **Amendé par :** ADR-0043 (2026-08-29) — §2.4 : le dépôt d'un **Object** n'écrit plus seulement dans le `.px`. Il déclare toujours la prise `objectref` — aucune identité de scène n'entre dans le fichier — et il pointe en plus les exemplaires de la scène ouverte sur cet Object, là où rien n'est encore répondu. La phrase « une seule ressource est écrite » servait à écarter la question d'annulation inter-ressources, qui a depuis reçu sa réponse (ADR-0041 §6.2)
 - **Décide :** ce qu'un glisser-déposer venu de l'Editor peut faire dans un graphe `.px`
 - **Dépend de :** ADR-0010 (identité par ID), ADR-0016 / ADR-0026 (un `.px` est **une** ressource), ADR-0021 (identité de Component), ADR-0023 (`PropertyType`), ADR-0024 (undo par ressource), ADR-0027 (modèle de graphe), ADR-0034 (références d'Object), ADR-0036 (frontière `objectref` ↔ `object`)
 - **Amende :** ADR-0027 §11 ; ADR-0034 §3.7 (ligne *Object*) et son tableau « ne décide pas »

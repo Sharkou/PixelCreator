@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ComponentRegistry, Scene, Transform, defineComponent } from '../core/mod.js';
+import { ComponentRegistry, Object as SceneObject, PropertyType, Scene, Transform, defineComponent } from '../core/mod.js';
 import { RectangleRenderer } from '../runtime/mod.js';
 import { Project, ResourceKind } from '../project/mod.js';
 import { createResourceOfKind } from './project/commands.js';
 import { describeType, groupTypes, registerBuiltIns } from './registry.js';
 import { Selection } from './selection.js';
-import { addComponent, availableComponents, createObject, deleteObject, removeComponent, uniqueName } from './commands.js';
+import { addComponent, availableComponents, createObject, deleteObject, pointSocketAt, removeComponent, uniqueName } from './commands.js';
 
 function registry() {
     return registerBuiltIns(new ComponentRegistry());
@@ -227,4 +227,101 @@ test('a shipped type is unaffected by any of it', () => {
     assert.equal(describeType('RectangleRenderer', known, { project }).label, 'Rectangle');
     assert.equal(describeType('Transform', known, { project }).label, 'Transform');
     assert.equal(describeType('Transform', known).label, 'Transform', 'and with no project at all');
+});
+
+/** A scene with two objects carrying one `.px`, and a Crate for them to point at. */
+function socketScene() {
+    const type = 'res_door';
+    const payload = {
+        type,
+        label: 'Door',
+        properties: { target: { id: 'p_target', type: PropertyType.OBJECTREF, default: null } },
+        graph: { version: 1, nodes: [], connections: [] }
+    };
+    const Door = defineComponent(payload);
+
+    const registry = new ComponentRegistry();
+    registry.register(Transform);
+    registry.register(Door);
+
+    const scene = new Scene('Level', { registry });
+    const submitted = [];
+    scene.operations.on('operation', operation => submitted.push(operation));
+
+    const make = name => {
+        const object = scene.add(new SceneObject(name));
+        object.addComponent(new Transform());
+        return object;
+    };
+
+    const doorA = make('Door A');
+    const doorB = make('Door B');
+    doorA.addComponent(new Door());
+    doorB.addComponent(new Door());
+    const crate = make('Crate');
+    const other = make('Other');
+
+    return {
+        scene, type, doorA, doorB, crate, other, submitted,
+        socket: { id: 'p_target', name: 'target', type: PropertyType.OBJECTREF }
+    };
+}
+
+// --- pointing a `.px`'s Object socket at a scene Object (ADR-0043) ------------------------
+
+test('pointing a socket fills every instance that has no answer yet', () => {
+    const it = socketScene();
+
+    const pointed = pointSocketAt(it.scene, it.socket, { type: it.type, object: it.crate.id });
+
+    assert.equal(pointed.length, 2, 'both doors were given the Crate');
+    assert.equal(it.doorA.getComponent(it.type).target, it.crate.id);
+    assert.equal(it.doorB.getComponent(it.type).target, it.crate.id);
+});
+
+test('an answer a creator already gave is never overwritten', () => {
+    // A GESTURE THAT NAMES A DEFAULT MUST NOT UNDO A DECISION. Door B was aimed somewhere
+    // else by hand; the drop fills the empty one and leaves the other exactly as it is.
+    const it = socketScene();
+    it.doorB.getComponent(it.type).target = it.other.id;
+
+    const pointed = pointSocketAt(it.scene, it.socket, { type: it.type, object: it.crate.id });
+
+    assert.equal(pointed.length, 1);
+    assert.equal(it.doorA.getComponent(it.type).target, it.crate.id);
+    assert.equal(it.doorB.getComponent(it.type).target, it.other.id, 'left alone');
+});
+
+test('objects that do not carry the Component are not touched', () => {
+    const it = socketScene();
+
+    pointSocketAt(it.scene, it.socket, { type: it.type, object: it.crate.id });
+
+    assert.ok(!it.crate.getComponent(it.type), 'the Crate carries no Door');
+    assert.equal(Reflect.has(it.crate, 'target'), false, 'nothing was written onto a stranger');
+});
+
+test('a gesture that names no Object writes nothing at all', () => {
+    // THE COMMON CASE OF THE SECOND HALF: `Get Property` declares a socket as a MEANS, and
+    // the payload it came from may carry no identity. Nothing to point at, nothing written.
+    const it = socketScene();
+
+    assert.deepEqual(pointSocketAt(it.scene, it.socket, { type: it.type, object: null }), []);
+    assert.deepEqual(pointSocketAt(null, it.socket, { type: it.type, object: it.crate.id }), []);
+    assert.deepEqual(pointSocketAt(it.scene, null, { type: it.type, object: it.crate.id }), []);
+    assert.equal(it.doorA.getComponent(it.type).target, null);
+});
+
+test('the writes are authored, so one gesture is one undo on the scene', () => {
+    const it = socketScene();
+    const batch = 'one-gesture';
+
+    pointSocketAt(it.scene, it.socket, { type: it.type, object: it.crate.id, batch });
+
+    // AUTHORED, NOT PLAIN. A plain write would reach the value and never the history, so
+    // the scene half of the gesture could not be taken back — and the `.px` half can
+    // (ADR-0024). What this asserts is that they went through the pipeline at all.
+    const writes = it.submitted.filter(operation => operation.prop === 'target');
+    assert.equal(writes.length, 2, 'two instances, two authored writes');
+    assert.ok(writes.every(operation => operation.batch === batch), 'under one batch');
 });
