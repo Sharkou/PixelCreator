@@ -3,6 +3,7 @@
 - **Statut :** **accepté** (2026-08-28)
 - **Décide :** ce qu'est un nœud d'entrée clavier/souris ; comment un nœud d'entrée dit quels flux il déclenche ; comment une propriété choisie se lit une fois choisie
 - **Dépend de :** ADR-0011 (déterminisme), ADR-0014 (l'input est passé, jamais lu), ADR-0027 (modèle de graphe), ADR-0033 (rangées), ADR-0040 (un nœud par intention)
+- **Amendé par :** ADR-0045 (2026-08-29) — §3.2 : un événement d'entrée continu existe, sous un nom qui le distingue (`Key Down`, `Pointer Button Down`), ce que l'objection de lisibilité demandait sans le dire. §6.1 : un Component peut de nouveau être lâché sur un nœud qui en nomme un. §2 : le chemin fusionné redevient deux lignes, `Component` puis `Property`.
 - **Amende :** ADR-0014 §5 (les trois questions ne sont plus un seul nœud) ; ADR-0040 §2 (le Component redevient visible — comme contexte, pas comme question)
 - **Ne décide pas :** la mise en mémoire tampon des transitions d'input — voir §3.4
 

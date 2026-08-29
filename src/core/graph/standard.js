@@ -220,40 +220,41 @@ const BUTTON_LABELS = ['Left', 'Middle', 'Right'];
 const DEFAULT_BUTTON = 'left';
 
 /**
- * WHICH PROPERTY, AS ONE QUESTION — stored as two identities, asked as one.
+ * WHICH PROPERTY, AS TWO QUESTIONS — because one of them was answered by a list of eighty.
  *
- * A creator wants "the Player's rotation". The engine needs to know that rotation belongs to
- * Transform, and it stores that: `component` names the type, `property` names the field, both
- * of PROJECT scope (ADR-0027 §4). What changed is that they are no longer TWO CONTROLS. A
- * creator met `Component [ Transform ]` above `Property [ Rotation ]` and had to know that a
- * Component is a thing an Object is made of before they could read a number — an abstraction
- * of the engine, standing between them and their intention (ADR-0040 §2).
+ * ADR-0040 §2 merged them into one grouped picker, and it was right about the reason: a
+ * creator wants "the Player's rotation" and should not have to know that rotation lives in
+ * a Component before they can reach it. What it could not know is what the merged list
+ * becomes on a real project — ADR-0040 §8 wrote the risk down itself: "la liste de
+ * propriétés est plus longue : elle contient tous les Components du projet". Measured, it
+ * is: six shipped types plus every `.px`, in one scroll, to reach `x`.
  *
- * The Editor offers one grouped picker (`Transform ▸ Rotation`) and writes both. The Core
- * stores what it always stored, so nothing on disk changes and no graph needs migrating.
+ * So the Component is a question again — but a question with an ANSWER ALREADY GIVEN. It
+ * defaults to this Component, it is never empty, and picking one narrows the list below it
+ * from eighty rows to four. That is the difference from what ADR-0040 removed: the old
+ * control demanded an answer before it would show anything, and this one is already
+ * answered and merely refines (ADR-0045 §1).
  *
- * `component` ABSENT MEANS THIS COMPONENT — the `.px` being edited, whose properties are the
- * fields a creator declared on it. That is what `Get Property` always read, and it is now one
- * group in the same list rather than a second node.
+ * `component` ABSENT STILL MEANS THIS COMPONENT, so nothing on disk changes and no graph
+ * needs migrating — the storage ADR-0040 §2 settled is untouched.
  */
 const propertyPathParam = {
     component: {
         type: PropertyType.STRING,
         default: null,
-        // NO LABEL AND NO ROW OF ITS OWN: it is written by the picker below, never shown.
-        // A param the creator never meets is a param that does not need a name in the UI.
-        hidden: true,
+        label: 'Component',
         reference: COMPONENT_REFERENCE,
-        tooltip: 'The Component type declaring the property, by identity'
+        tooltip: 'Which Component the property belongs to. Empty means this one'
     },
     property: {
         type: PropertyType.STRING,
         default: null,
         label: 'Property',
         reference: PROPERTY_REFERENCE,
-        // ONE CONTROL WRITES BOTH. The value a creator picks carries the pair; the Editor
-        // splits it (`paramWrites`, editor/inspector/node.js).
-        compound: ['component', 'property'],
+        // WHICH PROPERTIES ARE OFFERED DEPENDS ON THE ANSWER ABOVE, and saying so is what
+        // lets the Editor drop a property that the new Component does not declare — in the
+        // same batch, so one `Ctrl Z` puts both back (`paramWrites`).
+        dependsOn: COMPONENT_REFERENCE,
         tooltip: 'Which property this node reads or writes'
     }
 };
@@ -578,7 +579,7 @@ export const STANDARD_NODES = [
     {
         type: 'input.onKey',
         label: 'On Key',
-        category: 'Events',
+        category: 'Input',
         keywords: ['input', 'keyboard', 'key', 'press', 'pressed', 'released', 'when', 'event'],
         event: 'update',
         params: {
@@ -612,6 +613,50 @@ export const STANDARD_NODES = [
             return fired;
         },
         tooltip: 'Runs when this key goes down, and when it comes back up'
+    },
+
+    {
+        // A THIRD MOMENT, AND IT IS THE ONE A BEGINNER WRITES FIRST (ADR-0045 §4).
+        //
+        // "Tant que je tiens Droite, avance" cost `On Update` + `Key Is Down` + `Branch`
+        // before this node: three cards and two wires, and the middle one asks a creator to
+        // have understood that a keypress is a value tested every frame rather than a thing
+        // that happens. ADR-0041 §3.2 refused exactly this node, and its reason was sound —
+        // "un nœud qui se déclenche soixante fois par seconde en ressemblant exactement à
+        // celui qui se déclenche une fois". What answers it is not a weaker argument, it is
+        // a different NAME: `On Key` is a moment and says `On`, this is a state and says
+        // `Down`, and the two are separate cards a creator picks between by reading them.
+        //
+        // `Key Is Down` STAYS, AND IS NOT REDUNDANT. A flow says WHEN to act; a boolean is
+        // something to ASK inside a condition — "jump only if grounded AND Space is down" is
+        // unwritable with a flow. Two models, two uses, and neither replaces the other.
+        type: 'input.keyDown',
+        label: 'Key Down',
+        category: 'Input',
+        keywords: ['input', 'keyboard', 'key', 'hold', 'held', 'while', 'down', 'continuous', 'event'],
+        event: 'update',
+        params: {
+            key: {
+                type: PropertyType.STRING,
+                default: DEFAULT_KEY,
+                label: 'Key',
+                reference: KEY_REFERENCE,
+                tooltip: 'The key this node watches'
+            }
+        },
+        outputs: [flow('down', 'Down',
+            'Runs on EVERY step the key is held — sixty times a second, not once')],
+        // THE SEMANTICS, EXACTLY: it fires on every step for which `isDown` is true,
+        // starting with the step the key goes down and ending with the step before it comes
+        // up. Not "after a delay", not "on repeat" — the state of the key, once per step,
+        // which is the only definition that stays true on a server replaying inputs
+        // (ADR-0011).
+        execute: io => {
+            const key = io.param('key') ?? DEFAULT_KEY;
+            const state = key ? io.ctx?.input?.of?.(io.self?.owner ?? null) : null;
+            return state?.isDown(key) ? 'down' : [];
+        },
+        tooltip: 'Runs on every step, for as long as this key is held'
     },
 
     {
@@ -682,7 +727,7 @@ export const STANDARD_NODES = [
     {
         type: 'input.onPointerButton',
         label: 'On Pointer Button',
-        category: 'Events',
+        category: 'Input',
         icon: 'node-pointer',
         keywords: ['input', 'mouse', 'click', 'clicked', 'press', 'released', 'tap', 'when', 'event'],
         event: 'update',
@@ -715,6 +760,35 @@ export const STANDARD_NODES = [
             return fired;
         },
         tooltip: 'Runs when this pointer button goes down, and when it comes back up'
+    },
+
+    {
+        // THE SAME THIRD MOMENT FOR A BUTTON, and deliberately the same word: a creator who
+        // has learned `Key Down` has learned this one (ADR-0045 §4).
+        type: 'input.pointerButtonDown',
+        label: 'Pointer Button Down',
+        category: 'Input',
+        icon: 'node-pointer',
+        keywords: ['input', 'mouse', 'hold', 'held', 'while', 'drag', 'down', 'continuous', 'event'],
+        event: 'update',
+        params: {
+            button: {
+                type: PropertyType.ENUM,
+                values: BUTTON_NAMES,
+                labels: BUTTON_LABELS,
+                default: DEFAULT_BUTTON,
+                label: 'Button',
+                tooltip: 'Which pointer button this node watches'
+            }
+        },
+        outputs: [flow('down', 'Down',
+            'Runs on EVERY step the button is held — sixty times a second, not once')],
+        execute: io => {
+            const button = buttonOf(io.node);
+            const state = io.ctx?.input?.of?.(io.self?.owner ?? null);
+            return state?.isButtonDown(button) ? 'down' : [];
+        },
+        tooltip: 'Runs on every step, for as long as this pointer button is held'
     },
 
     {
@@ -760,9 +834,14 @@ export const STANDARD_NODES = [
         // about the engine rather than about their game (ADR-0040 §1).
         params: { ...targetParam, ...propertyPathParam },
         inputs: [data('object', OBJECT_TYPE, 'Object')],
+        // `Property`, NOT THE PROPERTY'S NAME. The picker two rows above already says which
+        // property this is, and repeating `Position X` on the socket said it twice on a
+        // 176 px card while telling a beginner nothing about what the port IS. The name and
+        // the type are still one hover away (ADR-0045 §2).
         outputs: (node, context) => {
             const property = resolvedProperty(node, context);
-            return [data('value', portTypeOf(property), property?.name ?? 'Value')];
+            return [data('value', portTypeOf(property), 'Property', null, null,
+                property ? `The value of ${property.name}` : 'Choose a property above')];
         },
         // THE VALUE CROSSES THE SAME BOUNDARY ITS TYPE DOES. The port was typed by
         // `portTypeOf()`, so an `objectref` property leaves this node as a HANDLE and not as
@@ -838,10 +917,12 @@ export const STANDARD_NODES = [
     {
         type: 'transform.translate',
         label: 'Translate',
-        // THE SAME FAMILY AS Get/Set PROPERTY, because it is the same act: changing what an
-        // Object holds. A seventh category for one node would give it a colour of its own and
-        // say it was a different kind of thing (ADR-0030 §4).
-        category: 'Properties',
+        // ITS OWN FAMILY, BECAUSE OF THE QUESTION A BEGINNER ASKS. "I want to move my
+        // object — where do I look?" is not answered by `Properties`, which is where you
+        // look to READ one; and `Rotate` and `Scale` will be looking for the same shelf
+        // (ADR-0045 §3). It keeps the property HUE — it is a different family, not a
+        // different idea, and an eighth colour would be the carnival the palette avoids.
+        category: 'Transform',
         keywords: ['move', 'translate', 'position', 'nudge', 'offset', 'walk', 'shift', 'x', 'y'],
         tooltip: 'Moves an Object, relative to where it already is',
         params: { ...targetParam },
@@ -861,6 +942,109 @@ export const STANDARD_NODES = [
             if (transform) {
                 transform.x += io.input('x') ?? 0;
                 transform.y += io.input('y') ?? 0;
+            }
+            return 'out';
+        }
+    },
+
+    // ROTATE AND SCALE COMPLETE THE FAMILY, and the family is why they are here at all. A
+    // shelf holding one node is a category a creator learns nothing from; `Translate` alone
+    // also said, wrongly, that moving was the one thing the engine had an opinion about.
+    // Both are RELATIVE, like `Translate` and for the same reason: the absolute form is
+    // `Set Property`, which already exists and reads correctly (ADR-0045 §11).
+
+    {
+        type: 'transform.rotate',
+        label: 'Rotate',
+        category: 'Transform',
+        keywords: ['turn', 'spin', 'rotation', 'angle', 'degrees', 'orient'],
+        tooltip: 'Turns an Object, relative to the way it is already facing',
+        params: { ...targetParam },
+        inputs: [
+            flow('in'),
+            data('object', OBJECT_TYPE, 'Object'),
+            // THE PORT IS NAMED FOR ITS UNIT, WHICH IS THE WHOLE ANSWER TO A REAL TRAP.
+            // `Transform.rotation` is stored in radians (components/transform.js) and the
+            // Inspector shows it in degrees, so a port called `Angle` would be a question
+            // with two answers and no way to tell which one this node wants. Calling it
+            // `Degrees` costs one word and removes the question — the same technique
+            // `Pressed` / `Released` / `Is Down` already use (ADR-0041 §3).
+            //
+            // WHY DEGREES AND NOT RADIANS. Degrees are what a creator reads on this very
+            // property one panel away, and 90 is a quarter turn to everyone. The conversion
+            // lives in this node and nowhere else: the Core still STORES radians, so nothing
+            // about the property model moves. `Get Property > Rotation` still answers
+            // radians, which is a seam this catalogue does not close today — closing it
+            // means ports declaring a unit and the Editor converting at the port, and that
+            // is a decision worth its own ADR rather than a side effect of adding a node.
+            data('degrees', PropertyType.NUMBER, 'Degrees', 0,
+                null, 'How far to turn, in degrees. 90 is a quarter turn clockwise')
+        ],
+        outputs: [flow('out')],
+        execute: io => {
+            // A TARGET WITH NO TRANSFORM IS A STATE OF THE SCENE, NOT A FAULT (ADR-0034
+            // §3.4), exactly as in `Translate`.
+            const transform = targetObject(io)?.getComponent?.('Transform') ?? null;
+            if (transform) transform.rotation += (io.input('degrees') ?? 0) * Math.PI / 180;
+            return 'out';
+        }
+    },
+
+    {
+        type: 'transform.scale',
+        label: 'Scale',
+        category: 'Transform',
+        keywords: ['size', 'grow', 'shrink', 'bigger', 'smaller', 'zoom', 'stretch'],
+        tooltip: 'Grows or shrinks an Object, relative to the size it already is',
+        params: { ...targetParam },
+        inputs: [
+            flow('in'),
+            data('object', OBJECT_TYPE, 'Object'),
+            // ONE IS THE IDENTITY, AND THAT IS WHY IT IS THE DEFAULT. Scaling MULTIPLIES —
+            // it is the only reading of "scale" that composes — so a fresh card that did
+            // nothing has to read `1`, not `0`. A creator seeing `X 1 Y 1` also reads the
+            // relative meaning off the card without being told it.
+            data('x', PropertyType.NUMBER, 'X', 1, null, 'Multiplies the horizontal scale'),
+            data('y', PropertyType.NUMBER, 'Y', 1, null, 'Multiplies the vertical scale')
+        ],
+        outputs: [flow('out')],
+        execute: io => {
+            const transform = targetObject(io)?.getComponent?.('Transform') ?? null;
+            if (transform) {
+                transform.scaleX *= io.input('x') ?? 1;
+                transform.scaleY *= io.input('y') ?? 1;
+            }
+            return 'out';
+        }
+    },
+
+    // THE ABSOLUTE ONE, AND IT EARNS ITS PLACE BY BEING TWO NODES OTHERWISE. Putting an
+    // object somewhere — a spawn point, a snap, a reset — is one intention and cost a
+    // `Set Property > X` and a `Set Property > Y`, which is two trips through the property
+    // picker to say one thing. It sits beside `Translate` because "where is it" and "how far
+    // does it move" are the same shelf of the same question (ADR-0045 §11).
+    {
+        type: 'transform.setPosition',
+        label: 'Set Position',
+        category: 'Transform',
+        keywords: ['position', 'place', 'teleport', 'move to', 'put', 'snap', 'x', 'y'],
+        tooltip: 'Puts an Object at a position, whatever it was before',
+        params: { ...targetParam },
+        inputs: [
+            flow('in'),
+            data('object', OBJECT_TYPE, 'Object'),
+            // LOCAL, LIKE THE TRANSFORM IT WRITES (ADR-0002) and like `Translate` above:
+            // this is the number the Inspector shows for the same object, not a world
+            // position that would quietly disagree with it.
+            data('x', PropertyType.NUMBER, 'X', 0),
+            data('y', PropertyType.NUMBER, 'Y', 0)
+        ],
+        outputs: [flow('out')],
+        execute: io => {
+            const transform = targetObject(io)?.getComponent?.('Transform') ?? null;
+            if (transform) {
+                transform.x = io.input('x') ?? 0;
+                transform.y = io.input('y') ?? 0;
             }
             return 'out';
         }
@@ -1090,6 +1274,59 @@ export const STANDARD_NODES = [
     // and a creator has no way to see where it started. Zero is wrong in the same place and
     // stops there.
     arithmetic('math.divide', 'Divide', (a, b) => (b === 0 ? 0 : a / b)),
+
+    // TWO NODES THAT ARE NOT ARITHMETIC BUT ARE ASKED FOR IN THE SAME BREATH. Both are one
+    // line of maths a creator should never have to assemble: `Clamp` is a Greater Than, a
+    // Less Than and two Branches, and `Lerp` is a Subtract, a Multiply and an Add. Neither
+    // needs a runtime decision, which is what separates them from `Random` and `Delay`
+    // (ADR-0045 §11).
+
+    {
+        type: 'math.clamp',
+        label: 'Clamp',
+        category: 'Math',
+        keywords: ['limit', 'bound', 'range', 'constrain', 'min', 'max', 'between'],
+        tooltip: 'Keeps a number between two bounds',
+        inputs: [
+            data('value', PropertyType.NUMBER, 'Value', 0),
+            data('min', PropertyType.NUMBER, 'Min', 0),
+            data('max', PropertyType.NUMBER, 'Max', 1)
+        ],
+        outputs: [data('result', PropertyType.NUMBER, 'Result')],
+        evaluate: io => {
+            const low = number(io.input('min'));
+            const high = number(io.input('max'));
+            // BOUNDS THE WRONG WAY ROUND ARE NOT A FAULT, they are two wires a creator
+            // crossed. Sorting them answers what they meant; throwing would stop a frame
+            // over a mistake with an obvious reading.
+            const [lower, upper] = low <= high ? [low, high] : [high, low];
+            return { result: Math.min(Math.max(number(io.input('value')), lower), upper) };
+        }
+    },
+
+    {
+        type: 'math.lerp',
+        label: 'Lerp',
+        category: 'Math',
+        keywords: ['interpolate', 'blend', 'mix', 'between', 'smooth', 'ease', 'fade'],
+        tooltip: 'A number part way between two others',
+        inputs: [
+            data('a', PropertyType.NUMBER, 'From', 0),
+            data('b', PropertyType.NUMBER, 'To', 1),
+            // NOT CLAMPED, AND THAT IS DELIBERATE: an amount above 1 overshoots, which is
+            // how a spring or a bounce is written. `Clamp` is one node away for anyone who
+            // wants the other behaviour, and a node that silently refused to overshoot
+            // would be impossible to work around.
+            data('t', PropertyType.NUMBER, 'Amount', 0,
+                null, '0 is From, 1 is To, and halfway is 0.5')
+        ],
+        outputs: [data('result', PropertyType.NUMBER, 'Result')],
+        evaluate: io => {
+            const from = number(io.input('a'));
+            const to = number(io.input('b'));
+            return { result: from + (to - from) * number(io.input('t')) };
+        }
+    },
 
     // --- comparison ---------------------------------------------------------------------
 

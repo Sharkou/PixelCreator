@@ -17,7 +17,7 @@ import * as builtins from './builtins.js';
 import { BUILT_IN, registerBuiltIns } from './builtins.js';
 
 test('the shipped types install through the runtime barrel, which is the public surface', () => {
-    // THROUGH THE BARREL ON PURPOSE. `src/editor/` and `src/play/` both reach the engine
+    // THROUGH THE BARREL ON PURPOSE. `src/editor/` and `src/preview/` both reach the engine
     // this way, so the import a boot actually performs is the one under test.
     const registry = new ComponentRegistry();
 

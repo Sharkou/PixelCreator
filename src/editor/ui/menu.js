@@ -296,8 +296,7 @@ export class Menu extends Element {
                     return undefined;
                 }
                 if (this.#category !== null) {
-                    this.#category = null;
-                    this.#renderList();
+                    this.#leaveCategory();
                     return undefined;
                 }
                 return this.remove();
@@ -369,6 +368,10 @@ export class Menu extends Element {
         fill(this.#list, groups.map(group => el('button', {
             class: 'line group',
             type: 'button',
+            // Named, so that coming back OUT of this category can find this exact row
+            // again rather than the first one. Matching on the label would work until two
+            // groups shared a word.
+            'data-category': group.category,
             onpointerenter: event => this.#highlight(event.currentTarget),
             onclick: () => {
                 this.#category = group.category;
@@ -384,6 +387,31 @@ export class Menu extends Element {
         this.#highlight(this.#list.querySelector('button:not([disabled])'));
     }
 
+    /**
+     * Step back out to the list of categories, standing on the one just left.
+     *
+     * COMING BACK IS NOT ARRIVING. Walking out of `Transform` and finding the cursor on
+     * `Compare` — the first row, wherever it happens to be — loses the creator's place
+     * every time they look inside a category and change their mind. The category they were
+     * in is the one thing they are certainly still thinking about, so it is where they land:
+     * `→` `←` returns to exactly where `→` was pressed, which is what makes browsing by
+     * keyboard survivable.
+     *
+     * All three ways out share it — the `All categories` row, Escape and `←` — because they
+     * are one intent and a creator would notice immediately if one of them behaved
+     * differently.
+     */
+    #leaveCategory() {
+        const left = this.#category;
+        this.#category = null;
+        this.#renderList();
+
+        // Read rather than selected, because a category is whatever a caller named it and
+        // a selector would need escaping the moment one contains a quote.
+        const row = [...this.#list.children].find(child => child.dataset?.category === left);
+        if (row) this.#highlight(row);
+    }
+
     /** The entries themselves: one category's, or the whole list under its headings. */
     #renderEntries() {
         const rows = [];
@@ -395,10 +423,7 @@ export class Menu extends Element {
                 class: 'line back',
                 type: 'button',
                 onpointerenter: event => this.#highlight(event.currentTarget),
-                onclick: () => {
-                    this.#category = null;
-                    this.#renderList();
-                }
+                onclick: () => this.#leaveCategory()
             },
                 el('span', { class: 'glyph' }, icon('chevron')),
                 el('span', { class: 'name', textContent: 'All categories' })
@@ -546,8 +571,7 @@ export class Menu extends Element {
 
         if (this.#browse && this.#category !== null) {
             event.preventDefault();
-            this.#category = null;
-            this.#renderList();
+            this.#leaveCategory();
             return undefined;
         }
 

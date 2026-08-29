@@ -305,3 +305,153 @@ test('the Object own properties a graph writes reach the scene, and the renderer
     assert.deepEqual(it.renderer.frame(), [], 'and gone from the frame the moment it is not');
     assert.deepEqual(it.failures, []);
 });
+
+// --- the three moments of a key, as behaviour (ADR-0045 §4) -------------------------------
+
+test('Key Down runs on every step the key is held, and On Key runs once', () => {
+    // THE DIFFERENCE A CREATOR HAS TO SEE, measured over the same four steps. `On Key` is a
+    // moment; `Key Down` is a state, once per step; and the second used to cost `On Update`
+    // + `Key Is Down` + `Branch`.
+    const held = game({
+        version: 1,
+        nodes: [
+            { id: 'key', type: 'input.keyDown', x: 0, y: 0, params: { key: 'Space' } },
+            { id: 'move', type: 'transform.translate', x: 0, y: 0, params: {}, inputs: { x: 1, y: 0 } }
+        ],
+        connections: [{ id: 'c', from: { node: 'key', port: 'down' }, to: { node: 'move', port: 'in' } }]
+    });
+    const once = game(nudgeOnSpace(1));
+
+    for (const it of [held, once]) {
+        it.runtime.input.local.press('Space');
+        for (let step = 0; step < 4; step++) it.runtime.step();
+    }
+
+    assert.equal(held.hero.getComponent('Transform').x, 4, 'four steps held, four moves');
+    assert.equal(once.hero.getComponent('Transform').x, 1, 'and Pressed is still a moment');
+});
+
+test('Key Down stops on the step the key comes up, and starts on the step it goes down', () => {
+    const it = game({
+        version: 1,
+        nodes: [
+            { id: 'key', type: 'input.keyDown', x: 0, y: 0, params: { key: 'Space' } },
+            { id: 'move', type: 'transform.translate', x: 0, y: 0, params: {}, inputs: { x: 1, y: 0 } }
+        ],
+        connections: [{ id: 'c', from: { node: 'key', port: 'down' }, to: { node: 'move', port: 'in' } }]
+    });
+
+    it.runtime.step();
+    assert.equal(it.hero.getComponent('Transform').x, 0, 'nothing before the key goes down');
+
+    it.runtime.input.local.press('Space');
+    it.runtime.step();
+    assert.equal(it.hero.getComponent('Transform').x, 1, 'the step it goes down counts');
+
+    it.runtime.input.local.release('Space');
+    it.runtime.step();
+    it.runtime.step();
+    assert.equal(it.hero.getComponent('Transform').x, 1, 'and it stops when the key does');
+});
+
+test('Pointer Button Down is the same three moments, in the same words', () => {
+    const it = game({
+        version: 1,
+        nodes: [
+            { id: 'button', type: 'input.pointerButtonDown', x: 0, y: 0, params: { button: 'left' } },
+            { id: 'move', type: 'transform.translate', x: 0, y: 0, params: {}, inputs: { x: 2, y: 0 } }
+        ],
+        connections: [{ id: 'c', from: { node: 'button', port: 'down' }, to: { node: 'move', port: 'in' } }]
+    });
+
+    it.runtime.input.local.pressButton(0);
+    it.runtime.step();
+    it.runtime.step();
+    assert.equal(it.hero.getComponent('Transform').x, 4);
+
+    it.runtime.input.local.releaseButton(0);
+    it.runtime.step();
+    assert.equal(it.hero.getComponent('Transform').x, 4);
+});
+
+test('a key nobody is holding starts nothing, and reports nothing', () => {
+    const it = game({
+        version: 1,
+        nodes: [
+            { id: 'key', type: 'input.keyDown', x: 0, y: 0, params: { key: 'Space' } },
+            { id: 'move', type: 'transform.translate', x: 0, y: 0, params: {}, inputs: { x: 1, y: 0 } }
+        ],
+        connections: [{ id: 'c', from: { node: 'key', port: 'down' }, to: { node: 'move', port: 'in' } }]
+    });
+
+    for (let step = 0; step < 5; step++) it.runtime.step();
+
+    assert.equal(it.hero.getComponent('Transform').x, 0);
+    assert.deepEqual(it.failures, []);
+});
+
+// --- the Transform family, as behaviour ---------------------------------------------
+//
+// THREE NODES THAT WRITE THE SAME COMPONENT, AND THE DIFFERENCE BETWEEN THEM IS THE POINT.
+// `Translate` and `Scale` are relative, `Set Position` is absolute, and a creator who picks
+// the wrong one sees it in the second frame rather than the first — so each test below runs
+// more than one step.
+
+/** One node on `On Update`, which is how a Transform node is actually reached. */
+function everyStep(type, inputs, params = {}) {
+    return {
+        version: 1,
+        nodes: [
+            { id: 'tick', type: 'event.update', x: 0, y: 0, params: {} },
+            { id: 'act', type, x: 0, y: 0, params, inputs }
+        ],
+        connections: [{ id: 'c', from: { node: 'tick', port: 'out' }, to: { node: 'act', port: 'in' } }]
+    };
+}
+
+test('Rotate turns by degrees, and the Transform keeps radians', () => {
+    // THE SEAM THE NODE EXISTS TO HIDE. A creator says 90; `Transform.rotation` is in
+    // radians and stays that way, because the conversion is the node's and not the model's.
+    const it = game(everyStep('transform.rotate', { degrees: 90 }));
+
+    it.runtime.step();
+    assert.ok(Math.abs(it.hero.getComponent('Transform').rotation - Math.PI / 2) < 1e-9);
+
+    it.runtime.step();
+    assert.ok(Math.abs(it.hero.getComponent('Transform').rotation - Math.PI) < 1e-9,
+        'and it turns AGAIN, because it is relative');
+    assert.deepEqual(it.failures, []);
+});
+
+test('Scale multiplies, so one is the step that changes nothing', () => {
+    const it = game(everyStep('transform.scale', { x: 2, y: 1 }));
+
+    it.runtime.step();
+    it.runtime.step();
+
+    const transform = it.hero.getComponent('Transform');
+    assert.equal(transform.scaleX, 4, 'twice, twice');
+    assert.equal(transform.scaleY, 1, 'and one leaves the other axis alone');
+});
+
+test('Set Position puts the object there, whatever it was doing', () => {
+    const it = game(everyStep('transform.setPosition', { x: 40, y: -5 }));
+
+    it.hero.getComponent('Transform').x = 999;
+    it.runtime.step();
+    it.runtime.step();
+
+    const transform = it.hero.getComponent('Transform');
+    assert.equal(transform.x, 40, 'absolute, so the second step does not add a second 40');
+    assert.equal(transform.y, -5);
+});
+
+test('a Transform node on an Object that has no Transform does nothing, and says nothing', () => {
+    // ADR-0034 §3.4: a state of the scene, not an authoring error. The next node still runs.
+    const it = game(everyStep('transform.rotate', { degrees: 45 }));
+    it.hero.removeComponent('Transform');
+
+    it.runtime.step();
+
+    assert.deepEqual(it.failures, []);
+});

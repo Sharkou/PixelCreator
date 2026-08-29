@@ -24,6 +24,7 @@ import { Workspace } from './project/workspace.js';
 import { createDefinitions } from './project/definitions.js';
 import { Transport, TransportState } from './transport.js';
 import { openPreview } from './preview.js';
+import { broadcastEdits } from './live.js';
 import { KeyboardInput, PointerInput } from './input.js';
 import { fillStarterScene } from './project/starter.js';
 import { installDocumentStyles, sheet } from './ui/styles.js';
@@ -402,6 +403,11 @@ export function start(mount = document.body) {
         scene,
         behaviors
     });
+
+    // EVERY PREVIEW OF THIS PROJECT FOLLOWS FROM HERE (ADR-0044 §3). Nothing is pushed
+    // unless a window is listening, and nothing about the Editor changes when none is: the
+    // pipelines it already announces on are simply also heard somewhere else.
+    broadcastEdits(workspace);
 
     // ONE INTENTION CHANNEL FOR THREE SUBJECTS (ADR-0032). A window says what the creator
     // is working on; it does not have to know that a second holder exists, and it cannot

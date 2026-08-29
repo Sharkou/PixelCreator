@@ -65,10 +65,12 @@ export class Field extends Element {
             min-width: 0;
         }
 
-        /* Anything that holds a value fills its cell; anything that is a switch or a
-           swatch takes only what it needs. */
+        /* Anything that holds a value fills its cell. A switch is the one exception, and it
+           is not an exception to the rule so much as outside it: a toggle has two states
+           and no magnitude, so stretching it would only make a bigger thing to miss. */
         .control > px-number,
         .control > input[type='text'],
+        .control > input[type='color'],
         .control > input[type='range'],
         .control > select { flex: 1; min-width: 0; }
 
@@ -116,7 +118,11 @@ export class Field extends Element {
             color: var(--px-text-dim);
             transform: rotate(90deg);
         }
-        .control > input[type='color'] { width: 44px; flex: 0 0 auto; }
+        /* A COLOUR IS A VALUE, AND IT TAKES THE COLUMN LIKE EVERY OTHER VALUE. It used to be
+           a 44px chip, which made Color the one row in the panel with a right-hand edge of
+           its own — and a small target for the one control a creator opens by clicking it.
+           Wide also shows more of an almost-black or an almost-white. */
+        .control > input[type='color'] { height: var(--px-control); }
 
         .amount {
             flex: 0 0 auto;

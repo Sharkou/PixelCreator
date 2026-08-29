@@ -4,7 +4,7 @@
 // reason `editor/registry.js` has always given: a module with a side effect on import cannot
 // be imported without accepting it, and a headless test may want an empty catalogue. What
 // moved here is only WHICH classes exist — because the Editor is no longer the only
-// application that needs them. The game client (`src/play/`) opens the same projects and
+// application that needs them. The preview client (`src/preview/`) opens the same projects and
 // must build the same objects, and it may not import anything of the Editor's (ADR-0042 §2).
 //
 // IT LIVES IN `runtime/` BECAUSE THAT IS WHERE THE HALF OF THEM LIVE. `Transform` is the

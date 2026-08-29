@@ -42,6 +42,11 @@ export const CATEGORY_HUES = {
     // this is the colour its own `object` port wears below — so a `Self` node and the socket
     // it feeds are visibly the same kind of thing (ADR-0030 §4, ADR-0034 §3.2).
     References: 'var(--px-hue-reference)',
+    // A TRANSFORM NODE WEARS THE PROPERTY HUE, because that is what it writes. It is its
+    // own FAMILY in the menu — "where do I look to move something" is a different question
+    // from "where do I look to read a value" — but it is not its own IDEA on the canvas,
+    // and an eighth colour would be the carnival this table exists to prevent (ADR-0030 §4).
+    Transform: 'var(--px-hue-property)',
     Math: 'var(--px-hue-number)',
     Compare: 'var(--px-hue-number)',
     Logic: 'var(--px-hue-boolean)',

@@ -6,9 +6,21 @@
 // Legacy had none of it, and used a text input that accepted `12foo`.
 //
 // IT REFUSES WHAT IS NOT A NUMBER, without fighting the person typing. `-` and `1.` are
-// not numbers yet, so they are left in the box and nothing is reported; `abc` is simply
-// dropped when the box is left. The rule is one-way: an incomplete entry never reaches
-// the model, and the model never overwrites a box being typed into.
+// not numbers yet, so they are left in the box and nothing is reported. The rule is
+// one-way: an incomplete entry never reaches the model, and the model never overwrites a
+// box being typed into.
+//
+// A LETTER NEVER GETS IN, AND THAT IS A CHANGE. It used to be admitted and dropped on the
+// way out — `Number('12a')` is NaN, `format(NaN)` is `''`, so typing one letter emptied a
+// field that still held 12 in the model. Two rules replace it: an edit that would not leave
+// a number ON THE WAY TO ONE is refused as it is typed, and whatever survives is normalised
+// on blur against the LAST GOOD VALUE rather than against NaN. So the box can never end up
+// empty, and it can never end up holding something the model does not (ADR-0045 §7).
+//
+// REFUSED AT `beforeinput`, WHICH IS WHERE THE BROWSER ASKS. Every way text arrives goes
+// through it — typing, pasting, dropping, dictation, an IME — so paste is filtered by the
+// same rule as a keystroke, and selection, arrow keys and the browser's own undo are never
+// touched because nothing is rewritten behind the caret.
 //
 // THE STEPPERS ARE STACKED, AND THAT IS THE WHOLE POINT OF THE SHAPE. Two side buttons
 // cost 34 px of a field that has about 90 to spend inside a 304 px panel; one 11 px
@@ -26,6 +38,7 @@
 import { Element, el, fill } from './element.js';
 import { sheet } from './styles.js';
 import { attachScrub } from './scrub.js';
+import { admits, format, parse } from './number.js';
 
 /** How long a stepper is held before it starts repeating. */
 const REPEAT_DELAY = 320;
@@ -204,9 +217,16 @@ export class NumberInput extends Element {
         return this;
     }
 
-    /** The value shown, as a number. */
+    /**
+     * The value shown, as a number — and never NaN.
+     *
+     * A HALF-TYPED ENTRY IS NOT A VALUE, AND MUST NOT BECOME ONE. `-` and `1.` read as the
+     * last good number, which is what the model still holds, so leaving the field puts that
+     * number back instead of emptying the box.
+     */
     get value() {
-        return this.#input ? globalThis.Number(this.#input.value) : this.#value;
+        const shown = this.#input ? parse(this.#input.value) : null;
+        return shown ?? this.#value;
     }
 
     set value(value) {
@@ -240,13 +260,15 @@ export class NumberInput extends Element {
             autocomplete: 'off',
             readOnly: Boolean(readonly),
             value: format(this.#value),
+            onbeforeinput: event => this.#filter(event),
             oninput: () => this.#report(this.#input.value),
             onkeydown: event => this.#onKey(event),
             onfocus: () => this.classList.add('focused'),
             onblur: () => {
                 this.classList.remove('focused');
-                // Whatever survived typing is normalised on the way out, so `1.` and
-                // `007` do not stay on screen once the field is left.
+                // Whatever survived typing is normalised on the way out, so `1.` and `007`
+                // do not stay on screen once the field is left — and an entry that is still
+                // not a number falls back to the value the model holds, never to nothing.
                 this.#input.value = format(this.value);
             }
         });
@@ -313,6 +335,35 @@ export class NumberInput extends Element {
         return button;
     }
 
+    /**
+     * Refuse an edit that would leave something a number can never grow out of.
+     *
+     * IT COMPUTES THE RESULT AND JUDGES THAT, rather than judging the keystroke. `-` is
+     * legal at the front and nowhere else, `.` once and only in a decimal field, and a
+     * pasted `12px` is refused for the same reason a typed `p` is — one rule, every way
+     * text can arrive.
+     *
+     * WHAT IT NEVER TOUCHES: a deletion, a selection, an arrow key, or the browser's own
+     * undo. Those either carry no text or produce a shorter string, which is still on the
+     * way to a number.
+     *
+     * @param {InputEvent} event - The edit the browser is about to make
+     */
+    #filter(event) {
+        const input = this.#input;
+        const inserted = event.data ?? event.dataTransfer?.getData('text/plain') ?? '';
+        // Nothing being inserted is a deletion, and a deletion always leaves less.
+        if (inserted === '') return;
+
+        const next = globalThis.String(input.value).slice(0, input.selectionStart ?? 0)
+            + inserted
+            + globalThis.String(input.value).slice(input.selectionEnd ?? 0);
+
+        if (admits(next, this.#config)) return;
+
+        event.preventDefault();
+    }
+
     #onKey(event) {
         const multiplier = event.shiftKey ? 10 : 1;
 
@@ -348,16 +399,23 @@ export class NumberInput extends Element {
 
     #commit(value) {
         const bounded = this.#bound(value);
+        // THE LAST GOOD VALUE IS THE LAST ONE THIS CONTROL PRODUCED, not the last one it was
+        // handed. The owner stops pushing values in the moment the box has focus — it must,
+        // or the caret jumps — so a control that only remembered what it was TOLD went back
+        // to a number several edits stale the first time an entry was abandoned half-typed.
+        this.#value = bounded;
         this.#input.value = format(bounded);
         this.#config.onInput?.(bounded);
     }
 
     #report(raw) {
-        const parsed = globalThis.Number(raw);
-        // Mid-entry: "-", "1.", "" are all on the way to a number. Say nothing and let
+        // Mid-entry: "-", "1." and "" are all on the way to a number. Say nothing and let
         // the creator finish.
-        if (raw.trim() === '' || !globalThis.Number.isFinite(parsed)) return;
-        this.#config.onInput?.(this.#bound(parsed));
+        const parsed = parse(raw);
+        if (parsed === null) return;
+        const bounded = this.#bound(parsed);
+        this.#value = bounded;
+        this.#config.onInput?.(bounded);
     }
 
     #bound(value) {
@@ -367,11 +425,6 @@ export class NumberInput extends Element {
         if (max !== null && bounded > max) bounded = max;
         return bounded;
     }
-}
-
-function format(value) {
-    if (!globalThis.Number.isFinite(value)) return '';
-    return globalThis.String(globalThis.Number(value.toPrecision(12)));
 }
 
 customElements.define('px-number', NumberInput);

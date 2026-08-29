@@ -4,6 +4,7 @@
 - **Décide :** la frontière Editor / Runtime en tant que deux applications ; comment un projet est transmis à un runtime ; ce qu'est un `preview id` et comment il deviendra un `game id`
 - **Dépend de :** ADR-0005 (le runtime est fait de modules), ADR-0011 (autorité), ADR-0015 (un graphe est le comportement d'un type), ADR-0020 (Resources), ADR-0029 (transport et Play), ADR-0035 (ordre de `step()`)
 - **Amende :** rien. ADR-0029 reste valide et intact — voir §1.
+- **Amendé par :** ADR-0044 — les deux dossiers deviennent un (§2), le préfixe `prv_` disparaît et l'identifiant est celui du projet (§3), le magasin garde une entrée par projet (§4), et un canal vivant tient les Previews ouverts à jour (§6).
 - **Ne décide pas :** le multijoueur, le transport réseau, l'authentification, la persistance côté serveur. Voir §6, qui dit précisément où ils se brancheront.
 
 ---
@@ -43,6 +44,10 @@ la seule des deux qui puisse devenir `play.pixelcreator.io/<id>`.
   src/preview/  ce qui passe entre →  project, core
 ```
 
+> **Amendé par ADR-0044 §2 :** `src/play/` et `src/preview/` sont désormais un seul dossier,
+> `src/preview/`. La frontière décrite ici — le client de jeu n'importe rien de l'éditeur —
+> est inchangée ; c'est la répartition en deux dossiers qui ne l'était plus.
+
 `src/play/` ne peut rien importer de `src/editor/`, et l'inverse est vrai aussi. Ce que
 l'éditeur envoie au client n'est pas un objet : c'est un **bundle**, du JSON, franchissant
 une frontière que `postMessage`, `localStorage` ou HTTP peuvent porter indifféremment.
@@ -74,9 +79,14 @@ un serveur headless pourra l'ouvrir pour arbitrer une partie (ADR-0011).
 play/index.html#p/<id>   →   resolve(id)   →   bundle   →   Runtime
 ```
 
+> **Amendé par ADR-0044 §2.1 :** un `preview id` est l'identifiant du projet lui-même, sans
+> préfixe. La couture décrite ici — `resolve(id)` est la seule chose qui distingue un preview
+> d'un jeu publié — est exactement ce qui rend le préfixe inutile : cette fonction ne l'a
+> jamais lu.
+
 | | `preview id` | `game id` (à venir) |
 |---|---|---|
-| Forme | `prv_` + aléatoire | attribué par le serveur |
+| Forme | ~~`prv_` + aléatoire~~ l'identifiant du projet | attribué par le serveur |
 | Portée | ce navigateur | public |
 | Durée de vie | jusqu'à remplacement ou nettoyage — §4 | tant que le jeu est publié |
 | Résolution | stockage local | HTTP |
@@ -92,7 +102,8 @@ préfixe rend la nature de l'identifiant lisible sans avoir à la deviner.
 - Le bundle est écrit dans le stockage du navigateur, sous sa clé de preview.
 - Le magasin garde les **quelques previews les plus récents** et jette les autres : un
   projet contient des images en data URL, et une session d'édition en produirait sinon un
-  historique sans fin.
+  historique sans fin. *(ADR-0044 §2.1 : une entrée par PROJET, réécrite, et non une par
+  pression sur Preview.)*
 - Rien ne sort de la machine. Un lien de preview ouvert ailleurs ne trouve rien et le dit.
 
 Ce sont des propriétés de **l'implémentation de `resolve`**, pas du modèle. Aucune d'elles
@@ -136,8 +147,8 @@ exactement les deux choses qu'ADR-0011 et ADR-0014 ont laissées en attente.
 |---|---|
 | `bundleProject()` / `openBundle()` sont purs et sans DOM | tests headless |
 | Un bundle rouvert rend la même scène et les mêmes ressources | aller-retour, dans un test |
-| `src/play/` n'importe rien de `src/editor/` | `tools/layers` |
-| Rien n'importe `src/play/` | idem |
+| `src/preview/` n'importe rien de `src/editor/` | `tools/layers` — *ADR-0044 §2* |
+| Rien hors de l'éditeur n'importe `src/preview/` | idem |
 | Un identifiant inconnu produit un message, jamais une page blanche | la page de jeu |
 | Plusieurs previews coexistent | deux fenêtres, deux identifiants |
 

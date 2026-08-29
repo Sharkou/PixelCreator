@@ -656,21 +656,45 @@ test('a node that names a property is a target; one that does not is not', () =>
         'the canvas beside a node is not a node');
 });
 
-test('a Component dropped anywhere on a graph is refused, and says what to drag instead', () => {
-    // REACHED TWICE, THE SECOND TIME BY MEASUREMENT (ADR-0041 §6.1). Re-enabled, it wrote
-    // `component` and left `property` open — and the property picker writes BOTH halves, so
-    // the creator's very next action overwrote what the drop had just done. A gesture whose
-    // only effect is replaced by the next one is a gesture that did nothing.
+test('a Component dropped on a property node answers its first question', () => {
+    // REMOVED TWICE, AND BOTH TIMES FOR ONE REASON: the property picker wrote BOTH halves,
+    // so the drop was undone by the creator's next click (ADR-0040 §4, ADR-0041 §6.1). That
+    // premise is gone — `Component` is a control of its own (ADR-0045 §1) — so the gesture
+    // now writes a row a creator can see, and narrows the list below it.
+    const it = linked();
+    const payload = componentPayload(it.hero, 'res_link', 'Link');
+    const written = [];
+
+    const target = nodeTarget(GET_ON_PARAMS);
+    assert.equal(canDrop(payload, target).allowed, true);
+
+    performDrop(payload, target, { setNodeParam: (node, name, value) => written.push([name, value]) });
+
+    assert.deepEqual(written, [['component', 'res_link']], 'the type, and nothing else');
+});
+
+test('a Component on BARE canvas is still refused, because it would make an unfinished node', () => {
+    // A drop makes a finished node or it does not happen (ADR-0039 §0.2). Which property is
+    // precisely what a Component does not say, and guessing is the magic this editor refuses.
+    const it = linked();
+    const payload = componentPayload(it.hero, 'res_link', 'Link');
+    const bare = { zone: DropZone.GRAPH, at: AT.at, bound: true };
+
+    const verdict = canDrop(payload, bare);
+
+    assert.equal(verdict.allowed, false);
+    assert.match(verdict.reason, /Get or Set Property/, 'and it names the gesture that works');
+    assert.equal(performDrop(payload, bare, { setNodeParam: () => assert.fail('wrote') }), null);
+});
+
+test('a Component on a node that names no Component is refused, with somewhere to go', () => {
     const it = linked();
     const payload = componentPayload(it.hero, 'res_link', 'Link');
 
-    for (const target of [nodeTarget(GET_ON_PARAMS), { zone: DropZone.GRAPH, at: AT.at, bound: true }]) {
-        const verdict = canDrop(payload, target);
+    const verdict = canDrop(payload, nodeTarget({ value: { type: PropertyType.NUMBER } }));
 
-        assert.equal(verdict.allowed, false);
-        assert.match(verdict.reason, /properties/, 'the refusal names the gesture that works');
-        assert.equal(performDrop(payload, target, { setNodeParams: () => assert.fail('wrote') }), null);
-    }
+    assert.equal(verdict.allowed, false);
+    assert.ok(verdict.reason);
 });
 
 test('no scene identity can reach a .px through a graph drop', () => {
@@ -952,12 +976,10 @@ test('the drags a canvas takes never answer for one another', () => {
     assert.equal(ruleFor(objectPayload(it.player), bare).id, 'object-to-graph');
     assert.equal(ruleFor(propertyPayload('res_link', 'p_target', 't'), bare).id, 'property-to-canvas');
     assert.equal(ruleFor(propertyPayload('res_link', 'p_target', 't'), onNode).id, 'property-to-node');
-    // A Component reaches the floor of the canvas wherever it is let go: it has a meaning,
-    // and the meaning is not here (ADR-0040 §2).
-    // A Component reaches the floor of the canvas wherever it is let go: it has a meaning,
-    // and the meaning is not here.
+    // A COMPONENT NOW MEANS SOMETHING ON A NODE AND NOTHING ON BARE CANVAS, which is the
+    // same shape the other two drags already had: the place decides (ADR-0045 §6).
     assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), bare).id, 'drop-on-graph');
-    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), onNode).id, 'drop-on-graph');
+    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), onNode).id, 'component-to-node');
     // AN OBJECT NOW MEANS TWO THINGS, AND THE PLACE DECIDES WHICH — the same rule the other
     // two drags already followed. On bare canvas it declares an input; on a node that acts on
     // an Object it points that node, which is configuration by direct manipulation and not a

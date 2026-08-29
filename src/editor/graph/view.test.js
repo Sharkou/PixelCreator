@@ -493,10 +493,15 @@ test('a param never lands on a row whose port has to speak for itself', () => {
     // AND IT LANDS AFTER IT, because the Object row leads: a node reads "on THIS, do that"
     // (ADR-0039 §0.1). What this test protects is that the param never SHARES that row —
     // an object socket has no field and its label is all it has.
-    assert.equal(rows.length, 2, 'it takes a row of its own rather than that one');
+    //
+    // THREE ROWS, BECAUSE THE ANSWER COMES LAST TOO. A node configured by its own params
+    // computes its output FROM them, so the output cannot sit above the questions that
+    // decide it (ADR-0045 §2).
+    assert.equal(rows.length, 3, 'it takes a row of its own rather than the Object row');
     assert.equal(rows[0].input.id, 'object', 'the Object it acts on comes first');
     assert.equal(rows[1].control.name, 'component');
     assert.equal(rows[1].input, null, 'and that row carries no port to be confused with');
+    assert.equal(rows[2].output.id, 'value', 'and the answer is last');
     assert.ok(!silenced.has('in:object'), 'the only thing naming an object port is its name');
     assert.ok(!silenced.has('out:value'), 'nor is the socket it shares a line with spoken for');
 });
@@ -572,11 +577,10 @@ test('Set Property says Object, Property and Value once each, in that order', ()
     const rows = nodeRows(ports, [...paramFields(definition, node, context), ...inputFields(ports)]);
     const silenced = silencedPorts(rows);
 
-    // THE ORDER IS THE SENTENCE: when it runs, WHAT it acts on, WHICH property, then the
-    // value that flows through it (ADR-0039 §0.1). THREE ROWS AND NOT FOUR: the Component
-    // half of the property is stored and never asked, so it takes no line (ADR-0040 §2).
+    // THE ORDER IS THE SENTENCE: when it runs, WHAT it acts on, WHICH Component, WHICH
+    // property of it, then the value that flows through (ADR-0039 §0.1, ADR-0045 §1).
     assert.deepEqual(rows.map(row => row.control?.name ?? null),
-        [null, 'target', 'property', 'value']);
+        [null, 'target', 'component', 'property', 'value']);
     assert.equal(rows[1].input.id, 'object', 'the Object row leads, carrying its picker');
     assert.ok(silenced.has('in:object'), 'the picker speaks for the socket it shares a row with');
     assert.ok(silenced.has('in:value'), 'and the value socket is spoken for by its own field');
@@ -643,18 +647,27 @@ test('the Object picker shares the Object socket row', () => {
     assert.ok(silencedPorts(rows).has('in:object'), 'and speaks for it, so nothing is said twice');
 });
 
-test('Get Property keeps its object socket off the pickers\' rows too', () => {
+test('Get Property asks its three questions, then answers on a line of its own', () => {
+    // THE LAYOUT THE NODE WAS BEING MISREAD FOR (ADR-0045 §2). The output used to sit on
+    // line one, beside the Object — above the two pickers that DECIDE it — so the card read
+    // backwards and the socket looked like it belonged to the Object.
     const node = {
         id: 'n', type: 'property.get', x: 0, y: 0,
         params: { component: 'Transform', property: 'y' }
     };
     const definition = registry.get('property.get');
-    const ports = portsOf(definition, node, { properties: [], components: CATALOGUE });
-    const rows = nodeRows(ports, paramFields(definition, node, { properties: [], components: CATALOGUE }));
+    const context = { properties: [], components: CATALOGUE };
+    const ports = portsOf(definition, node, context);
+    const rows = nodeRows(ports, paramFields(definition, node, context));
 
-    assert.deepEqual(rows.map(row => row.control?.name ?? null), ['target', 'property']);
+    assert.deepEqual(rows.map(row => row.control?.name ?? null),
+        ['target', 'component', 'property', null]);
     assert.equal(rows[0].input.id, 'object', 'the Object row leads, carrying its picker');
-    assert.equal(rows[0].output.id, 'value');
+    assert.equal(rows.at(-1).output.id, 'value', 'and the answer is alone at the end');
+    assert.equal(rows.at(-1).input, null, 'with nothing beside it to be confused with');
+    assert.equal(rows.at(-1).output.label, 'Property',
+        'named for what the port IS, not for what it currently holds');
+    assert.ok(!silencedPorts(rows).has('out:value'), 'so nothing takes its label away');
 });
 
 test('a value port a creator can type into gets a field once its type is known', () => {

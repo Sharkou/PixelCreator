@@ -15,7 +15,7 @@
 // `owner` each and a transport between them — the two things ADR-0011 and ADR-0014 left
 // open, and neither of them is a change to this file's shape.
 
-import { Matrix, components } from '../core/mod.js';
+import { Matrix, components, defineComponent } from '../core/mod.js';
 import { registerStandardNodes } from '../core/mod.js';
 import { loadComponentDefinitions, loadScene } from '../project/mod.js';
 import {
@@ -27,8 +27,9 @@ import {
     registerBuiltIns,
     viewMatrix
 } from '../runtime/mod.js';
-import { openBundle } from '../preview/bundle.js';
-import { idFromHash, resolvePreview } from '../preview/store.js';
+import { openBundle } from './bundle.js';
+import { idFromHash, resolvePreview } from './store.js';
+import { LiveMessage, openLiveChannel } from './live.js';
 import { bindInput } from './input.js';
 
 /**
@@ -78,7 +79,88 @@ export async function start(mount = document.body) {
     }
 
     document.title = `${opened.name} — Pixel Creator`;
-    return run(mount, scene, behaviors);
+    const game = run(mount, scene, behaviors);
+
+    // AND IT FOLLOWS THE EDITOR FROM HERE (ADR-0044 §3). A Preview used to be a snapshot
+    // that could only be replaced by closing it and pressing the button again, which is
+    // not what "preview" means to anyone: a creator nudging a position wants to see the
+    // nudge. What arrives is an Operation, the same record the Editor's own history holds,
+    // and applying one announces nothing back — so this page still cannot author anything
+    // (ADR-0042 §5 holds).
+    const live = followEdits(opened, { scene, behaviors, registry: components });
+    const stop = game.stop;
+    return { ...game, stop: () => { live.close(); stop(); } };
+}
+
+/**
+ * Apply what the Editor of this project says, for as long as the page is open.
+ *
+ * @param {object} opened - What `openBundle()` answered
+ * @param {object} context - `{ scene, behaviors, registry }`
+ * @returns {{close: Function}} A handle that stops following
+ */
+function followEdits(opened, { scene, behaviors, registry }) {
+    const channel = openLiveChannel(opened.project?.id);
+    if (!channel) return { close: () => {} };
+
+    /**
+     * The live schema record of each `.px`, so an old instance reports the new shape.
+     *
+     * ONE CLASS PER TYPE, MUTATED IN PLACE — the same conclusion the Editor reached
+     * (editor/project/definitions.js): an instance carries its class, so registering a NEW
+     * class on every edit leaves every object already in the scene declaring the old one.
+     * `defineComponent()` closes over the record it is given AND exposes it as
+     * `static schema`, so one mutation updates what a new instance is built with and what
+     * an old instance reports.
+     */
+    const schemas = new globalThis.Map();
+
+    channel.onmessage = event => {
+        const message = event?.data ?? null;
+
+        if (message?.kind === LiveMessage.OPERATION && message.resource === opened.scene) {
+            // APPLIED, NOT SUBMITTED. `apply()` performs an already-authoritative change
+            // without arbitrating it and without announcing it, which is the whole of what
+            // a follower does (ADR-0011).
+            scene.operations.apply(message.operation);
+            return;
+        }
+
+        if (message?.kind === LiveMessage.DEFINITION) applyDefinition(message, { behaviors, registry, schemas });
+    };
+
+    return { close: () => channel.close?.() };
+}
+
+/**
+ * Take a `.px` the Editor has just rewritten, and make the running game use it.
+ *
+ * @param {object} message - `{ resource, payload }`
+ * @param {object} context - `{ behaviors, registry, schemas }`
+ */
+function applyDefinition({ resource, payload }, { behaviors, registry, schemas }) {
+    if (!payload) return;
+
+    const live = schemas.get(resource) ?? null;
+    let Component = registry.has(resource) ? registry.get(resource) : null;
+
+    if (live && Component) {
+        for (const name of globalThis.Object.keys(live)) delete live[name];
+        globalThis.Object.assign(live, payload.properties ?? {});
+        Component.label = payload.label || resource;
+        Component.definition = payload;
+    } else {
+        const record = { ...(payload.properties ?? {}) };
+        schemas.set(resource, record);
+        Component = defineComponent({ ...payload, type: resource, properties: record });
+        registry.register(Component, { replace: true });
+    }
+
+    // THE OTHER HALF OF A `.px`, AND THE ONE THE CREATOR IS WATCHING FOR. A graph is read
+    // once and identified by object identity, so binding a fresh payload replaces the
+    // running behaviour on the next step, on every instance, with nothing to reload
+    // (ADR-0016 §7).
+    if (payload.graph) behaviors.bind(Component, payload.graph);
 }
 
 /**

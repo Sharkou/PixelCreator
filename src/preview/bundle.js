@@ -4,7 +4,7 @@
 // game client are two applications that share no memory and no imports; what passes between
 // them is this. That is the property which keeps the design from being a dead end: the day a
 // bundle arrives over HTTP instead of out of a browser store, nothing here changes and
-// nothing in `src/play/` learns about it.
+// nothing in the preview client learns about it.
 //
 // PURE, AND WITHOUT A DOM. A headless server that arbitrates a game (ADR-0011) has to open
 // exactly what a browser opens, so opening a bundle may not touch a canvas, a window or a

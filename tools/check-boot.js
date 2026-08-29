@@ -31,7 +31,7 @@ import { stripNonCode } from './check-exports.js';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 /** The pages a browser is pointed at. Everything else is reached from them. */
-export const ENTRIES = ['src/editor/index.html', 'src/play/index.html'];
+export const ENTRIES = ['src/editor/index.html', 'src/preview/index.html'];
 
 /** `<script type="module">` — either a src, or a body full of imports. */
 const SCRIPT_RE = /<script\b[^>]*type=["']module["'][^>]*>([\s\S]*?)<\/script>/gi;

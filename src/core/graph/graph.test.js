@@ -321,8 +321,12 @@ test('a property node takes the shape of the property it names', () => {
 
     const output = model.portOf(get, PortDirection.OUTPUT, 'value');
 
-    assert.equal(output.type, PropertyType.NUMBER);
-    assert.equal(output.label, 'speed');
+    assert.equal(output.type, PropertyType.NUMBER, 'the TYPE still follows the property');
+    // THE LABEL DOES NOT, AND THAT IS THE CHANGE. `Property` names what the port IS; the
+    // picker two rows above already says which property it currently holds, and printing
+    // the name twice on a 176 px card taught a beginner nothing (ADR-0045 §2).
+    assert.equal(output.label, 'Property');
+    assert.match(output.tooltip, /speed/, 'and the name is one hover away');
 });
 
 // --- serialization -----------------------------------------------------------------------

@@ -25,7 +25,7 @@ test('every module the real entry points reach can be loaded', async () => {
 test('both applications are entry points, because both are booted', () => {
     // The Editor and the game client are two apps (ADR-0042 §2); a check that walked only
     // one of them would let the other rot.
-    assert.deepEqual(ENTRIES, ['src/editor/index.html', 'src/play/index.html']);
+    assert.deepEqual(ENTRIES, ['src/editor/index.html', 'src/preview/index.html']);
 });
 
 // --- what it catches, on a graph built to break ------------------------------------------

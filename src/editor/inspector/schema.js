@@ -532,7 +532,17 @@ function clamp(value, min, max) {
     return value;
 }
 
-function humanize(name) {
+/**
+ * `scaleX` -> `Scale X`: a model name as a creator reads it.
+ *
+ * SHARED, BECAUSE THE PANEL AND THE PICKER HAVE TO AGREE. The Inspector shows `Scale X` and
+ * the graph's property picker used to offer `scaleX` for the very same property, which is
+ * two names for one thing on two surfaces a creator moves between constantly (ADR-0045 §6).
+ *
+ * @param {string} name - The declared property name
+ * @returns {string} What to show
+ */
+export function humanize(name) {
     return name
         .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
         .replace(/^./, first => first.toUpperCase());

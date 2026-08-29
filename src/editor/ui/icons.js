@@ -178,6 +178,9 @@ const PATHS = {
         + `<path d="M3.4 11.4h3.2M9.4 9.6l3.2 3.2M12.6 9.6l-3.2 3.2" ${S}/>`,
     'node-compare': `<path d="M6.4 4.4 2.6 8l3.8 3.6" ${S}/><path d="M9.6 4.4 13.4 8l-3.8 3.6" ${S}/>`,
     'node-logic': `<circle cx="6.2" cy="8" r="3.8" ${S}/><circle cx="9.8" cy="8" r="3.8" ${S}/>`,
+    'node-transform': `<path d="M8 2.6v10.8M2.6 8h10.8" ${S}/>`
+        + `<path d="M6.2 4.4 8 2.6l1.8 1.8M6.2 11.6 8 13.4l1.8-1.8" ${S}/>`
+        + `<path d="M4.4 6.2 2.6 8l1.8 1.8M11.6 6.2 13.4 8l-1.8 1.8" ${S}/>`,
     'node-debug': `<rect x="5" y="5.4" width="6" height="7.2" rx="3" ${S}/>`
         + `<path d="M5 8H2.4M11 8h2.6M5.6 5.6 4 4M10.4 5.6 12 4M5.6 11.6 4 13.2M10.4 11.6 12 13.2" ${S}/>`,
 
@@ -396,6 +399,9 @@ export const NODE_CATEGORY_ICONS = {
     Input: 'node-input',
     Flow: 'node-flow',
     Properties: 'node-property',
+    // MOVING A THING IS NOT READING ONE, and the glyph says which: four arrows out of a
+    // centre is the gesture, where `node-property` is a tag on a value (ADR-0045 §3).
+    Transform: 'node-transform',
     // The category a node reaching ANOTHER Object belongs to. It was called `Scene` while
     // it also held the property nodes; the glyph is unchanged because what it draws — an
     // object framed and aimed at — is exactly what a reference is (ADR-0034 §3.2).

@@ -362,14 +362,46 @@ export class Inspector extends Element {
             min-width: 0;
         }
 
-        /* Two axes of one idea, side by side. */
-        .fields.pair { display: grid; grid-template-columns: 1fr 1fr; }
+        /* EVERY CONTROL FILLS THE VALUE COLUMN, AND THAT IS WHAT MAKES THE PANEL A COLUMN.
+           A control used to be as wide as whatever it happened to contain: a Sprite field
+           holding hero.png was one width, the same field holding a.png another, and a
+           Material field with nothing in it was a stub about a third of the panel. Twelve
+           rows of that is twelve right-hand edges, and nothing to read down.
 
-        /* A lone number takes the first of the same two cells, so Rotation ends
-           exactly where the X of Position ends. The second cell is held open and
-           empty rather than collapsed — that is what keeps the column. */
-        .fields.single { display: grid; grid-template-columns: 1fr 1fr; }
-        .fields.single > :nth-child(2) { visibility: hidden; pointer-events: none; }
+           THE NUMBER SETS THE MEASURE, because it is the one control whose width was
+           already deliberate: .single and .pair divide the value column into two equal
+           cells so that Rotation ends where the X of Position ends. So a number is one
+           cell, and everything else is the pair of them — which means every edge in the
+           panel falls on one of two positions, and a Resource or an Object gets the room
+           it always needed (ADR-0045 §9).
+
+           DECLARED HERE, AND ONLY HERE. Each control already stretches what is INSIDE it —
+           ui/field.js gives its box flex: 1 — but nothing told the control itself how much
+           of the row it owned, and the answer cannot be per-control without eight files
+           having to agree. */
+        .fields > * { flex: 1 1 0; min-width: 0; }
+
+        /* What is not a value keeps its own size: the grip that carries a property, and
+           the part of a filename nobody may edit. */
+        .fields > .carry,
+        .fields > .suffix { flex: 0 0 auto; }
+
+        /* TWO CELLS FOR THE VALUE AND A NARROW ONE AFTER EACH FOR ITS GRIP. A lone number
+           takes the first cell only, so Rotation ends exactly where the X of Position
+           ends; the rest is held open rather than collapsed, which is what keeps the
+           column. Two axes of one idea take both.
+
+           THE GRIP COLUMN IS DECLARED FOR BOTH, EVEN WHERE IT IS EMPTY, because the moment
+           only one of them reserved it the two stopped lining up — and lining up is the
+           entire reason this grid exists rather than a flex box.
+
+           AND IT IS STATED, NOT SIZED TO ITS CONTENT. An auto column measures what is in it,
+           so a lone number — whose second grip cell is empty — got that width back and ended
+           eight pixels past the X of Position. 16px is what the grip measures (ui/icons.js
+           draws it in a 16px box); if that box ever changes, this is the line that has to
+           hear about it. */
+        .fields.pair,
+        .fields.single { display: grid; grid-template-columns: 1fr 16px 1fr 16px; }
 
         .none {
             padding: var(--px-space-1) 0 var(--px-space-2);
@@ -1590,9 +1622,45 @@ export class Inspector extends Element {
             }
         }, icon('close', 16));
 
-        section.querySelector('.tools').append(toggle, remove);
+        section.querySelector('.tools').append(...[this.#openTool(type), toggle, remove].filter(Boolean));
         this.#makeReorderable(section, object, type);
         return section;
+    }
+
+    /**
+     * The way into the file a Component IS, for the Components that are one (ADR-0045 §8).
+     *
+     * A `.px` ON AN OBJECT IS A DOCUMENT A CREATOR WILL WANT TO EDIT, and the only way in was
+     * to leave the panel, find the resource in Project, and double-click it — three steps to
+     * reach the thing already named on screen. Shipped Components have no file, so they get
+     * no button rather than a disabled one.
+     *
+     * IT ANNOUNCES, IT DOES NOT OPEN. Which surface a `.px` opens on is the shell's decision
+     * and this panel holds no reference to one (ADR-0006); `px-open-resource` is the event
+     * the Project panel already raises for the same intent, so there is one route in.
+     *
+     * @param {string} type - The Component type, which for a `.px` is its ResourceId
+     * @returns {HTMLElement|null} The button, or null when this Component is not a file
+     */
+    #openTool(type) {
+        const resource = this.#workspace?.project?.get?.(type) ?? null;
+        if (!resource || resource.kind !== ResourceKind.COMPONENT) return null;
+
+        const title = this.#titleOf(type);
+        return el('button', {
+            class: 'ghost',
+            type: 'button',
+            title: `Open ${title}`,
+            'aria-label': `Open ${title}`,
+            onclick: event => {
+                event.stopPropagation();
+                this.dispatchEvent(new CustomEvent('px-open-resource', {
+                    detail: { resource },
+                    bubbles: true,
+                    composed: true
+                }));
+            }
+        }, icon('graph', 16));
     }
 
     // --- reordering components ----------------------------------------------------
@@ -1825,12 +1893,13 @@ export class Inspector extends Element {
      * @param {object} target - The component instance the row belongs to
      * @param {object} descriptor - The field descriptor being drawn
      * @param {string} component - The Component type
+     * @param {string} [name] - What to call it, where the label alone would not say
      * @returns {HTMLElement} The handle
      */
-    #carryHandle(target, descriptor, component) {
+    #carryHandle(target, descriptor, component, name = descriptor.label) {
         const grip = el('span', {
             class: 'carry',
-            title: `Drag ${descriptor.label} onto a graph`,
+            title: `Drag ${name} onto a graph`,
             'aria-hidden': 'true'
         }, icon('grip', 12));
 
@@ -1841,7 +1910,7 @@ export class Inspector extends Element {
         // panel is showing — the context is already on screen, and making the creator say it
         // again with a second drag and a wire is the friction this gesture exists to remove.
         this.#makeDragSource(grip, () =>
-            propertyPayload(component, identity, descriptor.label, this.#selection?.object ?? null));
+            propertyPayload(component, identity, name, this.#selection?.object ?? null));
         return grip;
     }
 
@@ -2163,12 +2232,7 @@ export class Inspector extends Element {
     #renderRows(target, fields, component = null) {
         return rows(fields).map(row => (row.fields.length === 1
             ? this.#renderRow(target, row.fields[0], component)
-            // A PAIRED ROW IS TWO PROPERTIES, NOT ONE. `Position` is how this panel shows
-            // `x` and `y` side by side (inspector/schema.js); the Core has no vector type
-            // and ADR-0023 §2 removed the idea deliberately. So there is nothing single for
-            // a handle here to carry, and the two halves are dragged from their own rows
-            // when a creator needs one.
-            : this.#renderPair(target, row)));
+            : this.#renderPair(target, row, component)));
     }
 
     #renderRow(target, descriptor, component = null) {
@@ -2193,26 +2257,48 @@ export class Inspector extends Element {
         // needs the label at the top of it.
         const tall = descriptor.kind === FieldKind.LIST;
 
-        // A NUMERIC ROW ALREADY RESERVED THIS SPACE. `.fields.single` keeps a spacer so a
-        // plain number does not stretch across the panel; the handle takes that place and
-        // costs nothing at all. Every other row gives up the handle's width from a control
-        // that has it to spare.
+        // THE GRIP SITS IMMEDIATELY AFTER THE CONTROL IT CARRIES. A numeric row has a
+        // column reserved for it; every other row gives up its width from a control that
+        // has it to spare.
         return el('div', { class: `row${tall ? ' tall' : ''}` },
             label,
-            el('div', { class: `fields${single ? ' single' : ''}` },
-                field,
-                carry ?? (single ? el('span') : null))
+            el('div', { class: `fields${single ? ' single' : ''}` }, field, carry)
         );
     }
 
-    #renderPair(target, row) {
+    /**
+     * Two properties on one row — `Position`, `Size`, `Scale`.
+     *
+     * A PAIRED ROW IS TWO PROPERTIES, NOT ONE, which is why it has two grips. The Core has
+     * no vector type and ADR-0023 §2 removed the idea deliberately, so there is nothing
+     * whole here to carry: `Position` names no property a node could read, while `x` and
+     * `y` each name one. One grip per half is the only mapping the model can honour — and
+     * the alternative, a row that simply could not be dragged, left the three most-used
+     * properties in the Editor as the three a graph could not be built from (ADR-0045 §10).
+     *
+     * @param {object} target - The component instance
+     * @param {object} row - A grouped row: its label and its two field descriptors
+     * @param {string|null} component - The Component type, when there is one to name
+     * @returns {HTMLElement} The row
+     */
+    #renderPair(target, row, component = null) {
         const prefixes = PAIR_PREFIXES[row.fields[0].name] ?? ['', ''];
 
         return el('div', { class: 'row' },
             el('span', { class: 'label', textContent: row.label }),
             el('div', { class: 'fields pair' },
-                row.fields.map((descriptor, index) =>
-                    el('px-field').bind(target, descriptor, { prefix: prefixes[index] }))
+                row.fields.flatMap((descriptor, index) => [
+                    el('px-field').bind(target, descriptor, { prefix: prefixes[index] }),
+                    // `X` names nothing on its own: the row it sits in is what a creator
+                    // reads it with, and the tooltip is where that has to be said.
+                    component
+                        ? this.#carryHandle(target, descriptor, component, descriptor.label.length <= 2
+                            ? `${row.label} ${descriptor.label}`
+                            : descriptor.label)
+                        // The column stays even with nothing in it, or the halves of this
+                        // row would stop lining up with the numbers above them.
+                        : el('span', { class: 'carry' })
+                ])
             )
         );
     }
@@ -2304,6 +2390,16 @@ export class Inspector extends Element {
         // something registers it (ADR-0016, `project/definitions.js`).
         await this.#definitions?.install(created.id);
         addComponent(object, created.id, this.#registry);
+
+        // AND IT OPENS, BECAUSE THAT IS WHAT THE CREATOR ASKED FOR (ADR-0045 §8). "Add a
+        // Custom Component" is never the whole intention — an empty `.px` does nothing, so
+        // the next thing anybody wants is its canvas. Leaving them to find the new file in
+        // the Project panel is asking them to go looking for the thing they just made.
+        this.dispatchEvent(new CustomEvent('px-open-resource', {
+            detail: { resource: created },
+            bubbles: true,
+            composed: true
+        }));
     }
 }
 

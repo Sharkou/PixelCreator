@@ -139,8 +139,8 @@ export const MAX_ZOOM = 2.5;
  * | Node | Rows |
  * |---|---|
  * | `Number`, `Boolean`, `Text` | ONE — the field and the output socket, side by side |
- * | `Get Property` | ONE — the property picker, and the socket that carries its value |
- * | `Set Property` | flow in / picker / flow out, then the value socket beside its field |
+ * | `Get Property` | Object, Component, Property — then the socket the value leaves by |
+ * | `Set Property` | flow in / out, Object, Component, Property, then the value socket |
  * | `Add`, `Multiply`, `Equal`, `And` | A with its field, B with its field, then Result |
  * | `Not` | ONE — one value in, one out: the zip still says something true |
  * | `Branch` | flow in / true, then the condition beside its checkbox / false |
@@ -160,14 +160,20 @@ export function nodeRows(ports, controls = []) {
 
     // The results leave the zip when there are fewer of them than there are values going in;
     // the flow ports never do. Both lists keep their declared order.
-    const results = reduces(inputs, outputs) ? outputs.filter(isData) : [];
+    const results = reduces(inputs, outputs) || configured(inputs, outputs, controls)
+        ? outputs.filter(isData)
+        : [];
     const paired = results.length === 0 ? outputs : outputs.filter(port => !isData(port));
 
     const rows = [];
     for (let index = 0; index < Math.max(inputs.length, paired.length); index++) {
         rows.push({ input: inputs[index] ?? null, output: paired[index] ?? null, control: null });
     }
-    for (const result of results) rows.push({ input: null, output: result, control: null });
+    // A RESULT ROW IS THE NODE'S ANSWER, AND ANSWERS COME LAST. It is marked as one so a
+    // param cannot be placed on it: a question drawn across the answer is what made
+    // `Get Property` read `Object [Self] … value` on line one, with the two pickers that
+    // DECIDE that value underneath it (ADR-0045 §2).
+    for (const result of results) rows.push({ input: null, output: result, control: null, result: true });
 
     // A control that edits a port goes to that port's row, wherever it is. Placed first, so
     // it cannot be displaced by a param that merely wanted "the next free row".
@@ -202,7 +208,7 @@ export function nodeRows(ports, controls = []) {
     if (at === -1) at = rows.length;
 
     for (const control of floating) {
-        const labelled = rows.findIndex(row => !row.control && canBeLabelled(row, speaksForOutput));
+        const labelled = rows.findIndex(row => !row.control && !row.result && canBeLabelled(row, speaksForOutput));
         if (labelled !== -1) {
             rows[labelled].control = control;
             continue;
@@ -294,6 +300,28 @@ function isData(port) {
 function reduces(inputs, outputs) {
     const produced = outputs.filter(isData).length;
     return produced > 0 && produced < inputs.filter(isData).length;
+}
+
+/**
+ * Whether what a node produces comes from its CONFIGURATION rather than from its input.
+ *
+ * THE OTHER HALF OF `reduces()`, AND THE ONE THE ZIP COULD NOT SEE. `Get Property` takes one
+ * value in and gives one out, so the arity test calls them counterparts and puts them on one
+ * line — but the Object going in is not where the value comes from. The value comes from the
+ * Component and the Property, which are params, and drawing the answer ABOVE the two
+ * questions that decide it is the node read backwards (ADR-0045 §2).
+ *
+ * A node with no params of its own is left alone: `Parent` and `Is Valid` really do answer
+ * about the Object handed to them, and one line is the truth there.
+ *
+ * @param {object[]} inputs - The node's input ports
+ * @param {object[]} outputs - The node's output ports
+ * @param {object[]} controls - The field descriptors, as `nodeRows()` takes them
+ * @returns {boolean} True when the outputs belong below everything else
+ */
+function configured(inputs, outputs, controls) {
+    if (outputs.filter(isData).length === 0 || inputs.filter(isData).length === 0) return false;
+    return controls.some(control => !control?.port);
 }
 
 /**

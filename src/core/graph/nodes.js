@@ -90,7 +90,17 @@ export const OBJECT_TYPE = 'object';
  * meaning (ADR-0027).
  */
 export const NODE_CATEGORIES = [
-    'Events', 'Input', 'References', 'Properties', 'Flow', 'Values', 'Math', 'Compare', 'Logic', 'Debug'
+    // THE ORDER A CREATOR READS THE MENU IN, AND IT IS THE ORDER A BEHAVIOUR IS WRITTEN IN:
+    // something happens, something arrives from outside, something is decided, something is
+    // pointed at, something is read or written, something MOVES, and then the arithmetic
+    // that feeds it (ADR-0045 §3).
+    //
+    // `Transform` IS ITS OWN FAMILY, and the question that settles it is the one a beginner
+    // asks: "I want to move my object — where do I look?" Not under `Properties`, which is
+    // where you look to READ one. `Translate` and the Rotate and Scale that will join it
+    // change where a thing IS, and that is a different kind of act from reading `x`.
+    'Events', 'Input', 'Flow', 'References', 'Properties', 'Transform',
+    'Values', 'Math', 'Compare', 'Logic', 'Debug'
 ];
 
 /**

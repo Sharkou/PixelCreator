@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { Scene, components } from '../core/mod.js';
 import { Workspace } from './project/workspace.js';
 import { openPreview } from './preview.js';
-import { idFromHash, isPreviewId } from '../preview/store.js';
+import { idFromHash } from '../preview/store.js';
 
 /** A workspace with a scene open, and a storage that behaves like the browser's. */
 function editing() {
@@ -30,7 +30,7 @@ test('Preview bundles the project, stores it, and opens a window at its URL', ()
     const result = openPreview(it.workspace, { open: url => (opened.push(url), { closed: false }) });
 
     assert.ok(result, 'it opened');
-    assert.equal(isPreviewId(result.id), true, 'a preview id, marked as one');
+    assert.equal(result.id, it.workspace.project.id, 'the preview of a project IS the project');
     assert.deepEqual(opened, [result.url]);
     assert.equal(idFromHash(new URL(result.url, 'http://x/').hash), result.id,
         'the URL carries the id the client will ask for');
@@ -90,15 +90,18 @@ test('a blocked pop-up is not a failed preview, and says so', () => {
     assert.ok(it.storage.getItem(`px.preview.${result.id}`), 'and the bundle is waiting at it');
 });
 
-test('two previews are two ids, which is what two clients of one game will need', () => {
+test('two previews are two windows on ONE game, sharing one identity', () => {
+    // WHAT A MINTED ID PER PRESS COULD NOT GIVE (ADR-0044 §2). Two clients of one game have
+    // to agree on what the game is called before they can share a channel — or, later, a
+    // server and a URL. So the id is the project's, and pressing twice reaches one bundle.
     const it = editing();
 
     const first = openPreview(it.workspace, { open: () => ({}) });
     const second = openPreview(it.workspace, { open: () => ({}) });
 
-    assert.notEqual(first.id, second.id);
-    assert.ok(it.storage.getItem(`px.preview.${first.id}`), 'and both are still there');
-    assert.ok(it.storage.getItem(`px.preview.${second.id}`));
+    assert.equal(first.id, second.id);
+    assert.equal(first.url, second.url, 'so both windows are the same address');
+    assert.ok(it.storage.getItem(`px.preview.${first.id}`), 'and one bundle is waiting at it');
 });
 
 test('no project is answered, not thrown', () => {

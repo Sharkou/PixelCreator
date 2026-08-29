@@ -7,10 +7,12 @@
 //
 // A WINDOW PER PREVIEW, NOT A WINDOW REUSED. Several previews open at once is not an
 // accident here: two windows on one bundle are already two clients of one game, which is
-// the whole of what this tranche prepares for multiplayer (ADR-0042 §6).
+// the whole of what this tranche prepares for multiplayer (ADR-0042 §6). They now share an
+// identity as well as a bundle — the project's — so they are two clients of ONE game
+// rather than two games that happen to look alike (ADR-0044 §2).
 
 import { bundleProject } from '../preview/bundle.js';
-import { createPreviewId, previewUrl, putPreview } from '../preview/store.js';
+import { previewUrl, putPreview } from '../preview/store.js';
 
 /**
  * Bundle what is being edited and open it in a game window.
@@ -34,7 +36,12 @@ export function openPreview(workspace, { open = defaultOpen, report = null } = {
 
     const scene = (workspace.opened?.() ?? []).find(resource => resource.kind === 'scene') ?? null;
     const bundle = bundleProject(project, project.store, { scene: scene?.id ?? null });
-    const id = createPreviewId();
+    // THE PROJECT IS THE IDENTITY (ADR-0044 §2). A fresh id per press made two windows on
+    // one game two strangers: they could not share a channel, they could not share a URL,
+    // and the store gathered one dead bundle per press. What a Preview shows is this
+    // project, so what names it is this project — the same id Publish will later durably
+    // mint, which is why nothing downstream has to learn a second kind of name.
+    const id = project.id;
 
     if (!putPreview(id, bundle)) {
         return fail(report, 'This browser would not store the preview. '

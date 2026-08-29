@@ -5,39 +5,23 @@
 // came from this browser's storage, from a `fetch`, or from a file. That one seam is what
 // makes `play.pixelcreator.io/<id>` a replacement rather than a rewrite.
 //
-// A PREVIEW ID IS NOT A GAME ID, AND THE PREFIX SAYS SO. `prv_` marks something local,
-// disposable and belonging to this machine; a published game will carry an id a server
-// minted, and the client will not be able to tell them apart — which is the point.
+// A PREVIEW IS ADDRESSED BY THE PROJECT IT SHOWS (ADR-0044 §2). It used to mint a fresh
+// `prv_…` on every opening, so two windows on one game were two unrelated identities, the
+// store filled with one entry per press, and nothing could name "the preview of THIS
+// project" — which is precisely what a live channel and, later, a published URL have to
+// name. The identity is therefore the project's own, and it is stable: pressing Preview
+// twice reaches one bundle, and every window of it is a client of one game.
 //
-// IT FORGETS ON PURPOSE. A project carries images as data URLs, so keeping every preview a
-// session produced would fill the browser's storage with the history of one afternoon. The
-// most recent few are kept and the rest are dropped, oldest first.
+// IT FORGETS ON PURPOSE. A project carries images as data URLs, so keeping every project a
+// browser has ever opened would fill its storage. The most recent few are kept and the
+// rest are dropped, oldest first — and because an id is now a project rather than a press,
+// re-opening the same project rewrites its own entry instead of adding one.
 
-/** How a preview identifier is spelled, so its nature is readable rather than guessed. */
-export const PREVIEW_PREFIX = 'prv_';
-
-/** How many previews are kept before the oldest is dropped. */
+/** How many projects keep a stored bundle before the oldest is dropped. */
 export const PREVIEW_LIMIT = 4;
 
 const KEY = 'px.preview.';
 const INDEX = 'px.preview.index';
-
-/**
- * Mint an identifier for a new preview.
- * @returns {string} A preview id
- */
-export function createPreviewId() {
-    return `${PREVIEW_PREFIX}${Math.random().toString(36).slice(2, 10)}`;
-}
-
-/**
- * Whether an identifier names a local preview rather than a published game.
- * @param {string} id - The identifier
- * @returns {boolean} True for a preview
- */
-export function isPreviewId(id) {
-    return typeof id === 'string' && id.startsWith(PREVIEW_PREFIX);
-}
 
 /**
  * Keep a bundle under an identifier, dropping the oldest when there are too many.
@@ -91,18 +75,21 @@ export async function resolvePreview(id, storage = defaultStorage()) {
 }
 
 /**
- * The URL that plays a bundle.
+ * The URL that runs a bundle.
  *
  * A FRAGMENT, NOT A QUERY, and that is not cosmetic: a fragment never reaches a server, so
  * a preview id — which names something on this machine — cannot end up in an access log.
- * A published game will use a path (`/play/<id>`), which is the same function with a
- * different base (ADR-0042 §6).
+ * A published game will use a path (`/<id>`), which is the same function with a different
+ * base (ADR-0042 §6).
+ *
+ * RELATIVE TO THE PAGE THAT ASKS, and the page that asks is the Editor: both applications
+ * live under `src/`, so one step up and across is what reaches the client from there.
  *
  * @param {string} id - The preview id
  * @param {string} [base] - Where the client page lives
  * @returns {string} A URL
  */
-export function previewUrl(id, base = '../play/index.html') {
+export function previewUrl(id, base = '../preview/index.html') {
     return `${base}#p/${id}`;
 }
 

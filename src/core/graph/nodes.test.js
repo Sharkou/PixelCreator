@@ -146,19 +146,48 @@ test('the two On nodes sit with the property nodes whose semantics they share', 
     assert.equal(registry.get('property.set').category, registry.get('property.set').category);
 });
 
-test('every input node is one family, and the events are the other half of it', () => {
+test('every input node is one family, whichever half of the model it belongs to', () => {
+    // A CREATOR LOOKING FOR "KEYBOARD" LOOKS UNDER Input, AND FINDS ALL OF IT (ADR-0045 §3).
+    // The split between a moment and a state is real and the node NAMES say it — `On Key`,
+    // `Key Down`, `Key Is Down` — but it is a distinction the engine draws, and filing the
+    // halves under two headings made a creator hunt for the other one.
     const registry = registerStandardNodes(new NodeRegistry());
 
-    // A NODE IS FILED BY WHAT IT DOES, NOT BY THE DEVICE IT READS. `On Key` starts a flow,
-    // so it belongs with `On Start` and `On Update`; `Key Is Down` answers a question, so it
-    // belongs with the states. The two halves of "keyboard" sit in two categories on
-    // purpose, and that split IS the model (ADR-0041 §3).
-    for (const type of ['input.key', 'input.pointer', 'input.pointerButton']) {
+    for (const type of [
+        'input.onKey', 'input.keyDown', 'input.key',
+        'input.pointer', 'input.onPointerButton', 'input.pointerButtonDown', 'input.pointerButton'
+    ]) {
         assert.equal(registry.get(type).category, 'Input', type);
     }
-    for (const type of ['event.start', 'event.update', 'input.onKey', 'input.onPointerButton']) {
+
+    // `Events` KEEPS THE TWO THAT ARE NOT ABOUT A DEVICE: the simulation starting, and the
+    // simulation ticking.
+    for (const type of ['event.start', 'event.update']) {
         assert.equal(registry.get(type).category, 'Events', type);
     }
+});
+
+test('the three moments of a key are three nodes, and each says which it is', () => {
+    // `On Key` IS A MOMENT, `Key Down` IS EVERY STEP OF A STATE, `Key Is Down` IS A QUESTION.
+    // ADR-0041 §3.2 refused the middle one because a node firing sixty times a second must
+    // not LOOK like one that fires once; what answers that is the name and the port, so both
+    // are asserted here (ADR-0045 §4).
+    const registry = registerStandardNodes(new NodeRegistry());
+    const flowsOf = type => portsOf(registry.get(type), { id: 'n', type, params: {} }, {})
+        .outputs.filter(port => port.kind === PortKind.FLOW).map(port => port.label);
+
+    assert.deepEqual(flowsOf('input.onKey'), ['Pressed', 'Released']);
+    assert.deepEqual(flowsOf('input.keyDown'), ['Down']);
+    assert.deepEqual(flowsOf('input.key'), [], 'a question has no flow at all');
+
+    assert.equal(registry.get('input.keyDown').label, 'Key Down');
+    assert.equal(registry.get('input.key').label, 'Key Is Down');
+    assert.match(
+        portsOf(registry.get('input.keyDown'), { id: 'n', type: 'input.keyDown', params: {} }, {})
+            .outputs[0].tooltip,
+        /every step/i,
+        'and the port says outright that it repeats'
+    );
 });
 
 // --- a node is named for what it does, never for what it is set to -------------------------
@@ -197,13 +226,13 @@ test('node types group by category, in the declared order, with nothing empty', 
 
     const groups = groupNodes(registry);
 
-    // `Input` sits beside `Events` because both are the outside world arriving in a graph
-    // (ADR-0014). `References` comes before `Properties` because that is the order a
-    // creator works in: reach an Object, then read or write something on it — and the two
-    // are separate groups because handing over a reference and accessing a property are
-    // different acts, which is what the canvas colours apart (ADR-0034 §3.3).
-    assert.deepEqual(groups.map(group => group.category).slice(0, 5),
-        ['Events', 'Input', 'References', 'Properties', 'Flow']);
+    // THE ORDER A BEHAVIOUR IS WRITTEN IN (ADR-0045 §3): something happens, something
+    // arrives from outside, something is decided, something is pointed at, something is read
+    // or written, and something moves. `Transform` is its own family because of the question
+    // a beginner asks — "I want to move my object, where do I look?" — which is not the
+    // question `Properties` answers.
+    assert.deepEqual(groups.map(group => group.category).slice(0, 6),
+        ['Events', 'Input', 'Flow', 'References', 'Properties', 'Transform']);
     assert.equal(groups.every(group => group.entries.length > 0), true);
     assert.equal(groups.flatMap(group => group.entries).length, STANDARD_NODES.length);
 });

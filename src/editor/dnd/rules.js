@@ -19,6 +19,7 @@
 // general ones. Adding a kind of drop is adding a row.
 
 import {
+    COMPONENT_REFERENCE,
     PROPERTY_REFERENCE,
     OBJECT_SOCKET_REFERENCE,
     Object as SceneObject,
@@ -130,12 +131,12 @@ function buildInstance(rule, resource, { scene }) {
 const NOTHING_OPEN = 'There is no Component open on this canvas to declare anything in.';
 
 const REFUSED_ON_GRAPH = {
-    // A COMPONENT IS NOT SOMETHING A GRAPH HOLDS, and this is the second time that answer
-    // has been reached — the first by argument, this one by measurement (ADR-0041 §6.1).
-    // A graph reads and writes PROPERTIES; a Component is what a property is filed under,
-    // and it has one gesture of its own: giving it to an Object.
-    [DragKind.COMPONENT]: 'A graph works on properties, not on Components. Drag one of its '
-        + 'properties here, or drop it on an Object to add it.',
+    // A COMPONENT REFINES A NODE, AND ONLY A NODE (ADR-0045 §6). Dropped on a `Get` or
+    // `Set Property` it answers the question that node asks first; on BARE canvas it would
+    // still produce a card with no property chosen, and a drop makes a finished node or it
+    // does not happen (ADR-0039 §0.2). The phrase says which of the two the creator wants.
+    [DragKind.COMPONENT]: 'Drop a Component on a Get or Set Property to aim it, or drag one '
+        + 'of its properties onto the canvas to make a node.',
     [DragKind.PROPERTY]: 'This node does not name a property. Drop it on a Get or Set '
         + 'Property, or on bare canvas to add one.',
     // An Object with no identity at all — a drag that carried nothing.
@@ -520,6 +521,31 @@ export const RULES = [
             context.setNodeParam?.(target.node, 'target', socket.id, { batch });
             return { node: target.node, socket };
         }
+    },
+
+    {
+        // A COMPONENT LET GO ON A NODE THAT NAMES ONE ANSWERS ITS FIRST QUESTION.
+        //
+        // THIS GESTURE WAS REMOVED TWICE, AND BOTH REASONS WERE THE SAME ONE: the property
+        // picker wrote BOTH halves, so a drop that set `component` was undone by the very
+        // next click (ADR-0040 §4, ADR-0041 §6.1 — "rien qui survive au clic suivant"). That
+        // premise is gone. `Component` is a control of its own now (ADR-0045 §1): the drop
+        // writes a row a creator can see, the property picker below it narrows to that
+        // Component's fields, and nothing overwrites anything.
+        //
+        // AND IT IS DURABLE IN THE OTHER SENSE TOO: re-aiming a node at another Component is
+        // a drag rather than a rebuild, and `paramWrites()` drops a property the new type
+        // does not declare — in the same batch, so one `Ctrl Z` puts both back.
+        id: 'component-to-node',
+        accepts: (payload, target) => payload.kind === DragKind.COMPONENT
+            && target.zone === DropZone.GRAPH
+            && Boolean(target.node)
+            && Boolean(payload.type)
+            && target.params?.component?.reference === COMPONENT_REFERENCE,
+        describe: (payload, target) =>
+            `Point ${target.label ?? 'this node'} at ${payload.label || payload.type}`,
+        perform: (payload, target, context) =>
+            context.setNodeParam?.(target.node, 'component', payload.type) ?? null
     },
 
     {

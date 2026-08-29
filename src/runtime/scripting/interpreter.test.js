@@ -260,6 +260,58 @@ test('arithmetic and comparison do what they say, and dividing by zero yields ze
     assert.equal(component.out, 0, 'not Infinity, which would spread through every frame after it');
 });
 
+test('Clamp keeps a number between its bounds, whichever way round they are wired', () => {
+    const run = (value, min, max) => {
+        const file = px();
+        const out = file.property({ name: 'out', type: PropertyType.NUMBER, default: 0 });
+        const update = file.node('event.update');
+        const clamp = file.node('math.clamp', {});
+        const set = file.node('property.set', { property: out.id });
+
+        clamp.inputs = { value, min, max };
+        file.wire([update, 'out'], [set, 'in']);
+        file.wire([clamp, 'result'], [set, 'value']);
+
+        const { component, behavior } = behaviourFor(file.model);
+        behavior.update(null, {});
+        return component.out;
+    };
+
+    assert.equal(run(5, 0, 10), 5, 'inside is left alone');
+    assert.equal(run(-3, 0, 10), 0, 'below is lifted');
+    assert.equal(run(42, 0, 10), 10, 'above is cut');
+    // Two wires a creator crossed, with one obvious reading. Answering it beats throwing.
+    assert.equal(run(5, 10, 0), 5, 'bounds the wrong way round still bound');
+    assert.equal(run(42, 10, 0), 10);
+});
+
+test('Lerp reaches both ends exactly, and is allowed past them', () => {
+    const run = (a, b, t) => {
+        const file = px();
+        const out = file.property({ name: 'out', type: PropertyType.NUMBER, default: 0 });
+        const update = file.node('event.update');
+        const lerp = file.node('math.lerp', {});
+        const set = file.node('property.set', { property: out.id });
+
+        lerp.inputs = { a, b, t };
+        file.wire([update, 'out'], [set, 'in']);
+        file.wire([lerp, 'result'], [set, 'value']);
+
+        const { component, behavior } = behaviourFor(file.model);
+        behavior.update(null, {});
+        return component.out;
+    };
+
+    assert.equal(run(0, 100, 0), 0, '0 is From, exactly');
+    assert.equal(run(0, 100, 1), 100, 'and 1 is To, exactly');
+    assert.equal(run(0, 100, 0.25), 25);
+    assert.equal(run(20, 40, 0.5), 30, 'halfway between two numbers that are not 0 and 1');
+    // NOT CLAMPED, DELIBERATELY: overshoot is how a bounce is written, and `Clamp` is one
+    // node away for anyone who wants the other behaviour.
+    assert.equal(run(0, 100, 1.5), 150);
+    assert.equal(run(0, 100, -0.5), -50);
+});
+
 // --- properties ---------------------------------------------------------------------------------
 
 test('renaming a property leaves the running graph reading the same value', () => {

@@ -245,6 +245,19 @@ test('the v2 profile protects the boundaries the architecture declares', () => {
     assert.equal(isForbidden(v2, 'project', 'editor'), true);
     assert.equal(isForbidden(v2, 'project', 'runtime'), true);
     assert.equal(isForbidden(v2, 'runtime', 'project'), true);
+
+    // TWO APPLICATIONS, ONE LINE (ADR-0042 §2, as amended by ADR-0044 §1). The preview
+    // client and the seam it opens now share one folder, because the word a creator meets
+    // is Preview; what survives the merge is the rule that mattered — a game client that
+    // could import the Editor would be an Editor with its panels hidden.
+    assert.equal(isForbidden(v2, 'preview', 'editor'), true);
+    assert.equal(isForbidden(v2, 'core', 'preview'), true);
+    assert.equal(isForbidden(v2, 'project', 'preview'), true);
+    assert.equal(isForbidden(v2, 'runtime', 'preview'), true);
+
+    // AND THE DIRECTION THAT MUST STAY OPEN: the Editor is what writes a bundle and opens
+    // the window on it, so it reaches `preview/` and always did.
+    assert.equal(isForbidden(v2, 'editor', 'preview'), false);
 });
 
 test('the v2 profile leaves the allowed directions alone', () => {

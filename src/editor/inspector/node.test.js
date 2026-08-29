@@ -14,7 +14,7 @@ import {
 import { ComponentRegistry, Transform } from '../../core/mod.js';
 import { componentCatalogue } from '../registry.js';
 import { FieldKind } from './schema.js';
-import { CHOOSE_PROPERTY, NOTHING_SELECTED, PATH_ARROW, describeNode, inputFields, joinPath, paramFields, paramWrites, splitPath } from './node.js';
+import { NOTHING_SELECTED, describeNode, inputFields, paramFields, paramWrites } from './node.js';
 
 const registry = registerStandardNodes(new NodeRegistry());
 
@@ -80,8 +80,10 @@ test('a param that names a property becomes a choice of identities, labelled by 
     const field = fieldNamed(description, 'property');
 
     assert.equal(field.kind, FieldKind.ENUM);
-    assert.deepEqual(field.values.map(splitPath).map(pair => pair.property), ['p1', 'p2']);
-    assert.deepEqual(field.labels, ['speed', 'alive'], 'a creator picks a name, the graph stores an identity');
+    assert.deepEqual(field.values, ['p1', 'p2']);
+    // THE NAME AS THE INSPECTOR WRITES IT. A creator picks the words they see one panel
+    // away; the graph stores an identity a rename cannot invalidate (ADR-0045 §6).
+    assert.deepEqual(field.labels, ['Speed', 'Alive'], 'a creator picks a name, the graph stores an identity');
 });
 
 test('a property node takes the shape of the property it names', () => {
@@ -137,82 +139,56 @@ test('param fields come out in declaration order, whatever the node', () => {
 
 // --- ONE PICKER FOR "WHICH PROPERTY" (ADR-0040 §2) ---------------------------------------
 //
-// A creator wants "the Player's rotation". They used to meet `Component [ Transform ]` above
-// `Property [ Rotation ]` and had to know that rotation belongs to a Component before they
-// could read a number. `Component` is an abstraction of the engine; standing between someone
-// and their intention is not what it is for. The groups ARE the Components now — the idea is
-// still visible, as structure rather than as a question.
+// A creator wants "the Player's rotation". ADR-0040 §2 merged the two questions into one
+// grouped list, for a good reason — `Component` is an abstraction of the engine, and it
+// should not stand between someone and their intention. What it could not know is what the
+// merged list becomes on a real project, and ADR-0040 §8 wrote the risk down itself: it
+// holds every Component of the project. So the Component is a question again — but one that
+// is ALREADY ANSWERED, defaults to this Component, and exists to make the list below it
+// short (ADR-0045 §1).
 
-test('the property picker offers every property, grouped by the Component that declares it', () => {
+test('the Component picker leads, is never empty, and defaults to this Component', () => {
     const description = describeNode(node('property.get'), { registry, properties, components });
-    const picker = fieldNamed(description, 'property');
+    const picker = fieldNamed(description, 'component');
 
     assert.equal(picker.kind, FieldKind.ENUM);
-    assert.deepEqual(picker.labels, ['speed', 'alive', 'x', 'y', 'hp']);
-    assert.deepEqual(picker.groups,
-        ['This Component', 'This Component', 'Transform', 'Transform', 'Health']);
+    assert.deepEqual(picker.labels, ['This Component', 'Transform', 'Health']);
+    assert.equal(picker.values[0], '', 'and the first row stores nothing at all');
+    assert.equal(picker.value, '', 'a node that names none is showing This Component');
 });
 
-test('this Component comes first, because its own fields are what a graph reaches for most', () => {
-    const picker = fieldNamed(describeNode(node('property.get'), { registry, properties, components }), 'property');
-
-    assert.equal(picker.groups[0], 'This Component');
-    assert.deepEqual(picker.values.slice(0, 2).map(splitPath), [
-        { component: null, property: 'p1' },
-        { component: null, property: 'p2' }
-    ]);
-});
-
-test('a value carries both identities, and the Component half is what the Core stores', () => {
-    const picker = fieldNamed(describeNode(node('property.get'), { registry, properties, components }), 'property');
-    const health = picker.values[picker.labels.indexOf('hp')];
-
-    assert.deepEqual(splitPath(health), { component: 'Health', property: 'h1' });
-});
-
-test('the picker shows the pair the node holds, not the half filed under its own name', () => {
-    // A node holding `Health` + `h1` has to find itself in a list keyed by both, or it would
-    // read as nothing chosen.
-    const picker = fieldNamed(
-        describeNode(node('property.get', { component: 'Health', property: 'h1' }), { registry, properties, components }),
+test('the property list is the Component\'s, and only the Component\'s', () => {
+    // THE WHOLE POINT OF PUTTING THE QUESTION BACK. Eighty rows to reach `x` is not a list
+    // a creator reads; four is.
+    const own = fieldNamed(describeNode(node('property.get'), { registry, properties, components }), 'property');
+    const named = fieldNamed(
+        describeNode(node('property.get', { component: 'Transform' }), { registry, properties, components }),
         'property'
     );
 
-    assert.equal(picker.held, joinPath('Health', 'h1'));
-    assert.ok(picker.values.includes(picker.held), 'and that value is one the list offers');
+    assert.deepEqual(own.labels, ['Speed', 'Alive'], 'no Component named: this one\'s fields');
+    assert.deepEqual(named.labels, ['X', 'Y'], 'Transform named: Transform\'s, and nothing else');
 });
 
-test('the closed control says which Component, because the list heading is gone', () => {
-    // TWO COMPONENTS DECLARING `speed` ARE ONE WORD APART. In the list a heading answers
-    // which is which; on the node there is no heading, and `speed` alone was ambiguous the
-    // moment a project had two of them (ADR-0041 §2).
+test('both questions are asked, in the order they are answered', () => {
     const description = describeNode(node('property.get'), { registry, properties, components });
-    const picker = fieldNamed(description, 'property');
 
-    const own = picker.values.indexOf(joinPath(null, 'p1'));
-    const other = picker.values.indexOf(joinPath('Transform', 't1'));
-
-    assert.equal(picker.labels[other], 'x', 'the LIST keeps the short name, under its heading');
-    assert.equal(picker.paths[other], `Transform ${PATH_ARROW} x`, 'the ANSWER carries the path');
-    assert.equal(picker.paths[own], 'speed', 'your own fields get no prefix: there is only one');
-    assert.equal(picker.paths[other].includes('.'), false, 'and it is never a dot: that is code');
+    assert.deepEqual(description.fields.map(field => field.name), ['target', 'component', 'property']);
 });
 
-test('a Component is never a question of its own', () => {
-    // It is still STORED — the Core needs to know which type declares the property — but it
-    // is written by the picker and never shown as a control (ADR-0040 §2).
+test('every param row says what it is asking', () => {
+    // THE LABEL THAT WAS MISSING. The merged picker took the whole row so the path had space,
+    // which left the control naming neither the question nor the answer.
     const description = describeNode(node('property.get'), { registry, properties, components });
 
-    assert.equal(description.fields.some(field => field.name === 'component'), false);
-    assert.deepEqual(description.fields.map(field => field.name), ['target', 'property']);
+    assert.deepEqual(description.fields.map(field => field.label), ['Object', 'Component', 'Property']);
 });
 
 test('a Component installed after the panel was drawn is offered, because the catalogue is asked again', () => {
     const later = [...components, { type: 'Patrol', label: 'Patrol', properties: [{ id: 'x1', name: 'speed', type: PropertyType.NUMBER }] }];
-    const picker = fieldNamed(describeNode(node('property.get'), { registry, components: later }), 'property');
+    const picker = fieldNamed(describeNode(node('property.get'), { registry, components: later }), 'component');
 
-    assert.ok(picker.groups.includes('Patrol'));
-    assert.ok(picker.values.includes(joinPath('Patrol', 'x1')));
+    assert.ok(picker.values.includes('Patrol'));
 });
 
 test('nothing to choose from is a read-only row, never an empty dropdown', () => {
@@ -223,54 +199,61 @@ test('nothing to choose from is a read-only row, never an empty dropdown', () =>
     assert.match(picker.placeholder, /no properties/i);
 });
 
+test('an empty property list says WHICH Component declares nothing', () => {
+    // TWO EMPTIES A CREATOR HAS TO TELL APART: a Component that declares nothing, and no
+    // Component named yet. A blank strip says neither.
+    const bare = { type: 'Marker', label: 'Marker', properties: [] };
+    const picker = fieldNamed(
+        describeNode(node('property.get', { component: 'Marker' }), { registry, properties, components: [bare] }),
+        'property'
+    );
+
+    assert.match(picker.placeholder, /Marker declares no properties/);
+});
+
 test('a picker with nothing chosen holds the empty string a field understands', () => {
-    // `joinPath(null, '')` is a NUL — a value no option carries — so the control drew an
-    // invisible character where its placeholder belonged, and the row came out blank.
     const picker = fieldNamed(describeNode(node('property.get'), { registry, properties, components }), 'property');
 
-    assert.equal(picker.held, '');
-    assert.equal(picker.values.includes(picker.held), false, 'and it is not one of the choices');
-});
-
-test('a property picker with nothing chosen says what it is for, not just that it is empty', () => {
-    // IT STANDS IN FOR ITS OWN LABEL. On a node the compound picker takes the whole row so
-    // the path has room (ADR-0041 §2), so `None` would be a dropdown naming neither the
-    // question nor the answer.
-    assert.equal(
-        fieldNamed(describeNode(node('property.get'), { registry, properties, components }), 'property').placeholder,
-        CHOOSE_PROPERTY
-    );
-});
-
-test('a picker that is not compound still reads as plainly empty', () => {
-    // `None` is right exactly where a label beside the control already asks the question:
-    // the Key picker keeps its `Key` label, so the control only has to say "not chosen".
-    const key = fieldNamed(describeNode(node('input.key'), { registry, properties }), 'key');
-
-    assert.equal(key.placeholder, NOTHING_SELECTED);
+    assert.equal(picker.value, '');
+    assert.equal(picker.placeholder, NOTHING_SELECTED);
 });
 
 // --- what one param change amounts to ----------------------------------------------------
 
-test('picking a property writes both identities, and only those', () => {
-    // ONE CONTROL, TWO PARAMS. The interface asks one question; the Core stores the pair it
-    // has always stored, so nothing on disk changes.
+test('picking a Component writes the type, and This Component writes nothing', () => {
+    // `component` ABSENT MEANS THIS COMPONENT (core/graph/standard.js), which is what every
+    // graph written until now carries. The control needs a value it can select; the model
+    // needs `null`, and that is the one line between them.
+    const record = node('property.get');
+    const definition = registry.get('property.get');
+
+    assert.deepEqual(paramWrites(definition, record, 'component', 'Health', { properties, components }),
+        [{ name: 'component', value: 'Health' }]);
+    assert.deepEqual(paramWrites(definition, node('property.get', { component: 'Health' }), 'component', '', { properties, components }),
+        [{ name: 'component', value: null }]);
+});
+
+test('changing the Component drops a property the new one does not declare', () => {
+    // A REFERENCE THAT DEPENDS ON ANOTHER CANNOT SURVIVE IT CHANGING. Both writes travel one
+    // batch, so a single `Ctrl Z` puts them back (ADR-0027).
     const record = node('property.get', { component: 'Transform', property: 't1' });
 
     assert.deepEqual(
-        paramWrites(registry.get('property.get'), record, 'property', joinPath('Health', 'h1'), { components }),
-        [{ name: 'component', value: 'Health' }, { name: 'property', value: 'h1' }]
+        paramWrites(registry.get('property.get'), record, 'component', 'Health', { properties, components }),
+        [{ name: 'component', value: 'Health' }, { name: 'property', value: null }]
     );
 });
 
-test('picking one of this Component\'s own fields clears the Component half', () => {
-    // `component` absent MEANS this Component (core/graph/standard.js). Leaving a stale type
-    // behind would aim the node at someone else's property of the same id.
-    const record = node('property.set', { component: 'Health', property: 'h1' });
+test('a property that still exists under the new Component is kept', () => {
+    const twins = [
+        { type: 'A', label: 'A', properties: [{ id: 'shared', name: 'speed', type: PropertyType.NUMBER }] },
+        { type: 'B', label: 'B', properties: [{ id: 'shared', name: 'speed', type: PropertyType.NUMBER }] }
+    ];
+    const record = node('property.get', { component: 'A', property: 'shared' });
 
     assert.deepEqual(
-        paramWrites(registry.get('property.set'), record, 'property', joinPath(null, 'p1'), { properties, components }),
-        [{ name: 'component', value: null }, { name: 'property', value: 'p1' }]
+        paramWrites(registry.get('property.get'), record, 'component', 'B', { properties, components: twins }),
+        [{ name: 'component', value: 'B' }]
     );
 });
 
@@ -341,7 +324,13 @@ test('a target nobody has chosen reads as Self, not as nothing', () => {
 
     assert.equal(alone.placeholder, 'Self', 'nothing to choose from, and it still acts on itself');
     assert.equal(offered.placeholder, 'Self', 'something to choose, nothing chosen: still itself');
-    assert.deepEqual(offered.values, ['p9'], 'and the Objects this .px declares are the choices');
+
+    // AND IT IS A ROW, SO THERE IS A WAY BACK (ADR-0045 §5). An enum offers what it lists;
+    // `Self` was only a placeholder, so a creator who picked `Player` by mistake was stuck
+    // with it.
+    assert.deepEqual(offered.values, ['', 'p9']);
+    assert.deepEqual(offered.labels, ['Self', 'Player']);
+    assert.equal(offered.value, '', 'and an unset target is showing that first row');
 });
 
 test('Get Object with nothing chosen does not read as Self, because it is not', () => {
@@ -421,24 +410,23 @@ test('the property picker leads with the Object, and its four fields read as a g
     types.register(Transform);
     const catalogue = componentCatalogue(types);
 
-    const field = fieldNamed(describeNode(node('property.set'), { registry, components: catalogue }), 'property');
-    const shown = field.values.map((value, at) => ({
-        group: field.groups[at],
-        label: field.labels[at],
-        path: field.paths[at]
-    }));
-    const own = shown.filter(entry => entry.group === 'Object');
+    const chooser = fieldNamed(describeNode(node('property.set'), { registry, components: catalogue }), 'component');
+    assert.equal(chooser.labels[1], 'Object', 'right after This Component, because it is the outermost thing');
 
-    assert.deepEqual(own.map(entry => entry.label), ['name', 'tag', 'layer', 'active']);
-    assert.equal(own[0].path, `Object ${PATH_ARROW} name`, 'read with its context, like any other');
-    assert.equal(shown[0].group, 'Object', 'the outermost thing a creator points at comes first');
-    assert.ok(shown.some(entry => entry.group === 'Transform'), 'and the real Components follow');
+    const named = node('property.set', { component: 'Object' });
+    const field = fieldNamed(describeNode(named, { registry, components: catalogue }), 'property');
+
+    assert.deepEqual(field.labels, ['Name', 'Tag', 'Layer', 'Active'],
+        'in the words the Inspector\'s own header uses for them');
 });
 
-test('choosing an Object field stores the namespace and the field, like any other pair', () => {
+test('choosing the Object namespace stores it exactly as a Component type is stored', () => {
     const definition = registry.get('property.set');
-    const writes = paramWrites(definition, node('property.set'), 'property',
-        joinPath('Object', 'active'), { properties: [], components });
+    const types = new ComponentRegistry();
+    types.register(Transform);
 
-    assert.deepEqual(writes, [{ name: 'component', value: 'Object' }, { name: 'property', value: 'active' }]);
+    assert.deepEqual(
+        paramWrites(definition, node('property.set'), 'component', 'Object', { properties: [], components: componentCatalogue(types) }),
+        [{ name: 'component', value: 'Object' }]
+    );
 });

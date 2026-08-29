@@ -23,6 +23,7 @@
 
 import {
     ANY_TYPE,
+    COMPONENT_REFERENCE,
     KEY_REFERENCE,
     OBJECT_SOCKET_REFERENCE,
     OBJECT_TYPE,
@@ -34,7 +35,7 @@ import {
     referencedComponent
 } from '../../core/mod.js';
 import { keyOptions } from '../keys.js';
-import { fieldFor } from './schema.js';
+import { fieldFor, humanize } from './schema.js';
 
 /**
  * Describe a graph node for the Inspector.
@@ -139,16 +140,6 @@ export const NOTHING_SELECTED = 'None';
  */
 export const SELF_TARGET = 'Self';
 
-/**
- * What separates a Component from its property when the pair is read as one thing.
- *
- * A GLYPH, NOT A DOT. `Transform.rotation` is an expression in a programming language, and
- * this Editor is not one — a creator who has never written code reads a dot as punctuation
- * they are expected to understand (ADR-0041 §2). An arrow is a direction: the property is
- * INSIDE the Component, and the shape says so without a word.
- */
-export const PATH_ARROW = '\u25b8';
-
 /** What a property picker with nothing chosen reads as, standing in for its own label. */
 export const CHOOSE_PROPERTY = 'Choose a property';
 
@@ -191,28 +182,49 @@ const REFERENCES = {
     // THERE IS NO SECOND ROW FOR A COMPONENT. There was one, offering the project's types
     // for a param of its own; the param is still stored and is no longer asked, so a table
     // row answering a question nobody puts is a row that would only drift.
-    [PROPERTY_REFERENCE]: {
+    // WHICH COMPONENT, AS A QUESTION ALREADY ANSWERED (ADR-0045 §1). It leads the pair and
+    // it is never empty: `This Component` is the first row and what an unset param means,
+    // so a creator who picks nothing has still picked something true. What it buys is the
+    // row below it — eighty properties become four.
+    //
+    // THE STORED VALUE OF `This Component` IS NOTHING AT ALL. `''` is the sentinel a field
+    // already understands for "no choice", and `paramWrites()` turns it back into `null` on
+    // the way to the model — which is the value every graph written until now carries for
+    // "my own" (ADR-0040 §2). Nothing on disk changes.
+    [COMPONENT_REFERENCE]: {
         options: (node, context) => [
-            // THIS COMPONENT FIRST, because a `.px`'s own fields are what its graph reaches
-            // for most — and because they used to need a different node entirely.
-            ...(context.properties ?? []).map(property => ({
-                value: joinPath(null, property.id),
-                label: property.name,
-                group: THIS_COMPONENT,
-                // NO PREFIX ON YOUR OWN FIELDS. `This Component \u25b8 speed` would be
-                // ceremony: there is only one Component it could belong to, and naming it
-                // is the abstraction leaking back in through the label.
-                path: property.name
-            })),
-            ...(context.components ?? []).flatMap(entry =>
-                (entry.properties ?? []).map(property => ({
-                    value: joinPath(entry.type, property.id),
-                    label: property.name,
-                    group: entry.label ?? entry.type,
-                    path: `${entry.label ?? entry.type} ${PATH_ARROW} ${property.name}`
-                })))
+            { value: '', label: THIS_COMPONENT },
+            ...(context.components ?? []).map(entry => ({
+                value: entry.type,
+                label: entry.label ?? entry.type
+            }))
         ],
-        empty: () => 'This Component declares no properties'
+        // Unreachable: `This Component` is always offered, so the list is never empty.
+        empty: () => THIS_COMPONENT,
+        unset: () => THIS_COMPONENT
+    },
+    // WHICH PROPERTY, OF THE COMPONENT NAMED ABOVE. A short list, because the question
+    // before it has been answered — which is the whole of what ADR-0045 §1 changes.
+    [PROPERTY_REFERENCE]: {
+        // THE NAME A CREATOR READS, NOT THE ONE THE MODEL STORES. The Inspector shows
+        // `Scale X` for the property this picker used to call `scaleX`, and a beginner
+        // moving between the two panels had no reason to believe they were the same thing
+        // (ADR-0045 §6). A property a creator declared themselves is humanised by the very
+        // same rule one panel away, so the two still agree.
+        options: (node, context) => propertiesOf(node, context)
+            .map(property => ({
+                value: property.id,
+                label: property.label ?? humanize(property.name)
+            })),
+        // IT DEPENDS ON A SIBLING, AND SAYS SO. Picking a different Component leaves the
+        // property naming something the new type does not declare, so `paramWrites()` drops
+        // it in the same batch — repaired, not left dangling (ADR-0027).
+        dependsOn: COMPONENT_REFERENCE,
+        // TWO EMPTIES A CREATOR HAS TO TELL APART. A Component that declares nothing is not
+        // the same as a Component nobody has named, and a blank strip says neither.
+        empty: (node, context) => (node?.params?.component
+            ? `${referencedComponent(node, context)?.label ?? node.params.component} declares no properties`
+            : 'This Component declares no properties')
     },
     // THE FOURTH KIND, AND IT COST A ROW. A key is named by a string the Core refuses to
     // enumerate and the Editor can, because the Editor is the thing with a keyboard
@@ -234,19 +246,28 @@ const REFERENCES = {
     // is not, and offering one would let a creator point a node at something that can never
     // be an Object.
     [OBJECT_SOCKET_REFERENCE]: {
-        options: (node, context) => (context.properties ?? [])
-            .filter(property => property.type === PropertyType.OBJECTREF)
-            .map(property => ({ value: property.id, label: property.name })),
-        // BOTH EMPTIES READ THE SAME, because they ARE the same: whether this `.px` declares
-        // no Object inputs yet or declares some and none is chosen, the answer is whatever
-        // the node does with no socket named.
-        //
-        // AND ONLY THE PARAM KNOWS WHAT THAT IS. `Set Property`'s target falls back to the
-        // Object the Component is attached to, so its picker says `Self` and tells the truth
-        // (ADR-0040 §3). `Get Object` has no such fallback — with no socket named it hands
-        // on NOTHING — and it wore the same word, so a node that answers null read as a node
-        // that answers itself. The word therefore travels with the param that means it, and
-        // a param that claims no fallback gets the `None` every other unset reference shows.
+        options: (node, context, descriptor) => [
+            // `Self` IS A ROW ON THE PARAM THAT HAS A FALLBACK (ADR-0045 §5). It was the
+            // unset state
+            // and nothing else, so a creator who picked `Player` by mistake had no way back:
+            // an enum offers what it lists, and `Self` was not listed. It also makes this
+            // picker read like the two below it — one question, one list, one answer already
+            // given — which is the whole point of putting them in a column.
+            //
+            // ONLY WHERE THERE IS ACTUALLY A FALLBACK. `Get Object` uses this same kind and
+            // has none: with no socket named it hands on nothing, so offering `Self` there
+            // would describe a node that already exists and not this one (ADR-0043 §7). The
+            // param says whether it has one, and the row follows.
+            //
+            // IT STORES NOTHING, exactly as `This Component` does: `''` is the sentinel the
+            // control understands and `paramWrites()` writes `null`, which is what every
+            // graph already carries for "the Object I am attached to" (ADR-0040 §3).
+            ...(descriptor?.unset ? [{ value: '', label: descriptor.unset }] : []),
+            ...(context.properties ?? [])
+                .filter(property => property.type === PropertyType.OBJECTREF)
+                .map(property => ({ value: property.id, label: property.name }))
+        ],
+        // Unreachable: `Self` is always offered, so the list is never empty.
         empty: (node, context, descriptor) => descriptor?.unset ?? NOTHING_SELECTED,
         unset: (node, context, descriptor) => descriptor?.unset ?? NOTHING_SELECTED
     }
@@ -275,17 +296,11 @@ const REFERENCES = {
  * @returns {Array<{name: string, value: any}>} The writes, the asked-for one first
  */
 export function paramWrites(definition, node, name, value, context = {}) {
-    // ONE CONTROL, TWO IDENTITIES. The property picker asks a single question — which
-    // property — and the Core stores the answer as the pair it has always stored: the type
-    // that declares it, and the property's own id (ADR-0027 §4). Splitting here is what lets
-    // the interface drop `Component` as a question without the format changing at all.
-    const compound = definition?.params?.[name]?.compound ?? null;
-    if (compound) {
-        const parts = splitPath(value);
-        return compound.map(field => ({ name: field, value: parts[field] ?? null }));
-    }
-
-    const writes = [{ name, value }];
+    // `This Component` IS STORED AS NOTHING, which is what every graph written until now
+    // carries for "my own" (ADR-0040 §2). The control needs a value it can select — `''` is
+    // the sentinel a field already understands — and the model needs `null`; this is the one
+    // line between them, so the format is untouched (ADR-0045 §1).
+    const writes = [{ name, value: value === '' ? null : value }];
 
     const changed = definition?.params?.[name]?.reference ?? null;
     if (!changed) return writes;
@@ -294,9 +309,9 @@ export function paramWrites(definition, node, name, value, context = {}) {
     // already lives by. A headless caller, or an Editor opened before any Component type was
     // installed, offers an empty catalogue; dropping a sibling on the strength of that would
     // be destroying a reference because the question could not be asked.
-    if (REFERENCES[changed]?.options(node, context).length === 0) return writes;
+    if (REFERENCES[changed]?.options(node, context, definition.params[name]).length === 0) return writes;
 
-    const next = { ...node, params: { ...node?.params, [name]: value } };
+    const next = { ...node, params: { ...node?.params, [name]: writes[0].value } };
 
     for (const [other, descriptor] of globalThis.Object.entries(definition.params ?? {})) {
         if (other === name) continue;
@@ -306,7 +321,7 @@ export function paramWrites(definition, node, name, value, context = {}) {
 
         const held = node?.params?.[other] ?? null;
         if (held === null) continue;
-        if (reference.options(next, context).some(option => option.value === held)) continue;
+        if (reference.options(next, context, descriptor).some(option => option.value === held)) continue;
 
         writes.push({ name: other, value: null });
     }
@@ -378,37 +393,24 @@ export function inputFields(ports) {
     return fields;
 }
 
-/** The separator joining a Component type to one of its property identities. */
-const PATH = '\u0000';
-
 /**
- * The two identities of a property, as the one value a picker offers.
+ * The properties a node may pick from, which is the answer to the question above it.
  *
- * A NUL BYTE, BECAUSE IT CANNOT OCCUR IN EITHER HALF. A `ResourceId` is base36 and a property
- * id is base36 or a JavaScript identifier; a printable separator would have been a guess
- * about what a name can never contain, and this is not one. It never reaches a payload:
- * `paramWrites()` splits the pair before anything is stored.
+ * ONE RESOLVER, TWO SOURCES, AND THE CREATOR SEES ONE LIST. No Component named means the
+ * `.px` being edited, whose properties are the fields a creator declared on it; a named one
+ * means that type's. It is the Editor's mirror of `resolvedProperty()` in the Core, and the
+ * two agree because both branch on the same absent param.
  *
- * @param {string|null} component - The Component type, or null for this one
- * @param {string} property - The property's identity
- * @returns {string} The joined value
+ * @param {object} node - The node
+ * @param {object} context - `{ properties, components }`
+ * @returns {object[]} The descriptors on offer
  */
-export function joinPath(component, property) {
-    return `${component ?? ''}${PATH}${property}`;
+function propertiesOf(node, context) {
+    if (!node?.params?.component) return context.properties ?? [];
+    return referencedComponent(node, context)?.properties ?? [];
 }
 
-/**
- * The pair a joined value carries.
- * @param {string} value - A value from the property picker
- * @returns {{component: string|null, property: string}} The two identities
- */
-export function splitPath(value) {
-    const at = globalThis.String(value ?? '').indexOf(PATH);
-    if (at === -1) return { component: null, property: value ?? null };
 
-    const component = value.slice(0, at);
-    return { component: component === '' ? null : component, property: value.slice(at + 1) };
-}
 
 /**
  * A param that names something, as a choice whose values are identities.
@@ -420,75 +422,36 @@ export function splitPath(value) {
  *
  * @returns {object|null} The descriptor, or null when this param names nothing
  */
-/**
- * What a compound picker reads as when only its outer half is answered.
- *
- * @param {object} descriptor - The param descriptor, carrying `compound`
- * @param {object} node - The node
- * @param {object} context - `{ properties, components }`
- * @returns {string|null} The partial path, or null when there is nothing to say
- */
-function partialPath(descriptor, node, context) {
-    const outer = descriptor.compound?.[0];
-    if (!outer) return null;
-
-    const type = node?.params?.[outer] ?? null;
-    if (!type || node?.params?.[descriptor.compound[1]]) return null;
-
-    const entry = (context.components ?? []).find(candidate => candidate.type === type);
-    return `${entry?.label ?? type} ${PATH_ARROW} \u2026`;
-}
 
 function referenceChoice(name, descriptor, node, context) {
     const reference = REFERENCES[descriptor?.reference];
     if (!reference) return null;
 
-    const options = reference.options(node, context);
-    // WHAT THE CONTROL SHOWS IS THE PAIR, not the half stored under this name — otherwise a
-    // node holding `Transform` + `rotation` would find nothing in a list keyed by both.
-    // NOTHING CHOSEN IS THE EMPTY STRING, NOT AN EMPTY HALF OF A PATH. `joinPath(null, '')`
-    // is `'\u0000'` — a value no option carries, so the control drew an invisible character
-    // instead of its placeholder and the row came out blank. The sentinel a field already
-    // understands is `''`, so that is what an unanswered picker holds.
+    const options = reference.options(node, context, descriptor);
+    // NOTHING CHOSEN IS THE EMPTY STRING, which is the sentinel a field already understands
+    // — and, for the Component picker, also the value of its first real row.
     const chosen = node?.params?.[name] ?? '';
-    const held = descriptor.compound
-        ? (chosen ? joinPath(node?.params?.[descriptor.compound[0]] ?? null, chosen) : '')
-        : null;
 
     const field = fieldFor(name, {
         ...descriptor,
         type: PropertyType.ENUM,
         values: options.map(option => option.value),
         labels: options.map(option => option.label),
-        // THE CLOSED CONTROL SAYS WHOSE. In the list the heading answers that; on the node
-        // there is no heading, and two Components declaring `speed` were indistinguishable
-        // once one of them was chosen (ADR-0041 §2).
-        paths: options.some(option => option.path) ? options.map(option => option.path ?? null) : null,
         // A LONG LIST IS A LIST WITH HEADINGS. Ninety-nine keys in one column is not
         // something a creator reads, and the Editor's dropdown has grouped and filtered
         // since Add Component (ADR-0026 §10) — so an option may say which group it belongs
         // to, and every reference that has no groups passes `null` and draws as it always
         // did.
         groups: options.some(option => option.group) ? options.map(option => option.group ?? '') : null,
-        // A HALF-ANSWERED PATH SAYS WHICH HALF IT HAS. Dropping a Component on a node names
-        // the Component and leaves the property open — the one thing the gesture could not
-        // know. Showing `None` there would hide what the drop just did; showing
-        // `Transform \u25b8 \u2026` says the context is set and one question is left, which
-        // is exactly the state the node is in (ADR-0041 §2).
-        // A CONTROL WITH NO LABEL BESIDE IT HAS TO SAY WHAT IT IS. On a node the compound
-        // picker takes the whole row (windows/graph.js), so `None` would be a dropdown that
-        // names neither the question nor the answer.
         placeholder: options.length === 0
             ? reference.empty(node, context, descriptor)
-            : (partialPath(descriptor, node, context)
-                ?? reference.unset?.(node, context, descriptor)
-                ?? (descriptor.compound ? CHOOSE_PROPERTY : NOTHING_SELECTED)),
+            : (reference.unset?.(node, context, descriptor) ?? NOTHING_SELECTED)
     });
 
     // `fieldFor()` answers a fixed shape, so what it does not carry rides beside it: the
-    // joined value, and the fact that this control asks a COMPOUND question — which is what
-    // tells the canvas to give it the whole row rather than a word and a stub
+    // value the CONTROL shows, which is not always the value the model holds. `This
+    // Component` is stored as `null` and offered as `''`, and the canvas binds to this
     // (`#drawControl`, windows/graph.js).
-    if (held === null) return field;
-    return { ...field, held, compound: descriptor.compound };
+    return { ...field, value: chosen };
 }
+

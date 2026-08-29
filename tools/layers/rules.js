@@ -22,7 +22,6 @@ export const profiles = [
             { name: 'runtime', test: path => path.startsWith('runtime/') },
             { name: 'editor', test: path => path.startsWith('editor/') },
             { name: 'preview', test: path => path.startsWith('preview/') },
-            { name: 'play', test: path => path.startsWith('play/') },
             { name: 'network', test: path => path.startsWith('network/') }
         ],
         // core is the shared foundation: client, server and Editor all build on it, so
@@ -39,14 +38,20 @@ export const profiles = [
         // (ADR-0016, ADR-0020).
         //
         // TWO APPLICATIONS, AND THE LINE BETWEEN THEM IS THE POINT (ADR-0042 §2). `editor/`
-        // and `play/` are both tops of the graph: each may reach down into project, runtime
-        // and core, and NEITHER may reach the other. A game client that could import the
-        // Editor would be an editor with its panels hidden, and the day it shipped it would
-        // ship the Editor with it.
+        // and `preview/` are both tops of the graph: each may reach down into project,
+        // runtime and core, and NEITHER may reach the other. A game client that could import
+        // the Editor would be an editor with its panels hidden, and the day it shipped it
+        // would ship the Editor with it.
         //
-        // `preview/` is what passes between them — a bundle, and the seam that resolves an
-        // identifier into one. It sits above project and below both applications, so it may
-        // never reach either: a bundle a headless server opens cannot depend on a window.
+        // `preview/` HOLDS BOTH THE CLIENT AND THE SEAM, since the folder was renamed from
+        // `play/` — the concept a creator meets is Preview, and two folders for one word was
+        // the confusion. The layer therefore reaches runtime, which the seam alone did not
+        // need; what protects the seam is not a layer rule but its own contract, which the
+        // headless tests hold: `bundleProject()` and `openBundle()` touch no DOM.
+        //
+        // The rule that actually matters is unchanged and is the one ADR-0042 §2 names:
+        // NOTHING under `preview/` may import `editor/`. The other direction stays open, and
+        // must: the Editor is what WRITES a bundle and opens the window on it.
         //
         // Deliberately NOT forbidden: editor -> network (the Editor talks to the
         // server), runtime -> network, network -> runtime, project -> network. None of
@@ -63,16 +68,9 @@ export const profiles = [
             { from: 'runtime', to: 'editor' },
             { from: 'network', to: 'editor' },
             { from: 'core', to: 'preview' },
-            { from: 'core', to: 'play' },
             { from: 'project', to: 'preview' },
-            { from: 'project', to: 'play' },
             { from: 'runtime', to: 'preview' },
-            { from: 'runtime', to: 'play' },
-            { from: 'preview', to: 'editor' },
-            { from: 'preview', to: 'play' },
-            { from: 'preview', to: 'runtime' },
-            { from: 'editor', to: 'play' },
-            { from: 'play', to: 'editor' }
+            { from: 'preview', to: 'editor' }
         ],
         knownViolations: []
     },

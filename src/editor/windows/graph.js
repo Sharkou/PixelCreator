@@ -1387,11 +1387,12 @@ export class GraphWindow extends Element {
 
         // Falls back to what the TYPE declares, not to nothing: an untouched value is not
         // an empty one, it is one still holding the default the interpreter will read.
-        // A COMPOUND CONTROL SHOWS THE PAIR IT ASKS ABOUT, not the half filed under its own
-        // name: the property picker's options are keyed by (Component, property), so the
-        // value it is bound to has to be too (`referenceChoice`, inspector/node.js).
+        //
+        // A REFERENCE CHOICE STATES WHAT IT IS SHOWING. `This Component` is stored as `null`
+        // and offered as `''`, so the control's own value is what the descriptor says rather
+        // than what the record holds (`referenceChoice`, inspector/node.js).
         const held = source => {
-            if (descriptor.held !== undefined) return descriptor.held;
+            if (descriptor.value !== undefined) return descriptor.value;
             return source?.[key] === undefined ? descriptor.default ?? null : source[key];
         };
 
@@ -1418,25 +1419,20 @@ export class GraphWindow extends Element {
         // would run without it, and hiding it would make unwiring a surprise.
         // AN EMPTY LABEL DRAWS NOTHING, not an empty box that still takes its gap. It is
         // how a `Number` node gets down to one field and one socket.
-        // A PATH IS ITS OWN LABEL, so it takes the whole row. `Property [ Transform ▸ ro… ]`
-        // truncated the half that matters — the property is the answer and the Component is
-        // only its context (ADR-0041 §2) — because a 176px node cannot hold a word, a path
-        // and a caret. Dropping the word gives the path the space it needs, and it loses
-        // nothing: `Transform ▸ Rotation` already reads as a property, and the placeholder
-        // says so in the same voice when nothing is chosen.
-        const wide = globalThis.Boolean(descriptor.compound);
+        // EVERY PARAM ROW SAYS WHAT IT IS ASKING. The merged property picker used to take the
+        // whole row because a 176px node could not hold a word, a PATH and a caret; the path
+        // is gone — the Component is a row of its own now (ADR-0045 §1) — so `Property` fits
+        // beside its control, and a creator no longer has to infer the question from the
+        // answer.
         const row = el('div', {
             class: `param-row${descriptor.connected ? ' masked' : ''}`,
             style: `--px-node-hue: ${hue}`
         },
-            descriptor.label && !wide
+            descriptor.label
                 ? el('span', { class: 'param-label', textContent: descriptor.label })
                 : null,
             field
         );
-        // THE FULL PATH IS ALWAYS READABLE SOMEWHERE. A very long property name still
-        // truncates on a node this narrow; hovering says the whole of it.
-        if (wide && descriptor.held) row.title = pathTitle(descriptor);
         if (descriptor.connected) row.title = `${descriptor.label} is coming from a connection`;
 
         // The canvas turns a press into a pan or a node drag; inside a field it is a
@@ -2357,10 +2353,5 @@ function sameSet(first, second) {
     return true;
 }
 
-/** The whole of a compound choice, for a row too narrow to draw it. */
-function pathTitle(descriptor) {
-    const at = descriptor.values?.indexOf(descriptor.held) ?? -1;
-    return (at === -1 ? null : descriptor.paths?.[at] ?? descriptor.labels?.[at]) ?? descriptor.label;
-}
 
 customElements.define('px-graph', GraphWindow);
