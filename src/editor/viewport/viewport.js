@@ -597,7 +597,7 @@ export class Viewport extends Element {
 
         // The grid only changes when the point of view does, so it is not rebuilt for
         // nothing on a frame that only moved an object.
-        const signature = `${this.#camera.x}|${this.#camera.y}|${this.#camera.rotation}`
+        const signature = `${this.#camera.x}|${this.#camera.y}|${this.#camera.rotationX}`
             + `|${this.#zoom()}|${this.#gridRenderer.width}x${this.#gridRenderer.height}`;
         if (signature !== this.#gridSignature) {
             // THE COLOURS COME FROM THE TOKENS, so the scene's grid and the graph's are

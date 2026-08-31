@@ -94,6 +94,7 @@ const NOWHERE = { clientX: -1, clientY: -1 };
 const PAIR_PREFIXES = {
     x: ['X', 'Y'],
     width: ['W', 'H'],
+    rotationX: ['X', 'Y'],
     scaleX: ['X', 'Y']
 };
 

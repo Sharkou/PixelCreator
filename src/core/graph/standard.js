@@ -932,7 +932,7 @@ export const STANDARD_NODES = [
             flow('in'),
             data('object', OBJECT_TYPE, 'Object'),
             // THE PORT IS NAMED FOR ITS UNIT, WHICH IS THE WHOLE ANSWER TO A REAL TRAP.
-            // `Transform.rotation` is stored in radians (components/transform.js) and the
+            // `Transform.rotationX` is stored in radians (components/transform.js) and the
             // Inspector shows it in degrees, so a port called `Angle` would be a question
             // with two answers and no way to tell which one this node wants. Calling it
             // `Degrees` costs one word and removes the question — the same technique
@@ -953,7 +953,7 @@ export const STANDARD_NODES = [
             // A TARGET WITH NO TRANSFORM IS A STATE OF THE SCENE, NOT A FAULT (ADR-0034
             // §3.4), exactly as in `Translate`.
             const transform = targetObject(io)?.getComponent?.('Transform') ?? null;
-            if (transform) transform.rotation += (io.input('degrees') ?? 0) * Math.PI / 180;
+            if (transform) transform.rotationX += (io.input('degrees') ?? 0) * Math.PI / 180;
             return 'out';
         }
     },

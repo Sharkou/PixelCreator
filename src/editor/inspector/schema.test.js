@@ -51,14 +51,15 @@ const byName = (fields, name) => fields.find(field => field.name === name);
 test('a schema drives the fields, in declaration order', () => {
     const fields = describeComponent(new Transform());
     assert.deepEqual(fields.map(field => field.name),
-        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'rotationX', 'rotationY']);
+        ['x', 'y', 'rotationX', 'rotationY', 'scaleX', 'scaleY']);
     assert.equal(fields[0].kind, FieldKind.NUMBER);
-    // A TURN OUT OF THE PLANE IS CONTINUOUS, so it draws a number and not a switch: 45 is a
-    // card caught mid-turn, and a boolean could not say it (ADR-0050).
-    assert.equal(byName(fields, 'rotationX').kind, FieldKind.NUMBER);
-    assert.equal(byName(fields, 'rotationX').unit, '\u00b0');
-    assert.equal(byName(fields, 'rotationX').scale, 1, 'degrees are stored as typed');
-    assert.equal(byName(fields, 'rotation').unit, '°', 'radians are a model unit, degrees are what is shown');
+    // BOTH HALVES ARE CONTINUOUS NUMBERS IN ONE UNIT (ADR-0051): 45 is a sprite caught
+    // mid-turn, and radians are the model unit while degrees are what is shown.
+    for (const half of ['rotationX', 'rotationY']) {
+        assert.equal(byName(fields, half).kind, FieldKind.NUMBER, half);
+        assert.equal(byName(fields, half).unit, '°', half);
+        assert.equal(byName(fields, half).scale, 180 / Math.PI, half);
+    }
 });
 
 test('schema constraints are carried through', () => {
@@ -83,7 +84,7 @@ test('a number bounded at both ends becomes a slider', () => {
 });
 
 test('rotation is stated in radians and shown in degrees', () => {
-    const rotation = byName(describeComponent(new Transform()), 'rotation');
+    const rotation = byName(describeComponent(new Transform()), 'rotationX');
 
     assert.equal(rotation.unit, '°');
     assert.equal(formatValue(rotation, Math.PI / 4), '45');
@@ -171,7 +172,10 @@ test('x and y are one row, and so are width and height', () => {
 
     assert.equal(transform[0].label, 'Position');
     assert.deepEqual(transform[0].fields.map(field => field.name), ['x', 'y']);
-    assert.deepEqual(transform[1].fields.map(field => field.name), ['rotation']);
+    // ROTATION IS A PAIR TOO NOW, so the panel reads Position / Rotation / Scale — three
+    // rows of one shape rather than two pairs around a lone scalar (ADR-0051 §2).
+    assert.equal(transform[1].label, 'Rotation');
+    assert.deepEqual(transform[1].fields.map(field => field.name), ['rotationX', 'rotationY']);
     assert.equal(transform[2].label, 'Scale');
     assert.deepEqual(transform[2].fields.map(field => field.name), ['scaleX', 'scaleY']);
 
@@ -215,7 +219,7 @@ test('an int is rounded', () => {
 });
 
 test('a converted value is shown at a length a creator can act on', () => {
-    const rotation = byName(describeComponent(new Transform()), 'rotation');
+    const rotation = byName(describeComponent(new Transform()), 'rotationX');
 
     // 0.3 rad is 17.188733853924695 degrees. Twelve significant digits of that is noise
     // in a field ninety pixels wide.
@@ -224,7 +228,7 @@ test('a converted value is shown at a length a creator can act on', () => {
 });
 
 test('rounding for display never rewrites the model', () => {
-    const rotation = byName(describeComponent(new Transform()), 'rotation');
+    const rotation = byName(describeComponent(new Transform()), 'rotationX');
     const shown = toDisplay(rotation, 0.3);
 
     // The field shows the short form and reports nothing, so the stored value keeps
@@ -246,7 +250,7 @@ test('the readable form and the value are two different numbers', () => {
 test('a gesture starts from the model, so the display rounding cannot become the value', () => {
     // Rotation, because the conversion to degrees is what makes the two forms visibly
     // different: 0.3 rad is 17.188733853924695 degrees and the box shows 17.189.
-    const rotation = byName(describeComponent(new Transform()), 'rotation');
+    const rotation = byName(describeComponent(new Transform()), 'rotationX');
     const stored = 0.3;
 
     const fromModel = toDisplayExact(rotation, stored);
@@ -266,7 +270,7 @@ test('a gesture starts from the model, so the display rounding cannot become the
 });
 
 test('the exact form converts units like the readable one, without shortening', () => {
-    const rotation = byName(describeComponent(new Transform()), 'rotation');
+    const rotation = byName(describeComponent(new Transform()), 'rotationX');
 
     assert.equal(toDisplay(rotation, 0.3), 17.189, 'readable');
     assert.equal(toDisplayExact(rotation, 0.3), 0.3 * 180 / Math.PI, 'exact, and still in degrees');
@@ -290,7 +294,7 @@ test('an int never shows a decimal point', () => {
 
 test('float noise still disappears', () => {
     const x = byName(describeComponent(new Transform()), 'x');
-    const rotation = byName(describeComponent(new Transform()), 'rotation');
+    const rotation = byName(describeComponent(new Transform()), 'rotationX');
 
     assert.equal(formatValue(x, 0.1 + 0.2), '0.3');
     assert.equal(formatValue(rotation, Math.PI / 4), '45');

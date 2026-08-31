@@ -25,59 +25,80 @@
 
 import { Matrix } from '../math/matrix.js';
 
-/** What one degree is worth in radians, since `rotationX` and `rotationY` are stored in degrees. */
-const DEGREES_TO_RADIANS = Math.PI / 180;
-
 export class Transform {
 
     static type = 'Transform';
 
-    static exposes = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'rotationX', 'rotationY'];
+    static exposes = ['x', 'y', 'rotationX', 'rotationY', 'scaleX', 'scaleY'];
 
     static schema = {
         x: { type: 'number', default: 0 },
         y: { type: 'number', default: 0 },
-        rotation: { type: 'number', default: 0, unit: 'rad' },
+        // ROTATION IS A PAIR, LIKE POSITION AND SCALE (ADR-0051). It was one scalar beside
+        // two pairs, which made the panel read as three shapes for one idea. The Inspector
+        // pairs `x`/`y` and `scaleX`/`scaleY` by declaration (inspector/schema.js, `PAIRS`),
+        // so rotation joins that table rather than inventing a vector type — ADR-0023 §2
+        // removed vectors from the Property System deliberately, and this needs none.
+        //
+        // X IS THE ROTATION THAT ALWAYS EXISTED: in the plane of the screen, like a clock
+        // hand. Y turns the sprite about the vertical axis, out of the plane — which under
+        // the orthographic projection this renderer already uses is exactly a horizontal
+        // foreshortening by `cos`. Neither is an approximation of the other.
+        //
+        // BOTH IN RADIANS, because the first always was and migrating it would rewrite every
+        // scene. One unit for one property: the Inspector converts both to degrees through
+        // the same `DISPLAY_UNITS` entry, so a creator types 45 into either half.
+        rotationX: { type: 'number', default: 0, unit: 'rad' },
+        rotationY: { type: 'number', default: 0, unit: 'rad' },
         scaleX: { type: 'number', default: 1 },
-        scaleY: { type: 'number', default: 1 },
-        // TURNING OUT OF THE SCREEN, IN A RENDERER THAT HAS NO DEPTH (ADR-0050).
-        //
-        // `rotation` turns an object IN the plane and stays exactly what it was. These two
-        // turn it OUT of the plane — and under the orthographic projection this renderer
-        // already uses, that is not an approximation of anything: a rotation of θ about the
-        // X axis maps (x, y, 0) to (x, y·cosθ, y·sinθ), and dropping z leaves (x, y·cosθ).
-        // A vertical scale by cos θ IS the rotation, exactly.
-        //
-        // SO THESE ARE CONTINUOUS, AND THAT IS THE POINT. 45° is a card caught mid-turn, 90°
-        // is its edge, 180° is its back. That 180° looks like a mirror is a consequence of
-        // the cosine, not the model: nothing here is a flip with a longer name.
-        //
-        // DEGREES, STORED AS TYPED. `rotation` is kept in radians because it always was and
-        // migrating it would rewrite every scene; these are new, so they hold the number a
-        // creator wrote. The unit is declared for the suffix alone — `DISPLAY_UNITS` has no
-        // entry for `°`, so the scale stays 1 and nothing is converted.
-        rotationX: { type: 'number', default: 0, unit: '\u00b0' },
-        rotationY: { type: 'number', default: 0, unit: '\u00b0' }
+        scaleY: { type: 'number', default: 1 }
     };
+
+    /**
+     * Read a Transform saved before rotation became a pair.
+     *
+     * A SCENE SAVED YESTERDAY CARRIES `rotation`, AND `reconcileValues()` DROPS WHAT THE
+     * SCHEMA DOES NOT DECLARE — so without this an old project would open with every object
+     * unrotated, silently. The rename is the whole migration: the value meant the in-plane
+     * rotation then and means it now, in the same unit.
+     *
+     * DECLARED, NOT SPECIAL-CASED. `static migrate` is read by `reconcileValues()` for any
+     * component that has one, so a shipped type can rename a property without every caller
+     * of the serializer learning about it (ADR-0051 §3).
+     *
+     * @param {object} values - Serialized values, as they were written
+     * @returns {object} The values this version of the schema understands
+     */
+    static migrate(values) {
+        if (!values || !globalThis.Object.hasOwn(values, 'rotation')) return values;
+
+        const { rotation, ...rest } = values;
+        // A value the newer schema already carries wins: this only fills a gap.
+        return globalThis.Object.hasOwn(rest, 'rotationX') ? rest : { ...rest, rotationX: rotation };
+    }
 
     /**
      * Create a transform. All values are local, relative to the parent.
      * @param {number} [x] - Horizontal position
      * @param {number} [y] - Vertical position
-     * @param {number} [rotation] - Rotation in radians
+     * THE SCHEMA'S ORDER IS NOT THIS ONE, AND THAT IS DELIBERATE. `rotationY` is declared
+     * beside `rotationX` because the Inspector reads the schema to draw its rows, and comes
+     * LAST here because the positional signature is a compatibility surface: every
+     * `new Transform(x, y, rotation, scaleX, scaleY)` written before rotation became a pair
+     * still means what it meant.
+     *
+     * @param {number} [rotationX] - Rotation in the plane of the screen, in radians
      * @param {number} [scaleX] - Horizontal scale factor
      * @param {number} [scaleY] - Vertical scale factor
-     * @param {number} [rotationX] - Turn about the X axis, in degrees
-     * @param {number} [rotationY] - Turn about the Y axis, in degrees
+     * @param {number} [rotationY] - Rotation about the vertical axis, in radians
      */
-    constructor(x = 0, y = 0, rotation = 0, scaleX = 1, scaleY = 1, rotationX = 0, rotationY = 0) {
+    constructor(x = 0, y = 0, rotationX = 0, scaleX = 1, scaleY = 1, rotationY = 0) {
         this.x = x;
         this.y = y;
-        this.rotation = rotation;
-        this.scaleX = scaleX;
-        this.scaleY = scaleY;
         this.rotationX = rotationX;
         this.rotationY = rotationY;
+        this.scaleX = scaleX;
+        this.scaleY = scaleY;
     }
 }
 
@@ -90,37 +111,39 @@ export function localMatrix(object) {
     const transform = object.getComponent('Transform');
     if (!transform) return Matrix.identity();
 
-    // THE ONE PLACE A TURN OUT OF THE PLANE BECOMES GEOMETRY (ADR-0050). Everything that
-    // reads a placement — the renderer, picking, the camera — goes through `worldMatrix()`
-    // and therefore through here, so it is composed once and nothing downstream learns a new
-    // word. The pipeline is untouched: what leaves is the same affine 2x3 it always was.
+    // THE ONE PLACE THE PAIR BECOMES GEOMETRY (ADR-0051). Everything that reads a placement
+    // — the renderer, picking, the camera — goes through `worldMatrix()` and therefore
+    // through here, so it is composed once and nothing downstream learns a new word. The
+    // pipeline is untouched: what leaves is the same affine 2x3 it always was.
     //
-    // X TURNS ABOUT THE HORIZONTAL AXIS, SO IT FORESHORTENS THE VERTICAL ONE, and Y the
-    // other way round. Reading it as "rotationX scales Y" looks like a transposition and is
-    // not: an axis you turn about is the axis that keeps its length.
+    // Y IS A HORIZONTAL FORESHORTENING, AND THAT IS NOT AN APPROXIMATION. Under the
+    // orthographic projection this renderer already uses, turning by φ about the vertical
+    // axis maps (x, y, 0) to (x·cos φ, y, -x·sin φ); dropping z leaves (x·cos φ, y). A
+    // horizontal scale by cos φ IS that rotation, exactly — 1 at rest, 0 edge on at 90°,
+    // -1 showing its back at 180°. That the back reads as a mirror is a consequence of the
+    // cosine, not a case anybody wrote.
     return Matrix.compose(
         transform.x,
         transform.y,
-        transform.rotation,
-        transform.scaleX * foreshorten(transform.rotationY),
-        transform.scaleY * foreshorten(transform.rotationX)
+        // X IS THE ROTATION THAT ALWAYS EXISTED, passed exactly where it always was.
+        angle(transform.rotationX),
+        transform.scaleX * Math.cos(angle(transform.rotationY)),
+        transform.scaleY
     );
 }
 
 /**
- * How much an axis is shortened by turning the object about the perpendicular one.
+ * An angle a Transform is holding, or zero when it is holding nothing usable.
  *
- * `cos` OF THE ANGLE, AND NOTHING ELSE. Under an orthographic projection a turn of θ about
- * an axis leaves the perpendicular one measuring `cos θ` of what it did — 1 at rest, 0 edge
- * on, -1 showing its back. The sign is what makes 180° read as a mirror, which is a
- * consequence of the cosine rather than a case anybody wrote.
+ * A Transform reached through a migration, or written by hand, may carry `undefined` where a
+ * number belongs; `Math.cos(undefined)` is NaN, and a NaN in a matrix takes the object off
+ * screen with nothing to show for it.
  *
- * @param {number} degrees - The turn, in degrees, as the model stores it
- * @returns {number} The factor to apply to the perpendicular axis
+ * @param {any} value - What the component holds
+ * @returns {number} The angle in radians
  */
-function foreshorten(degrees) {
-    const angle = typeof degrees === 'number' && Number.isFinite(degrees) ? degrees : 0;
-    return Math.cos(angle * DEGREES_TO_RADIANS);
+function angle(value) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 /**

@@ -1,6 +1,7 @@
 # ADR-0050 — Tourner hors du plan
 
 - **Statut :** **accepté** (2026-08-31)
+- **Remplacé par :** ADR-0051 (2026-08-31) — la rotation devient une PAIRE `rotationX` / `rotationY` appariée comme Position et Scale. `Rotation.X` est l'ancienne rotation dans le plan ; `Rotation.Y` prend le rôle que §3 donnait à `rotationX`. Les deux sont en radians, plus en degrés.
 - **Décide :** comment un objet 2D dit qu'il est tourné hors du plan de l'écran
 - **Dépend de :** ADR-0002 (espaces et Transform), ADR-0003 (Property System), ADR-0007 (schéma)
 - **Remplace :** ADR-0047 §3 — `flipX` / `flipY` sont retirés

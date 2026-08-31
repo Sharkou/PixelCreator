@@ -437,10 +437,10 @@ test('Rotate turns by degrees, and the Transform keeps radians', () => {
     const it = game(everyStep('transform.rotate', { degrees: 90 }));
 
     it.runtime.step();
-    assert.ok(Math.abs(it.hero.getComponent('Transform').rotation - Math.PI / 2) < 1e-9);
+    assert.ok(Math.abs(it.hero.getComponent('Transform').rotationX - Math.PI / 2) < 1e-9);
 
     it.runtime.step();
-    assert.ok(Math.abs(it.hero.getComponent('Transform').rotation - Math.PI) < 1e-9,
+    assert.ok(Math.abs(it.hero.getComponent('Transform').rotationX - Math.PI) < 1e-9,
         'and it turns AGAIN, because it is relative');
     assert.deepEqual(it.failures, []);
 });

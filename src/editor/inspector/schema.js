@@ -153,6 +153,7 @@ export function fieldKindFor(type) {
 const PAIRS = [
     { first: 'x', second: 'y', label: 'Position' },
     { first: 'width', second: 'height', label: 'Size' },
+    { first: 'rotationX', second: 'rotationY', label: 'Rotation' },
     { first: 'scaleX', second: 'scaleY', label: 'Scale' }
 ];
 

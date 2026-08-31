@@ -53,7 +53,7 @@ test('a parent rotation orbits the child', () => {
     // A quarter turn moves a child that sits to the right onto the axis below.
     assertPosition(worldPosition(child), { x: 0, y: 10 });
     assert.equal(child.x, 10, 'the local value is untouched');
-    assert.equal(child.rotation, 0, 'and so is the local rotation');
+    assert.equal(child.rotationX, 0, 'and so is the local rotation');
 });
 
 test('a parent rotation also rotates the child frame', () => {
@@ -135,11 +135,11 @@ test('rotating a parent after the fact orbits the child', () => {
     const child = object('Child', new Transform(10, 0));
     parent.addChild(child);
 
-    parent.rotation = QUARTER_TURN;
+    parent.rotationX = QUARTER_TURN;
 
     assertPosition(worldPosition(child), { x: 0, y: 10 });
     assert.equal(child.x, 10);
-    assert.equal(child.rotation, 0);
+    assert.equal(child.rotationX, 0);
 });
 
 test('detaching a child returns it to its local placement', () => {
@@ -208,5 +208,5 @@ test('the world transform is not stored anywhere', () => {
     assert.equal(child.worldX, undefined);
     assert.equal(child.getComponent('Transform').worldX, undefined);
     assert.deepEqual(globalThis.Object.keys(child.getComponent('Transform')),
-        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'rotationX', 'rotationY']);
+        ['x', 'y', 'rotationX', 'rotationY', 'scaleX', 'scaleY']);
 });

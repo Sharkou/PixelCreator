@@ -248,7 +248,7 @@ export function moveComponent(object, type, index, { actor, batch } = {}) {
  *
  * ONE GESTURE, ONE HISTORY ENTRY, SIX OPERATIONS:
  *
- *   batch { REPARENT, SET_PROPERTY x, y, rotation, scaleX, scaleY }
+ *   batch { REPARENT, SET_PROPERTY x, y, rotationX, scaleX, scaleY }
  *
  * Dropping an object into another branch of the Hierarchy is a tidying gesture, not a
  * move: in Unity, Godot and Blender the object does not budge on screen, and a creator
@@ -315,8 +315,15 @@ export function reparentObject(scene, object, parent = null, index, {
         return { applied: true, batch, sheared: true };
     }
 
-    for (const prop of ['x', 'y', 'rotation', 'scaleX', 'scaleY']) {
-        transform.setProperty(prop, local[prop], { origin: Origin.EDITOR, actor, batch });
+    // WHAT `decompose()` CALLS `rotation` IS WHAT THE TRANSFORM CALLS `rotationX`, and the
+    // two names are both right: the matrix has one rotation to report, and the component
+    // holds it as the first half of a pair (ADR-0051 §1). `rotationY` is not decomposed
+    // because it is not IN the matrix as an angle — it left as a horizontal scale, and
+    // `scaleX` already carries it back.
+    const PLACEMENT = [['x', 'x'], ['y', 'y'], ['rotationX', 'rotation'], ['scaleX', 'scaleX'], ['scaleY', 'scaleY']];
+
+    for (const [prop, decomposed] of PLACEMENT) {
+        transform.setProperty(prop, local[decomposed], { origin: Origin.EDITOR, actor, batch });
     }
 
     return { applied: true, batch, sheared: false };

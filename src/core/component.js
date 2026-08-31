@@ -173,7 +173,13 @@ export function componentLabel(component) {
  */
 export function reconcileValues(component, values = {}) {
     const schema = componentSchema(component);
-    const entries = globalThis.Object.entries(values ?? {});
+    // A TYPE MAY RENAME A PROPERTY WITHOUT EVERY CALLER LEARNING ABOUT IT (ADR-0051 §3).
+    // Values the schema does not declare are dropped below — which is what lets a definition
+    // change without a migration — and that same rule silently discards a value a RENAME
+    // meant to keep. `static migrate` is the one place a type gets to say "this used to be
+    // called something else", and it runs before the filter rather than around it.
+    const migrated = migrateValues(component, values);
+    const entries = globalThis.Object.entries(migrated ?? {});
 
     for (const [key, value] of entries) {
         if (key === 'active') {
@@ -191,6 +197,27 @@ export function reconcileValues(component, values = {}) {
     }
 
     return component;
+}
+
+/**
+ * Let a component type rewrite serialized values written against an older schema.
+ *
+ * @param {object} component - The component the values are destined for
+ * @param {object} values - Serialized values, as they were written
+ * @returns {object} The values the current schema understands
+ */
+function migrateValues(component, values) {
+    const migrate = component?.constructor?.migrate;
+    if (typeof migrate !== 'function') return values;
+
+    // A MIGRATION THAT THROWS MUST NOT COST THE SCENE. Losing one component's values is bad;
+    // losing the whole file because a rename was written badly is the failure ADR-0021
+    // exists to prevent.
+    try {
+        return migrate(values) ?? values;
+    } catch {
+        return values;
+    }
 }
 
 /**

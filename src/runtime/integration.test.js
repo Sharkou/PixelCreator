@@ -38,7 +38,7 @@ function fakeContext() {
 class Orbit {
     static type = 'Orbit';
     constructor(speed = 1) { this.speed = speed; }
-    update(self, ctx) { self.rotation += this.speed * ctx.deltaTime; }
+    update(self, ctx) { self.rotationX += this.speed * ctx.deltaTime; }
 }
 
 test('a scene runs and draws through the Canvas 2D backend', () => {
@@ -71,7 +71,7 @@ test('a scene runs and draws through the Canvas 2D backend', () => {
     assert.ok(Math.abs(position.y - 130) < 1e-6, `expected y near 130, got ${position.y}`);
 
     assert.equal(child.x, 40, 'the child never had its local values rewritten');
-    assert.equal(child.rotation, 0);
+    assert.equal(child.rotationX, 0);
 
     assert.equal(context.of('fillRect').length, 60, 'one clear and one rectangle per frame');
     assert.equal(context.of('save').length, context.of('restore').length);
@@ -102,7 +102,7 @@ test('the same simulation runs headless and reaches the same state', () => {
 
     assert.equal(serverRuntime.renders, false);
     assert.equal(clientRuntime.renders, true);
-    assert.equal(server.object.rotation, client.object.rotation);
+    assert.equal(server.object.rotationX, client.object.rotationX);
     assert.deepEqual(
         server.object.getComponent('ParticleSystem').particles,
         client.object.getComponent('ParticleSystem').particles,

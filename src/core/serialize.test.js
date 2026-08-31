@@ -80,7 +80,7 @@ test('a facade property belongs to its component, not to the object', () => {
     assert.equal(data.x, undefined, 'the facade stores nothing, so it serializes nothing');
     assert.deepEqual(data.components[0], {
         type: 'Transform',
-        values: { x: 55, y: 20, rotation: 0, scaleX: 1, scaleY: 1, rotationX: 0, rotationY: 0 }
+        values: { x: 55, y: 20, rotationX: 0, rotationY: 0, scaleX: 1, scaleY: 1, rotationX: 0, rotationY: 0 }
     });
 });
 
@@ -244,7 +244,7 @@ test('a scene survives a round trip', () => {
     assert.equal(restoredParent.tag, 'root');
     assert.equal(restoredParent.layer, 2);
     assert.equal(restoredParent.x, 10, 'the facade works on the restored object');
-    assert.equal(restoredParent.rotation, 1.5);
+    assert.equal(restoredParent.rotationX, 1.5);
     assert.equal(restoredParent.getComponent('Transform').scaleX, 2);
     assert.equal(restoredParent.getComponent('Transform').scaleY, 3);
     assert.equal(restoredParent.getComponent('Rotator').speed, 5);

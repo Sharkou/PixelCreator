@@ -24,7 +24,7 @@ function place(target, object, x, y, { rotation = 0, scaleX = 1, scaleY = 1 } = 
     const transform = object.getComponent('Transform');
     transform.x = x;
     transform.y = y;
-    transform.rotation = rotation;
+    transform.rotationX = rotation;
     transform.scaleX = scaleX;
     transform.scaleY = scaleY;
     return object;
@@ -60,8 +60,11 @@ test('the whole gesture is one history entry', () => {
     const result = reparentObject(target, child, parent);
 
     assert.equal(operations[0].type, 'REPARENT');
+    // FIVE, NOT SIX: `rotationY` is not decomposed from the matrix because it is not IN it
+    // as an angle — it left as a horizontal scale, and `scaleX` carries it back (ADR-0051
+    // §1). Writing it here would be inventing a value the geometry never reported.
     assert.deepEqual(operations.slice(1).map(operation => operation.prop),
-        ['x', 'y', 'rotation', 'scaleX', 'scaleY']);
+        ['x', 'y', 'rotationX', 'scaleX', 'scaleY']);
     assert.ok(operations.every(operation => operation.batch === result.batch),
         'one batch, so one undo takes the whole drop back');
 });
@@ -196,7 +199,7 @@ test('the Transform of a reparented object still holds LOCAL values only', () =>
     reparentObject(target, child, parent);
 
     assert.deepEqual(globalThis.Object.keys(child.getComponent('Transform')),
-        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'rotationX', 'rotationY']);
+        ['x', 'y', 'rotationX', 'rotationY', 'scaleX', 'scaleY']);
     assert.equal(child.x, -70);
     assert.equal(worldPosition(child).x, 30);
 });
