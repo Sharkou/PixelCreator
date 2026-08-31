@@ -420,11 +420,7 @@ export class Field extends Element {
         const glyph = el('span', { class: 'choice-glyph' });
         const text = el('span', { class: 'choice-name' });
 
-        const button = el('button', {
-            class: 'choice',
-            type: 'button',
-            disabled: descriptor.readonly,
-            onclick: () => openMenu(
+        const open = (extra = {}) => openMenu(
                 button,
                 // HEADINGS WHERE THE OPTIONS DECLARE THEM. A heading is inserted where the
                 // group changes rather than by sorting, so the order the descriptor gives is
@@ -458,10 +454,22 @@ export class Field extends Element {
                 {
                     search: descriptor.values.length > 8,
                     browse: descriptor.browse === true,
-                    label: descriptor.label.toLowerCase()
+                    label: descriptor.label.toLowerCase(),
+                    ...extra
                 }
-            )
+            );
+
+        const button = el('button', {
+            class: 'choice',
+            type: 'button',
+            disabled: descriptor.readonly,
+            onclick: () => open()
         }, glyph, text, el('span', { class: 'choice-caret' }, icon('chevron', 16)));
+
+        // ASKED FROM OUTSIDE, AND ONLY EVER TO OPEN WHAT A CLICK OPENS. A drop that names a
+        // group needs THIS control's menu, one level in — not a second menu built elsewhere
+        // from the same options, which is how two lists start to disagree (ADR-0052 §2).
+        this.pxOpenPicker = (options = {}) => { if (!descriptor.readonly) open(options); };
 
         // The control shows what the MODEL holds, so an undo or a collaborator moves it
         // the same way a click does. `#pull()` calls this back through `value`.

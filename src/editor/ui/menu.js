@@ -217,12 +217,19 @@ export class Menu extends Element {
      * @param {boolean} [options.search] - Show a filter field and the key hints
      * @param {string} [options.label] - What is being chosen, for the placeholder
      * @param {boolean} [options.browse] - Open on the categories rather than on everything
+     * @param {string|null} [options.category] - Open already inside this group
      */
-    open(rect, items, onPick, { search = false, label = '', browse = false } = {}) {
+    open(rect, items, onPick, { search = false, label = '', browse = false, category = null } = {}) {
         this.#onPick = onPick;
         this.#items = items;
         this.#browse = browse;
-        this.#category = null;
+        // ALREADY ONE LEVEL IN, WHEN THE CALLER KNOWS WHICH (ADR-0052 §2). A Component let go
+        // on a node has said which group it means; opening on the full list would make the
+        // creator say it again. It is the state `→` reaches, entered from outside — not a
+        // second way to browse, and `←` still leads back out to the categories.
+        this.#category = browse && category && this.#groups().some(group => group.category === category)
+            ? category
+            : null;
         this.#list = el('div', { class: 'list' });
 
         const parts = [];

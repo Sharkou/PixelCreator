@@ -131,17 +131,12 @@ function buildInstance(rule, resource, { scene }) {
 const NOTHING_OPEN = 'There is no Component open on this canvas to declare anything in.';
 
 const REFUSED_ON_GRAPH = {
-    // A COMPONENT IS NOT SOMETHING A GRAPH CAN BE HANDED, AND THE THIRD REMOVAL IS THE LAST
-    // (ADR-0047 §2). The gesture was refused, restored, and refused again, each time for the
-    // same reason underneath: what a Component names is a GROUP of properties, and a node
-    // needs one of them. It briefly had a field of its own to write into; now that one
-    // picker asks the whole question, writing `component` alone sets a value the creator
-    // cannot see and the next click overwrites — which is the definition of a dead value.
-    //
-    // WHAT THE CREATOR WANTED IS ONE STEP AWAY AND SAYS SO: drag the property itself, or open
-    // the picker, where that Component is a heading to walk into.
-    [DragKind.COMPONENT]: 'Drag one of this Component\u2019s properties onto the canvas, or '
-        + 'open a Get or Set Property and pick it there \u2014 its Component is a group in that list.',
+    // A COMPONENT ON BARE CANVAS IS STILL REFUSED, and for the reason it always was: a drop
+    // makes a finished node or it does not happen (ADR-0039 §0.2), and which property is
+    // exactly what a Component does not say. On a node that ASKS for a property it now means
+    // something — see `component-to-node` (ADR-0052 §2).
+    [DragKind.COMPONENT]: 'Drop this Component on a Get or Set Property to choose from its '
+        + 'properties, or drag one of them straight onto the canvas.',
     [DragKind.PROPERTY]: 'This node does not name a property. Drop it on a Get or Set '
         + 'Property, or on bare canvas to add one.',
     // An Object with no identity at all — a drag that carried nothing.
@@ -526,6 +521,35 @@ export const RULES = [
             context.setNodeParam?.(target.node, 'target', socket.id, { batch });
             return { node: target.node, socket };
         }
+    },
+
+    {
+        // A COMPONENT LET GO ON A NODE ASKS THE QUESTION, IT DOES NOT ANSWER IT (ADR-0052 §2).
+        //
+        // THE GESTURE WAS REFUSED THREE TIMES, AND EVERY REFUSAL WAS RIGHT AT THE TIME. What
+        // a Component names is a GROUP of properties and a node needs ONE — so every version
+        // that WROTE something wrote a value the creator could not see and the next click
+        // overwrote (ADR-0040 §4, ADR-0041 §6.1, ADR-0047 §2).
+        //
+        // WHAT CHANGED IS THAT THE PICKER GAINED LEVELS. The property picker browses
+        // `Component > Property` now, so there is a state between "nothing chosen" and "a
+        // property chosen" that is worth reaching: the list, already inside that Component.
+        // The drop opens it. Nothing is written, so nothing can be overwritten — and the
+        // creator's next click finishes the node.
+        //
+        // IT ASKS THE CANVAS, WHICH OWNS THE CONTROL. Building a second menu here from the
+        // same options is how two lists start to disagree; `pickProperty` opens the one the
+        // node is already drawing.
+        id: 'component-to-node',
+        accepts: (payload, target) => payload.kind === DragKind.COMPONENT
+            && target.zone === DropZone.GRAPH
+            && Boolean(target.node)
+            && Boolean(payload.type)
+            && target.params?.property?.reference === PROPERTY_REFERENCE,
+        describe: (payload, target) =>
+            `Choose a property of ${payload.label || payload.type} for ${target.label ?? 'this node'}`,
+        perform: (payload, target, context) =>
+            (context.pickProperty?.(target.node, payload.label || payload.type) ? target.node : null)
     },
 
     {

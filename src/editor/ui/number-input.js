@@ -52,6 +52,9 @@ export class NumberInput extends Element {
         :host {
             display: flex;
             align-items: center;
+            /* The unit rides over the field's right edge rather than beside it — see
+               .suffix below — and that needs a box to be positioned against. */
+            position: relative;
             height: var(--px-control);
             background: var(--px-surface-input);
             border: 1px solid var(--px-border);
@@ -113,15 +116,28 @@ export class NumberInput extends Element {
 
         input:focus { outline: none; box-shadow: none; }
 
+        /* A UNIT IS AN ANNOTATION, NOT A COLUMN (ADR-0052). Laid out in the flex row it took
+           ten pixels from the field, so Rotation centred its digits five pixels left of
+           the Position and Scale above it — three rows that are meant to read as one
+           shape, and did not. Taking it out of the flow gives the number the same box its
+           neighbours have, and the unit still sits where it always did.
+
+           IT DOES NOT SWALLOW CLICKS, so the field under it stays as easy to reach as any
+           other; a value long enough to run beneath it is already ellipsised by the input. */
         .suffix {
-            padding-right: var(--px-space-1);
+            position: absolute;
+            right: calc(11px + var(--px-space-1));
+            pointer-events: none;
             font-family: var(--px-font-mono);
             font-size: var(--px-text-2xs);
             color: var(--px-text-dim);
-            flex: 0 0 auto;
             -webkit-user-select: none;
             user-select: none;
         }
+
+        /* With no steppers there is no column to clear. */
+        :host([steppers='false']) .suffix,
+        :host([readonly]) .suffix { right: var(--px-space-1); }
 
         .steppers {
             display: flex;

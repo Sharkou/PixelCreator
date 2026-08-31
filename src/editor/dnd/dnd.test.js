@@ -656,20 +656,41 @@ test('a node that names a property is a target; one that does not is not', () =>
         'the canvas beside a node is not a node');
 });
 
-test('a Component is refused on a node too, and the refusal says where to go instead', () => {
-    // THE THIRD REMOVAL, AND THE LAST (ADR-0047 §2). The gesture was refused, restored when
-    // `Component` briefly had a field of its own, and refused again now that one picker asks
-    // the whole question: writing `component` alone sets a value the creator cannot see and
-    // the next click overwrites. A drop that produces a dead value is worse than no drop.
+test('a Component let go on a property node opens its picker, one level in', () => {
+    // REFUSED THREE TIMES, AND EVERY REFUSAL WAS RIGHT AT THE TIME (ADR-0040 §4,
+    // ADR-0041 §6.1, ADR-0047 §2): every version that WROTE something wrote a value the
+    // creator could not see and the next click overwrote.
+    //
+    // WHAT CHANGED IS THAT THE PICKER GAINED LEVELS. There is now a state between "nothing
+    // chosen" and "a property chosen" that is worth reaching — the list, already inside that
+    // Component — and reaching it writes nothing at all (ADR-0052 §2).
+    const it = linked();
+    const payload = componentPayload(it.hero, 'res_link', 'Link');
+    const target = nodeTarget(GET_ON_PARAMS);
+    const opened = [];
+
+    assert.equal(canDrop(payload, target).allowed, true);
+    assert.match(canDrop(payload, target).reason ?? '', /choose a property/i);
+
+    const written = [];
+    performDrop(payload, target, {
+        pickProperty: (node, category) => (opened.push([node, category]), true),
+        setNodeParam: (...args) => written.push(args),
+        setNodeParams: (...args) => written.push(args)
+    });
+
+    assert.deepEqual(opened, [[target.node, 'Link']], 'the picker opens in that Component');
+    assert.deepEqual(written, [], 'and nothing is written, so nothing can be overwritten');
+});
+
+test('a Component on a node that asks no property is still refused', () => {
+    // The rule is about the QUESTION the node asks, not about the node being a node.
     const it = linked();
     const payload = componentPayload(it.hero, 'res_link', 'Link');
 
-    const verdict = canDrop(payload, nodeTarget(GET_ON_PARAMS));
+    const verdict = canDrop(payload, nodeTarget({ params: {} }));
     assert.equal(verdict.allowed, false);
-    // AND IT NAMES THE TWO WAYS THAT DO WORK, because a refusal with no route is a dead end
-    // (ADR-0026 §6).
     assert.match(verdict.reason, /propert/i);
-    assert.match(verdict.reason, /group/i, 'it says the Component is a heading in that list');
 });
 
 test('a Component on BARE canvas is still refused, because it would make an unfinished node', () => {
@@ -977,8 +998,10 @@ test('the drags a canvas takes never answer for one another', () => {
     assert.equal(ruleFor(propertyPayload('res_link', 'p_target', 't'), onNode).id, 'property-to-node');
     // A COMPONENT MEANS NOTHING ON A GRAPH AT ALL, and the two places refuse it the same
     // way: what it names is a GROUP of properties, and a node needs one of them (ADR-0047 §2).
+    // A COMPONENT MEANS NOTHING ON BARE CANVAS — which property is exactly what it does not
+    // say — and on a node that ASKS for one it opens that node's picker (ADR-0052 §2).
     assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), bare).id, 'drop-on-graph');
-    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), onNode).id, 'drop-on-graph');
+    assert.equal(ruleFor(componentPayload(it.hero, 'res_link', 'Link'), onNode).id, 'component-to-node');
     // AN OBJECT NOW MEANS TWO THINGS, AND THE PLACE DECIDES WHICH — the same rule the other
     // two drags already followed. On bare canvas it declares an input; on a node that acts on
     // an Object it points that node, which is configuration by direct manipulation and not a

@@ -639,8 +639,30 @@ export class GraphWindow extends Element {
             // its own — "This Component" — and must be stored with no type at all; carrying
             // its ResourceId in would make the node reach for a type through the catalogue
             // and find nothing (ADR-0041 §2, `resolvedProperty`).
-            ownType: this.#definition?.type ?? null
+            ownType: this.#definition?.type ?? null,
+            // A COMPONENT LET GO ON A NODE ASKS THE QUESTION, IT DOES NOT ANSWER IT
+            // (ADR-0052 §2). It names a GROUP of properties and the node needs one, so the
+            // drop opens that node's own property picker already inside the group — nothing
+            // is written until the creator picks, so there is no value to be overwritten.
+            pickProperty: (node, category) => this.#pickProperty(node, category)
         };
+    }
+
+    /**
+     * Open a node's property picker, already inside one Component's group.
+     *
+     * @param {object} node - The node record
+     * @param {string} category - The group to open in, as the picker labels it
+     * @returns {boolean} True when a picker was opened
+     */
+    #pickProperty(node, category) {
+        const holder = this.#svg?.querySelector(
+            `foreignObject[data-node="${node?.id}"][data-param="property"]`);
+        const field = holder?.querySelector('px-field');
+        if (!field?.pxOpenPicker) return false;
+
+        field.pxOpenPicker({ category });
+        return true;
     }
 
     /**
@@ -1366,6 +1388,11 @@ export class GraphWindow extends Element {
     #drawControl(node, descriptor, box, hue) {
         const holder = svg('foreignObject', {
             class: 'param',
+            // Stamped so a drop that names a Component can find THIS node's property
+            // control and open its own picker (ADR-0052 §2) — the same trick the ports
+            // above use, rather than a second registry of controls.
+            'data-node': node.id,
+            'data-param': descriptor.name,
             x: box.x - node.x,
             y: box.y - node.y,
             width: box.width,

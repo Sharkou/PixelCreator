@@ -1214,3 +1214,17 @@ test('Distance takes Objects, because that is the question a creator asks', () =
     const ports = portsOf(definition, { id: 'n', type: 'math.distance', params: {} }, {});
     assert.deepEqual(ports.inputs.map(port => port.label), ['From', 'To']);
 });
+
+test('rounding has all three directions, because Round cannot express the other two', () => {
+    // Snapping to a grid, counting whole items and clamping to a tile each want one
+    // direction specifically, and writing either from `Round` needs an offset a creator
+    // should not have to derive (ADR-0052 §3).
+    const registry = registerStandardNodes(new NodeRegistry());
+    const answer = (type, value) => registry.get(type).evaluate({ input: () => value }).result;
+
+    assert.equal(answer('math.floor', 2.9), 2);
+    assert.equal(answer('math.ceil', 2.1), 3);
+    assert.equal(answer('math.floor', -2.1), -3, 'down means down, not towards zero');
+    assert.equal(answer('math.ceil', -2.9), -2);
+    assert.equal(answer('math.round', 2.5), 3, 'and Round is unchanged');
+});

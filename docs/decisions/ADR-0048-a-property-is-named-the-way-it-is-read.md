@@ -1,6 +1,7 @@
 # ADR-0048 — Une propriété se nomme comme elle se lit
 
 - **Statut :** **accepté** (2026-08-31)
+- **Amendé par :** ADR-0052 (2026-08-31) — §3 : le refus définitif du geste Component → graphe ne vaut plus que pour le canvas nu ; sur un nœud qui demande une propriété, le lâcher ouvre son picker.
 - **Décide :** comment une requête de recherche est comparée à une entrée ; comment une propriété s'appelle dans une liste ; ce qu'un Component lâché sur un graphe veut dire, définitivement ; quels nœuds de calcul manquaient au catalogue
 - **Dépend de :** ADR-0026 §10 (menus groupés), ADR-0039 (taxonomie), ADR-0043 (l'Object répond de lui-même), ADR-0047 (une seule question)
 - **Amende :** ADR-0047 §2 (le refus du geste Component → graphe est confirmé, avec une mesure à l'appui plutôt qu'un raisonnement)

@@ -1299,6 +1299,15 @@ export const STANDARD_NODES = [
     unary('math.round', 'Round', value => Math.round(value),
         ['nearest', 'whole', 'integer', 'snap'],
         'The nearest whole number'),
+    // THE TWO DIRECTIONS `Round` DOES NOT LET YOU CHOOSE. Snapping to a grid, counting whole
+    // items and clamping to a tile all want one of them specifically, and writing either from
+    // `Round` needs an offset a creator should not have to derive.
+    unary('math.floor', 'Floor', value => Math.floor(value),
+        ['down', 'lower', 'truncate', 'whole', 'integer'],
+        'The whole number at or below this one'),
+    unary('math.ceil', 'Ceil', value => Math.ceil(value),
+        ['up', 'higher', 'ceiling', 'whole', 'integer'],
+        'The whole number at or above this one'),
 
     // TWO NODES THAT ARE NOT ARITHMETIC BUT ARE ASKED FOR IN THE SAME BREATH. Both are one
     // line of maths a creator should never have to assemble: `Clamp` is a Greater Than, a
