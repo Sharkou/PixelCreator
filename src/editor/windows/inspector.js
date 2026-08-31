@@ -355,14 +355,31 @@ export class Inspector extends Element {
         .row > .label.handle:hover,
         .row > .label.scrubbing { color: var(--px-accent); }
 
+        /* A CONTROL THAT IS ALONE ON ITS LINE IS NOT A CONTROL THAT SHOULD TAKE THE LINE
+           (ADR-0047 §4). Full width was the previous answer and it was too much: a Sprite
+           field ran edge to edge while every number above it stopped at 40%, so the panel
+           had two right-hand margins and no column. Four parts control to one part air puts
+           it at about 70% — long enough for a file name, short enough that the panel still
+           reads as one shape.
+
+           THE GRIP KEEPS ITS OWN COLUMN, and it is the same last column the paired rows
+           end on, so every handle in the panel sits on one vertical line whatever the row
+           above it was. */
         .fields {
-            display: flex;
+            display: grid;
+            grid-template-columns: minmax(0, 4fr) minmax(0, 1fr) 16px;
             align-items: center;
             gap: var(--px-space-1);
             min-width: 0;
         }
 
-        /* EVERY CONTROL FILLS THE VALUE COLUMN, AND THAT IS WHAT MAKES THE PANEL A COLUMN.
+        /* SCOPED TO THE LONE-CONTROL GRID, and it has to be: a paired row lays its second
+           control in column 3, so a rule that put every grip there would drop the Y of
+           Position on top of it. The two grids share a shape, not their columns. */
+        .fields:not(.pair):not(.single) > .suffix { justify-self: start; }
+        .fields:not(.pair):not(.single) > .carry { grid-column: 3; }
+
+        /* EVERY CONTROL FILLS THE ROOM ITS ROW GIVES IT, AND THAT IS WHAT MAKES THE PANEL A COLUMN.
            A control used to be as wide as whatever it happened to contain: a Sprite field
            holding hero.png was one width, the same field holding a.png another, and a
            Material field with nothing in it was a stub about a third of the panel. Twelve

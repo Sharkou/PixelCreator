@@ -208,5 +208,5 @@ test('the world transform is not stored anywhere', () => {
     assert.equal(child.worldX, undefined);
     assert.equal(child.getComponent('Transform').worldX, undefined);
     assert.deepEqual(globalThis.Object.keys(child.getComponent('Transform')),
-        ['x', 'y', 'rotation', 'scaleX', 'scaleY']);
+        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'flipX', 'flipY']);
 });

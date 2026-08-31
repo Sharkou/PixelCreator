@@ -203,28 +203,29 @@ const REFERENCES = {
         empty: () => THIS_COMPONENT,
         unset: () => THIS_COMPONENT
     },
-    // WHICH PROPERTY, OF THE COMPONENT NAMED ABOVE. A short list, because the question
-    // before it has been answered — which is the whole of what ADR-0045 §1 changes.
+    // WHICH PROPERTY, OF WHICH COMPONENT — ONE QUESTION (ADR-0047 §1).
+    //
+    // IT WAS TWO FIELDS, AND TWO FIELDS WAS ONE TOO MANY. A creator thinks "this object's
+    // rotation", not "the Transform Component, and within it, rotation" — the second is the
+    // engine's decomposition wearing the creator's clothes. ADR-0045 §1 split them to make
+    // the list short, and that WAS the real problem; the answer is a picker that groups,
+    // not a second control.
+    //
+    // THE PICKER IS THE ONE THE NODE MENU ALREADY IS. Headings per Component, walk in with
+    // `→`, back out with `←`, and typing ranks across every group at once — so
+    // `rot` finds `Transform ▸ Rotation` without anybody choosing a Component first
+    // (ui/menu.js, `browse`). Nothing new had to be built; the list had to be grouped.
+    //
+    // THE VALUE CARRIES BOTH HALVES, and only as far as the control: `paramWrites()` splits
+    // it back into the two params the model has always held. A composite in the picker is
+    // an encoding; a composite in the payload would be a format.
     [PROPERTY_REFERENCE]: {
-        // THE NAME A CREATOR READS, NOT THE ONE THE MODEL STORES. The Inspector shows
-        // `Scale X` for the property this picker used to call `scaleX`, and a beginner
-        // moving between the two panels had no reason to believe they were the same thing
-        // (ADR-0045 §6). A property a creator declared themselves is humanised by the very
-        // same rule one panel away, so the two still agree.
-        options: (node, context) => propertiesOf(node, context)
-            .map(property => ({
-                value: property.id,
-                label: property.label ?? humanize(property.name)
-            })),
-        // IT DEPENDS ON A SIBLING, AND SAYS SO. Picking a different Component leaves the
-        // property naming something the new type does not declare, so `paramWrites()` drops
-        // it in the same batch — repaired, not left dangling (ADR-0027).
-        dependsOn: COMPONENT_REFERENCE,
-        // TWO EMPTIES A CREATOR HAS TO TELL APART. A Component that declares nothing is not
-        // the same as a Component nobody has named, and a blank strip says neither.
-        empty: (node, context) => (node?.params?.component
-            ? `${referencedComponent(node, context)?.label ?? node.params.component} declares no properties`
-            : 'This Component declares no properties')
+        options: (node, context) => propertyPaths(context),
+        browse: true,
+        // NOTHING TO OFFER MEANS NOTHING IN THIS PROJECT DECLARES A PROPERTY, which is a
+        // state a fresh project is really in — not an error, and not "this Component
+        // declares none", because there is no Component in the question any more.
+        empty: () => 'Nothing declares a property yet'
     },
     // THE FOURTH KIND, AND IT COST A ROW. A key is named by a string the Core refuses to
     // enumerate and the Editor can, because the Editor is the thing with a keyboard
@@ -300,9 +301,22 @@ export function paramWrites(definition, node, name, value, context = {}) {
     // carries for "my own" (ADR-0040 §2). The control needs a value it can select — `''` is
     // the sentinel a field already understands — and the model needs `null`; this is the one
     // line between them, so the format is untouched (ADR-0045 §1).
-    const writes = [{ name, value: value === '' ? null : value }];
-
     const changed = definition?.params?.[name]?.reference ?? null;
+
+    // ONE ANSWER, TWO PARAMS (ADR-0047 §1). The property picker hands back a path because a
+    // creator picked one row; the model has always held the Component and the property
+    // apart, and it still does. Both writes carry the same batch, so one `Ctrl Z` puts the
+    // pair back — there is no state in which a node names a property of a Component it is
+    // not pointed at.
+    if (changed === PROPERTY_REFERENCE) {
+        const { component, property } = splitPropertyPath(value);
+        return [
+            { name: 'component', value: component },
+            { name: 'property', value: property }
+        ];
+    }
+
+    const writes = [{ name, value: value === '' ? null : value }];
     if (!changed) return writes;
 
     // NOTHING TO CHECK AGAINST IS NOT THE SAME AS NOTHING THERE — the rule `validateGraph()`
@@ -410,6 +424,82 @@ function propertiesOf(node, context) {
     return referencedComponent(node, context)?.properties ?? [];
 }
 
+/** What separates the two halves of a property path, in the picker and nowhere else. */
+const PATH_SEPARATOR = '/';
+
+/**
+ * Encode a Component and one of its properties as one option value.
+ *
+ * @param {string} type - The Component type, or '' for the one being edited
+ * @param {string} property - The property's identity
+ * @returns {string} The option value
+ */
+export function propertyPath(type, property) {
+    return `${type ?? ''}${PATH_SEPARATOR}${property}`;
+}
+
+/**
+ * Split a property path back into the two params the model holds.
+ *
+ * ONLY THE FIRST SEPARATOR COUNTS. A Component type is a ResourceId or an identifier and a
+ * property identity is one too, so neither contains a slash — but splitting on the first one
+ * is what makes that a property of this function rather than a hope about the data.
+ *
+ * @param {string} value - An option value, as `propertyPath()` wrote it
+ * @returns {{component: string|null, property: string|null}} The two halves
+ */
+export function splitPropertyPath(value) {
+    const text = globalThis.String(value ?? '');
+    const at = text.indexOf(PATH_SEPARATOR);
+    if (at === -1) return { component: null, property: text || null };
+    return {
+        component: text.slice(0, at) || null,
+        property: text.slice(at + 1) || null
+    };
+}
+
+/**
+ * Every property this project can name, grouped by the Component that declares it.
+ *
+ * THE COMPONENT BEING EDITED COMES FIRST, because "my own Health" is what a `.px` is written
+ * to talk about, and a creator should not have to walk past `Camera` to reach it. It is
+ * stored as no Component at all — the sentinel every graph has carried since ADR-0040 §2 —
+ * so its half of the path is empty.
+ *
+ * THE ROW SAYS THE SHORT NAME, AND SO DOES THE SHUT CONTROL. `Transform \u25b8 Rotation` was
+ * tried and measured: it does not fit a 176 px card, so it truncated to `Transform \u25b8 \u2026`
+ * — which hid the one half that identifies the choice and kept the half the picker had
+ * already shown under a heading. The group belongs where the choosing happens.
+ *
+ * @param {object} context - `{ properties, components }`
+ * @returns {Array<{value: string, label: string, group: string}>} The options
+ */
+function propertyPaths(context) {
+    const options = [];
+
+    const own = context.properties ?? [];
+    for (const property of own) {
+        options.push({
+            value: propertyPath('', property.id),
+            label: property.label ?? humanize(property.name),
+            group: THIS_COMPONENT
+        });
+    }
+
+    for (const entry of context.components ?? []) {
+        const group = entry.label ?? entry.type;
+        for (const property of entry.properties ?? []) {
+            options.push({
+                value: propertyPath(entry.type, property.id),
+                label: property.label ?? humanize(property.name),
+                group
+            });
+        }
+    }
+
+    return options;
+}
+
 
 
 /**
@@ -430,7 +520,13 @@ function referenceChoice(name, descriptor, node, context) {
     const options = reference.options(node, context, descriptor);
     // NOTHING CHOSEN IS THE EMPTY STRING, which is the sentinel a field already understands
     // — and, for the Component picker, also the value of its first real row.
-    const chosen = node?.params?.[name] ?? '';
+    //
+    // A PATH IS READ BACK FROM THE TWO PARAMS IT WAS SPLIT INTO. The control speaks in whole
+    // answers and the model holds halves, so the encoding happens in both directions here
+    // and nowhere else (ADR-0047 §1).
+    const chosen = descriptor.reference === PROPERTY_REFERENCE
+        ? (node?.params?.property ? propertyPath(node?.params?.component ?? '', node.params.property) : '')
+        : node?.params?.[name] ?? '';
 
     const field = fieldFor(name, {
         ...descriptor,
@@ -443,6 +539,12 @@ function referenceChoice(name, descriptor, node, context) {
         // to, and every reference that has no groups passes `null` and draws as it always
         // did.
         groups: options.some(option => option.group) ? options.map(option => option.group ?? '') : null,
+        // WHAT THE CLOSED CONTROL READS, when the row's own label is not enough on its own.
+        // `Rotation` under a heading is unambiguous; `Rotation` alone in a shut box is not,
+        // because the heading is what said whose (ADR-0047 §1).
+        paths: options.some(option => option.path) ? options.map(option => option.path ?? '') : null,
+        // A reference may ask for the menu to open on its groups rather than on everything.
+        browse: reference.browse === true,
         placeholder: options.length === 0
             ? reference.empty(node, context, descriptor)
             : (reference.unset?.(node, context, descriptor) ?? NOTHING_SELECTED)

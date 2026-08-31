@@ -1,6 +1,7 @@
 # ADR-0046 — Un geste, un modèle, et deux largeurs
 
 - **Statut :** **accepté** (2026-08-29)
+- **Amendé par :** ADR-0047 (2026-08-29) — §3 : le geste Component → nœud est retiré une dernière fois, le champ qu'il remplissait n'existant plus. §7 : un contrôle seul sur sa ligne mesure environ 70 % et non toute la colonne.
 - **Décide :** ce qui porte une propriété de l'Object ; combien de poignées porte une propriété ; ce que voit l'Inspector après la création d'un `.px` ; ce qu'un Component sans fichier s'appelle ; combien de nœuds décrivent une touche ; ce que mesure un contrôle ; ce qu'un identifiant peut contenir ; combien de modèles une ressource a
 - **Dépend de :** ADR-0006 (une fenêtre annonce, le shell route), ADR-0011 (autorité), ADR-0014 (l'input est passé), ADR-0021 (une identité n'est pas un nom), ADR-0028 (réordonner), ADR-0041 (un événement est un moment), ADR-0043 (l'Object répond de lui-même), ADR-0044 (canal vivant), ADR-0045 (deux questions, deux lignes)
 - **Amende :** ADR-0041 §3.2 (réglée autrement, voir §6) ; ADR-0045 §4 (trois nœuds deviennent trois ports), §9 (une couleur redevient courte), §10 (la poignée de la propriété est celle du réordonnancement)

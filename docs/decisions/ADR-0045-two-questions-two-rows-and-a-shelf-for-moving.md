@@ -1,6 +1,7 @@
 # ADR-0045 — Deux questions, deux lignes, et une étagère pour bouger
 
 - **Statut :** **accepté** (2026-08-29)
+- **Amendé par :** ADR-0047 (2026-08-29) — §1 : le champ `Component` disparaît au profit d'un picker groupé, la question restant posée par le modèle. §2 : l'entrée `Value` de `Set Property` prend le même traitement que la sortie de `Get Property`.
 - **Décide :** la forme des nœuds de propriété ; ce qu'un événement d'entrée continu s'appelle ; les catégories du catalogue ; ce qu'un champ de l'Inspector mesure ; ce qu'une propriété peut porter jusqu'au graphe
 - **Dépend de :** ADR-0002 (espaces), ADR-0016 (un `.px` est un type), ADR-0023 §2 (pas de type vecteur), ADR-0026 (une frappe est une entrée d'historique), ADR-0031 (propriétés déclarées), ADR-0034 (portée des identités), ADR-0036 (frontière `objectref`), ADR-0039 (taxonomie), ADR-0043 (l'Object répond de lui-même)
 - **Amendé par :** ADR-0046 (2026-08-29) — §4 : les trois moments d'une touche deviennent trois PORTS d'un seul nœud, ce qui règle l'objection d'ADR-0041 §3.2 mieux que trois noms. §9 : une couleur redevient un contrôle court. §10 : la poignée d'une propriété est celle du réordonnancement, et il n'y en a plus deux.

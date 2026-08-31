@@ -239,11 +239,21 @@ const DEFAULT_BUTTON = 'left';
  * needs migrating — the storage ADR-0040 §2 settled is untouched.
  */
 const propertyPathParam = {
+    // STORED, AND NEVER ASKED (ADR-0047 §1). The Core needs to know WHOSE property this is —
+    // `resolvedProperty()` reads it — but a creator does not think in two questions. They
+    // think "this object's rotation", which is one answer with two halves, so one picker
+    // writes both. `hidden` is ADR-0007's word for a param that is model and not interface,
+    // and `paramFields()` has honoured it all along.
+    //
+    // TWO PARAMS AND NOT ONE COMPOSITE STRING: the format is untouched, `resolvedProperty()`
+    // is untouched, and every graph written since ADR-0040 still reads. What changed is the
+    // number of controls, which was never the number of identities.
     component: {
         type: PropertyType.STRING,
         default: null,
         label: 'Component',
         reference: COMPONENT_REFERENCE,
+        hidden: true,
         tooltip: 'Which Component the property belongs to. Empty means this one'
     },
     property: {
@@ -251,10 +261,6 @@ const propertyPathParam = {
         default: null,
         label: 'Property',
         reference: PROPERTY_REFERENCE,
-        // WHICH PROPERTIES ARE OFFERED DEPENDS ON THE ANSWER ABOVE, and saying so is what
-        // lets the Editor drop a property that the new Component does not declare — in the
-        // same batch, so one `Ctrl Z` puts both back (`paramWrites`).
-        dependsOn: COMPONENT_REFERENCE,
         tooltip: 'Which property this node reads or writes'
     }
 };
@@ -829,7 +835,14 @@ export const STANDARD_NODES = [
                 data('object', OBJECT_TYPE, 'Object'),
                 // THE VALUE IS TYPED FROM THE PROPERTY, which lives in this node — so it is
                 // exact however the Object arrives, and never a function of what is wired.
-                data('value', portTypeOf(property), property?.name ?? 'Value', property?.default)
+                //
+                // AND IT IS CALLED `Value`, NOT THE PROPERTY'S NAME (ADR-0047 §1, the same
+                // reasoning ADR-0045 §2 applied to `Get Property`'s output). The picker one
+                // row above already says which property this is; repeating it on the port
+                // said it twice on a 176 px card — and said it in the MODEL's spelling,
+                // `flipY`, beside a picker reading `Flip Y`.
+                data('value', portTypeOf(property), 'Value', property?.default,
+                    null, property ? `The value to write into ${property.label ?? property.name}` : null)
             ];
         },
         outputs: [flow('out')],

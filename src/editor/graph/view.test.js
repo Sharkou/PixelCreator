@@ -577,10 +577,11 @@ test('Set Property says Object, Property and Value once each, in that order', ()
     const rows = nodeRows(ports, [...paramFields(definition, node, context), ...inputFields(ports)]);
     const silenced = silencedPorts(rows);
 
-    // THE ORDER IS THE SENTENCE: when it runs, WHAT it acts on, WHICH Component, WHICH
-    // property of it, then the value that flows through (ADR-0039 §0.1, ADR-0045 §1).
+    // THE ORDER IS THE SENTENCE: when it runs, WHAT it acts on, WHICH property, then the
+    // value that flows through. The Component is stored and never asked, so it draws no row
+    // at all (ADR-0039 §0.1, ADR-0047 §1).
     assert.deepEqual(rows.map(row => row.control?.name ?? null),
-        [null, 'target', 'component', 'property', 'value']);
+        [null, 'target', 'property', 'value']);
     assert.equal(rows[1].input.id, 'object', 'the Object row leads, carrying its picker');
     assert.ok(silenced.has('in:object'), 'the picker speaks for the socket it shares a row with');
     assert.ok(silenced.has('in:value'), 'and the value socket is spoken for by its own field');
@@ -647,9 +648,9 @@ test('the Object picker shares the Object socket row', () => {
     assert.ok(silencedPorts(rows).has('in:object'), 'and speaks for it, so nothing is said twice');
 });
 
-test('Get Property asks its three questions, then answers on a line of its own', () => {
+test('Get Property asks its two questions, then answers on a line of its own', () => {
     // THE LAYOUT THE NODE WAS BEING MISREAD FOR (ADR-0045 §2). The output used to sit on
-    // line one, beside the Object — above the two pickers that DECIDE it — so the card read
+    // line one, beside the Object — above the pickers that DECIDE it — so the card read
     // backwards and the socket looked like it belonged to the Object.
     const node = {
         id: 'n', type: 'property.get', x: 0, y: 0,
@@ -661,7 +662,7 @@ test('Get Property asks its three questions, then answers on a line of its own',
     const rows = nodeRows(ports, paramFields(definition, node, context));
 
     assert.deepEqual(rows.map(row => row.control?.name ?? null),
-        ['target', 'component', 'property', null]);
+        ['target', 'property', null], 'two questions, and the Component is not one of them');
     assert.equal(rows[0].input.id, 'object', 'the Object row leads, carrying its picker');
     assert.equal(rows.at(-1).output.id, 'value', 'and the answer is alone at the end');
     assert.equal(rows.at(-1).input, null, 'with nothing beside it to be confused with');
@@ -927,7 +928,7 @@ test('a node draws every control from one left edge', () => {
     const rows = nodeRows(portsOf(definition, node, context), paramFields(definition, node, context));
     const boxes = controlBoxes(node, rows);
 
-    assert.ok(boxes.length >= 3, 'it has three questions to draw');
+    assert.ok(boxes.length >= 2, 'it has more than one question to draw');
     assert.equal(new Set(boxes.map(box => box.x)).size, 1, 'and they all start at one x');
 
     // THE RIGHT EDGE IS STILL EACH ROW'S OWN, because a port that prints its label really

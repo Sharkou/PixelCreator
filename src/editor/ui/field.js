@@ -452,8 +452,14 @@ export class Field extends Element {
                         : [entry];
                 }),
                 option => this.#push(option),
-                // A filter earns its row once the list is longer than a glance.
-                { search: descriptor.values.length > 8, label: descriptor.label.toLowerCase() }
+                // A filter earns its row once the list is longer than a glance; a descriptor
+                // that declares groups worth WALKING asks for them to be the first page
+                // (ADR-0047 §1, `browse` in ui/menu.js).
+                {
+                    search: descriptor.values.length > 8,
+                    browse: descriptor.browse === true,
+                    label: descriptor.label.toLowerCase()
+                }
             )
         }, glyph, text, el('span', { class: 'choice-caret' }, icon('chevron', 16)));
 

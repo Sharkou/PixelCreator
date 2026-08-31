@@ -78,7 +78,10 @@ test('a facade property belongs to its component, not to the object', () => {
     const data = serializeObject(object);
 
     assert.equal(data.x, undefined, 'the facade stores nothing, so it serializes nothing');
-    assert.deepEqual(data.components[0], { type: 'Transform', values: { x: 55, y: 20, rotation: 0, scaleX: 1, scaleY: 1 } });
+    assert.deepEqual(data.components[0], {
+        type: 'Transform',
+        values: { x: 55, y: 20, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false }
+    });
 });
 
 test('ad-hoc properties on an Object are not serialized', () => {

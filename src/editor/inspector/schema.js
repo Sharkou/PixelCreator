@@ -532,6 +532,11 @@ function field(name, property = {}) {
         // differently as an answer than as a choice: `Transform \u25b8 Rotation` closed,
         // `Rotation` in the list. Null everywhere else, and then the label answers for both.
         paths: declared === PropertyType.ENUM && property.paths ? [...property.paths] : null,
+        // AND WHETHER THE LIST IS WALKED RATHER THAN SCROLLED. A choice whose groups are
+        // themselves a level — every Component of a project, each with its properties — opens
+        // on the groups; every other choice opens on its options, as it always did
+        // (ADR-0047 §1).
+        browse: declared === PropertyType.ENUM && property.browse === true,
         readonly: Boolean(property.readonly),
         tooltip: property.tooltip ?? null
     };

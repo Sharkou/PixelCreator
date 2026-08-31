@@ -523,7 +523,7 @@ test('a `.px` resolves Component types however it was attached', async () => {
 
     const value = model.graph.portsOf(node).inputs.find(port => port.id === 'value');
     assert.equal(value.type, 'number', 'the port is typed from the Component the node names');
-    assert.equal(value.label, 'x');
+    assert.equal(value.label, 'Value', 'named for what the port is, not for what it points at');
 });
 
 test('a workspace given no components still opens a `.px`', async () => {

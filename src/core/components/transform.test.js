@@ -7,18 +7,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Object } from '../object.js';
-import { Transform } from './transform.js';
+import { Transform, localMatrix, worldPosition } from './transform.js';
 import { serializeObject, serializeComponent } from '../serialize.js';
 
-test('a transform holds the five local placement properties', () => {
+test('a transform holds where an object is, how big it is, and which way it faces', () => {
     const transform = new Transform();
 
-    assert.deepEqual(globalThis.Object.keys(transform), ['x', 'y', 'rotation', 'scaleX', 'scaleY']);
+    assert.deepEqual(globalThis.Object.keys(transform),
+        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'flipX', 'flipY']);
     assert.equal(transform.x, 0);
     assert.equal(transform.y, 0);
     assert.equal(transform.rotation, 0);
     assert.equal(transform.scaleX, 1);
     assert.equal(transform.scaleY, 1);
+    // FACING IS ITS OWN QUESTION (ADR-0047 §3). A 2D character that turns around is
+    // mirrored, not rotated, and the engine stays strictly 2D.
+    assert.equal(transform.flipX, false);
+    assert.equal(transform.flipY, false);
 });
 
 test('size is not a transform concern', () => {
@@ -29,8 +34,9 @@ test('size is not a transform concern', () => {
     assert.equal(transform.height, undefined);
 });
 
-test('the facade exposes exactly the five properties', () => {
-    assert.deepEqual(Transform.exposes, ['x', 'y', 'rotation', 'scaleX', 'scaleY']);
+test('the facade exposes every placement property, facing included', () => {
+    assert.deepEqual(Transform.exposes,
+        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'flipX', 'flipY']);
 });
 
 test('the whole placement is reachable from the object', () => {
@@ -117,7 +123,8 @@ test('a serialized transform carries only local values', () => {
 
     const data = serializeComponent(child.getComponent('Transform'));
 
-    assert.deepEqual(data, { x: 10, y: 5, rotation: 0, scaleX: 1, scaleY: 1 });
+    assert.deepEqual(data,
+        { x: 10, y: 5, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false });
     assert.equal(JSON.stringify(serializeObject(child)).includes('world'), false);
 });
 
@@ -138,4 +145,44 @@ test('one source of truth, whichever path writes it', () => {
     assert.equal(object.x, 4);
 
     assert.equal(serializeComponent(transform).x, 4);
+});
+
+test('a flip mirrors the object without touching its scale', () => {
+    // TWO QUESTIONS, TWO VALUES (ADR-0047 §3). Reusing the sign of `scaleX` would make one
+    // number answer "how big" and "which way round" at once, so a creator who scaled to 2
+    // and then flipped would have to type -2 and remember why.
+    const object = new Object('Player');
+    object.addComponent(new Transform(0, 0, 0, 2, 3));
+    const transform = object.getComponent('Transform');
+
+    assert.equal(localMatrix(object).a, 2, 'unflipped, the matrix carries the scale');
+
+    transform.flipX = true;
+    assert.equal(localMatrix(object).a, -2, 'flipped, it carries the mirror as well');
+    assert.equal(transform.scaleX, 2, 'and the scale a creator typed is still the one they typed');
+
+    transform.flipY = true;
+    assert.equal(localMatrix(object).d, -3);
+    assert.equal(transform.scaleY, 3);
+});
+
+test('a flip composes down the hierarchy like every other placement value', () => {
+    // Nothing downstream learns a new word: the mirror is composed in `localMatrix()`, so
+    // rendering, picking and physics all read it through `worldMatrix()` as they always did.
+    const parent = new Object('Parent');
+    const child = new Object('Child');
+    parent.addComponent(new Transform(0, 0, 0, 1, 1, true, false));
+    child.addComponent(new Transform(10, 0));
+    parent.addChild(child);
+
+    assert.equal(worldPosition(child).x, -10, 'the child is mirrored with its parent');
+});
+
+test('a flip is a boolean, so it round-trips through serialization', () => {
+    const object = new Object('Player');
+    object.addComponent(new Transform(0, 0, 0, 1, 1, true, true));
+
+    const data = serializeComponent(object.getComponent('Transform'));
+    assert.equal(data.flipX, true);
+    assert.equal(data.flipY, true);
 });

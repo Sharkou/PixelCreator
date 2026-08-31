@@ -51,8 +51,10 @@ const byName = (fields, name) => fields.find(field => field.name === name);
 
 test('a schema drives the fields, in declaration order', () => {
     const fields = describeComponent(new Transform());
-    assert.deepEqual(fields.map(field => field.name), ['x', 'y', 'rotation', 'scaleX', 'scaleY']);
+    assert.deepEqual(fields.map(field => field.name),
+        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'flipX', 'flipY']);
     assert.equal(fields[0].kind, FieldKind.NUMBER);
+    assert.equal(byName(fields, 'flipX').kind, FieldKind.BOOLEAN, 'facing is a switch, not a number');
     assert.equal(byName(fields, 'rotation').unit, '°', 'radians are a model unit, degrees are what is shown');
 });
 

@@ -29,14 +29,27 @@ export class Transform {
 
     static type = 'Transform';
 
-    static exposes = ['x', 'y', 'rotation', 'scaleX', 'scaleY'];
+    static exposes = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'flipX', 'flipY'];
 
     static schema = {
         x: { type: 'number', default: 0 },
         y: { type: 'number', default: 0 },
         rotation: { type: 'number', default: 0, unit: 'rad' },
         scaleX: { type: 'number', default: 1 },
-        scaleY: { type: 'number', default: 1 }
+        scaleY: { type: 'number', default: 1 },
+        // FACING IS NOT ROTATION, AND IT IS NOT A NEGATIVE SCALE EITHER (ADR-0047 §3).
+        //
+        // A 2D character that turns around does not rotate — it is MIRRORED, and the engine
+        // stays strictly 2D: `rotation` remains one scalar and no third axis is invented.
+        // What was missing is the word for the other half of "which way is this facing".
+        //
+        // TWO BOOLEANS AND NOT `scaleX < 0`. Reusing the sign would make one number answer
+        // two questions — how big, and which way round — so a creator who scaled an object
+        // to 2 and then flipped it would have to type -2 and remember why. They compose
+        // instead: the scale says the size, the flip says the facing, and the matrix
+        // multiplies them.
+        flipX: { type: 'boolean', default: false },
+        flipY: { type: 'boolean', default: false }
     };
 
     /**
@@ -46,13 +59,17 @@ export class Transform {
      * @param {number} [rotation] - Rotation in radians
      * @param {number} [scaleX] - Horizontal scale factor
      * @param {number} [scaleY] - Vertical scale factor
+     * @param {boolean} [flipX] - Mirror horizontally
+     * @param {boolean} [flipY] - Mirror vertically
      */
-    constructor(x = 0, y = 0, rotation = 0, scaleX = 1, scaleY = 1) {
+    constructor(x = 0, y = 0, rotation = 0, scaleX = 1, scaleY = 1, flipX = false, flipY = false) {
         this.x = x;
         this.y = y;
         this.rotation = rotation;
         this.scaleX = scaleX;
         this.scaleY = scaleY;
+        this.flipX = flipX;
+        this.flipY = flipY;
     }
 }
 
@@ -64,12 +81,17 @@ export class Transform {
 export function localMatrix(object) {
     const transform = object.getComponent('Transform');
     if (!transform) return Matrix.identity();
+    // THE ONE PLACE A FLIP BECOMES GEOMETRY (ADR-0047 §3). Everything that reads a placement
+    // — the renderer, picking, physics — goes through `worldMatrix()` and therefore through
+    // here, so mirroring is composed once and nothing downstream learns a new word. A mirror
+    // IS a negative scale in the matrix; what the model refuses is to make the creator write
+    // it as one.
     return Matrix.compose(
         transform.x,
         transform.y,
         transform.rotation,
-        transform.scaleX,
-        transform.scaleY
+        transform.flipX ? -transform.scaleX : transform.scaleX,
+        transform.flipY ? -transform.scaleY : transform.scaleY
     );
 }
 

@@ -88,7 +88,8 @@ test('ports may depend on the node, and are looked up by identity', () => {
     const value = portOf(definition, node, PortDirection.INPUT, 'value', context);
 
     assert.equal(value.type, PropertyType.STRING);
-    assert.equal(value.label, 'speed');
+    assert.equal(value.label, 'Value',
+        'the port is what it IS; the picker above says which property (ADR-0047 §1)');
     assert.equal(value.default, 'x');
     assert.equal(portOf(definition, node, PortDirection.INPUT, 'nope', context), null);
 });

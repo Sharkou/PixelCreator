@@ -501,7 +501,12 @@ export function start(mount = document.body) {
         // THE EDITOR HANDS OVER A FUNCTION, NOT A WINDOW. Everything about how a preview is
         // stored and addressed lives in `preview.js` and `preview/`; the shell only knows
         // that pressing the button opens the game somewhere else (ADR-0042 §2).
-        preview: () => openPreview(workspace, { report: message => reportLog(message) })
+        // ITS OWN VOICE, NOT THE CREATOR'S. `reportLog` is where the `Log` NODE writes, so
+        // routing the Preview's own failure there printed `[graph] The browser blocked…` —
+        // an Editor message wearing a creator's prefix.
+        preview: () => openPreview(workspace, {
+            report: message => console.info('[preview]', message)
+        })
     });
     chrome.transport(transport);
 
