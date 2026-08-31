@@ -25,11 +25,14 @@
 
 import { Matrix } from '../math/matrix.js';
 
+/** What one degree is worth in radians, since `rotationX` and `rotationY` are stored in degrees. */
+const DEGREES_TO_RADIANS = Math.PI / 180;
+
 export class Transform {
 
     static type = 'Transform';
 
-    static exposes = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'flipX', 'flipY'];
+    static exposes = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'rotationX', 'rotationY'];
 
     static schema = {
         x: { type: 'number', default: 0 },
@@ -37,19 +40,24 @@ export class Transform {
         rotation: { type: 'number', default: 0, unit: 'rad' },
         scaleX: { type: 'number', default: 1 },
         scaleY: { type: 'number', default: 1 },
-        // FACING IS NOT ROTATION, AND IT IS NOT A NEGATIVE SCALE EITHER (ADR-0047 §3).
+        // TURNING OUT OF THE SCREEN, IN A RENDERER THAT HAS NO DEPTH (ADR-0050).
         //
-        // A 2D character that turns around does not rotate — it is MIRRORED, and the engine
-        // stays strictly 2D: `rotation` remains one scalar and no third axis is invented.
-        // What was missing is the word for the other half of "which way is this facing".
+        // `rotation` turns an object IN the plane and stays exactly what it was. These two
+        // turn it OUT of the plane — and under the orthographic projection this renderer
+        // already uses, that is not an approximation of anything: a rotation of θ about the
+        // X axis maps (x, y, 0) to (x, y·cosθ, y·sinθ), and dropping z leaves (x, y·cosθ).
+        // A vertical scale by cos θ IS the rotation, exactly.
         //
-        // TWO BOOLEANS AND NOT `scaleX < 0`. Reusing the sign would make one number answer
-        // two questions — how big, and which way round — so a creator who scaled an object
-        // to 2 and then flipped it would have to type -2 and remember why. They compose
-        // instead: the scale says the size, the flip says the facing, and the matrix
-        // multiplies them.
-        flipX: { type: 'boolean', default: false },
-        flipY: { type: 'boolean', default: false }
+        // SO THESE ARE CONTINUOUS, AND THAT IS THE POINT. 45° is a card caught mid-turn, 90°
+        // is its edge, 180° is its back. That 180° looks like a mirror is a consequence of
+        // the cosine, not the model: nothing here is a flip with a longer name.
+        //
+        // DEGREES, STORED AS TYPED. `rotation` is kept in radians because it always was and
+        // migrating it would rewrite every scene; these are new, so they hold the number a
+        // creator wrote. The unit is declared for the suffix alone — `DISPLAY_UNITS` has no
+        // entry for `°`, so the scale stays 1 and nothing is converted.
+        rotationX: { type: 'number', default: 0, unit: '\u00b0' },
+        rotationY: { type: 'number', default: 0, unit: '\u00b0' }
     };
 
     /**
@@ -59,17 +67,17 @@ export class Transform {
      * @param {number} [rotation] - Rotation in radians
      * @param {number} [scaleX] - Horizontal scale factor
      * @param {number} [scaleY] - Vertical scale factor
-     * @param {boolean} [flipX] - Mirror horizontally
-     * @param {boolean} [flipY] - Mirror vertically
+     * @param {number} [rotationX] - Turn about the X axis, in degrees
+     * @param {number} [rotationY] - Turn about the Y axis, in degrees
      */
-    constructor(x = 0, y = 0, rotation = 0, scaleX = 1, scaleY = 1, flipX = false, flipY = false) {
+    constructor(x = 0, y = 0, rotation = 0, scaleX = 1, scaleY = 1, rotationX = 0, rotationY = 0) {
         this.x = x;
         this.y = y;
         this.rotation = rotation;
         this.scaleX = scaleX;
         this.scaleY = scaleY;
-        this.flipX = flipX;
-        this.flipY = flipY;
+        this.rotationX = rotationX;
+        this.rotationY = rotationY;
     }
 }
 
@@ -81,18 +89,38 @@ export class Transform {
 export function localMatrix(object) {
     const transform = object.getComponent('Transform');
     if (!transform) return Matrix.identity();
-    // THE ONE PLACE A FLIP BECOMES GEOMETRY (ADR-0047 §3). Everything that reads a placement
-    // — the renderer, picking, physics — goes through `worldMatrix()` and therefore through
-    // here, so mirroring is composed once and nothing downstream learns a new word. A mirror
-    // IS a negative scale in the matrix; what the model refuses is to make the creator write
-    // it as one.
+
+    // THE ONE PLACE A TURN OUT OF THE PLANE BECOMES GEOMETRY (ADR-0050). Everything that
+    // reads a placement — the renderer, picking, the camera — goes through `worldMatrix()`
+    // and therefore through here, so it is composed once and nothing downstream learns a new
+    // word. The pipeline is untouched: what leaves is the same affine 2x3 it always was.
+    //
+    // X TURNS ABOUT THE HORIZONTAL AXIS, SO IT FORESHORTENS THE VERTICAL ONE, and Y the
+    // other way round. Reading it as "rotationX scales Y" looks like a transposition and is
+    // not: an axis you turn about is the axis that keeps its length.
     return Matrix.compose(
         transform.x,
         transform.y,
         transform.rotation,
-        transform.flipX ? -transform.scaleX : transform.scaleX,
-        transform.flipY ? -transform.scaleY : transform.scaleY
+        transform.scaleX * foreshorten(transform.rotationY),
+        transform.scaleY * foreshorten(transform.rotationX)
     );
+}
+
+/**
+ * How much an axis is shortened by turning the object about the perpendicular one.
+ *
+ * `cos` OF THE ANGLE, AND NOTHING ELSE. Under an orthographic projection a turn of θ about
+ * an axis leaves the perpendicular one measuring `cos θ` of what it did — 1 at rest, 0 edge
+ * on, -1 showing its back. The sign is what makes 180° read as a mirror, which is a
+ * consequence of the cosine rather than a case anybody wrote.
+ *
+ * @param {number} degrees - The turn, in degrees, as the model stores it
+ * @returns {number} The factor to apply to the perpendicular axis
+ */
+function foreshorten(degrees) {
+    const angle = typeof degrees === 'number' && Number.isFinite(degrees) ? degrees : 0;
+    return Math.cos(angle * DEGREES_TO_RADIANS);
 }
 
 /**

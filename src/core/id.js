@@ -5,8 +5,24 @@
 // distributed nor collision-resistant enough. This uses the platform CSPRNG, available
 // both in browsers and in Node without any DOM dependency.
 
-const ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
-const DEFAULT_LENGTH = 12;
+// LETTERS ONLY, AND UNAMBIGUOUS ONES (ADR-0049). An identifier is read aloud, typed from a
+// screenshot and pasted into a URL, and a digit beside a letter is where that goes wrong:
+// `0`/`O`, `1`/`l`. Dropping the digits also makes an id look like a WORD rather than like a
+// hash, which is what a creator sharing a link expects to see.
+//
+// IT IS STILL DRAWN, NEVER DERIVED. ADR-0010 forbids an identity that comes from a name a
+// creator can change; nothing here reads a name. What changed is the alphabet, not where the
+// value comes from — so renaming a project still breaks nothing.
+//
+// `i`, `l`, `o` AND `u` ARE OUT: the first three because they are the classic misreadings,
+// and `u` because leaving it in is how a random string spells something nobody wanted.
+const ALPHABET = 'abcdefghjkmnpqrstvwxyz';
+
+// FOURTEEN, BECAUSE TWENTY-TWO SYMBOLS ARE WORTH LESS THAN THIRTY-TWO. The old alphabet gave
+// exactly 5 bits a character; this one gives log2(22) ≈ 4.46, so twelve characters would be
+// 53 bits where the guarantee was 60. Fourteen restores it (62 bits) at the cost of two
+// characters nobody reads anyway.
+const DEFAULT_LENGTH = 14;
 
 /**
  * Create an opaque identifier.
@@ -18,14 +34,21 @@ export function createId(length = DEFAULT_LENGTH) {
         throw new RangeError(`createId: length must be a positive integer, got ${length}`);
     }
 
-    // The alphabet holds 32 symbols, so 256 is an exact multiple of it and masking a
-    // random byte down to 5 bits keeps the distribution uniform without rejection.
-    const bytes = new Uint8Array(length);
-    globalThis.crypto.getRandomValues(bytes);
+    // REJECTION, BECAUSE 22 DOES NOT DIVIDE 256. Masking or taking a remainder would make
+    // the first few letters of the alphabet likelier than the last — a bias that shrinks the
+    // real value space and that no test of "does it use every character" would catch. The
+    // largest exact multiple of 22 below 256 is 242, so a byte at or above it is thrown away
+    // and redrawn; that happens for 14 values in 256, about 5% of the time.
+    const limit = 256 - (256 % ALPHABET.length);
 
     let id = '';
-    for (let i = 0; i < length; i++) {
-        id += ALPHABET[bytes[i] & 31];
+    while (id.length < length) {
+        const bytes = new Uint8Array(length - id.length);
+        globalThis.crypto.getRandomValues(bytes);
+        for (const byte of bytes) {
+            if (byte >= limit) continue;
+            id += ALPHABET[byte % ALPHABET.length];
+        }
     }
     return id;
 }

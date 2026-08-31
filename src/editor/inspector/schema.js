@@ -573,6 +573,30 @@ function clamp(value, min, max) {
 }
 
 /**
+ * What a property is called in a list, where nothing else is on the row to disambiguate it.
+ *
+ * `X` IS NOT A NAME, IT IS HALF OF ONE (ADR-0048 §2). The Inspector draws `x` and `y` on one
+ * row under the word `Position`, so the row reads correctly and the property never has to
+ * say it. A picker has no such row: `X` there sits under `Transform` beside `Scale X`, and a
+ * creator searching for `Transform Position X` — the words they see in the panel — found
+ * nothing at all.
+ *
+ * ONLY THE HALVES THAT CANNOT SPEAK FOR THEMSELVES. `scaleX` already humanises to `Scale X`
+ * and `width` to `Width`; prefixing those would produce `Scale Scale X` and `Size Width`. A
+ * label of one or two characters is exactly the case the pair's name has to rescue.
+ *
+ * @param {object} property - A declared property, with its `name` and optional `label`
+ * @returns {string} What to show in a list
+ */
+export function listLabel(property) {
+    const named = property?.label ?? humanize(property?.name ?? '');
+    if (named.length > 2) return named;
+
+    const pair = PAIRS.find(entry => entry.first === property?.name || entry.second === property?.name);
+    return pair ? `${pair.label} ${named}` : named;
+}
+
+/**
  * `scaleX` -> `Scale X`: a model name as a creator reads it.
  *
  * SHARED, BECAUSE THE PANEL AND THE PICKER HAVE TO AGREE. The Inspector shows `Scale X` and

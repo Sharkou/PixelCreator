@@ -28,6 +28,7 @@ import { ANY_TYPE, OBJECT_TYPE, PortKind, nodes as defaultNodes, portTypeOf } fr
 import { declaredProperties } from '../definition.js';
 import { OBJECT_COMPONENT, objectProperties } from '../object.js';
 import { GraphError, GraphIssueCode } from './errors.js';
+import { worldPosition } from '../components/transform.js';
 
 /**
  * The param that names a property, so the Editor knows to offer a picker.
@@ -840,7 +841,7 @@ export const STANDARD_NODES = [
                 // reasoning ADR-0045 §2 applied to `Get Property`'s output). The picker one
                 // row above already says which property this is; repeating it on the port
                 // said it twice on a 176 px card — and said it in the MODEL's spelling,
-                // `flipY`, beside a picker reading `Flip Y`.
+                // `rotationX`, beside a picker reading `Rotation X`.
                 data('value', portTypeOf(property), 'Value', property?.default,
                     null, property ? `The value to write into ${property.label ?? property.name}` : null)
             ];
@@ -1241,6 +1242,63 @@ export const STANDARD_NODES = [
     // and a creator has no way to see where it started. Zero is wrong in the same place and
     // stops there.
     arithmetic('math.divide', 'Divide', (a, b) => (b === 0 ? 0 : a / b)),
+    // THE SAME REASONING AS DIVIDE, FOR THE SAME OPERATOR: `x % 0` is NaN, and a NaN
+    // entering a Transform spreads silently through every frame after it.
+    arithmetic('math.modulo', 'Modulo', (a, b) => (b === 0 ? 0 : a % b),
+        ['remainder', 'rest', 'wrap', 'cycle', 'mod', '%']),
+    arithmetic('math.min', 'Min', (a, b) => Math.min(a, b), ['smallest', 'lower', 'floor', 'least']),
+    arithmetic('math.max', 'Max', (a, b) => Math.max(a, b), ['largest', 'higher', 'ceiling', 'greatest']),
+
+    // TRIGONOMETRY, IN THE UNIT THE EDITOR SPEAKS. `Sin` and `Cos` are what an oscillation is
+    // written with — a coin bobbing, a platform swinging, an enemy weaving — and a creator
+    // who has typed `90` into a Rotation field expects to type `90` here (ADR-0049 §2). The
+    // conversion lives in the node, exactly as it does in `Rotate`; the Core still thinks in
+    // radians and nothing about the property model moves.
+    unary('math.sin', 'Sin', degrees => Math.sin(degrees * Math.PI / 180),
+        ['sine', 'wave', 'oscillate', 'trigonometry', 'circle'],
+        'The sine of an angle, between -1 and 1 — how a wave is written', 'Degrees'),
+    unary('math.cos', 'Cos', degrees => Math.cos(degrees * Math.PI / 180),
+        ['cosine', 'wave', 'oscillate', 'trigonometry', 'circle'],
+        'The cosine of an angle, between -1 and 1', 'Degrees'),
+
+    // HOW FAR APART TWO OBJECTS ARE, and it takes Objects rather than four numbers because
+    // that is the question a creator asks: "is the enemy close enough". Four coordinate ports
+    // would make them assemble the question before they could ask it.
+    {
+        type: 'math.distance',
+        label: 'Distance',
+        category: 'Math',
+        keywords: ['far', 'near', 'apart', 'between', 'range', 'proximity', 'length'],
+        tooltip: 'How far apart two Objects are, in world units',
+        inputs: [
+            data('a', OBJECT_TYPE, 'From'),
+            data('b', OBJECT_TYPE, 'To')
+        ],
+        outputs: [data('result', PropertyType.NUMBER, 'Distance')],
+        // AN OBJECT WITH NO TRANSFORM IS A STATE OF THE SCENE, NOT A FAULT (ADR-0034 §3.4) —
+        // the rule every Transform node already follows. It has no position, so there is no
+        // distance to give and the answer is zero rather than an error.
+        evaluate: io => {
+            const from = io.input('a');
+            const to = io.input('b');
+            if (!from?.getComponent?.('Transform') || !to?.getComponent?.('Transform')) {
+                return { result: 0 };
+            }
+            const here = worldPosition(from);
+            const there = worldPosition(to);
+            return { result: Math.hypot(there.x - here.x, there.y - here.y) };
+        }
+    },
+
+    // ONE NUMBER IN, ONE OUT. `arithmetic()` takes two and these take one, which is the
+    // whole of the difference — so they are the same shape with one port fewer rather than
+    // a second idea (ADR-0048 §4).
+    unary('math.absolute', 'Absolute', value => Math.abs(value),
+        ['abs', 'positive', 'magnitude', 'size', 'unsigned'],
+        'The number without its sign'),
+    unary('math.round', 'Round', value => Math.round(value),
+        ['nearest', 'whole', 'integer', 'snap'],
+        'The nearest whole number'),
 
     // TWO NODES THAT ARE NOT ARITHMETIC BUT ARE ASKED FOR IN THE SAME BREATH. Both are one
     // line of maths a creator should never have to assemble: `Clamp` is a Greater Than, a
@@ -1298,7 +1356,23 @@ export const STANDARD_NODES = [
     // --- comparison ---------------------------------------------------------------------
 
     comparison('compare.greater', 'Greater Than', (a, b) => a > b),
+    comparison('compare.greaterOrEqual', 'Greater Or Equal', (a, b) => a >= b),
     comparison('compare.less', 'Less Than', (a, b) => a < b),
+    comparison('compare.lessOrEqual', 'Less Or Equal', (a, b) => a <= b),
+    {
+        type: 'compare.notEqual',
+        label: 'Not Equal',
+        category: 'Compare',
+        keywords: ['different', '!=', 'differs', 'unequal', 'comparison'],
+        inputs: [data('a', ANY_TYPE, 'A'), data('b', ANY_TYPE, 'B')],
+        outputs: [data('result', PropertyType.BOOLEAN, 'Result')],
+        // THE EXACT NEGATION OF `Equal`, AND IT READS THE SAME COMPARISON. Writing it as
+        // `!==` beside a node written as `===` is how the two drift apart the day one of
+        // them learns about a new type.
+        evaluate: io => ({ result: !sameValue(io.input('a'), io.input('b')) }),
+        tooltip: 'Whether two values are different'
+    },
+
     {
         type: 'compare.equal',
         label: 'Equal',
@@ -1306,7 +1380,7 @@ export const STANDARD_NODES = [
         keywords: ['equals', '==', 'same', 'comparison'],
         inputs: [data('a', ANY_TYPE, 'A'), data('b', ANY_TYPE, 'B')],
         outputs: [data('result', PropertyType.BOOLEAN, 'Result')],
-        evaluate: io => ({ result: io.input('a') === io.input('b') })
+        evaluate: io => ({ result: sameValue(io.input('a'), io.input('b')) })
     },
 
     // --- logic ---------------------------------------------------------------------------
@@ -1359,7 +1433,48 @@ export function registerStandardNodes(registry = defaultNodes) {
     return registry;
 }
 
-function arithmetic(type, label, apply) {
+/**
+ * Whether two graph values are the same value.
+ *
+ * ONE COMPARISON, READ FROM ONE PLACE. `Equal` and `Not Equal` are exact negations, and
+ * writing the second as `!==` beside a first written as `===` is how two rules that were
+ * one start to disagree the day either learns about a new type.
+ *
+ * @param {any} a - The first value
+ * @param {any} b - The second
+ * @returns {boolean} True when they are the same
+ */
+function sameValue(a, b) {
+    return a === b;
+}
+
+/**
+ * A node that takes one number and answers one.
+ *
+ * @param {string} type - The node type
+ * @param {string} label - What it is called
+ * @param {Function} apply - The operation
+ * @param {string[]} keywords - What else a creator might type
+ * @param {string} tooltip - What it answers
+ * @param {string} [port] - What the input is called, when `Value` would not say enough
+ * @returns {object} The definition
+ */
+function unary(type, label, apply, keywords, tooltip, port = 'Value') {
+    return {
+        type,
+        label,
+        category: 'Math',
+        keywords: ['maths', 'number', label.toLowerCase(), ...keywords],
+        // THE PORT IS NAMED FOR ITS UNIT WHERE THE UNIT IS A QUESTION, which is the technique
+        // `Rotate` already uses: `Angle` would have two answers, `Degrees` has one.
+        inputs: [data('value', PropertyType.NUMBER, port, 0)],
+        outputs: [data('result', PropertyType.NUMBER, 'Result')],
+        evaluate: io => ({ result: apply(number(io.input('value'))) }),
+        tooltip
+    };
+}
+
+function arithmetic(type, label, apply, keywords = []) {
     return {
         type,
         label,
@@ -1368,7 +1483,7 @@ function arithmetic(type, label, apply) {
         // type, the category AND these (editor/ui/relevance.js), which is what lets `times`
         // find Multiply and `arithmetic` find all four. A node with none is still findable
         // by its name; these only widen the door.
-        keywords: ['arithmetic', 'maths', 'operator', label.toLowerCase()],
+        keywords: ['arithmetic', 'maths', 'operator', label.toLowerCase(), ...keywords],
         inputs: [data('a', PropertyType.NUMBER, 'A', 0), data('b', PropertyType.NUMBER, 'B', 0)],
         outputs: [data('result', PropertyType.NUMBER, 'Result')],
         evaluate: io => ({ result: apply(number(io.input('a')), number(io.input('b'))) })

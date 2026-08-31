@@ -80,7 +80,7 @@ test('a facade property belongs to its component, not to the object', () => {
     assert.equal(data.x, undefined, 'the facade stores nothing, so it serializes nothing');
     assert.deepEqual(data.components[0], {
         type: 'Transform',
-        values: { x: 55, y: 20, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false }
+        values: { x: 55, y: 20, rotation: 0, scaleX: 1, scaleY: 1, rotationX: 0, rotationY: 0 }
     });
 });
 

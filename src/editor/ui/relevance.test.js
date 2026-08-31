@@ -120,3 +120,47 @@ test('an entry with no fields at all scores nothing rather than throwing', () =>
     assert.equal(score(null, 'add'), 0);
     assert.deepEqual(rank([{}], 'add'), []);
 });
+
+test('a query may name the group and the row at once', () => {
+    // THE QUERY A CREATOR WRITES WHEN THEY KNOW EXACTLY WHAT THEY WANT, and the one that
+    // used to find nothing: `Transform` is the entry's CATEGORY and `Position X` is its
+    // LABEL, and no single field holds both (ADR-0048 §1). It became the common case the
+    // moment the Component field was removed and the group became half of a property's name.
+    const rows = [
+        { label: 'Position X', category: 'Transform' },
+        { label: 'Position Y', category: 'Transform' },
+        { label: 'Rotation', category: 'Transform' },
+        { label: 'Value', category: 'Health' },
+        { label: 'Color', category: 'Sprite' }
+    ];
+
+    assert.deepEqual(rank(rows, 'Transform Position X').map(row => row.label), ['Position X']);
+    assert.deepEqual(rank(rows, 'Health Value').map(row => row.label), ['Value']);
+    assert.deepEqual(rank(rows, 'sprite color').map(row => row.label), ['Color']);
+});
+
+test('every word has to be answered, so typing more narrows the list', () => {
+    // AN AND, NOT AN OR. A filter that grew as you typed would be the opposite of a filter.
+    const rows = [
+        { label: 'Position X', category: 'Transform' },
+        { label: 'Position Y', category: 'Transform' },
+        { label: 'Speed', category: 'Health' }
+    ];
+
+    assert.equal(rank(rows, 'transform').length, 2);
+    assert.equal(rank(rows, 'transform position').length, 2);
+    assert.equal(rank(rows, 'transform position y').length, 1);
+    assert.equal(rank(rows, 'transform speed').length, 0, 'a word nothing answers rules the entry out');
+});
+
+test('one word still ranks exactly as it always did', () => {
+    // The whole query against one field is tried FIRST, so nothing about a single-word
+    // search moved when the multi-word reading was added.
+    const rows = [
+        { label: 'Add', category: 'Math' },
+        { label: 'Add Component', category: 'Object' }
+    ];
+
+    assert.deepEqual(rank(rows, 'add').map(row => row.label), ['Add', 'Add Component'],
+        'the shorter label still wins on an equal match');
+});

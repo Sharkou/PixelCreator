@@ -196,7 +196,7 @@ test('the Transform of a reparented object still holds LOCAL values only', () =>
     reparentObject(target, child, parent);
 
     assert.deepEqual(globalThis.Object.keys(child.getComponent('Transform')),
-        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'flipX', 'flipY']);
+        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'rotationX', 'rotationY']);
     assert.equal(child.x, -70);
     assert.equal(worldPosition(child).x, 30);
 });

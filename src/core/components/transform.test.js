@@ -10,20 +10,33 @@ import { Object } from '../object.js';
 import { Transform, localMatrix, worldPosition } from './transform.js';
 import { serializeObject, serializeComponent } from '../serialize.js';
 
-test('a transform holds where an object is, how big it is, and which way it faces', () => {
+test('a transform holds where an object is, how big it is, and how it is turned', () => {
     const transform = new Transform();
 
     assert.deepEqual(globalThis.Object.keys(transform),
-        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'flipX', 'flipY']);
+        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'rotationX', 'rotationY']);
     assert.equal(transform.x, 0);
     assert.equal(transform.y, 0);
     assert.equal(transform.rotation, 0);
     assert.equal(transform.scaleX, 1);
     assert.equal(transform.scaleY, 1);
-    // FACING IS ITS OWN QUESTION (ADR-0047 §3). A 2D character that turns around is
-    // mirrored, not rotated, and the engine stays strictly 2D.
-    assert.equal(transform.flipX, false);
-    assert.equal(transform.flipY, false);
+    // TURNING OUT OF THE PLANE IS ITS OWN QUESTION (ADR-0050): `rotation` turns an object IN
+    // the plane, these two turn it OUT of it.
+    assert.equal(transform.rotationX, 0);
+    assert.equal(transform.rotationY, 0);
+});
+
+test('there is no such thing as a flip', () => {
+    // FLIP WAS A BOOLEAN WHERE THE MODEL NEEDED A NUMBER (ADR-0050). It could only say
+    // "front" or "back"; what a card caught mid-turn needs is 45.
+    const transform = new Transform();
+
+    assert.equal(transform.flipX, undefined);
+    assert.equal(transform.flipY, undefined);
+    assert.equal('flipX' in Transform.schema, false);
+    assert.equal('flipY' in Transform.schema, false);
+    assert.equal(Transform.exposes.includes('flipX'), false);
+    assert.equal(Transform.exposes.includes('flipY'), false);
 });
 
 test('size is not a transform concern', () => {
@@ -34,9 +47,23 @@ test('size is not a transform concern', () => {
     assert.equal(transform.height, undefined);
 });
 
-test('the facade exposes every placement property, facing included', () => {
+test('the facade exposes every placement property, both turns included', () => {
     assert.deepEqual(Transform.exposes,
-        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'flipX', 'flipY']);
+        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'rotationX', 'rotationY']);
+});
+
+test('a turn out of the plane is a number, in degrees', () => {
+    const fields = Transform.schema;
+
+    assert.equal(fields.rotationX.type, 'number');
+    assert.equal(fields.rotationY.type, 'number');
+    assert.equal(fields.rotationX.default, 0);
+    assert.equal(fields.rotationY.default, 0);
+    // DEGREES, STORED AS TYPED. The unit is declared for the suffix alone — nothing converts,
+    // unlike `rotation`, which is kept in radians because it always was.
+    assert.equal(fields.rotationX.unit, '\u00b0');
+    assert.equal(fields.rotationY.unit, '\u00b0');
+    assert.equal(fields.rotation.unit, 'rad', 'and the in-plane rotation is untouched');
 });
 
 test('the whole placement is reachable from the object', () => {
@@ -124,7 +151,7 @@ test('a serialized transform carries only local values', () => {
     const data = serializeComponent(child.getComponent('Transform'));
 
     assert.deepEqual(data,
-        { x: 10, y: 5, rotation: 0, scaleX: 1, scaleY: 1, flipX: false, flipY: false });
+        { x: 10, y: 5, rotation: 0, scaleX: 1, scaleY: 1, rotationX: 0, rotationY: 0 });
     assert.equal(JSON.stringify(serializeObject(child)).includes('world'), false);
 });
 
@@ -147,42 +174,85 @@ test('one source of truth, whichever path writes it', () => {
     assert.equal(serializeComponent(transform).x, 4);
 });
 
-test('a flip mirrors the object without touching its scale', () => {
-    // TWO QUESTIONS, TWO VALUES (ADR-0047 §3). Reusing the sign of `scaleX` would make one
-    // number answer "how big" and "which way round" at once, so a creator who scaled to 2
-    // and then flipped would have to type -2 and remember why.
-    const object = new Object('Player');
+test('a turn foreshortens the perpendicular axis, by the cosine of the angle', () => {
+    // THE WHOLE MODEL, IN FOUR ANGLES (ADR-0050). Under the orthographic projection this
+    // renderer already uses, a turn of θ about an axis leaves the perpendicular one
+    // measuring cos θ of what it did. 45° is a card caught mid-turn; 90° is its edge; 180°
+    // is its back — and THAT is why the back looks mirrored, not because anybody wrote a
+    // mirror.
+    const turned = (rotationX, rotationY) => {
+        const object = new Object('Card');
+        object.addComponent(new Transform(0, 0, 0, 1, 1, rotationX, rotationY));
+        return localMatrix(object);
+    };
+    const near = (value, expected, what) =>
+        assert.ok(Math.abs(value - expected) < 1e-9, `${what}: ${value} is not ${expected}`);
+
+    near(turned(0, 0).d, 1, 'at rest');
+    near(turned(45, 0).d, Math.SQRT1_2, 'mid-turn');
+    near(turned(90, 0).d, 0, 'edge on');
+    near(turned(180, 0).d, -1, 'showing its back');
+
+    // Y turns the other way round, and touches the horizontal axis instead.
+    near(turned(0, 45).a, Math.SQRT1_2, 'mid-turn');
+    near(turned(0, 90).a, 0, 'edge on');
+    near(turned(0, 180).a, -1, 'showing its back');
+
+    // AN AXIS YOU TURN ABOUT KEEPS ITS LENGTH, which is what makes the pairing look like a
+    // transposition and stops it being one.
+    near(turned(90, 0).a, 1, 'turning about X leaves the horizontal axis alone');
+    near(turned(0, 90).d, 1, 'turning about Y leaves the vertical axis alone');
+});
+
+test('a turn scales what the creator scaled, rather than replacing it', () => {
+    const object = new Object('Card');
     object.addComponent(new Transform(0, 0, 0, 2, 3));
     const transform = object.getComponent('Transform');
 
-    assert.equal(localMatrix(object).a, 2, 'unflipped, the matrix carries the scale');
+    transform.rotationX = 180;
+    assert.ok(Math.abs(localMatrix(object).d + 3) < 1e-9, 'the turn multiplies the scale');
+    assert.equal(transform.scaleY, 3, 'and the scale a creator typed is still the one they typed');
 
-    transform.flipX = true;
-    assert.equal(localMatrix(object).a, -2, 'flipped, it carries the mirror as well');
-    assert.equal(transform.scaleX, 2, 'and the scale a creator typed is still the one they typed');
-
-    transform.flipY = true;
-    assert.equal(localMatrix(object).d, -3);
-    assert.equal(transform.scaleY, 3);
+    transform.rotationY = 60;
+    assert.ok(Math.abs(localMatrix(object).a - 1) < 1e-9, '2 x cos 60 is 1');
+    assert.equal(transform.scaleX, 2);
 });
 
-test('a flip composes down the hierarchy like every other placement value', () => {
-    // Nothing downstream learns a new word: the mirror is composed in `localMatrix()`, so
-    // rendering, picking and physics all read it through `worldMatrix()` as they always did.
+test('the in-plane rotation is untouched by either turn', () => {
+    // NO REGRESSION ON `rotation`: it still composes as it always did, and the two turns
+    // multiply the scale terms the composition already carries.
+    const object = new Object('Card');
+    object.addComponent(new Transform(0, 0, Math.PI / 2));
+
+    const spun = localMatrix(object);
+    assert.ok(Math.abs(spun.a) < 1e-9, 'cos 90deg');
+    assert.ok(Math.abs(spun.b - 1) < 1e-9, 'sin 90deg');
+
+    object.getComponent('Transform').rotationX = 180;
+    const both = localMatrix(object);
+    assert.ok(Math.abs(both.b - 1) < 1e-9, 'the in-plane rotation still reads the same');
+    assert.ok(Math.abs(both.c - 1) < 1e-9, 'and the turn has flipped the other column');
+});
+
+test('a turn composes down the hierarchy like every other placement value', () => {
+    // Nothing downstream learns a new word: it is composed in `localMatrix()`, so rendering,
+    // picking and the camera all read it through `worldMatrix()` as they always did.
     const parent = new Object('Parent');
     const child = new Object('Child');
-    parent.addComponent(new Transform(0, 0, 0, 1, 1, true, false));
+    parent.addComponent(new Transform(0, 0, 0, 1, 1, 0, 180));
     child.addComponent(new Transform(10, 0));
     parent.addChild(child);
 
-    assert.equal(worldPosition(child).x, -10, 'the child is mirrored with its parent');
+    assert.ok(Math.abs(worldPosition(child).x + 10) < 1e-9, 'the child turns with its parent');
 });
 
-test('a flip is a boolean, so it round-trips through serialization', () => {
-    const object = new Object('Player');
-    object.addComponent(new Transform(0, 0, 0, 1, 1, true, true));
+test('a turn is a number, so it round-trips through serialization', () => {
+    const object = new Object('Card');
+    object.addComponent(new Transform(0, 0, 0, 1, 1, 45, 30));
 
     const data = serializeComponent(object.getComponent('Transform'));
-    assert.equal(data.flipX, true);
-    assert.equal(data.flipY, true);
+    assert.equal(data.rotationX, 45);
+    assert.equal(data.rotationY, 30);
+    assert.equal(data.flipX, undefined);
+    assert.equal(data.flipY, undefined);
 });

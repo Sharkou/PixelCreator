@@ -14,8 +14,7 @@ import {
     parseValue,
     rows,
     toDisplay,
-    toDisplayExact
-} from './schema.js';
+    toDisplayExact, listLabel} from './schema.js';
 
 class Plain {
     static type = 'Plain';
@@ -52,9 +51,13 @@ const byName = (fields, name) => fields.find(field => field.name === name);
 test('a schema drives the fields, in declaration order', () => {
     const fields = describeComponent(new Transform());
     assert.deepEqual(fields.map(field => field.name),
-        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'flipX', 'flipY']);
+        ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'rotationX', 'rotationY']);
     assert.equal(fields[0].kind, FieldKind.NUMBER);
-    assert.equal(byName(fields, 'flipX').kind, FieldKind.BOOLEAN, 'facing is a switch, not a number');
+    // A TURN OUT OF THE PLANE IS CONTINUOUS, so it draws a number and not a switch: 45 is a
+    // card caught mid-turn, and a boolean could not say it (ADR-0050).
+    assert.equal(byName(fields, 'rotationX').kind, FieldKind.NUMBER);
+    assert.equal(byName(fields, 'rotationX').unit, '\u00b0');
+    assert.equal(byName(fields, 'rotationX').scale, 1, 'degrees are stored as typed');
     assert.equal(byName(fields, 'rotation').unit, '°', 'radians are a model unit, degrees are what is shown');
 });
 
@@ -543,4 +546,21 @@ test('the Object rows come from the Core, so the panel and the graph cannot disa
     assert.deepEqual(rows.map(field => field.kind),
         [FieldKind.STRING, FieldKind.STRING, FieldKind.INT, FieldKind.BOOLEAN]);
     assert.ok(rows.find(field => field.name === 'layer').tooltip, 'and each still says what it is for');
+});
+
+test('a property that is half of a pair says which pair, where nothing else can', () => {
+    // `X` IS NOT A NAME, IT IS HALF OF ONE (ADR-0048 §2). The Inspector draws `x` and `y` on
+    // one row under `Position`, so the row says it; a picker has no such row, and `X` there
+    // sits under `Transform` beside `Scale X`.
+    assert.equal(listLabel({ name: 'x' }), 'Position X');
+    assert.equal(listLabel({ name: 'y' }), 'Position Y');
+
+    // ONLY THE HALVES THAT CANNOT SPEAK FOR THEMSELVES: prefixing these would produce
+    // `Scale Scale X` and `Size Width`.
+    assert.equal(listLabel({ name: 'scaleX' }), 'Scale X');
+    assert.equal(listLabel({ name: 'width' }), 'Width');
+    assert.equal(listLabel({ name: 'rotation' }), 'Rotation');
+
+    // A name a creator chose is theirs, whatever its length.
+    assert.equal(listLabel({ name: 'hp', label: 'HP' }), 'HP');
 });

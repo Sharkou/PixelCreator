@@ -97,9 +97,11 @@ test('the picker offers every property this project can name, grouped by its Com
     assert.equal(picker.groups[0], 'This Component');
     assert.deepEqual(picker.labels.slice(0, 2), ['Speed', 'Alive']);
 
-    // And every other Component's properties are there, under its own name.
+    // And every other Component's properties are there, under its own name — read as the
+    // Inspector reads them, so `x` is `Position X` and not a bare `X` beside `Scale X`
+    // (ADR-0048 §2).
     assert.ok(picker.groups.includes('Transform'));
-    assert.ok(picker.labels.includes('X'));
+    assert.ok(picker.labels.includes('Position X'));
 });
 
 test('a row says the short name, and the group beside it says whose', () => {
@@ -111,7 +113,8 @@ test('a row says the short name, and the group beside it says whose', () => {
     const at = picker.values.indexOf('Transform/t1');
 
     assert.ok(at >= 0, 'the value carries both halves');
-    assert.equal(picker.labels[at], 'X', 'the row says the short name');
+    assert.equal(picker.labels[at], 'Position X',
+        'the row says the name a creator reads in the Inspector, pair included');
     assert.equal(picker.groups[at], 'Transform', 'and its group says whose');
     assert.equal(picker.paths, null, 'nothing longer is drawn in a card that cannot hold it');
 });

@@ -58,10 +58,31 @@ export function score(entry, query) {
     const needle = normalise(query);
     if (needle === '') return 0;
 
-    let best = 0;
-    for (const field of FIELDS) {
-        for (const value of valuesOf(entry?.[field.key])) {
-            best = Math.max(best, matchScore(normalise(value), needle) * field.weight);
+    // THE WHOLE QUERY AGAINST ONE FIELD IS STILL THE STRONGEST READING, and it is tried
+    // first so that every single-word search ranks exactly as it always did.
+    let best = fieldScore(entry, needle);
+
+    // A QUERY MAY NAME THE GROUP AND THE ROW, AND UNTIL NOW IT COULD NAME NEITHER
+    // (ADR-0048 §1). `Transform Position X` found nothing: `Transform` is the entry's
+    // CATEGORY and `Position X` is its LABEL, and no single field holds both — so the one
+    // query a creator writes when they know exactly what they want was the one that failed.
+    // That mattered the moment the Component field was removed and the group became part of
+    // how a property is named.
+    //
+    // EVERY WORD MUST BE ANSWERED, BY WHICHEVER FIELD ANSWERS IT. That is an AND, so the
+    // list gets shorter as a creator types rather than longer — the behaviour a filter is
+    // expected to have. The score is the mean, so a two-word query that matches two labels
+    // exactly still outranks one that only brushes them.
+    if (best === 0) {
+        const words = needle.split(/\s+/).filter(Boolean);
+        if (words.length > 1) {
+            let total = 0;
+            for (const word of words) {
+                const answered = fieldScore(entry, word);
+                if (answered === 0) return 0;
+                total += answered;
+            }
+            best = total / words.length;
         }
     }
 
@@ -69,6 +90,23 @@ export function score(entry, query) {
     // `Add Component`. Small enough never to outrank a better kind of match.
     const length = normalise(entry?.label ?? '').length;
     return best > 0 ? best + Math.max(0, 40 - length) / 10 : 0;
+}
+
+/**
+ * The best any one field of an entry does against a needle.
+ *
+ * @param {object} entry - The entry
+ * @param {string} needle - Already normalised
+ * @returns {number} The weighted score, 0 when nothing answers
+ */
+function fieldScore(entry, needle) {
+    let best = 0;
+    for (const field of FIELDS) {
+        for (const value of valuesOf(entry?.[field.key])) {
+            best = Math.max(best, matchScore(normalise(value), needle) * field.weight);
+        }
+    }
+    return best;
 }
 
 /**

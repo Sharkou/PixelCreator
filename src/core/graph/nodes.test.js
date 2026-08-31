@@ -7,6 +7,7 @@ import { ComponentRegistry } from '../component.js';
 import { declaredProperties, defineComponent } from '../definition.js';
 import { OBJECT_COMPONENT, Object as SceneObject, objectProperties } from '../object.js';
 import { Scene } from '../scene.js';
+import { Transform } from '../components/transform.js';
 import {
     ANY_TYPE,
     NodeRegistry,
@@ -1118,4 +1119,98 @@ test('the input nodes say what each of their ports means', () => {
             .outputs.find(entry => entry.id === portId);
         assert.ok(port?.tooltip, `${type} ▸ ${portId} explains itself nowhere`);
     }
+});
+
+test('the arithmetic a creator expects to find is there, and answers', () => {
+    // A CATALOGUE WITH HOLES IN IT IS A CATALOGUE A CREATOR STOPS TRUSTING (ADR-0048 §4).
+    // `Min` and `Max` next to `Add` cost nothing and were simply missing.
+    const registry = registerStandardNodes(new NodeRegistry());
+    const answer = (type, a, b) => registry.get(type).evaluate({
+        input: port => (port === 'a' ? a : port === 'b' ? b : undefined)
+    }).result;
+
+    assert.equal(answer('math.min', 3, 7), 3);
+    assert.equal(answer('math.max', 3, 7), 7);
+    assert.equal(answer('math.modulo', 7, 3), 1);
+    // THE SAME DECISION `Divide` MADE, FOR THE SAME REASON: a NaN entering a Transform
+    // spreads silently through every frame after it.
+    assert.equal(answer('math.modulo', 7, 0), 0);
+});
+
+test('one number in, one out — and it is the same shape with a port fewer', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const answer = (type, value) => registry.get(type).evaluate({ input: () => value }).result;
+
+    assert.equal(answer('math.absolute', -4.5), 4.5);
+    assert.equal(answer('math.absolute', 4.5), 4.5);
+    assert.equal(answer('math.round', 2.4), 2);
+    assert.equal(answer('math.round', 2.6), 3);
+
+    for (const type of ['math.absolute', 'math.round']) {
+        const ports = portsOf(registry.get(type), { id: 'n', type, params: {} }, {});
+        assert.deepEqual(ports.inputs.map(port => port.id), ['value']);
+        assert.deepEqual(ports.outputs.map(port => port.id), ['result']);
+        assert.equal(registry.get(type).category, 'Math');
+    }
+});
+
+test('every comparison has its opposite, and Equal has its negation', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const answer = (type, a, b) => registry.get(type).evaluate({
+        input: port => (port === 'a' ? a : b)
+    }).result;
+
+    assert.equal(answer('compare.greaterOrEqual', 3, 3), true);
+    assert.equal(answer('compare.greaterOrEqual', 2, 3), false);
+    assert.equal(answer('compare.lessOrEqual', 3, 3), true);
+    assert.equal(answer('compare.lessOrEqual', 4, 3), false);
+
+    // NOT EQUAL IS THE EXACT NEGATION, and it reads the same comparison: writing it as
+    // `!==` beside an `Equal` written as `===` is how two rules that were one drift apart.
+    for (const [a, b] of [[1, 1], [1, 2], ['x', 'x'], [true, false]]) {
+        assert.equal(answer('compare.notEqual', a, b), !answer('compare.equal', a, b), `${a} vs ${b}`);
+    }
+});
+
+test('trigonometry speaks the unit the Editor speaks', () => {
+    // A CREATOR WHO HAS TYPED `90` INTO A ROTATION FIELD EXPECTS TO TYPE `90` HERE
+    // (ADR-0049 §2). The conversion lives in the node, exactly as it does in `Rotate`; the
+    // Core still thinks in radians and nothing about the property model moves.
+    const registry = registerStandardNodes(new NodeRegistry());
+    const answer = (type, value) => registry.get(type).evaluate({ input: () => value }).result;
+
+    assert.ok(Math.abs(answer('math.sin', 0) - 0) < 1e-9);
+    assert.ok(Math.abs(answer('math.sin', 90) - 1) < 1e-9);
+    assert.ok(Math.abs(answer('math.cos', 0) - 1) < 1e-9);
+    assert.ok(Math.abs(answer('math.cos', 180) + 1) < 1e-9);
+
+    // And the port says which unit, because `Angle` would have two answers.
+    const ports = portsOf(registry.get('math.sin'), { id: 'n', type: 'math.sin', params: {} }, {});
+    assert.equal(ports.inputs[0].label, 'Degrees');
+});
+
+test('Distance takes Objects, because that is the question a creator asks', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const definition = registry.get('math.distance');
+
+    const at = (x, y) => {
+        const object = new SceneObject('o');
+        object.addComponent(new Transform(x, y));
+        return object;
+    };
+    const between = (from, to) => definition.evaluate({
+        input: port => (port === 'a' ? from : to)
+    }).result;
+
+    assert.equal(between(at(0, 0), at(3, 4)), 5);
+    assert.equal(between(at(10, 10), at(10, 10)), 0);
+
+    // AN OBJECT WITH NO TRANSFORM IS A STATE OF THE SCENE, NOT A FAULT (ADR-0034 §3.4): it
+    // has no position, so there is no distance to give.
+    assert.equal(between(at(0, 0), new SceneObject('nowhere')), 0);
+    assert.equal(between(null, at(1, 1)), 0);
+
+    // Four coordinate ports would make a creator assemble the question before asking it.
+    const ports = portsOf(definition, { id: 'n', type: 'math.distance', params: {} }, {});
+    assert.deepEqual(ports.inputs.map(port => port.label), ['From', 'To']);
 });

@@ -35,7 +35,7 @@ import {
     referencedComponent
 } from '../../core/mod.js';
 import { keyOptions } from '../keys.js';
-import { fieldFor, humanize } from './schema.js';
+import { fieldFor, humanize, listLabel } from './schema.js';
 
 /**
  * Describe a graph node for the Inspector.
@@ -481,7 +481,7 @@ function propertyPaths(context) {
     for (const property of own) {
         options.push({
             value: propertyPath('', property.id),
-            label: property.label ?? humanize(property.name),
+            label: listLabel(property),
             group: THIS_COMPONENT
         });
     }
@@ -491,7 +491,7 @@ function propertyPaths(context) {
         for (const property of entry.properties ?? []) {
             options.push({
                 value: propertyPath(entry.type, property.id),
-                label: property.label ?? humanize(property.name),
+                label: listLabel(property),
                 group
             });
         }
