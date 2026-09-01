@@ -405,7 +405,7 @@ export const NODE_CATEGORY_ICONS = {
     // The category a node reaching ANOTHER Object belongs to. It was called `Scene` while
     // it also held the property nodes; the glyph is unchanged because what it draws — an
     // object framed and aimed at — is exactly what a reference is (ADR-0034 §3.2).
-    References: 'node-scene',
+    Object: 'node-scene',
     Values: 'node-value',
     Math: 'node-math',
     Compare: 'node-compare',

@@ -524,9 +524,18 @@ function referenceChoice(name, descriptor, node, context) {
     // A PATH IS READ BACK FROM THE TWO PARAMS IT WAS SPLIT INTO. The control speaks in whole
     // answers and the model holds halves, so the encoding happens in both directions here
     // and nowhere else (ADR-0047 §1).
+    // AN UNTOUCHED PARAM SHOWS WHAT THE RUNTIME WILL READ, NOT AN EMPTY BOX (ADR-0054 §2).
+    // A fresh `On Key` stores no key and its interpreter reads `params.key ?? 'Space'` — so
+    // the card said `None` while the simulation was already watching Space. That is the
+    // defect `value.number` was fixed for once already: "the box and the simulation
+    // disagreeing about the same value".
+    //
+    // ONLY WHERE A DEFAULT WAS DECLARED. A picker whose default is null — every property,
+    // Component and socket reference — still reads its placeholder, because there nothing IS
+    // the answer and saying so is the point.
     const chosen = descriptor.reference === PROPERTY_REFERENCE
         ? (node?.params?.property ? propertyPath(node?.params?.component ?? '', node.params.property) : '')
-        : node?.params?.[name] ?? '';
+        : node?.params?.[name] ?? descriptor.default ?? '';
 
     const field = fieldFor(name, {
         ...descriptor,

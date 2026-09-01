@@ -76,13 +76,19 @@ export const OBJECT_TYPE = 'object';
  * family to the eye and two rows in the menu, which is why they share a hue and keep
  * separate groups.
  *
- * `References` AND `Properties` ARE TWO IDEAS, AND THEY USED TO BE ONE. Everything that
+ * `Object` AND `Properties` ARE TWO IDEAS, AND THEY USED TO BE ONE. Everything that
  * reaches outside this Component was called `Scene`, so `Self` — which hands over an
  * Object — sat beside `Get Property On` — which reads a value off one. The first produces
- * a REFERENCE and takes part in no execution; the second is a property ACCESS that happens
+ * an OBJECT and takes part in no execution; the second is a property ACCESS that happens
  * to be aimed elsewhere. Splitting them is what lets the canvas colour them apart, and it
  * puts the two `On` nodes where they always belonged: with the other two property nodes,
  * whose semantics they share exactly (ADR-0034 §3.3).
+ *
+ * AND IT IS CALLED `Object`, NOT `References`. Every node in it answers "which Object" —
+ * `Self`, `Parent`, `Find By Tag`, `Get Object`, `Is Valid` — and `Object` is the word a
+ * creator already reads on the row those nodes plug into. `Reference` is what the ENGINE
+ * calls the thing being handed over; a beginner looking for "the object I collided with"
+ * does not think in references (ADR-0054 §1).
  *
  * A CATEGORY IS PRESENTATION AND IS NEVER SERIALIZED. A node record carries its `type`, its
  * params and its position; what family that type belongs to is read from the catalogue at
@@ -99,7 +105,7 @@ export const NODE_CATEGORIES = [
     // asks: "I want to move my object — where do I look?" Not under `Properties`, which is
     // where you look to READ one. `Translate` and the Rotate and Scale that will join it
     // change where a thing IS, and that is a different kind of act from reading `x`.
-    'Events', 'Input', 'Flow', 'References', 'Properties', 'Transform',
+    'Events', 'Input', 'Flow', 'Object', 'Properties', 'Transform',
     'Values', 'Math', 'Compare', 'Logic', 'Debug'
 ];
 

@@ -33,6 +33,7 @@ import { Sprite } from '../../runtime/mod.js';
 import { DragKind, DropZone } from './payload.js';
 import { createResourceOfKind } from '../project/commands.js';
 import { uniqueName } from '../commands.js';
+import { propertyPath } from '../inspector/node.js';
 
 /**
  * WHICH COMPONENT CONSUMES WHICH KIND OF RESOURCE — the one relation, stated once.
@@ -563,10 +564,21 @@ export const RULES = [
             && acceptsProperty(target),
         describe: (payload, target) =>
             `Point ${target.label ?? 'this node'} at ${payload.label || payload.property}`,
-        perform: (payload, target, context) => context.setNodeParams?.(target.node, {
-            component: ownComponent(payload, context),
-            property: payload.property
-        }) ?? null
+        // ONE PARAM, BECAUSE THE PICKER SPEAKS IN PATHS (ADR-0053). Writing `component` and
+        // `property` separately used to work; it stopped the day one picker started asking
+        // the whole question. `paramWrites()` now reads a write to `property` AS a path and
+        // splits it — so a bare property id arrived with no Component half, and the
+        // `component` written a line earlier was overwritten with null in the same batch.
+        //
+        // A property of the Object namespace showed it plainest: dropping `Active` on a node
+        // left it reading `/active` and resolving against the `.px`'s own fields, where no
+        // such property is. Writing the path is what the control writes, so there is one
+        // encoding with one decoder.
+        perform: (payload, target, context) => context.setNodeParam?.(
+            target.node,
+            'property',
+            propertyPath(ownComponent(payload, context) ?? '', payload.property)
+        ) ?? null
     },
 
     {

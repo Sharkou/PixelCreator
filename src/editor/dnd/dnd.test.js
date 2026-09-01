@@ -724,10 +724,10 @@ test('no scene identity can reach a .px through a graph drop', () => {
     const written = [];
 
     performDrop(propertyPayload('res_health', 'p_hp', 'hp', it.hero), nodeTarget(GET_ON_PARAMS), {
-        setNodeParams: (node, params) => written.push(params)
+        setNodeParam: (node, name, value) => written.push([name, value])
     });
 
-    assert.deepEqual(written, [{ component: 'res_health', property: 'p_hp' }]);
+    assert.deepEqual(written, [['property', 'res_health/p_hp']]);
     assert.equal(JSON.stringify(written).includes(it.hero.id), false, 'no scene identity travelled');
 });
 
@@ -893,10 +893,12 @@ test('a property of the .px being edited is stored as its own, not as a type', (
 
     performDrop(propertyPayload('res_self', 'p_speed', 'speed'), target, {
         ownType: 'res_self',
-        setNodeParams: (node, params) => written.push(params)
+        setNodeParam: (node, name, value) => written.push([name, value])
     });
 
-    assert.deepEqual(written, [{ component: null, property: 'p_speed' }]);
+    // Its own property is stored with no Component half at all — the sentinel every graph
+    // has carried since ADR-0040 §2, now the empty side of the path (ADR-0053).
+    assert.deepEqual(written, [['property', '/p_speed']]);
 });
 
 test('a property of ANOTHER Component keeps naming that Component', () => {
@@ -904,10 +906,10 @@ test('a property of ANOTHER Component keeps naming that Component', () => {
 
     performDrop(propertyPayload('res_health', 'p_hp', 'hp'), nodeTarget(GET_ON_PARAMS), {
         ownType: 'res_self',
-        setNodeParams: (node, params) => written.push(params)
+        setNodeParam: (node, name, value) => written.push([name, value])
     });
 
-    assert.deepEqual(written, [{ component: 'res_health', property: 'p_hp' }]);
+    assert.deepEqual(written, [['property', 'res_health/p_hp']]);
 });
 
 test('the same normalisation happens on bare canvas, where the node is created', () => {
@@ -920,17 +922,21 @@ test('the same normalisation happens on bare canvas, where the node is created',
     assert.deepEqual(made, [{ component: null, property: 'p_speed' }]);
 });
 
-test('a Property dropped on a compatible node configures both halves at once', () => {
+test('a Property dropped on a compatible node writes one path, which splits into both halves', () => {
+    // ONE PARAM, BECAUSE THE PICKER SPEAKS IN PATHS (ADR-0053). Writing the two halves
+    // separately used to work and stopped the day one picker asked the whole question:
+    // `paramWrites()` reads a write to `property` AS a path, so a bare id arrived with no
+    // Component half and overwrote the `component` written a line earlier with null.
     const target = nodeTarget(GET_ON);
     const written = [];
 
     assert.equal(canDrop(propertyPayload('res_health', 'p_hp', 'hp'), target).allowed, true);
 
     const result = performDrop(propertyPayload('res_health', 'p_hp', 'hp'), target, {
-        setNodeParams: (node, params) => written.push([node.id, params])
+        setNodeParam: (node, name, value) => written.push([node.id, name, value])
     });
 
-    assert.deepEqual(written, [['n1', { component: 'res_health', property: 'p_hp' }]]);
+    assert.deepEqual(written, [['n1', 'property', 'res_health/p_hp']]);
     assert.ok(result);
 });
 
@@ -955,12 +961,13 @@ test('the node a Property lands on is the same node whether the property is its 
     assert.equal(canDrop(propertyPayload('res_health', 'p_hp', 'hp'), nodeTarget(own)).allowed, true);
 
     performDrop(propertyPayload(null, 'p_speed', 'speed'), nodeTarget(own), {
-        setNodeParams: (node, params) => written.push(params)
+        setNodeParam: (node, name, value) => written.push([name, value])
     });
 
-    // A property of this Component names no type, and the absence IS the answer: `component`
-    // is written null rather than left over from whatever the node named before.
-    assert.deepEqual(written, [{ component: null, property: 'p_speed' }]);
+    // A property of this Component names no type, and the absence IS the answer: the path's
+    // Component half is empty, so the Component the node named before is replaced rather
+    // than left over (ADR-0053).
+    assert.deepEqual(written, [['property', '/p_speed']]);
 });
 
 test('a Property on bare canvas creates nothing until the creator has chosen', () => {
@@ -1562,4 +1569,21 @@ test('only the first file is taken, because one Component shows one resource', (
 
     assert.equal(ctx.project.resources(ResourceKind.ASSET).length, 1,
         'the rest are not imported and then silently lost');
+});
+
+test('an Object system property dropped on a node keeps its namespace', () => {
+    // THE DEFECT THIS FILE IS FOR (ADR-0053). Dropping `Active` on a node left it reading
+    // `/active` — the Object half of the path gone — so the node resolved against the `.px`'s
+    // own fields, where no such property is. The two params were written one after the other
+    // and the second overwrote the first, because `paramWrites()` reads a write to
+    // `property` as a whole path.
+    const own = registerStandardNodes(new NodeRegistry()).get('property.get').params;
+    const written = [];
+
+    performDrop(propertyPayload('Object', 'active', 'Active'), nodeTarget(own), {
+        setNodeParam: (node, name, value) => written.push([name, value])
+    });
+
+    assert.deepEqual(written, [['property', 'Object/active']],
+        'the namespace travels with the property, in one write');
 });

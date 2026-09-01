@@ -131,7 +131,7 @@ test('a node that hands over a reference is not a node that reads a property', (
     const categoryOf = type => registry.get(type).category;
 
     for (const type of ['scene.self', 'scene.parent', 'scene.findByTag', 'object.isValid']) {
-        assert.equal(categoryOf(type), 'References', type);
+        assert.equal(categoryOf(type), 'Object', type);
     }
     for (const type of ['property.get', 'property.set', 'property.get', 'property.set']) {
         assert.equal(categoryOf(type), 'Properties', type);
@@ -235,7 +235,7 @@ test('node types group by category, in the declared order, with nothing empty', 
     // a beginner asks — "I want to move my object, where do I look?" — which is not the
     // question `Properties` answers.
     assert.deepEqual(groups.map(group => group.category).slice(0, 6),
-        ['Events', 'Input', 'Flow', 'References', 'Properties', 'Transform']);
+        ['Events', 'Input', 'Flow', 'Object', 'Properties', 'Transform']);
     assert.equal(groups.every(group => group.entries.length > 0), true);
     assert.equal(groups.flatMap(group => group.entries).length, STANDARD_NODES.length);
 });

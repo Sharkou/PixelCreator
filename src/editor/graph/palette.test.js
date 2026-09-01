@@ -65,8 +65,8 @@ test('a reference and a property access are told apart by colour', () => {
     // what was wrong was that READING a property wore the same violet, so `Self` — which
     // hands over an Object — and `Get Property On` — which reads a value off one — were one
     // colour on a canvas whose whole job is to say what a node is.
-    assert.equal(categoryHue('References'), typeHue(OBJECT_TYPE), 'a reference IS its port');
-    assert.notEqual(categoryHue('Properties'), categoryHue('References'));
+    assert.equal(categoryHue('Object'), typeHue(OBJECT_TYPE), 'the Object family IS its port');
+    assert.notEqual(categoryHue('Properties'), categoryHue('Object'));
 });
 
 test('the world arriving wears one colour, and it is not the colour of control flow', () => {

@@ -296,7 +296,7 @@ test('an Object socket read is its own node, and that node has a stable name', (
     const described = describeNode(node('reference.object', { object: 'p9' }), { registry, properties: sockets });
 
     assert.equal(described.title, 'Get Object');
-    assert.equal(described.category, 'References');
+    assert.equal(described.category, 'Object');
 });
 
 test('a node whose reference cannot be resolved keeps its type label', () => {
@@ -365,4 +365,21 @@ test('choosing the Object namespace stores it exactly as a Component type is sto
         paramWrites(definition, node('property.set'), 'component', 'Object', { properties: [], components: componentCatalogue(types) }),
         [{ name: 'component', value: 'Object' }]
     );
+});
+
+test('an untouched picker shows what the runtime will read, not an empty box', () => {
+    // THE DEFECT THIS TEST IS FOR (ADR-0054 §2). A fresh `On Key` stores no key and its
+    // interpreter reads `params.key ?? 'Space'` — so the card said `None` while the
+    // simulation was already watching Space. It is the same defect `value.number` was fixed
+    // for once already: the box and the simulation disagreeing about one value.
+    const key = fieldNamed(describeNode(node('input.onKey'), { registry }), 'key');
+    assert.equal(key.value, 'Space');
+    assert.equal(registry.get('input.onKey').params.key.default, 'Space',
+        'and it is the declared default that is shown, not a guess');
+
+    // ONLY WHERE A DEFAULT WAS DECLARED. A picker whose default is null still reads its
+    // placeholder, because there nothing IS the answer and saying so is the point.
+    const description = describeNode(node('property.get'), { registry, properties, components });
+    assert.equal(fieldNamed(description, 'property').value, '');
+    assert.equal(fieldNamed(description, 'target').value, '');
 });

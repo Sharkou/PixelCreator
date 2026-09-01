@@ -1021,7 +1021,7 @@ export const STANDARD_NODES = [
     {
         type: 'scene.self',
         label: 'Self',
-        category: 'References',
+        category: 'Object',
         keywords: ['this', 'me', 'owner', 'object'],
         outputs: [data('object', OBJECT_TYPE, 'Object')],
         evaluate: io => ({ object: io.self ?? null }),
@@ -1035,7 +1035,7 @@ export const STANDARD_NODES = [
     {
         type: 'reference.object',
         label: 'Get Object',
-        category: 'References',
+        category: 'Object',
         keywords: ['object', 'reference', 'target', 'player', 'entity', 'get'],
         params: {
             object: {
@@ -1065,7 +1065,7 @@ export const STANDARD_NODES = [
     {
         type: 'scene.parent',
         label: 'Parent',
-        category: 'References',
+        category: 'Object',
         keywords: ['above', 'hierarchy', 'owner', 'object'],
         inputs: [data('object', OBJECT_TYPE)],
         outputs: [data('parent', OBJECT_TYPE)],
@@ -1079,7 +1079,7 @@ export const STANDARD_NODES = [
     {
         type: 'scene.findByTag',
         label: 'Find By Tag',
-        category: 'References',
+        category: 'Object',
         keywords: ['search', 'lookup', 'find', 'tag', 'object'],
         // THE EMPTY BOX SAYS SO, because what it means is not what a creator would guess.
         // An empty tag finds NOTHING rather than anything, for the reason stated below the
@@ -1105,7 +1105,7 @@ export const STANDARD_NODES = [
     {
         type: 'object.isValid',
         label: 'Is Valid',
-        category: 'References',
+        category: 'Object',
         keywords: ['exists', 'null', 'empty', 'check', 'object'],
         inputs: [data('object', OBJECT_TYPE)],
         outputs: [data('result', PropertyType.BOOLEAN, 'Result')],

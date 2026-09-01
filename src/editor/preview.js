@@ -61,7 +61,20 @@ export function openPreview(workspace, { open = defaultOpen, report = null } = {
 }
 
 function defaultOpen(url) {
-    return globalThis.open?.(url, '_blank', 'noopener') ?? null;
+    // `noopener` MAKES THE RETURN VALUE MEANINGLESS, and that is its specified behaviour:
+    // a window opened with it hands NO handle back, so `null` is what success looks like.
+    // Reading that null as "blocked" announced a failure on every single press while the
+    // Preview sat there open — the notice had fired 144 times in the console by the time
+    // it was measured, once per preview ever opened, and every one of them was wrong.
+    //
+    // SO WHAT IS ANSWERED IS WHETHER THE CALL WAS MADE, never whether a window appeared.
+    // Nothing here can tell: the opener is deliberately unreachable (ADR-0042 §5) and the
+    // only way to get proof back would be to hand `window.opener` to the game, which is
+    // exactly the coupling that seam exists to refuse. A creator whose pop-ups really are
+    // blocked still has the URL — it is in the result either way.
+    if (typeof globalThis.open !== 'function') return false;
+    globalThis.open(url, '_blank', 'noopener');
+    return true;
 }
 
 function fail(report, message, result = null) {
