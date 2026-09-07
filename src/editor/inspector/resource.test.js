@@ -91,8 +91,8 @@ test('a component reports its properties and the graph it carries', () => {
     const description = describeResource(component, { project, payload });
 
     assert.equal(labelled(description, 'Properties').value, 2);
-    assert.equal(labelled(description, 'Graph nodes').value, 1);
-    assert.equal(labelled(describeResource(component, { project, payload: {} }), 'Graph nodes').value, 0);
+    assert.equal(labelled(description, 'Nodes').value, 1);
+    assert.equal(labelled(describeResource(component, { project, payload: {} }), 'Nodes').value, 0);
 });
 
 test('an asset is the kind with content, and says what could not be drawn', () => {

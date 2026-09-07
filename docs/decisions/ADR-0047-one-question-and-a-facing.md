@@ -2,6 +2,7 @@
 
 - **Statut :** **accepté** (2026-08-29)
 - **Amendé par :** ADR-0048 (2026-08-31) — §2 : le refus du geste Component → graphe est confirmé par une mesure du geste concurrent plutôt que par un raisonnement sur la valeur morte.
+- **Amendé par :** ADR-0055 (2026-09-07) — §4 est **remplacée** : les quatre parts pour une part d'air produisaient un troisième bord droit qui ne s'alignait sur rien ; un contrôle seul reprend les deux cellules d'ADR-0046 §7.
 - **Amendé par :** ADR-0050 (2026-08-31) — §3 est **remplacée** : `flipX` / `flipY` disparaissent au profit de `rotationX` / `rotationY`, deux nombres en degrés. Le raisonnement de §3 (une orientation n'est pas une échelle négative) reste vrai ; ce qui était faux est d'y avoir répondu par un booléen.
 - **Amendé par :** ADR-0052 (2026-08-31) — §2 : le refus du geste Component → nœud est levé. La prémisse a changé — le picker a des niveaux, donc le lâcher peut ouvrir une question au lieu d'écrire une réponse.
 - **Décide :** combien de champs nomment une propriété dans un nœud ; ce qu'un Component lâché sur un graphe veut dire ; comment un objet 2D dit dans quel sens il regarde ; ce qu'un contrôle seul sur sa ligne mesure

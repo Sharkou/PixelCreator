@@ -102,7 +102,6 @@ export class Field extends Element {
         .choice[disabled]:hover { border-color: var(--px-border-subtle); }
 
         .choice-glyph { display: flex; flex: 0 0 auto; color: var(--px-accent); }
-        .choice-glyph[hidden] { display: none; }
 
         .choice-name {
             flex: 1;
@@ -118,10 +117,12 @@ export class Field extends Element {
             color: var(--px-text-dim);
             transform: rotate(90deg);
         }
-        /* A COLOUR IS A VALUE, AND IT TAKES THE COLUMN LIKE EVERY OTHER VALUE. It used to be
-           a 44px chip, which made Color the one row in the panel with a right-hand edge of
-           its own — and a small target for the one control a creator opens by clicking it.
-           Wide also shows more of an almost-black or an almost-white. */
+        /* A COLOUR FILLS THE CELL IT IS GIVEN, like every other value — it used to be a 44px
+           chip, which made Color the one row in the panel with a right-hand edge of its own,
+           and a small target for the one control a creator opens by clicking it. HOW MANY
+           cells it gets is the row's answer and not this file's (isWide, inspector/schema.js
+           — a swatch is short). All this line adds is the height, which a colour input does
+           not take from the shared rule. */
         .control > input[type='color'] { height: var(--px-control); }
 
         .amount {

@@ -35,12 +35,13 @@ export class Window extends Element {
            tokens instead of carrying a number of its own — 36 on a mouse, 42 under
            a coarse pointer. The prototype draws 30 here; that is off the four-pixel
            grid and below the touch target, so Modern Pixel wins (design/README.md is a
-           reference, not an authority on density). */
+           reference, not an authority on density). It is --px-header because the stage's
+           tab strip has to stand on the same line as this one. */
         header {
             display: flex;
             align-items: center;
             gap: var(--px-space-2);
-            height: calc(var(--px-hit) + var(--px-space-2));
+            height: var(--px-header);
             padding: 0 var(--px-space-1) 0 var(--px-space-2);
             background: var(--px-surface-raised);
             border-bottom: 1px solid var(--px-border);

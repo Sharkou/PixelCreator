@@ -168,8 +168,12 @@ const shellStyles = sheet(`
 
     /* THE RUNNING SCENE IS MARKED, because everything changed while it runs is lost at
        Stop (ADR-0029 section 4). A hairline along the top of the stage: present enough to
-       be noticed, quiet enough to work with. */
-    .shell.playing .area-upper { box-shadow: inset 0 2px 0 var(--px-success); }
+       be noticed, quiet enough to work with.
+
+       IT NAMES THE STAGE. It named .area-upper, an element the L4 layout removed, so the
+       one mark that says "everything you change now is thrown away at Stop" had matched
+       nothing since. */
+    .shell.playing .stage { box-shadow: inset 0 2px 0 var(--px-success); }
     .titlebar .gap { width: var(--px-space-2); flex: 0 0 auto; }
 
     /* The prototype's avatar: a gradient disc, 22 px, and a real button — it opens a menu
@@ -256,11 +260,19 @@ const shellStyles = sheet(`
 
     .stage-body > * { flex: 1; min-width: 0; min-height: 0; }
 
+    /* THE STRIP STANDS ON THE SAME LINE AS THE PANEL HEADERS BESIDE IT. It is the header of
+       the stage — the Hierarchy's is a header, the Inspector's is a header, and this one sat
+       seven pixels shorter than both, so the seam across the top of the workspace stepped
+       down as it crossed the middle. One token, three regions (ui/styles.js).
+
+       AND THE SEAM BETWEEN TWO TABS IS ONE LINE. The strip added a pixel of gap on top of
+       the pixel of border each tab draws, which read as a two-pixel gutter next to every
+       other hairline in the Editor. */
     .stage-tabs {
         display: flex;
         align-items: stretch;
         flex: 0 0 auto;
-        gap: 1px;
+        height: var(--px-header);
         background: var(--px-surface-raised);
         border-bottom: 1px solid var(--px-border);
         overflow-x: auto;
@@ -268,13 +280,11 @@ const shellStyles = sheet(`
         user-select: none;
     }
 
-    .stage-tabs[hidden] { display: none; }
-
     .stage-tab {
         display: flex;
         align-items: center;
         gap: var(--px-space-1);
-        height: var(--px-hit);
+        height: 100%;
         padding: 0 var(--px-space-1) 0 var(--px-space-2);
         border: none;
         border-right: 1px solid var(--px-border);
@@ -1401,7 +1411,7 @@ function documentArea({ workspace, viewport, scene }) {
                     event.stopPropagation();
                     workspace.close(view.id);
                 }
-            }, icon('close', 12)) : null;
+            }, icon('close')) : null;
 
             const label = el('span', { class: 'name', textContent: view.label });
 
@@ -1424,7 +1434,7 @@ function documentArea({ workspace, viewport, scene }) {
                     workspace.activate(view.id);
                 }
             },
-                el('span', { class: 'glyph' }, icon(view.icon, 14)),
+                el('span', { class: 'glyph' }, icon(view.icon)),
                 label,
                 // THE DOT DOES NOT REPLACE THE CLOSE BUTTON. Sharing one slot looked tidy
                 // and meant a tab with unsaved work could not be closed at all — the one

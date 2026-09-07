@@ -401,7 +401,6 @@ export class GraphWindow extends Element {
         }
 
         .status.problem { color: var(--px-danger); border-color: var(--px-danger); }
-        .status[hidden] { display: none; }
 
         /* A REPORT THAT LEADS SOMEWHERE. The banner named a fault and left the creator to
            find it; on a canvas they have panned away from, that is a fact with no address.
@@ -422,22 +421,15 @@ export class GraphWindow extends Element {
 
         .status .count.errors { color: var(--px-danger); }
 
-        .empty {
+        /* A CANVAS HAS NO BODY TO FILL, so its empty state floats over the plane instead
+           of taking a place in a column. That is the only thing this window adds to the
+           shared one (ui/styles.js); it used to restate all six of its properties, one text
+           step smaller than every other panel says the same thing in. */
+        .empty-state {
             position: absolute;
             inset: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: var(--px-space-2);
-            color: var(--px-text-dim);
-            font-size: var(--px-text-xs);
             pointer-events: none;
         }
-
-        /* display:flex above beats the browser default for [hidden], so the hint stayed
-           on screen over the very nodes it was telling the creator to make. */
-        .empty[hidden] { display: none; }
     `);
 
     #definition = null;
@@ -1034,7 +1026,7 @@ export class GraphWindow extends Element {
 
         this.#controls = el('div', { class: 'controls' }, add, frame);
         this.#status = el('div', { class: 'status', hidden: true });
-        this.#empty = el('div', { class: 'empty' },
+        this.#empty = el('div', { class: 'empty-state' },
             el('span', {}, icon('graph', 20)),
             el('span', { textContent: 'Right-click the canvas to add a node.' })
         );

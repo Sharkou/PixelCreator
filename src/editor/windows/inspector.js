@@ -16,9 +16,10 @@
 // whether the value is one number, two, a colour or a switch. `<px-field>` is the cell
 // that goes in the second column and nothing more — it used to draw its own label and its
 // own copy of this grid, which meant the same layout was declared twice, in two shadow
-// roots, kept in step by a shared token. `.fields` is flexible by default, two equal
-// cells for a pair, and two equal cells with the second held open and empty for a lone
-// number — which is what makes Rotation end exactly where the X of Position ends.
+// roots, kept in step by a shared token. `.fields` is one grid with two equal cells and a
+// grip gutter after each: a number takes the first cell, a pair takes one each, and
+// anything a creator reads words in takes both — which is what makes Rotation end exactly
+// where the X of Position ends, and Name end exactly where the Y of Position ends.
 //
 // THE SECTION TITLE IS THE MENU HEADING. `Rendering` in the Add Component dropdown and
 // `Rectangle Renderer` over a section are set in the same type, deliberately: the
@@ -101,7 +102,17 @@ const PAIR_PREFIXES = {
 export class Inspector extends Element {
 
     static styles = sheet(`
-        :host { display: block; }
+        :host {
+            display: block;
+            /* WHAT A HANDLE MEASURES, IN THE ONE PANEL THAT RESERVES ROOM FOR ONE. The
+               grip that carries a property is an icon in the Editor's small size, and two
+               things have to agree on that number: the handle itself, and the gutter the
+               value grid holds open beside every control so that a row with a handle and a
+               row without still end on the same line. It is not a design token — nothing
+               outside this panel lays anything out against a grip — and it is not a literal
+               repeated at both ends of the file either. */
+            --grip: var(--px-icon);
+        }
 
         /* The window the shell has decided a drop would land in (ADR-0028 §3). One class,
            styled by every window, so the answer cannot differ between them. */
@@ -112,6 +123,19 @@ export class Inspector extends Element {
            whole rather than outlining one line of itself. */
         :host(.dnd-attach) { background: var(--px-accent-muted); }
         px-window { height: 100%; }
+
+        /* THE PANEL IS THE WINDOW, NOT THE ROWS IT HAPPENS TO HOLD. This div is what the
+           window slots, and it was as tall as its content — so the centred empty state had
+           69 px to centre in and sat at the top, while every other window's fills its band;
+           and the drop that "lands anywhere on an object's panel" (see #makeDroppable below)
+           stopped at the last section. */
+        .panel { min-height: 100%; }
+
+        /* A PERCENTAGE HEIGHT RESOLVES AGAINST A DEFINITE ONE, AND min-height IS NOT THAT.
+           So the panel takes a real height in the one case that needs it — when the only
+           thing in it is the state that centres inside it — and stays content-sized in the
+           case where a column of sections has to be free to grow past the window. */
+        .panel:has(> .empty-state) { height: 100%; }
 
         /* ── identity ───────────────────────────────────────────────────── */
 
@@ -153,11 +177,12 @@ export class Inspector extends Element {
            label, tools. --px-hit tall because it is a click target rather than a line of
            a list, and padded by one space unit so the chevron starts at the panel edge
            exactly where a root row's chevron does — measured, not eyeballed.
-           There is still no 12 px grip before the caret: the order IS editable now
-           (MOVE_COMPONENT, ADR-0018/0019), and the whole header is what carries it, so a
-           separate handle would reserve a column to duplicate a target the creator
-           already has — and it was what pushed every caret in this panel away from the
-           edge. The cursor and the drop line say the header is draggable. */
+           A Component section carries a grip before its caret, because that grip does two
+           things the header alone cannot say: it reorders (MOVE_COMPONENT, ADR-0018/0019)
+           AND it carries the Component out to a graph (ADR-0046 §3). It is narrower than the
+           glyph in it on purpose: the six dots' ink is under six pixels across, and every
+           pixel this column takes pushes every caret in the panel off the edge it should
+           start at. The sections that carry nothing have no grip and no column for one. */
         section > header {
             display: flex;
             align-items: center;
@@ -278,7 +303,11 @@ export class Inspector extends Element {
             grid-template-columns: 62px minmax(0, 1fr);
             align-items: center;
             gap: var(--px-space-2);
-            min-height: calc(var(--px-control) + var(--px-space-1) + 2px);
+            /* A ROW IS AS TALL AS A TARGET IS. It used to be a 22 px control plus a step of
+               space plus two pixels, which is --px-hit written the long way round and two
+               pixels off it under a coarse pointer — where a row is exactly what a finger
+               aims at. */
+            min-height: var(--px-hit);
         }
 
         /* A CONTROL TALLER THAN ITS LABEL PUTS THE LABEL AT THE TOP, not in the middle of
@@ -314,36 +343,30 @@ export class Inspector extends Element {
            of its 62 px, and that column is the one part of this panel that cannot spare
            them: Rotation became Rotati… and Line Width became Line …. The value column is
            minmax(0, 1fr) and gives the same handle up for almost nothing — and beside the
-           value is where "carry this property" reads anyway. */
+           value is where "carry this property" reads anyway.
+
+           PRESENT AT REST, LOUD ON HOVER. A handle drawn fully transparent is one a creator
+           finds by accident: the gesture it offers — carrying a property into a graph — is
+           the main way a graph gets built, and it cannot be the one thing nothing hints at
+           (ADR-0041 §7). Dim enough not to compete with the value beside it.
+
+           ONE DECLARATION, AND IT USED TO BE THREE. The row's opacity was stated twice —
+           once at 0 and once at 0.4, two rules apart, the second silently winning — and a
+           third copy sized a .carry inside a property card's header. There is none: that
+           header carries a .grip, like a Component section's. */
         .row .carry {
             display: flex;
-            flex: 0 0 auto;
+            justify-content: center;
+            width: var(--grip);
             color: var(--px-text-dim);
             cursor: grab;
-            opacity: 0;
+            opacity: 0.4;
             transition: opacity var(--px-duration-fast) var(--px-ease);
         }
 
         .row:hover .carry,
         .row .carry.dragging { opacity: 1; }
         .row .carry.dragging { cursor: grabbing; }
-
-        /* PRESENT AT REST, LOUD ON HOVER. A handle drawn fully transparent is one a creator
-           finds by accident: the gesture it offers — carrying a property into a graph — is
-           the main way a graph gets built, and it cannot be the one thing nothing hints at
-           (ADR-0041 §7). Dim enough not to compete with the value beside it. */
-        .row .carry { opacity: 0.4; }
-        .property header .carry {
-            display: flex;
-            flex: 0 0 auto;
-            color: var(--px-text-dim);
-            cursor: grab;
-            opacity: 0.4;
-            transition: opacity var(--px-duration-fast) var(--px-ease);
-        }
-        .property header:hover .carry,
-        .property header .carry.dragging { opacity: 1; }
-        .property header .carry.dragging { cursor: grabbing; color: var(--px-accent); }
 
         /* Draggable, and it says so — but only where dragging means something.
            px-field decides, and adds the class (ui/field.js). */
@@ -356,70 +379,43 @@ export class Inspector extends Element {
         .row > .label.handle:hover,
         .row > .label.scrubbing { color: var(--px-accent); }
 
-        /* A CONTROL THAT IS ALONE ON ITS LINE IS NOT A CONTROL THAT SHOULD TAKE THE LINE
-           (ADR-0047 §4). Full width was the previous answer and it was too much: a Sprite
-           field ran edge to edge while every number above it stopped at 40%, so the panel
-           had two right-hand margins and no column. Four parts control to one part air puts
-           it at about 70% — long enough for a file name, short enough that the panel still
-           reads as one shape.
+        /* ONE GRID FOR EVERY VALUE, AND TWO WIDTHS ON IT (ADR-0046 §7). The value column is
+           two equal cells with a grip gutter after each: a short control takes the first
+           cell, a wide one takes both cells and the gutter between them, and a pair takes
+           one cell each. So every right-hand edge in the panel falls on one of exactly two
+           positions, and every handle on one of two others.
 
-           THE GRIP KEEPS ITS OWN COLUMN, and it is the same last column the paired rows
-           end on, so every handle in the panel sits on one vertical line whatever the row
-           above it was. */
+           THREE GRIDS WERE TWO TOO MANY, and the third is what this replaces. A lone control
+           had a grid of its own — four parts control to one part air — which put its edge at
+           70%: past the number above it, short of the pair beside it, aligned with nothing
+           in the panel. Shortening every wide control to hide a misalignment is the trade
+           that cost Name and an enum the room they need to be read; the column they all
+           end on is what the pairs were already drawing.
+
+           THE GUTTER IS STATED, NOT SIZED TO ITS CONTENT. An auto column measures what is in
+           it, so a lone number — whose gutter is empty — got that width back and ended past
+           the X of Position. --grip is what a handle measures, declared once at the top of
+           this sheet, so the gutter and the handle in it cannot drift apart. */
         .fields {
             display: grid;
-            grid-template-columns: minmax(0, 4fr) minmax(0, 1fr) 16px;
+            grid-template-columns: minmax(0, 1fr) var(--grip) minmax(0, 1fr) var(--grip);
             align-items: center;
             gap: var(--px-space-1);
             min-width: 0;
         }
 
-        /* SCOPED TO THE LONE-CONTROL GRID, and it has to be: a paired row lays its second
-           control in column 3, so a rule that put every grip there would drop the Y of
-           Position on top of it. The two grids share a shape, not their columns. */
-        .fields:not(.pair):not(.single) > .suffix { justify-self: start; }
-        .fields:not(.pair):not(.single) > .carry { grid-column: 3; }
+        .fields > * { min-width: 0; }
 
-        /* EVERY CONTROL FILLS THE ROOM ITS ROW GIVES IT, AND THAT IS WHAT MAKES THE PANEL A COLUMN.
-           A control used to be as wide as whatever it happened to contain: a Sprite field
-           holding hero.png was one width, the same field holding a.png another, and a
-           Material field with nothing in it was a stub about a third of the panel. Twelve
-           rows of that is twelve right-hand edges, and nothing to read down.
+        /* Both cells, and the gutter between them: what a creator types into or picks from
+           runs out of room in half a column (isWide, inspector/schema.js). */
+        .fields.wide > :first-child { grid-column: 1 / 4; }
 
-           THE NUMBER SETS THE MEASURE, because it is the one control whose width was
-           already deliberate: .single and .pair divide the value column into two equal
-           cells so that Rotation ends where the X of Position ends. So a number is one
-           cell, and everything else is the pair of them — which means every edge in the
-           panel falls on one of two positions, and a Resource or an Object gets the room
-           it always needed (ADR-0045 §9).
-
-           DECLARED HERE, AND ONLY HERE. Each control already stretches what is INSIDE it —
-           ui/field.js gives its box flex: 1 — but nothing told the control itself how much
-           of the row it owned, and the answer cannot be per-control without eight files
-           having to agree. */
-        .fields > * { flex: 1 1 0; min-width: 0; }
-
-        /* What is not a value keeps its own size: the grip that carries a property, and
-           the part of a filename nobody may edit. */
-        .fields > .carry,
-        .fields > .suffix { flex: 0 0 auto; }
-
-        /* TWO CELLS FOR THE VALUE AND A NARROW ONE AFTER EACH FOR ITS GRIP. A lone number
-           takes the first cell only, so Rotation ends exactly where the X of Position
-           ends; the rest is held open rather than collapsed, which is what keeps the
-           column. Two axes of one idea take both.
-
-           THE GRIP COLUMN IS DECLARED FOR BOTH, EVEN WHERE IT IS EMPTY, because the moment
-           only one of them reserved it the two stopped lining up — and lining up is the
-           entire reason this grid exists rather than a flex box.
-
-           AND IT IS STATED, NOT SIZED TO ITS CONTENT. An auto column measures what is in it,
-           so a lone number — whose second grip cell is empty — got that width back and ended
-           eight pixels past the X of Position. 16px is what the grip measures (ui/icons.js
-           draws it in a 16px box); if that box ever changes, this is the line that has to
-           hear about it. */
-        .fields.pair,
-        .fields.single { display: grid; grid-template-columns: 1fr 16px 1fr 16px; }
+        /* WHAT TRAILS A CONTROL KEEPS A READABLE SLOT. The extension of a resource name is
+           the one thing drawn after a wide control rather than beside it, and a 12 px gutter
+           would clip it. It takes its own auto column instead — and the grip gutter stays
+           declared and empty, so this row still ends where every other row ends. */
+        .fields.wide:has(> .suffix) { grid-template-columns: minmax(0, 1fr) auto var(--grip); }
+        .fields.wide:has(> .suffix) > :first-child { grid-column: 1; }
 
         .none {
             padding: var(--px-space-1) 0 var(--px-space-2);
@@ -535,7 +531,6 @@ export class Inspector extends Element {
         /* The part of a name a creator may not edit, drawn where it reads as part of the
            value rather than as a second field. */
         .row .suffix {
-            flex: 0 0 auto;
             align-self: center;
             font-family: var(--px-font-mono);
             font-size: var(--px-text-xs);
@@ -607,19 +602,6 @@ export class Inspector extends Element {
 
         /* ── empty ──────────────────────────────────────────────────────── */
 
-        .empty {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: var(--px-space-2);
-            padding: var(--px-space-8) var(--px-space-4);
-            text-align: center;
-            color: var(--px-text-dim);
-            line-height: var(--px-leading);
-        }
-
-        .empty .glyph { opacity: 0.35; }
     `);
 
     #scene = null;
@@ -703,7 +685,7 @@ export class Inspector extends Element {
      */
     connectedCallback() {
         if (this.shadowRoot.childElementCount === 0) {
-            this.#body = el('div');
+            this.#body = el('div', { class: 'panel' });
 
             // A FILE LET GO ANYWHERE ON AN OBJECT'S PANEL ATTACHES WHAT SHOWS IT — the same
             // sentence a resource dragged out of the Project panel already says here, from
@@ -846,7 +828,7 @@ export class Inspector extends Element {
         this.#create.disabled = !object;
 
         if (!object) {
-            fill(this.#body, el('div', { class: 'empty' },
+            fill(this.#body, el('div', { class: 'empty-state' },
                 el('span', { class: 'glyph' }, icon('inspector', 20)),
                 el('span', { textContent: 'Select an object or a resource to inspect it.' })
             ));
@@ -930,10 +912,12 @@ export class Inspector extends Element {
                 // share the Inspector window's own glyph, so two opposite sections read as
                 // the same kind of list (ui/icons.js).
                 glyph: 'info',
-                body: description.metadata.map(entry => el('div', { class: 'row' },
-                    el('span', { class: 'label', textContent: entry.label }),
-                    el('span', { class: 'value', textContent: globalThis.String(entry.value) })
-                ))
+                // ONE SHAPE FOR A REPORTED VALUE, and detailRow is it. These rows put the
+                // span straight into the row's second column while the node panel's put it
+                // in a .fields cell, so the same kind of line ended eight pixels apart
+                // depending on which section drew it.
+                body: description.metadata.map(entry =>
+                    detailRow(entry.label, globalThis.String(entry.value)))
             }),
             description.content
                 ? this.#renderSection({
@@ -1062,7 +1046,7 @@ export class Inspector extends Element {
             // (ADR-0046 §3).
             title: `Drag ${entry.name} to reorder it, or onto a graph to use it`,
             'aria-hidden': 'true'
-        }, icon('grip', 16));
+        }, icon('grip'));
 
         const caret = el('span', { class: `ghost twisty${open ? ' open' : ''}`, 'aria-hidden': 'true' },
             icon('chevron', 16));
@@ -1199,7 +1183,7 @@ export class Inspector extends Element {
         // their control happened to be (ADR-0046 §7).
         return el('div', { class: `row` },
             label,
-            el('div', { class: `fields${isWide(descriptor) ? '' : ' single'}` }, field, extra)
+            el('div', { class: `fields${isWide(descriptor) ? ' wide' : ''}` }, field, extra)
         );
     }
 
@@ -1268,7 +1252,7 @@ export class Inspector extends Element {
 
         return el('div', { class: 'row' },
             label,
-            el('div', { class: `fields${isWide(descriptor) ? '' : ' single'}` },
+            el('div', { class: `fields${isWide(descriptor) ? ' wide' : ''}` },
                 field,
                 extension ? el('span', { class: 'suffix', textContent: extension }) : null
             )
@@ -1711,7 +1695,7 @@ export class Inspector extends Element {
             class: 'grip',
             title: `Drag ${this.#titleOf(type)} to reorder it, or onto a graph to use it`,
             'aria-hidden': 'true'
-        }, icon('grip', 16));
+        }, icon('grip'));
         header.prepend(grip);
 
         this.#makeDraggable(grip, header, {
@@ -1925,7 +1909,7 @@ export class Inspector extends Element {
             class: 'carry',
             title: `Drag ${name} onto a graph`,
             'aria-hidden': 'true'
-        }, icon('grip', 12));
+        }, icon('grip'));
 
         const identity = declaredProperties(target)
             .find(property => property.name === descriptor.name)?.id ?? descriptor.name;
@@ -2144,10 +2128,7 @@ export class Inspector extends Element {
             el('div', { class: 'none' },
                 `Its definition is missing. Nothing runs, and every value below is kept `
                 + `exactly as it was saved — restoring “${type}” restores the object.`),
-            ...values.map(([name, value]) => el('div', { class: 'row' },
-                el('span', { class: 'label', textContent: humanise(name) }),
-                el('span', { class: 'value', textContent: globalThis.String(value) })
-            ))
+            ...values.map(([name, value]) => detailRow(humanise(name), globalThis.String(value)))
         ];
     }
 
@@ -2277,17 +2258,17 @@ export class Inspector extends Element {
         // ONE CELL OR TWO, AND THE DESCRIPTOR ANSWERS (ADR-0046 §7). This row used to decide
         // for itself — "a plain number is short, everything else is content" — which is how
         // a colour swatch came to be twice as wide as the number above it.
-        const single = !isWide(descriptor);
+        const wide = isWide(descriptor);
         // A list is the one control that is taller than its label, so it is the one that
         // needs the label at the top of it.
         const tall = descriptor.kind === FieldKind.LIST;
 
-        // THE GRIP SITS IMMEDIATELY AFTER THE CONTROL IT CARRIES. A numeric row has a
-        // column reserved for it; every other row gives up its width from a control that
-        // has it to spare.
+        // THE GRIP SITS IMMEDIATELY AFTER THE CONTROL IT CARRIES, in the gutter the value
+        // grid holds open for it — empty on the rows that carry nothing, so a row with a
+        // handle and a row without still end on the same line.
         return el('div', { class: `row${tall ? ' tall' : ''}` },
             label,
-            el('div', { class: `fields${single ? ' single' : ''}` }, field, carry)
+            el('div', { class: `fields${wide ? ' wide' : ''}` }, field, carry)
         );
     }
 
@@ -2478,7 +2459,7 @@ function humanise(name) {
 function portRow(side, port) {
     return el('div', { class: 'row' },
         el('span', { class: 'label', textContent: port.label || port.id }),
-        el('div', { class: 'fields' },
+        el('div', { class: 'fields wide' },
             el('span', {
                 class: 'value',
                 textContent: port.kind === 'flow' ? `${side} · flow` : `${side} · ${port.type}`
@@ -2496,7 +2477,7 @@ function portRow(side, port) {
 function detailRow(label, value) {
     return el('div', { class: 'row' },
         el('span', { class: 'label', textContent: label }),
-        el('div', { class: 'fields' }, el('span', { class: 'value', textContent: value }))
+        el('div', { class: 'fields wide' }, el('span', { class: 'value', textContent: value }))
     );
 }
 

@@ -108,6 +108,12 @@ export class Hierarchy extends Element {
            on the tree rather than on nothing. */
         .tree { padding: var(--px-space-1) 0 var(--px-space-3); min-height: 100%; box-sizing: border-box; }
 
+        /* A PERCENTAGE HEIGHT RESOLVES AGAINST A DEFINITE ONE, AND min-height IS NOT THAT. So
+           the tree takes a real height in the one case that needs it — when the only thing in
+           it is the state that centres inside it — and stays content-sized in the case where
+           a list of objects has to be free to grow past the window. */
+        .tree:has(> .empty-state) { height: 100%; }
+
         .row {
             position: relative;
             display: flex;
@@ -229,11 +235,6 @@ export class Hierarchy extends Element {
             outline-offset: -4px;
         }
 
-        .empty {
-            padding: var(--px-space-4) var(--px-space-3);
-            color: var(--px-text-dim);
-            line-height: var(--px-leading);
-        }
     `);
 
     #scene = null;
@@ -434,19 +435,15 @@ export class Hierarchy extends Element {
 
         if (visible && visible.size === 0) {
             this.#discardRows(new globalThis.Set());
-            fill(this.#tree, el('div', {
-                class: 'empty',
-                textContent: `No object matches “${this.#query.trim()}”.`
-            }));
+            fill(this.#tree, el('div', { class: 'empty-state' },
+                el('span', { textContent: `No object matches “${this.#query.trim()}”.` })));
             return;
         }
 
         if (roots.length === 0) {
             this.#discardRows(new globalThis.Set());
-            fill(this.#tree, el('div', {
-                class: 'empty',
-                textContent: 'No objects yet. Use +, or drag a tool in from the viewport.'
-            }));
+            fill(this.#tree, el('div', { class: 'empty-state' },
+                el('span', { textContent: 'No objects yet. Use +, or drag a tool in from the viewport.' })));
             return;
         }
 

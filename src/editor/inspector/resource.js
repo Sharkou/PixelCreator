@@ -49,7 +49,9 @@ const BY_KIND = {
     [ResourceKind.COMPONENT]: {
         fields: (resource, { payload }) => [
             readonly('properties', 'Properties', countKeys(payload?.properties)),
-            readonly('nodes', 'Graph nodes', payload?.graph?.nodes?.length ?? 0)
+            // `Nodes`, like every other kind that counts them: `Graph nodes` was the one
+            // label in the panel too long for its column, and it read as Graph no… .
+            readonly('nodes', 'Nodes', payload?.graph?.nodes?.length ?? 0)
         ]
     },
     [ResourceKind.GRAPH]: {

@@ -14,7 +14,7 @@ import {
     parseValue,
     rows,
     toDisplay,
-    toDisplayExact, listLabel} from './schema.js';
+    toDisplayExact, isWide, listLabel} from './schema.js';
 
 class Plain {
     static type = 'Plain';
@@ -567,4 +567,24 @@ test('a property that is half of a pair says which pair, where nothing else can'
 
     // A name a creator chose is theirs, whatever its length.
     assert.equal(listLabel({ name: 'hp', label: 'HP' }), 'HP');
+});
+
+
+test('what a creator reads words in takes both cells, and a number takes one', () => {
+    // TWO WIDTHS, DECLARED ONCE AND READ BY EVERY SURFACE (ADR-0046 §7). It was measured in
+    // Chrome and nowhere else, which is how `Name` and an `enum` came to be classed with the
+    // number for being "a word" — a ten-character box for the two controls a creator meets
+    // first. What decides is what the control has to SHOW.
+    for (const kind of [FieldKind.STRING, FieldKind.ENUM, FieldKind.RESOURCE, FieldKind.OBJECT,
+        FieldKind.RANGE, FieldKind.LIST, FieldKind.READONLY]) {
+        assert.ok(isWide({ kind }), `${kind} needs both cells`);
+    }
+
+    // A number pairs with its twin on one row, a switch has two states and no magnitude, and
+    // a swatch has no content to run out of room.
+    for (const kind of [FieldKind.NUMBER, FieldKind.INT, FieldKind.BOOLEAN, FieldKind.COLOR]) {
+        assert.ok(!isWide({ kind }), `${kind} takes one cell`);
+    }
+
+    assert.ok(!isWide(null), 'and nothing at all is not wide');
 });

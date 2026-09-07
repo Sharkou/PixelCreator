@@ -355,15 +355,21 @@ export function toDisplay(descriptor, value) {
  *
  * TWO WIDTHS, AND THE MEASURE IS THE NUMBER'S (ADR-0046 §7). The value column is two equal
  * cells: a short value takes one, a wide one takes both. What decides is not taste but what
- * the control has to SHOW — a file name, an Object's name, a slider's travel and a list of
- * rows all run out of room in half a column, while a number, a switch, a swatch, a word and
- * a chosen option do not.
+ * the control has to SHOW — a number and a switch say everything they have in half a
+ * column, and everything a creator reads words in does not.
  *
- * A COLOUR IS SHORT, AND THAT IS THE CORRECTION. It was given the full column for being "a
- * value like any other", which made `Color` the one row whose right edge sat past every
- * number above it — the exact mismatch this rule exists to remove.
+ * TYPING IS SHOWING, AND THAT IS THE CORRECTION. A name, a tag and a chosen option were
+ * classed with the number for being "a word", which left `Name` a box ten characters long
+ * and an `enum` too narrow to read the option it was holding — the two controls a creator
+ * meets first in this panel. What a creator types into or picks from now takes both cells,
+ * and the panel still ends on the two edges the pairs above it end on.
+ *
+ * A COLOUR STAYS SHORT. A swatch has no content to run out of room: it is a target to
+ * click, and widening it would put `Color` past every number above it for nothing.
  */
 const WIDE_KINDS = new globalThis.Set([
+    FieldKind.STRING,
+    FieldKind.ENUM,
     FieldKind.RESOURCE,
     FieldKind.OBJECT,
     FieldKind.RANGE,

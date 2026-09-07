@@ -250,6 +250,13 @@ const tokens = sheet(`
         --px-hit: 28px;
         --px-grip: 8px;
 
+        /* THE BAND ACROSS THE TOP OF A REGION, AND EVERY REGION HAS ONE. A window's header
+           and the stage's tab strip sit side by side on the same line, so the height they
+           share is a token rather than the same expression written twice: the strip was
+           --px-hit tall and the headers beside it --px-hit plus a step, which put the seam
+           under the tabs seven pixels above the seam under HIERARCHY and INSPECTOR. */
+        --px-header: calc(var(--px-hit) + var(--px-space-2));
+
         /* Icons exist at two sizes and nowhere in between (ui/icons.js). */
         --px-icon: 16px;
         --px-icon-lg: 20px;
@@ -412,6 +419,13 @@ const base = sheet(`
        file was quietly two pixels off wherever it was actually used. Restating it here is
        what makes the tokens mean what they say. */
     *, *::before, *::after { box-sizing: border-box; }
+
+    /* AND NEITHER DOES THE ONE THAT HIDES THINGS. The hidden attribute is a browser default
+       of display: none, which any display declaration in a window's own sheet outranks — so
+       an element given display: flex stayed on screen with the attribute set, and four
+       windows had each discovered that separately and patched it with a rule of their own.
+       Stated once, here, for the same reason box-sizing is. */
+    [hidden] { display: none !important; }
 
     :host {
         box-sizing: border-box;
@@ -667,8 +681,13 @@ ${controls}
         color: var(--px-text-dim);
     }
 
-    /* The centred "nothing here yet", built by ui/empty-state.js. Two windows already
-       show one; the rules live here so they cannot drift apart. */
+    /* The centred "nothing here yet", built by ui/empty-state.js.
+       EVERY WINDOW THAT CAN BE EMPTY SHOWS THIS ONE. It said "two windows already show one;
+       the rules live here so they cannot drift apart" while three more had drifted: the
+       Inspector centred its own with 32 px of padding and a glyph at 0.35, the Graph
+       repeated the same six properties one text step smaller, and the Hierarchy printed a
+       padded paragraph with no glyph at all. They differ in what they SAY, which is the
+       whole point of an empty state, and in nothing else. */
     .empty-state {
         display: flex;
         flex-direction: column;
