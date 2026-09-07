@@ -214,7 +214,7 @@ function runEvent(compiled, event, state, budget) {
         // what it is watching. Asking it costs no new vocabulary: a definition that stays
         // silent still fires everything, which is exactly what `On Start` and `On Update`
         // want and why neither of them changed.
-        const frame = { values: new Map() };
+        const frame = { values: new Map(), produced: new Map() };
         const fired = definition.execute
             ? continuationsOf(definition.execute(io(compiled, node, state, frame, new Set())))
             : flows;
@@ -228,17 +228,38 @@ function runEvent(compiled, event, state, budget) {
 /**
  * What a node answered, as a list of flow ports to continue down.
  *
- * ONE SHAPE FOR THREE ANSWERS: nothing, one port, or several. `Branch` returns a string,
- * `Sequence` an array, and a node with nothing to do returns null — and both callers of
- * `execute` have to read all three the same way, or an entry node and a flow node would
- * disagree about what returning `null` means.
+ * ONE SHAPE FOR FOUR ANSWERS: nothing, one port, several, or a port AND the values the node
+ * produced. `Branch` returns a string, `Sequence` an array, a node with nothing to do
+ * returns null, and `Spawn` returns `{ next, values }` — and both callers of `execute` have
+ * to read all four the same way, or an entry node and a flow node would disagree about what
+ * returning `null` means.
  *
- * @param {string|string[]|null|undefined} result - What `execute` answered
+ * @param {string|string[]|object|null|undefined} result - What `execute` answered
  * @returns {string[]} The flow ports to follow, in order
  */
 function continuationsOf(result) {
     if (result === null || result === undefined) return [];
-    return globalThis.Array.isArray(result) ? result : [result];
+    if (globalThis.Array.isArray(result)) return result;
+    if (typeof result === 'object') return continuationsOf(result.next);
+    return [result];
+}
+
+/**
+ * The values a flow node produced, or null when it produced none (ADR-0056 §4).
+ *
+ * A FLOW NODE MAY ALSO ANSWER WITH VALUES, and until `Spawn` there was no node that had to.
+ * A data output is pulled — the interpreter calls `evaluate` whenever something downstream
+ * reads it — and pulling is exactly what a node with an effect must not accept: `Spawn`
+ * asked twice would create two objects, and asked never would create none. So the value is
+ * PUSHED, once, at the moment the node runs, and whoever reads it later reads what that one
+ * run produced.
+ *
+ * @param {string|string[]|object|null|undefined} result - What `execute` answered
+ * @returns {object|null} `{ [portId]: value }`, or null
+ */
+function producedValues(result) {
+    if (!result || typeof result !== 'object' || globalThis.Array.isArray(result)) return null;
+    return result.values ?? null;
 }
 
 /**
@@ -253,6 +274,16 @@ function runFlow(compiled, start, state, budget) {
 
     const stack = [start.to];
     let steps = 0;
+
+    // WHAT THE FLOW HAS PRODUCED SO FAR, AND WHY IT OUTLIVES A FLOW STEP WHEN NOTHING ELSE
+    // DOES. `Spawn` creates the Object and the node three cards later positions it, so the
+    // handle has to survive from one flow step to the next — which the per-step value cache
+    // below deliberately does not do. It is scoped to THIS flow and nothing wider: it is
+    // dropped when the flow ends, it never reaches a component, a payload or a frame, and
+    // `producedFrom()` re-asks the Scene before handing an Object back. So a handle is never
+    // memoised past the moment the Scene still answers for it (ADR-0034 invariant 3,
+    // ADR-0056 §4).
+    const produced = new Map();
 
     while (stack.length > 0) {
         if (++steps > budget) {
@@ -271,8 +302,15 @@ function runFlow(compiled, start, state, budget) {
         // A NEW VALUE CACHE PER FLOW STEP. Memoising across a whole event would let a
         // `Get Property` read before a `Set Property` and keep serving the old value after
         // it — the graph would then disagree with the model it just wrote.
-        const frame = { values: new Map() };
+        const frame = { values: new Map(), produced };
         const result = definition.execute ? definition.execute(io(compiled, node, state, frame, new Set())) : null;
+
+        const values = producedValues(result);
+        if (values) {
+            for (const [port, value] of globalThis.Object.entries(values)) {
+                produced.set(portKey(node.id, port), value);
+            }
+        }
 
         const continuations = continuationsOf(result);
 
@@ -341,6 +379,14 @@ function evaluate(compiled, nodeId, portId, state, frame, visiting) {
     if (!node) return null;
 
     const definition = compiled.definitions.get(nodeId);
+
+    // A FLOW NODE IS READ, NEVER RE-RUN. It has no `evaluate` to call, and calling its
+    // `execute` here would run its EFFECT to answer a question — a `Spawn` read by two
+    // downstream nodes would create two Objects (ADR-0056 §4).
+    if (!definition.evaluate && definition.execute) {
+        return producedFrom(definition, node, portId, state, frame);
+    }
+
     visiting.add(nodeId);
     let produced = {};
     try {
@@ -354,6 +400,40 @@ function evaluate(compiled, nodeId, portId, state, frame, visiting) {
     }
 
     return frame.values.has(key) ? frame.values.get(key) : null;
+}
+
+/**
+ * What a flow node handed out when it ran, earlier in this same flow (ADR-0056 §4).
+ *
+ * NOTHING BEFORE THE NODE RAN, AND NOTHING AFTER THE FLOW ENDED. A `Spawn` read by a branch
+ * that reached the reader first answers `null`, which is the honest reading of "it has not
+ * happened yet" — and the same `null` a disconnected port yields, so the consumer needs no
+ * second rule.
+ *
+ * AN OBJECT IS RE-ASKED OF THE SCENE, EVERY READ. The store holds a handle, and a handle
+ * that a later `Destroy` has invalidated must not be handed on as if it were live: an Object
+ * that is no longer in the Scene reads as nothing, exactly as a dead `objectref` does
+ * (`portValueOf`, ADR-0034 §3.4). That is what keeps a memo from outliving the thing it
+ * memoises, which is the whole of invariant 3.
+ *
+ * @param {object} definition - The node type
+ * @param {object} node - The node instance
+ * @param {string} portId - The output port being read
+ * @param {object} state - The running state
+ * @param {object} frame - The current flow step's frame, carrying the flow's `produced` store
+ * @returns {any} The value that node produced, or null
+ */
+function producedFrom(definition, node, portId, state, frame) {
+    const key = portKey(node.id, portId);
+    if (!frame.produced?.has(key)) return null;
+
+    const value = frame.produced.get(key);
+    const port = portOf(definition, node, PortDirection.OUTPUT, portId, { properties: state.properties });
+    if (port?.type !== OBJECT_TYPE) return value;
+
+    const scene = state.ctx?.scene ?? null;
+    if (typeof scene?.has !== 'function') return value;
+    return scene.has(value) ? value : null;
 }
 
 /**

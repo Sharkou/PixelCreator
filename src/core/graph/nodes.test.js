@@ -10,6 +10,7 @@ import { Scene } from '../scene.js';
 import { Transform } from '../components/transform.js';
 import {
     ANY_TYPE,
+    NODE_CATEGORIES,
     NodeRegistry,
     OBJECT_TYPE,
     PortDirection,
@@ -1227,4 +1228,51 @@ test('rounding has all three directions, because Round cannot express the other 
     assert.equal(answer('math.floor', -2.1), -3, 'down means down, not towards zero');
     assert.equal(answer('math.ceil', -2.9), -2);
     assert.equal(answer('math.round', 2.5), 3, 'and Round is unchanged');
+});
+
+// --- creating and destroying, as the catalogue declares them (ADR-0056) --------------------
+
+test('Spawn and Destroy sit on the Object shelf, where the other Object nodes are', () => {
+    // A CATEGORY ANSWERS "WHAT KIND OF THING IS THIS NODE". Both of these are about an
+    // Object — one makes one, one unmakes one — so they live where `Self`, `Parent` and
+    // `Find By Tag` live, and the canvas needs no new hue and no new glyph for them.
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    for (const type of ['scene.spawn', 'scene.destroy']) {
+        const definition = registry.get(type);
+        assert.ok(definition, type);
+        assert.equal(definition.category, 'Object');
+        assert.ok(NODE_CATEGORIES.includes(definition.category), `${type} is on a declared shelf`);
+        assert.equal(typeof definition.execute, 'function', 'both are acts, so both take a flow');
+        assert.equal(definition.evaluate, undefined, 'and neither is pulled');
+    }
+});
+
+test('Spawn hands out the Object it made, and Destroy hands out nothing', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    const spawn = registry.get('scene.spawn');
+    const made = portsOf(spawn, { type: 'scene.spawn', params: {} }, {});
+    assert.deepEqual(made.inputs.map(port => port.id), ['in', 'object']);
+    assert.deepEqual(made.outputs.map(port => port.id), ['out', 'spawned']);
+
+    const spawned = made.outputs.find(port => port.id === 'spawned');
+    assert.equal(spawned.kind, PortKind.DATA);
+    assert.equal(spawned.type, OBJECT_TYPE, 'a handle, like every other Object port');
+    assert.equal(made.inputs.find(port => port.id === 'object').type, OBJECT_TYPE);
+
+    const destroy = registry.get('scene.destroy');
+    const removed = portsOf(destroy, { type: 'scene.destroy', params: {} }, {});
+    assert.deepEqual(removed.outputs.map(port => port.id), ['out'], 'a removal produces no value');
+});
+
+test('the Model of a Spawn declares no fallback, and the Object of a Destroy declares Self', () => {
+    // THE ONE WORD THAT SEPARATES THEM (ADR-0056 §3). Both params are the same kind, on the
+    // same port row, read by the same picker; `unset` is what the picker prints when nothing
+    // is chosen, and it is also what the validator reads to decide whether empty is an answer.
+    const registry = registerStandardNodes(new NodeRegistry());
+
+    assert.equal(registry.get('scene.spawn').params.target.unset, undefined);
+    assert.equal(registry.get('scene.spawn').params.target.label, 'Model');
+    assert.equal(registry.get('scene.destroy').params.target.unset, 'Self');
 });

@@ -235,7 +235,7 @@ function checkObjectInputs({ byId, registry, context, filled }) {
         // A BARE `object` PORT IS THE OTHER CASE and still reported: `Is Valid` asks for an
         // Object and offers no other way to give it one, so an empty port is a real gap. The
         // difference is in the definition, not in a list of node types (ADR-0034 §3.2).
-        const pointed = pointedPorts(definition);
+        const pointed = pointedPorts(definition, node);
 
         for (const port of portsOf(definition, node, context).inputs) {
             if (port.kind !== PortKind.DATA || port.type !== OBJECT_TYPE) continue;
@@ -257,13 +257,33 @@ function checkObjectInputs({ byId, registry, context, filled }) {
 
 /**
  * The input ports a node's own params can answer, so an empty one is not a gap.
+ *
+ * A PICKER IS NOT WHAT ANSWERS THE QUESTION — AN ANSWER IS, AND THERE ARE TWO KINDS. A param
+ * answers for its port when it declares a FALLBACK, and `unset: 'Self'` is that fallback said
+ * in the word the picker prints: a creator leaving it empty is saying *this* Object, so
+ * warning there would be warning about the commonest graph there is. Or it answers because
+ * the creator has NAMED something — a socket this `.px` declares — which is an answer
+ * whatever the param would have meant empty.
+ *
+ * `Spawn` HAS THE FIRST KIND AND NOT THE SECOND, WHICH IS WHY THE DISTINCTION IS WORTH
+ * DRAWING (ADR-0056 §3). Its picker reads `None`, not `Self`, because a copy node with no
+ * model copies nothing — so an empty one IS a gap, the same gap a bare `Is Valid` has,
+ * reached by a different route. Point it at a socket and the gap closes.
+ *
+ * A SOCKET THAT NO LONGER EXISTS IS NOT SILENTLY REOPENED HERE: naming one is still an
+ * answer, and the reference rules above already report the name that resolves to nothing —
+ * one finding for one mistake, rather than two saying different things about it.
+ *
  * @param {object} definition - The node definition
- * @returns {Set<string>} Port ids carrying a target picker
+ * @param {object} node - The node instance, which is what carries the answer
+ * @returns {Set<string>} Port ids whose param answers for them when nothing is connected
  */
-function pointedPorts(definition) {
-    const named = globalThis.Object.values(definition.params ?? {})
-        .filter(descriptor => descriptor?.reference === OBJECT_SOCKET_REFERENCE && descriptor.port)
-        .map(descriptor => descriptor.port);
+function pointedPorts(definition, node) {
+    const named = globalThis.Object.entries(definition.params ?? {})
+        .filter(([name, descriptor]) => descriptor?.reference === OBJECT_SOCKET_REFERENCE
+            && descriptor.port
+            && (descriptor.unset || node?.params?.[name]))
+        .map(([, descriptor]) => descriptor.port);
 
     return new Set(named);
 }

@@ -126,6 +126,15 @@ export class Runtime {
      *
      * A PARENT RUNS BEFORE ITS CHILDREN, which is what a hierarchy of transforms means.
      *
+     * THE SCENE MAY CHANGE SHAPE WHILE THE STEP RUNS, and both directions are decided rather
+     * than left to the order the walk happens to take (ADR-0056 §5). The order is
+     * materialised before the loop, so an object CREATED during this step is not in it and
+     * runs from the next one — which is also what stops a graph that spawns on every update
+     * from spawning without end inside one frame. An object DESTROYED during this step is
+     * still in the list, and is skipped: it is asked of the scene before each of its
+     * components, so a component that destroys its own Object is the last thing that runs on
+     * it.
+     *
      * Update is fully separated from draw: the whole scene is simulated, then the whole
      * scene is drawn. Legacy interleaved them per object, so what a component observed
      * depended on the draw order of the objects around it.
@@ -152,6 +161,16 @@ export class Runtime {
 
             const components = object.components;
             for (const type of globalThis.Object.keys(components)) {
+                // A DESTROYED OBJECT STOPS RUNNING AT ONCE (ADR-0056 §5). The order is
+                // materialised before the loop — it has to be, or removing an object would
+                // shift the walk under itself — so an object a graph destroyed earlier in
+                // THIS step is still in the list. Running it would simulate an object the
+                // scene no longer holds, and running its remaining components after one of
+                // them destroyed the object they sit on would be the same defect one level
+                // down. Asked here rather than only at the top of the object loop, because
+                // both cases are the same question: is this object still in the scene?
+                if (!this.#scene.has(object)) break;
+
                 const component = components[type];
                 if (component.active === false) continue;
 

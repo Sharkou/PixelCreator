@@ -284,3 +284,36 @@ test('firstError picks the finding that stops the graph, ignoring warnings', () 
     assert.equal(firstError(issues).code, GraphIssueCode.UNKNOWN_NODE_TYPE);
     assert.equal(runnable(issues), false);
 });
+
+test('a Spawn with no model chosen IS asked, because it has no fallback to mean', () => {
+    // THE OTHER HALF OF THE RULE ABOVE (ADR-0056 §3). `Destroy` with an empty picker destroys
+    // `Self`, so nothing is missing; `Spawn` with an empty picker copies NOTHING, and its
+    // picker says `None` rather than `Self`. What separates the two is the fallback the param
+    // declares, not the presence of a picker — so the validator reads the same word the
+    // Inspector prints.
+    const empty = check(graph({ nodes: [node('n1', 'scene.spawn')] }))
+        .filter(issue => issue.port === 'object');
+
+    assert.equal(empty.length, 1, 'a Spawn pointed at nothing is a gap a creator wants told');
+    assert.equal(empty[0].severity, GraphSeverity.WARNING, 'the graph still runs, and does nothing');
+    assert.equal(empty[0].code, GraphIssueCode.MISSING_REFERENCE);
+
+    assert.deepEqual(
+        check(graph({ nodes: [node('n1', 'scene.destroy')] })).filter(issue => issue.port === 'object'),
+        [],
+        'Destroy means Self, which is an answer'
+    );
+});
+
+test('a Spawn with a socket named, or a wire, is answered and says nothing', () => {
+    const properties = [{ id: 'p1', name: 'model', type: PropertyType.OBJECTREF, default: null }];
+
+    const pointed = check(graph({ nodes: [node('n1', 'scene.spawn', { target: 'p1' })] }), properties);
+    assert.deepEqual(pointed.filter(issue => issue.port === 'object'), []);
+
+    const wired = check(graph({
+        nodes: [node('n1', 'scene.findByTag'), node('n2', 'scene.spawn')],
+        connections: [wire('c1', ['n1', 'object'], ['n2', 'object'])]
+    }));
+    assert.deepEqual(wired.filter(issue => issue.port === 'object'), []);
+});

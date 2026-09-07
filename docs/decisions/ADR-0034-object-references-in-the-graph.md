@@ -2,6 +2,7 @@
 
 - **Statut :** **accepté** (2026-08-21)
 - **Amendé par :** ADR-0039 (2026-08-27) — §7 (une cible désignée redevient un paramètre), §3.7 (le dépôt d'une Resource est autorisé)
+- **Précisé par :** ADR-0056 (2026-09-07) — invariant 3 : un handle peut vivre le temps d'un **flux**, et non seulement d'un pas de flux, à condition d'être redemandé à la Scene à chaque lecture ; invariant 5 : `Spawn` et `Destroy` changent la forme de la Scene par ses propres primitives, sans produire d'Operation ni frapper d'identité
 - **Amendé par :** ADR-0040 (2026-08-28) — §3.3 : `Get`/`Set Property On` fusionnent avec `Get`/`Set Property` ; §3.2 : l'avertissement « prise Object vide » ne vaut que pour un port qu'aucun paramètre ne peut remplir, et le dépôt d'un **Component** dans un graphe est retiré
 - **Décide :** ce qu'un graphe `.px` peut atteindre en dehors de son propre Component
 - **Dépend de :** ADR-0010 (identité par ID), ADR-0015 (un graphe est le comportement d'un type), ADR-0018 (ordre structurel), ADR-0021 (identité de Component), ADR-0023 (`PropertyType`), ADR-0026 (`.px` = une ressource, drag & drop), ADR-0027 (modèle de graphe), ADR-0030 (références), ADR-0031 (valeurs autorisées), ADR-0033 (rangées et gestes)

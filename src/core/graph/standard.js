@@ -29,6 +29,7 @@ import { declaredProperties } from '../definition.js';
 import { OBJECT_COMPONENT, objectProperties } from '../object.js';
 import { GraphError, GraphIssueCode } from './errors.js';
 import { worldPosition } from '../components/transform.js';
+import { duplicateObject } from '../duplicate.js';
 
 /**
  * The param that names a property, so the Editor knows to offer a picker.
@@ -296,6 +297,32 @@ const targetParam = {
     }
 };
 
+/**
+ * The param naming WHICH Object `Spawn` copies (ADR-0056 §3).
+ *
+ * THE SAME PARAM NAME, AND THAT IS WHAT MAKES IT ONE MECHANISM AND NOT TWO. `targetSocket()`
+ * reads `params.target`, the Editor's `OBJECT_SOCKET_REFERENCE` picker writes it, and the
+ * drop of an Object onto a node declares the socket it points at — none of which learns a
+ * second name. What differs is the two things a param is allowed to differ in: what it is
+ * CALLED, and what an empty one MEANS.
+ *
+ * NO `unset`, SO NO `Self` ROW, SO NO FALLBACK. This is the mechanism `Get Object` already
+ * uses for the same reason (ADR-0043 §7): the picker offers `Self` only where a `Self`
+ * fallback exists, and a `Spawn` with no model chosen must copy nothing rather than copy the
+ * Object it is attached to — which would double that Object on every step.
+ */
+const modelParam = {
+    target: {
+        type: PropertyType.STRING,
+        default: null,
+        label: 'Model',
+        reference: OBJECT_SOCKET_REFERENCE,
+        port: 'object',
+        tooltip: 'Which Object to copy. Drag an Object from the Hierarchy onto this node, '
+            + 'or wire one in'
+    }
+};
+
 
 /**
  * The value a stored property becomes on the port that carries it.
@@ -388,10 +415,18 @@ export function storedValueOf(property, value) {
  * always used — and nothing here turns a string into an Object that was not declared to be
  * one.
  *
+ * WHAT AN UNPOINTED NODE FALLS BACK TO IS THE NODE'S OWN BUSINESS, and that is the second
+ * argument. Almost every node here means `Self` when nothing is named — the picker says so
+ * in words — but `Spawn` means NOTHING: a copy node that quietly copied the Object it is
+ * attached to would double that Object on every step, and would do it to a creator who
+ * simply had not chosen a model yet. So the fallback is a parameter of this one function
+ * rather than a second copy of the three-source rule above (ADR-0056 §3).
+ *
  * @param {object} io - What the node was handed
+ * @param {object|null} [fallback] - What an unpointed node acts on; `Self` by default
  * @returns {object|null} The Object, or null
  */
-function targetObject(io) {
+function targetObject(io, fallback = io.self ?? null) {
     // A CONNECTION WINS, AND IT WINS BY EXISTING. Not by producing a non-null Object: a
     // `Find By Tag` that finds nobody must write to nobody, not fall through to whatever the
     // picker happens to name. The three sources are ordered, never merged.
@@ -404,7 +439,7 @@ function targetObject(io) {
     // `object` non connecté valant Self" as implicit magic, and it was right about a bare
     // port: nothing on the node said so. The picker beside it says `Self` in words, so the
     // creator reads the answer instead of having to know it.
-    return io.self ?? null;
+    return fallback;
 }
 
 /**
@@ -1112,8 +1147,108 @@ export const STANDARD_NODES = [
         // WHAT A CREATOR HAS TO DEFEND THEMSELVES WITH. A target that is gone resolves to
         // nothing rather than failing (ADR-0034 §3.4), so a graph needs a way to ASK —
         // without it, a dead reference is indistinguishable from a graph that never worked.
-        evaluate: io => ({ result: (io.input('object') ?? null) !== null }),
+        //
+        // AND IT ASKS THE SCENE, NOT THE WIRE (ADR-0056 §5). "Is there a handle here" and
+        // "is that Object still in the scene" were the same question for as long as the only
+        // thing that could remove an object was the Editor, between two frames. `Destroy`
+        // makes them different: a handle held by the flow that destroyed its target is not
+        // null, and answering `true` for it would make this node say the opposite of what it
+        // is asked at the exact moment it is asked. With no scene in hand — a headless call
+        // with nothing to ask — a handle still reads as valid, which is the honest answer
+        // rather than a guess at absence.
+        evaluate: io => {
+            const object = io.input('object') ?? null;
+            if (object === null) return { result: false };
+
+            const scene = io.ctx?.scene ?? null;
+            return { result: typeof scene?.has === 'function' ? scene.has(object) : true };
+        },
         tooltip: 'Whether there is an Object here at all'
+    },
+
+    // --- creating and destroying an Object -----------------------------------------------
+    //
+    // A GRAPH CHANGES THE SHAPE OF THE SCENE, AND IT DOES IT THROUGH THE SCENE'S OWN
+    // PRIMITIVES. ADR-0034 invariant 5 says a node produces no Operation and strikes no
+    // identity, and both hold here: `duplicateObject()` and `Scene.remove()` write straight
+    // to the scene the way a script's `addChild()` does — a Change, an event, no Operation
+    // and nothing to replicate back (ADR-0019). A spawn is a simulation OUTPUT, not an
+    // authored intent, which is the same reading ADR-0003 gives a graph's property write.
+    //
+    // AND THE NODE IS HANDED A HANDLE, NEVER AN IDENTITY. Both take their Object the way
+    // every other node in this family takes one — a wire, or a socket this `.px` declares —
+    // so nothing belonging to a scene enters the payload, and invariant 1 is untouched.
+
+    {
+        type: 'scene.spawn',
+        label: 'Spawn',
+        category: 'Object',
+        keywords: ['create', 'instantiate', 'clone', 'copy', 'duplicate', 'new', 'bullet',
+            'enemy', 'particle', 'add'],
+        // WHAT IS INSTANTIATED IS AN OBJECT OF THE SCENE, AND THAT IS THE WHOLE DECISION.
+        // There is no prefab (ADR-0026 §7) and there cannot be one inside a step: a Resource
+        // is resolved through asynchronous storage the Runtime never reaches (ADR-0020,
+        // ADR-0034 §3.2). A live Object, on the other hand, already describes an instance
+        // completely — its components, its values, its children — so the model is an Object
+        // and no second description of what an Object is has to be invented (ADR-0056 §2).
+        tooltip: 'Creates a copy of an Object in the scene, beside the one it copies',
+        params: { ...modelParam },
+        inputs: [
+            flow('in'),
+            data('object', OBJECT_TYPE, 'Model', null, null,
+                'The Object to copy. It stays where it is; the copy is what is new')
+        ],
+        // THE INSTANCE COMES OUT, because a spawn a creator cannot then point at is a spawn
+        // they cannot place, colour or aim. It is the one thing only this node can answer,
+        // and it costs no new vocabulary: an `object` port, like every other (ADR-0056 §4).
+        //
+        // WHAT IT DELIBERATELY HAS NO PORT FOR IS A POSITION. `Set Position` already says
+        // "put this Object here" and says it correctly (ADR-0045 §11.2); an X and a Y here
+        // would be that node a second time, and worse — a port's default is a VALUE, so an
+        // untouched Spawn would read `X 0  Y 0` and teleport every copy to the origin
+        // instead of leaving it where its model stands.
+        outputs: [flow('out'), data('spawned', OBJECT_TYPE, 'Spawned')],
+        execute: io => {
+            // NO MODEL, NO COPY, AND NO COMPLAINT (ADR-0034 §3.4). A socket nobody filled in
+            // and a `Find By Tag` that found nobody are both states of the running game, not
+            // authoring errors — the flow continues and the output reads as nothing, which
+            // is exactly what a creator's `Is Valid` is there to catch.
+            const model = targetObject(io, null);
+            const scene = io.ctx?.scene ?? null;
+
+            return {
+                next: 'out',
+                values: { spawned: model && scene ? duplicateObject(scene, model) : null }
+            };
+        }
+    },
+
+    {
+        type: 'scene.destroy',
+        label: 'Destroy',
+        category: 'Object',
+        keywords: ['remove', 'delete', 'kill', 'despawn', 'die', 'disappear'],
+        tooltip: 'Removes an Object from the scene, along with everything under it',
+        // `Self` IS THE DEFAULT, AND IT IS THE COMMON CASE. "The enemy dies when it is hit"
+        // is written on the enemy, so the Object being removed is the one the graph is
+        // running as — the same reading `Translate` and `Set Position` already give an empty
+        // picker (ADR-0040 §3).
+        params: { ...targetParam },
+        inputs: [flow('in'), data('object', OBJECT_TYPE, 'Object')],
+        outputs: [flow('out')],
+        execute: io => {
+            // A TARGET THAT IS ALREADY GONE IS NOT A FAULT. `Scene.remove()` answers `false`
+            // for an Object it does not hold and for nothing at all, so two Destroys on one
+            // enemy is a state of the game rather than an error to report (ADR-0034 §3.4).
+            //
+            // THE FLOW CONTINUES, INCLUDING AFTER DESTROYING `Self`. A node that swallowed
+            // the rest of the graph would be a second kind of control flow, invisible on the
+            // canvas; what happens instead is what already happens to any dead reference —
+            // the nodes after it act on an Object the scene no longer holds, and do nothing
+            // (ADR-0056 §5).
+            io.ctx?.scene?.remove?.(targetObject(io));
+            return 'out';
+        }
     },
 
     // --- the properties of ANOTHER Object's Component ------------------------------------

@@ -1,6 +1,7 @@
 # ADR-0043 — L'Object répond de lui-même, un dépôt finit sa phrase, et une intention vaut un nœud
 
 - **Statut :** **accepté** (2026-08-29)
+- **Complété par :** ADR-0056 (2026-09-07) — le point ouvert `Destroy` / `Spawn` de §8 est tranché : ce sont des changements structurels écrits par les primitives de la Scene, donc invariant 5 tient sans Operation
 - **Décide :** comment un graphe atteint les propriétés propres de l'Object ; où va l'`ObjectId`
   quand un dépôt nomme un Object ; ce qui justifie un nœud utilitaire ; ce qui reste refusé
 - **Dépend de :** ADR-0001 (Object reste Object), ADR-0002 (Transform est un Component),
