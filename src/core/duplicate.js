@@ -23,14 +23,22 @@
 // the same table. Remapping child by child as the tree is walked would leave a parent
 // pointing at an id that had not been drawn yet.
 //
-// WHAT IS COPIED VERBATIM: every component value, `objectref` values included. A copy of a
-// bullet that pointed at the player still points at the player, which is the reading a
-// creator expects. A reference that pointed INSIDE the copied subtree still points at the
-// original subtree; remapping those would need the schema of every component to know which
-// values are identities, and that is a decision this file does not take on its own
-// (ADR-0056 §6).
+// A REFERENCE THAT POINTED INSIDE THE SUBTREE FOLLOWS THE COPY; ONE THAT POINTED OUTSIDE
+// DOES NOT (ADR-0056 §6). Duplicating a turret whose barrel names its own base must give a
+// barrel naming the COPY's base — otherwise two turrets share one base and the second one is
+// wired to the first. Duplicating a bullet that names the player must still name the player,
+// because the player was never copied. The two cases are one rule: an identity is rewritten
+// exactly when it is in the table of identities this duplication drew.
+//
+// THE RULE IS ASKED OF THE SCHEMA, NEVER OF THE VALUE. What is rewritten is a property whose
+// DECLARED type is `objectref`, or a list whose declared element type is — nothing else is
+// looked at. A string that merely looks like an identifier is a string (ADR-0023: the type
+// is what a value MEANS), and scanning values for things shaped like ids would rewrite a
+// player's name the day someone called their level `abcdefghjkmnpq`.
 
 import { createId } from './id.js';
+import { declaredProperties } from './definition.js';
+import { PropertyType, elementOf } from './properties/types.js';
 import { restoreSubtree } from './rebuild.js';
 import { serializeObject } from './serialize.js';
 
@@ -59,14 +67,25 @@ export function duplicateObject(scene, source, { parent, index } = {}) {
     // them is a fault (ADR-0034 §3.4).
     if (!source?.id || !scene?.has?.(source)) return null;
 
+    // THE WHOLE TABLE IS DRAWN BEFORE A SINGLE FIELD IS REWRITTEN, and that is what makes
+    // the rewrite independent of the order anything is walked, restored or linked in. A
+    // parent naming a child, a child naming its parent, two siblings naming each other and a
+    // cycle between two Components are all the same lookup in a table that is already
+    // complete — there is no pass that could reach a reference before its target had an
+    // identity, because no identity is drawn during the pass.
     const originals = subtreeOf(source);
     const fresh = new globalThis.Map(originals.map(object => [object.id, createId()]));
 
+    const declarations = new globalThis.Map();
     const written = originals.map(object => {
         const data = serializeObject(object);
         data.id = fresh.get(object.id);
         data.parent = fresh.get(data.parent) ?? null;
         data.children = data.children.map(id => fresh.get(id)).filter(Boolean);
+        data.components = data.components.map(entry => ({
+            type: entry.type,
+            values: remapValues(entry.values, declaredBy(scene, entry.type, declarations), fresh)
+        }));
         return data;
     });
 
@@ -80,6 +99,96 @@ export function duplicateObject(scene, source, { parent, index } = {}) {
     );
 
     return restored ? scene.get(root.id) ?? null : null;
+}
+
+/**
+ * What a Component type declares, read once per type per duplication.
+ *
+ * THE CANONICAL READER, NOT A SECOND ONE. `declaredProperties()` is what the graph, the
+ * property picker and the Inspector already ask, and it answers for a hand-written class
+ * (`static schema`) and for a `.px` (its definition's `properties`) with one call — which is
+ * exactly why a `.px` needs no special case here.
+ *
+ * A TYPE THE REGISTRY CANNOT RESOLVE DECLARES NOTHING, and its values are therefore carried
+ * verbatim. That is the same answer `MissingComponent` gives everywhere else: a placeholder
+ * keeps every value byte for byte precisely because nothing can interpret them (ADR-0021),
+ * and guessing which of them are identities would be the heuristic this file refuses.
+ *
+ * @param {object} scene - The Scene whose registry resolves the type
+ * @param {string} type - The Component type name
+ * @param {Map} cache - Per-duplication memo, so a type is read once for a whole subtree
+ * @returns {object[]} The property descriptors, possibly empty
+ */
+function declaredBy(scene, type, cache) {
+    if (cache.has(type)) return cache.get(type);
+
+    const Component = scene.registry?.get?.(type) ?? null;
+    const declared = Component ? declaredProperties(Component) : [];
+    cache.set(type, declared);
+    return declared;
+}
+
+/**
+ * One Component's serialized values, with the references into this subtree redirected.
+ *
+ * Returns the values it was given when nothing changed, so a component that declares no
+ * reference — which is nearly all of them — costs one loop over its declarations and no
+ * allocation.
+ *
+ * @param {object} values - Serialized values, as `serializeComponent()` wrote them
+ * @param {object[]} declarations - What the type declares
+ * @param {Map} fresh - old ObjectId -> new ObjectId, for this subtree
+ * @returns {object} The values to restore from
+ */
+function remapValues(values, declarations, fresh) {
+    let remapped = values;
+
+    for (const property of declarations) {
+        if (!values || !globalThis.Object.hasOwn(values, property.name)) continue;
+
+        const value = values[property.name];
+        const next = remapReference(property, value, fresh);
+        if (next === value) continue;
+
+        if (remapped === values) remapped = { ...values };
+        remapped[property.name] = next;
+    }
+
+    return remapped;
+}
+
+/**
+ * One value, redirected if its declaration says it is an identity and the table holds it.
+ *
+ * FOUR ANSWERS, AND THREE OF THEM ARE "LEAVE IT ALONE":
+ *
+ *   inside the subtree   the copy's identity — the reference follows the copy
+ *   outside it           unchanged, because the target was never copied
+ *   `null` or absent     unchanged; nothing is not a reference to anything
+ *   pointing at nothing  unchanged, because a dead reference is a state of the scene and
+ *                        not a thing to repair (ADR-0034 §3.4) — and it is indistinguishable
+ *                        from an external one here, which is the honest reading: this
+ *                        function knows what was copied, never what exists
+ *
+ * A LIST IS THE SAME RULE ONE LEVEL DOWN, and one level is as far as it goes: `elementOf()`
+ * refuses an element that is itself a list (ADR-0031 §3), so `array<objectref>` is the
+ * deepest shape a declaration can reach and there is nothing below it to recurse into. The
+ * list is rebuilt rather than written through — the array `serializeObject()` handed over is
+ * the one the MODEL holds, and writing into it would edit the original (invariant 8).
+ *
+ * @param {object} property - The declared property descriptor
+ * @param {any} value - What the component held
+ * @param {Map} fresh - old ObjectId -> new ObjectId
+ * @returns {any} The value to store on the copy
+ */
+function remapReference(property, value, fresh) {
+    if (property.type === PropertyType.OBJECTREF) return fresh.get(value) ?? value;
+
+    if (elementOf(property)?.type === PropertyType.OBJECTREF && globalThis.Array.isArray(value)) {
+        return value.some(item => fresh.has(item)) ? value.map(item => fresh.get(item) ?? item) : value;
+    }
+
+    return value;
 }
 
 /**

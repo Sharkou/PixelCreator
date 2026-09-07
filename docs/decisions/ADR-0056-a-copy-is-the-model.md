@@ -1,6 +1,6 @@
 # ADR-0056 — Une copie est le modèle, et un pas de simulation décide quand
 
-- **Statut :** **accepté** (2026-09-07)
+- **Statut :** **accepté** (2026-09-07), **§6 complétée le 2026-09-07** — la limite qui y était consignée est fermée : une référence interne au sous-arbre copié suit la copie
 - **Décide :** ce que `Spawn` instancie ; ce qu'un nœud a le droit de faire à la forme d'une
   Scene ; comment un nœud de flux rend une valeur ; ce qu'un `Runtime.step()` fait d'un
   Object créé ou détruit pendant qu'il tourne
@@ -75,8 +75,8 @@ qu'est un Object, et il divergerait au premier champ ajouté. Legacy avait ce se
 il s'appelait `copy()` et il vidait `components`, `childs` et `image`.
 
 Les identités sont **tirées d'abord, pour tout le sous-arbre**, puis les listes `children`
-sont réécrites à travers la même table : remapper au fil du parcours laisserait un parent
-pointer vers une identité pas encore tirée.
+**et les valeurs déclarées comme références** (§6) sont réécrites à travers la même table :
+remapper au fil du parcours laisserait un parent pointer vers une identité pas encore tirée.
 
 **La copie atterrit à côté de son modèle, en dernier parmi ses frères.** À côté, parce que
 `Transform` est une position dans l'espace du **parent** (ADR-0002) : une copie envoyée à la
@@ -205,15 +205,76 @@ qu'une supposition d'absence.
 
 ---
 
-## 6. Ce qui est copié, et ce qui ne l'est pas
+## 6. Une référence suit la copie quand sa cible a été copiée, et pas autrement
 
-Tout : chaque Component, chaque valeur, `objectref` comprises. Une copie de balle qui
-pointait vers le joueur pointe toujours vers le joueur, ce qui est la lecture attendue.
+Tout est copié : chaque Component, chaque valeur. Ce que §6 avait laissé ouvert est
+**vers quoi** une `objectref` copiée pointe, et la question a deux réponses parce qu'il y a
+deux cas.
 
-**Une référence qui pointait à l'intérieur du sous-arbre copié pointe toujours vers
-l'original.** La remapper demanderait le schéma de chaque Component pour savoir quelles
-valeurs sont des identités — une décision qui vaut la sienne propre, et que ce fichier ne
-prend pas tout seul. Consigné plutôt que fait à moitié.
+> **Une identité est réécrite exactement quand elle figure dans la table d'identités que
+> cette duplication a tirée.**
+
+| Valeur d'une propriété `objectref` de la copie | Devient |
+|---|---|
+| une identité **du sous-arbre copié** | l'identité de la copie correspondante |
+| une identité **extérieure** | inchangée — la cible n'a pas été copiée |
+| `null`, ou la propriété absente | inchangée |
+| une identité qui ne désigne plus rien | inchangée : une référence morte est un état de la scène et non une chose à réparer (ADR-0034 §3.4) — et elle est indiscernable d'une référence externe ici, ce qui est la lecture honnête : la table sait ce qui a été copié, jamais ce qui existe |
+
+Sans cette règle, dupliquer une tourelle dont le canon nomme sa propre base donnait un canon
+nommant la base de la **première** tourelle : deux tourelles pour une base, et la seconde
+silencieusement câblée sur la première.
+
+### 6.1 La règle est posée au SCHÉMA, jamais à la valeur
+
+Ce qui est réécrit est une propriété dont le type **déclaré** est `objectref`, ou une liste
+dont le type d'élément déclaré l'est. Rien d'autre n'est regardé. Scanner les valeurs à la
+recherche de chaînes ressemblant à un identifiant réécrirait le nom d'un niveau appelé
+`abcdefghjkmnpq` — et ADR-0023 dit déjà que le type est ce qu'une valeur **veut dire**.
+
+Le lecteur est `declaredProperties()`, celui que le graphe, le sélecteur de propriété et
+l'Inspector emploient déjà. Il répond pour une classe écrite à la main (`static schema`) et
+pour un `.px` (les `properties` de sa définition) **par le même appel** — c'est pour cela
+qu'un `.px` n'a besoin d'aucun cas particulier, et qu'aucune metadata nouvelle n'est créée.
+
+### 6.2 Les formes réellement déclarables, et il y en a exactement deux
+
+| Forme | Déclarable ? | Traitée |
+|---|---|---|
+| `objectref` | oui | oui |
+| `array` dont `elementOf()` rend `objectref` (`of: 'objectref'` ou `element: { type }`) | oui | oui, élément par élément |
+| `array` d'`array` | **non** — `elementOf()` refuse un élément qui est lui-même une liste (ADR-0031 §3) | sans objet |
+| `enum` | non — ses valeurs sont un jeu d'options fixé, pas des identités | sans objet |
+| une structure à champs | **n'existe pas** — ADR-0023 §2 a retiré `object` | sans objet |
+
+Il n'y a donc rien sous `array<objectref>` où descendre, et la récursion s'arrête d'elle-même
+sur le contrat existant. **Aucune généralisation spéculative n'est ajoutée** : le jour où le
+Property System admet une forme composée de plus, `remapReference()` est le seul endroit à
+étendre.
+
+### 6.3 Trois passes, jamais une correction après coup
+
+1. **allouer** toutes les identités neuves du sous-arbre ;
+2. **réécrire le payload** — `id`, `parent`, `children`, puis les valeurs déclarées comme
+   références ;
+3. **restaurer** par `restoreSubtree()`.
+
+La table est complète **avant** qu'un seul champ ne soit réécrit, donc la réécriture ne
+dépend d'aucun ordre : parent → enfant, enfant → parent, frère → frère, descendant → ancêtre
+et un cycle entre deux Components sont la même recherche dans une table déjà faite. Aucune
+passe ne peut atteindre une référence avant que sa cible ait une identité, puisque aucune
+identité n'est tirée pendant la passe.
+
+Et c'est réécrit dans le **payload**, jamais sur des Objects vivants : ce qui est restauré est
+déjà juste, donc ce qui est sérialisé l'est aussi, sans seconde passe à tenir en phase.
+
+### 6.4 La limite qui reste, et elle est déclarée
+
+Un Component d'un type que le registre ne résout pas — un `MissingComponent` — **ne déclare
+rien**, donc ses valeurs sont portées telles quelles, identités internes comprises. C'est la
+réponse que ce placeholder donne partout ailleurs : il garde tout octet pour octet
+précisément parce que rien ne sait l'interpréter (ADR-0021). Deviner lesquelles de ses valeurs
+sont des identités serait exactement l'heuristique que §6.1 refuse.
 
 ---
 
@@ -223,6 +284,15 @@ prend pas tout seul. Consigné plutôt que fait à moitié.
 |---|---|
 | Une copie est un Object neuf, sous-arbre compris | `core/duplicate.test.js` |
 | Une copie porte les valeurs de son modèle et ne partage aucun état | idem |
+| Une référence interne au sous-arbre suit la copie — parent→enfant, enfant→parent, frère→frère, cycle | idem |
+| Une référence externe, `null` ou morte est laissée telle quelle | idem |
+| Une `array<objectref>` est remappée élément par élément | idem |
+| Une propriété déclarée `string` n'est jamais remappée, même si sa valeur ressemble à un identifiant | idem |
+| Un `.px` déclarant `objectref` est traité comme une classe qui en déclare une | idem |
+| Deux copies d'un modèle pointent chacune uniquement dans son propre sous-arbre | idem |
+| Le modèle sérialise aux mêmes octets avant et après avoir été copié | idem |
+| Les références remappées survivent à la sérialisation et au rechargement | idem |
+| Ce qu'un `Spawn` crée est cohérent en interne, et sa sortie nomme cette copie-là | `runtime/spawn-destroy.test.js` |
 | Une copie atterrit chez le parent de son modèle, en dernier | idem |
 | Une copie est atteignable depuis les roots (invariant 7) | idem |
 | Copier ne produit aucune Operation | idem |
@@ -244,6 +314,6 @@ prend pas tout seul. Consigné plutôt que fait à moitié.
 |---|---|
 | **Le prefab** | ADR-0026 §7 reste tel quel. Cet ADR ne le préjuge pas : le jour où un prefab existe, il sera un second **modèle** possible, pas un second mécanisme de création |
 | **Le déterminisme des identités sous réplication** | Deux clients qui spawnent chacun de leur côté tirent deux `ObjectId` différents. L'état est identique à l'identité près, et ADR-0011 fait du serveur l'autorité — mais où vit la graine d'une identité reste ouvert, sur la même étagère que `Random` (ADR-0045 §11.5) |
-| **Les `objectref` internes à un sous-arbre copié** | §6 |
+| **Les valeurs d'un type que le registre ne résout pas** | §6.4 — un `MissingComponent` ne déclare rien, donc rien n'est remappé chez lui |
 | `Random`, `Delay` | Inchangés (ADR-0045 §11.5) |
 | **Une limite de population** | Un graphe qui spawne à chaque update remplit la scène ; le budget de l'interprète borne un ÉVÉNEMENT, pas une partie. C'est une question de produit, pas d'exécution |

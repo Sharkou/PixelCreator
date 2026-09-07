@@ -18,7 +18,8 @@ import {
     Transform,
     defineComponent,
     hierarchyOrder,
-    registerStandardNodes
+    registerStandardNodes,
+    serializeScene
 } from '../core/mod.js';
 import { Behaviors } from './scripting/behaviors.js';
 import { createGraphInterpreter } from './scripting/interpreter.js';
@@ -588,4 +589,152 @@ test('a spawned Object read after it has been destroyed reads as nothing', () =>
     assert.equal(count(it.scene, 'Model'), 1, 'the copy was made and then unmade');
     assert.equal(it.spawner.getComponent(it.type).alive, false, 'and the handle no longer reads live');
     assert.deepEqual(it.failures, []);
+});
+
+// --- what a spawned subtree points at, run through the interpreter (ADR-0056 §6) ----------
+//
+// THE PRIMITIVE IS TESTED IN `core/duplicate.test.js`; this is the same contract asked of the
+// NODE, because that is where a creator meets it. A turret spawned from a model whose barrel
+// names its own base must give a barrel naming the COPY's base — otherwise the second turret
+// aims through the first, and nothing on screen says why.
+
+/** A type declaring the two shapes an identity can be declared in. */
+class Link {
+
+    static type = 'Link';
+
+    static schema = {
+        target: { type: 'objectref', default: null },
+        friends: { type: 'array', of: 'objectref', default: [] },
+        note: { type: 'string', default: '' }
+    };
+
+    constructor() {
+        this.target = null;
+        this.friends = [];
+        this.note = '';
+    }
+}
+
+/** `On Start → Spawn`, pointed at the socket this `.px` declares. */
+const SPAWN_ONCE = once(
+    [{ id: 'spawn', type: 'scene.spawn', x: 0, y: 0, params: { target: 'p_target' } }],
+    [{ id: 'c', from: { node: 'start', port: 'out' }, to: { node: 'spawn', port: 'in' } }]
+);
+
+/**
+ * The staged game, with a `Barrel` under the `Model` and a `Link` on every piece.
+ *
+ * @returns {object} What `game()` answers, plus the barrel and an outsider
+ */
+function turret() {
+    const it = game(SPAWN_ONCE);
+    it.scene.registry.register(Link);
+
+    it.model.addComponent(new Link());
+    const barrel = it.scene.add(new SceneObject('Barrel'));
+    barrel.addComponent(new Transform(5, 0));
+    barrel.addComponent(new Link());
+    it.model.addChild(barrel);
+
+    const outsider = it.scene.add(new SceneObject('Outsider'));
+    it.spawner.getComponent(it.type).target = it.model.id;
+
+    /** The copy of the model, which is the last `Model` in canonical order. */
+    const copy = () => hierarchyOrder(it.scene).filter(object => object.name === 'Model').at(-1);
+
+    return { ...it, barrel, outsider, copy };
+}
+
+test('a spawned subtree points at its own pieces, not at the model it was copied from', () => {
+    const it = turret();
+    it.barrel.getComponent('Link').target = it.model.id;
+    it.model.getComponent('Link').target = it.barrel.id;
+
+    it.runtime.step();
+
+    const copy = it.copy();
+    const copiedBarrel = copy.children[0];
+
+    assert.notEqual(copy.id, it.model.id, 'a copy was made');
+    assert.equal(copiedBarrel.getComponent('Link').target, copy.id, 'child names the copy');
+    assert.equal(copy.getComponent('Link').target, copiedBarrel.id, 'parent names the copied child');
+    assert.equal(it.model.getComponent('Link').target, it.barrel.id, 'and the model is untouched');
+    assert.deepEqual(it.failures, []);
+});
+
+test('a spawned subtree keeps pointing at what was never copied', () => {
+    const it = turret();
+    it.barrel.getComponent('Link').target = it.outsider.id;
+    it.barrel.getComponent('Link').friends = [it.model.id, it.outsider.id];
+
+    it.runtime.step();
+
+    const copiedBarrel = it.copy().children[0];
+    assert.equal(copiedBarrel.getComponent('Link').target, it.outsider.id);
+    assert.deepEqual(copiedBarrel.getComponent('Link').friends, [it.copy().id, it.outsider.id],
+        'the internal half followed, the external half did not');
+});
+
+test('the Object a Spawn hands out is the root of the subtree its references point into', () => {
+    // THE TWO HALVES OF THIS TRANCHE, ASKED TOGETHER: the output port names the copy, and the
+    // copy is internally consistent. Either alone would look right and be wrong.
+    const it = game(once(
+        [
+            { id: 'spawn', type: 'scene.spawn', x: 0, y: 0, params: { target: 'p_target' } },
+            { id: 'keep', type: 'property.set', x: 0, y: 0, params: { property: 'p_kept' } }
+        ],
+        [
+            { id: 'c1', from: { node: 'start', port: 'out' }, to: { node: 'spawn', port: 'in' } },
+            { id: 'c2', from: { node: 'spawn', port: 'out' }, to: { node: 'keep', port: 'in' } },
+            { id: 'c3', from: { node: 'spawn', port: 'spawned' }, to: { node: 'keep', port: 'value' } }
+        ]
+    ), { properties: { ...SOCKET, kept: { id: 'p_kept', type: 'objectref', default: null } } });
+
+    it.scene.registry.register(Link);
+    const barrel = it.scene.add(new SceneObject('Barrel'));
+    barrel.addComponent(new Link());
+    it.model.addChild(barrel);
+    barrel.getComponent('Link').target = it.model.id;
+    it.spawner.getComponent(it.type).target = it.model.id;
+
+    it.runtime.step();
+
+    const kept = it.spawner.getComponent(it.type).kept;
+    assert.equal(typeof kept, 'string', 'an ObjectId was stored, never a handle (ADR-0034 §3.5)');
+
+    const spawned = it.scene.get(kept);
+    assert.ok(spawned, 'and it names an Object of this scene');
+    assert.notEqual(spawned.id, it.model.id);
+    assert.equal(spawned.children[0].getComponent('Link').target, spawned.id,
+        'the copy the node handed out is the one its own child names');
+});
+
+test('a spawned scene serializes to identities alone, remapped ones included', () => {
+    // INVARIANT 7, end to end: nothing a graph created writes a handle into a payload.
+    const it = turret();
+    it.barrel.getComponent('Link').target = it.model.id;
+    it.barrel.getComponent('Link').friends = [it.outsider.id];
+
+    it.runtime.step();
+    it.runtime.step();
+
+    const written = serializeScene(it.scene);
+    const copy = it.copy();
+    const copied = written.objects.find(entry => entry.children.includes(copy.children[0].id));
+
+    assert.ok(copied, 'the copy is in the payload');
+    for (const entry of written.objects) {
+        for (const component of entry.components) {
+            for (const value of globalThis.Object.values(component.values)) {
+                const isHandle = Boolean(value) && typeof value === 'object'
+                    && !globalThis.Array.isArray(value);
+                assert.equal(isHandle, false, `${entry.name}.${component.type}`);
+            }
+        }
+    }
+
+    const barrel = written.objects.find(entry => entry.id === copy.children[0].id);
+    const link = barrel.components.find(component => component.type === 'Link');
+    assert.equal(link.values.target, copy.id, 'the remapped reference is what was written');
 });
