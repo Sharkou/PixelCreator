@@ -1216,10 +1216,14 @@ export const STANDARD_NODES = [
             const model = targetObject(io, null);
             const scene = io.ctx?.scene ?? null;
 
-            return {
-                next: 'out',
-                values: { spawned: model && scene ? duplicateObject(scene, model) : null }
-            };
+            // THE IDENTITIES COME FROM THE SIMULATION, NOT FROM THE MACHINE (ADR-0057 §3).
+            // A spawn is a consequence of a step, so a server and every client running that
+            // step must agree on what was created — and they can only agree on an identity
+            // they both derive from the seed they share. Absent — a headless call with no
+            // Runtime — `duplicateObject()` falls back to the ordinary generator.
+            const spawn = () => duplicateObject(scene, model, { createId: io.ctx?.createObjectId });
+
+            return { next: 'out', values: { spawned: model && scene ? spawn() : null } };
         }
     },
 
@@ -1494,6 +1498,38 @@ export const STANDARD_NODES = [
             const from = number(io.input('a'));
             const to = number(io.input('b'));
             return { result: from + (to - from) * number(io.input('t')) };
+        }
+    },
+
+    {
+        type: 'math.random',
+        label: 'Random',
+        category: 'Math',
+        keywords: ['chance', 'dice', 'roll', 'luck', 'vary', 'shuffle', 'noise', 'pick'],
+        tooltip: 'A different number every time, between two bounds',
+        inputs: [
+            data('min', PropertyType.NUMBER, 'Min', 0),
+            // EXCLUSIVE, AND THE TOOLTIP SAYS SO because the alternative is a bug a creator
+            // cannot see: `Random 0..3` floored is a fair choice of three, and a `Max` that
+            // could come out would make the last one half as likely as the others.
+            data('max', PropertyType.NUMBER, 'Max', 1, null, 'The number it stops just short of')
+        ],
+        outputs: [data('value', PropertyType.NUMBER, 'Value')],
+        // IT DRAWS FROM THE SIMULATION, WHICH IS THE WHOLE REASON THIS NODE COULD NOT SHIP
+        // BEFORE (ADR-0045 §11.5, decided by ADR-0057). `Math.random()` would desynchronise a
+        // replicated game on its first draw; what it reads instead is the stream the Runtime
+        // derived from its seed, so the same seed and the same steps roll the same numbers on
+        // every machine. The purity guard in `nodes.test.js` is what keeps it that way.
+        //
+        // A SIMULATION WITH NO STREAM ANSWERS `Min`, and does not pretend. A graph run
+        // headlessly is handed no source of chance; answering the low bound is the honest
+        // reading of "nothing varies here", and it is the same family of non-answer a dead
+        // Object reference gets (ADR-0034 §3.4).
+        evaluate: io => {
+            const low = number(io.input('min'));
+            const high = number(io.input('max'));
+            const stream = io.ctx?.random ?? null;
+            return { value: stream ? stream.between(low, high) : low };
         }
     },
 

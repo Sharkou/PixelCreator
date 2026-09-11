@@ -10,6 +10,7 @@
 // whatever happened to be on screen.
 
 import { BlendMode } from '../renderer.js';
+import { advance, unitOf } from '../../random/random.js';
 
 export class ParticleSystem {
 
@@ -121,12 +122,24 @@ export class ParticleSystem {
         });
     }
 
-    /** Deterministic pseudo-random source, advanced in place. */
+    /**
+     * Deterministic pseudo-random source, advanced in place.
+     *
+     * Deterministic on purpose: the same steps must produce the same particles on a server
+     * and on every client. Math.random() would make the simulation diverge between machines,
+     * which is exactly what a replicated runtime cannot afford.
+     *
+     * IT STEPS THROUGH THE ONE GENERATOR THE RUNTIME HAS (`runtime/random/`, ADR-0057) rather
+     * than through a second copy of its constants — but it keeps its OWN position in that
+     * stream, and that is not an oversight. An emitter starts at the same place every time it
+     * is built, so the particles a scene shows are a function of the scene and of nothing
+     * else: they do not shift because a graph rolled a die earlier in the frame, and they are
+     * not part of what the seed decides.
+     *
+     * @returns {number} A number in [0, 1)
+     */
     nextRandom() {
-        // Deterministic on purpose: the same steps must produce the same particles on
-        // a server and on every client. Math.random() would make the simulation diverge
-        // between machines, which is exactly what a replicated runtime cannot afford.
-        this.seed = (this.seed * 1664525 + 1013904223) % 4294967296;
-        return this.seed / 4294967296;
+        this.seed = advance(this.seed);
+        return unitOf(this.seed);
     }
 }

@@ -26,10 +26,26 @@ const DEFAULT_LENGTH = 14;
 
 /**
  * Create an opaque identifier.
- * @param {number} length - Number of characters, 12 by default (60 bits of entropy)
+ *
+ * WHERE THE BYTES COME FROM IS THE ONE THING A CALLER MAY CHANGE, and nothing else about an
+ * identifier is (ADR-0057 §4). A simulation has to be able to mint the SAME identity on a
+ * server and on every client — an object spawned by a graph is a consequence of a step, so
+ * two machines running that step must agree on what was created (ADR-0011). What they cannot
+ * share is the platform CSPRNG, so the Runtime hands its own seeded byte source instead.
+ *
+ * THE ALPHABET, THE LENGTH AND THE REJECTION RULE DO NOT MOVE. An identifier minted in a
+ * simulation is an ordinary identifier — same shape, same guarantees, readable aloud in the
+ * same way (ADR-0049) — and pushing the seam this far down is what keeps it that way. A
+ * second id function for the Runtime would be a second answer to "what is an identity".
+ *
+ * @param {number} [length] - Number of characters, 14 by default (62 bits of entropy)
+ * @param {object} [options] - Options
+ * @param {Function} [options.randomBytes] - Fills a Uint8Array in place; the platform
+ *   CSPRNG by default. A deterministic source makes the identifier reproducible, and
+ *   therefore no longer unguessable — see the caution in the header.
  * @returns {string} The identifier
  */
-export function createId(length = DEFAULT_LENGTH) {
+export function createId(length = DEFAULT_LENGTH, { randomBytes = secureBytes } = {}) {
     if (!Number.isInteger(length) || length < 1) {
         throw new RangeError(`createId: length must be a positive integer, got ${length}`);
     }
@@ -43,12 +59,22 @@ export function createId(length = DEFAULT_LENGTH) {
 
     let id = '';
     while (id.length < length) {
-        const bytes = new Uint8Array(length - id.length);
-        globalThis.crypto.getRandomValues(bytes);
+        const bytes = randomBytes(new Uint8Array(length - id.length));
         for (const byte of bytes) {
             if (byte >= limit) continue;
             id += ALPHABET[byte % ALPHABET.length];
         }
     }
     return id;
+}
+
+/**
+ * The default byte source: the platform CSPRNG, in a browser and in Node alike.
+ *
+ * @param {Uint8Array} bytes - The array to fill, in place
+ * @returns {Uint8Array} The same array
+ */
+function secureBytes(bytes) {
+    globalThis.crypto.getRandomValues(bytes);
+    return bytes;
 }

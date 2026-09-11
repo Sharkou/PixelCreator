@@ -13,6 +13,7 @@
 - **Précise :** ADR-0034 invariant 3 — un handle peut vivre le temps d'**un flux** et non
   seulement d'un pas de flux, à condition d'être redemandé à la Scene à chaque lecture
 - **Ferme :** le point ouvert d'ADR-0043 §8 et d'ADR-0045 §11.5 pour `Destroy` et `Spawn`
+- **Complété par :** ADR-0057 (2026-09-11) — le déterminisme des identités de §8 est tranché : un `Spawn` frappe ses identités sur le flux `seed:ids` du Runtime, jamais sur le CSPRNG de la machine
 - **Ne décide pas :** le prefab (ADR-0026 §7 reste tel quel) ; `Random` et `Delay` ; le
   déterminisme des identités sous réplication — voir §7
 
@@ -313,7 +314,7 @@ sont des identités serait exactement l'heuristique que §6.1 refuse.
 | Point ouvert | Pourquoi |
 |---|---|
 | **Le prefab** | ADR-0026 §7 reste tel quel. Cet ADR ne le préjuge pas : le jour où un prefab existe, il sera un second **modèle** possible, pas un second mécanisme de création |
-| **Le déterminisme des identités sous réplication** | Deux clients qui spawnent chacun de leur côté tirent deux `ObjectId` différents. L'état est identique à l'identité près, et ADR-0011 fait du serveur l'autorité — mais où vit la graine d'une identité reste ouvert, sur la même étagère que `Random` (ADR-0045 §11.5) |
+| ~~Le déterminisme des identités sous réplication~~ | **Tranché par ADR-0057** : une identité créée par un pas est tirée du flux `seed:ids`, une identité créée en éditant reste tirée de la machine |
 | **Les valeurs d'un type que le registre ne résout pas** | §6.4 — un `MissingComponent` ne déclare rien, donc rien n'est remappé chez lui |
 | `Random`, `Delay` | Inchangés (ADR-0045 §11.5) |
 | **Une limite de population** | Un graphe qui spawne à chaque update remplit la scène ; le budget de l'interprète borne un ÉVÉNEMENT, pas une partie. C'est une question de produit, pas d'exécution |

@@ -6,8 +6,9 @@
 - **Dépend de :** ADR-0002 (espaces), ADR-0016 (un `.px` est un type), ADR-0023 §2 (pas de type vecteur), ADR-0026 (une frappe est une entrée d'historique), ADR-0031 (propriétés déclarées), ADR-0034 (portée des identités), ADR-0036 (frontière `objectref`), ADR-0039 (taxonomie), ADR-0043 (l'Object répond de lui-même)
 - **Amendé par :** ADR-0046 (2026-08-29) — §4 : les trois moments d'une touche deviennent trois PORTS d'un seul nœud, ce qui règle l'objection d'ADR-0041 §3.2 mieux que trois noms. §9 : une couleur redevient un contrôle court. §10 : la poignée d'une propriété est celle du réordonnancement, et il n'y en a plus deux.
 - **Amende :** ADR-0040 §2 et §4 (le Component redevient une question posée), ADR-0041 §3.2 (un événement continu existe, sous un autre nom), §6.1 (un Component peut être lâché sur un nœud), §2 (le chemin fusionné redevient deux lignes)
+- **Complété par :** ADR-0057 (2026-09-11) — `Random` de §11.5 est codé : la graine vit sur le Runtime, qui l'attribue et la dit
 - **Complété par :** ADR-0056 (2026-09-07) — `Destroy` et `Spawn` de §11.5 sont codés : le concept manquant est « une copie d'un Object de la Scene », et la question du pipeline qui itère est tranchée par `Runtime.step()`
-- **Ne décide pas :** l'unité d'un port en général — voir §11.4 ; `Random`, `Delay` — voir §11.5.
+- **Ne décide pas :** l'unité d'un port en général — voir §11.4 ; `Delay` — voir §11.5.
 
 ---
 
@@ -229,7 +230,7 @@ l'ajout d'un nœud.
 | `Clamp` | haute | une ligne | rien — **fait** |
 | `Lerp` | haute | une ligne | rien — **fait** |
 | `Move` | — | — | rien à faire : c'est `Translate`, et c'est déjà un de ses mots-clés |
-| `Random` | haute | une ligne | **une décision.** Un graphe répliqué doit produire la même partie chez tous les clients (ADR-0011, ADR-0019). Un `Math.random()` non semé désynchronise. Il faut décider où vit la graine et qui l'attribue. |
+| `Random` | haute | une ligne | rien — **fait** (ADR-0057). La graine vit sur le Runtime, qui l'attribue, la tire quand personne ne la donne, et la dit ; le nœud lit `ctx.random` comme il lit `ctx.input`. |
 | `Delay` | haute | moyenne | **une décision.** Où vit le minuteur en attente, survit-il à un `bind` (ADR-0016 §7 dit que relier remplace le comportement), est-il sérialisé, que fait un `undo` ? |
 | `Destroy` | haute | moyenne | **une décision.** Retirer un objet pendant que le pipeline l'itère ; et est-ce un `Operation` d'auteur ou une sortie de simulation (ADR-0003) ? |
 | `Spawn` | haute | forte | **un concept.** Il n'y a pas de prefab. Instancier quoi, à partir de quoi ? |

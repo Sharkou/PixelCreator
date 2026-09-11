@@ -56,12 +56,22 @@ import { serializeObject } from './serialize.js';
  *
  * @param {object} scene - The Scene holding the model, and receiving the copy
  * @param {object} source - The Object to copy; must belong to `scene`
+ * WHO MINTS THE IDENTITIES IS THE CALLER'S BUSINESS (ADR-0057 §3). Duplicating from the
+ * Editor is an authoring act and draws from the platform CSPRNG like every other identity;
+ * duplicating from a graph is a CONSEQUENCE OF A STEP, and a server and a client running that
+ * step have to agree on what was created — so the Runtime passes its own seeded source. The
+ * Core does not choose between the two and does not learn what a simulation is: it takes a
+ * factory and defaults to the ordinary one.
+ *
+ * @param {object} scene - The Scene holding the model, and receiving the copy
+ * @param {object} source - The Object to copy; must belong to `scene`
  * @param {object} [options] - Options
  * @param {string|null} [options.parent] - Parent id for the copy; the model's own by default
  * @param {number} [options.index] - Rank among its new siblings; appended when omitted
+ * @param {Function} [options.createId] - Mints one identity; `core/id.js`'s by default
  * @returns {object|null} The copy, or null when there was nothing to copy
  */
-export function duplicateObject(scene, source, { parent, index } = {}) {
+export function duplicateObject(scene, source, { parent, index, createId: mint = createId } = {}) {
     // A MODEL THAT IS NOT IN THIS SCENE IS NOT A MODEL. A detached Object, a handle to
     // something already destroyed, or nothing at all: all three answer null, and none of
     // them is a fault (ADR-0034 §3.4).
@@ -74,7 +84,7 @@ export function duplicateObject(scene, source, { parent, index } = {}) {
     // complete — there is no pass that could reach a reference before its target had an
     // identity, because no identity is drawn during the pass.
     const originals = subtreeOf(source);
-    const fresh = new globalThis.Map(originals.map(object => [object.id, createId()]));
+    const fresh = new globalThis.Map(originals.map(object => [object.id, mint()]));
 
     const declarations = new globalThis.Map();
     const written = originals.map(object => {

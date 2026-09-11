@@ -14,11 +14,13 @@
 // A component that throws is isolated so the frame survives, and reported through
 // `onError` — never disabled, never repaired, never written to (ADR-0012).
 
+import { createId } from '../core/id.js';
 import { hierarchyOrder } from '../core/scene.js';
 import { Clock } from './clock/clock.js';
 import { SceneRenderer } from './rendering/scene-renderer.js';
 import { componentFailure, rethrowLater } from './errors.js';
 import { Input } from './input/input.js';
+import { Random } from './random/random.js';
 
 export class Runtime {
 
@@ -30,6 +32,19 @@ export class Runtime {
     #behaviors;
     #running = true;
 
+    // THE ONE VALUE EVERY UNCERTAIN THING IN THIS SIMULATION IS DERIVED FROM (ADR-0057). A
+    // server sends it, a replay quotes it, a bug report pastes it — and two runs of it are
+    // the same run.
+    #seed;
+
+    // TWO STREAMS FROM ONE SEED, AND THEY ARE SEPARATE ON PURPOSE. Sharing one counter would
+    // make "how many objects have been spawned" an input to every dice roll that follows:
+    // adding a `Spawn` to a graph would silently change every `Random` after it, and a
+    // creator would have no way to read that from the canvas. Derived by NAME rather than
+    // split by turns, so a third stream later costs a line and shifts neither of these two.
+    #random;
+    #ids;
+
     /**
      * Create a runtime.
      * @param {object} scene - The scene to run
@@ -39,9 +54,20 @@ export class Runtime {
      * @param {Function} [options.onError] - Called with a ComponentFailure report (ADR-0012)
      * @param {Input} [options.input] - Default input, used when a step is given none
      * @param {object} [options.behaviors] - Graph behaviors bound to component types (ADR-0015)
+     * @param {string|number} [options.seed] - What every uncertain thing in this simulation is
+     *   derived from (ADR-0057). Drawn when omitted, and readable back as `runtime.seed`, so
+     *   a run is always reproducible even when nobody chose one.
      */
-    constructor(scene, { clock, renderer, onError, input, behaviors } = {}) {
+    constructor(scene, { clock, renderer, onError, input, behaviors, seed } = {}) {
         if (!scene) throw new TypeError('Runtime: a scene is required');
+
+        // DRAWN, NEVER CONSTANT, AND ALWAYS READABLE BACK. A fixed default would make every
+        // playthrough of a game identical, which is the opposite of what a creator reaching
+        // for `Random` wants. What makes the draw HONEST is that it is stated: the seed is a
+        // value on the runtime, so the difference between two runs is one string long.
+        this.#seed = seed ?? createId();
+        this.#random = new Random(`${this.#seed}:random`);
+        this.#ids = new Random(`${this.#seed}:ids`);
 
         this.#scene = scene;
         this.#clock = clock ?? new Clock();
@@ -78,6 +104,24 @@ export class Runtime {
     get behaviors() {
         return this.#behaviors;
     }
+
+    /** What every uncertain thing in this simulation is derived from (ADR-0057). */
+    get seed() {
+        return this.#seed;
+    }
+
+    /** The stream a graph draws from. Gameplay only: identities have their own. */
+    get random() {
+        return this.#random;
+    }
+
+    /**
+     * Mint one identity, from this simulation rather than from the machine.
+     *
+     * Bound once and handed to every step, so a node calls it without knowing which of the
+     * two streams it came from — or that there are two (ADR-0057 §3).
+     */
+    #createObjectId = () => createId(undefined, { randomBytes: bytes => this.#ids.fill(bytes) });
 
     /** True when the runtime draws; false on a server. */
     get renders() {
@@ -143,6 +187,12 @@ export class Runtime {
      * reaches the same state, whether it runs in a browser or on a server replaying what
      * players sent — the property reconciliation is built on.
      *
+     * AND SO IS CHANCE (ADR-0057). The sentence above used to have an unstated exception: a
+     * graph that drew a random number, or created an Object, reached a source the two
+     * machines did not share. Both now come off this context, derived from the runtime's
+     * seed, so "the same scene, the same inputs, the same seed" is the whole of the
+     * hypothesis and the conclusion holds without a footnote.
+     *
      * @param {Input} [input] - Input for this step; the runtime's own when omitted
      * @returns {number} The simulated time after the step
      */
@@ -153,7 +203,13 @@ export class Runtime {
             deltaTime: this.#clock.fixedStep,
             scene: this.#scene,
             runtime: this,
-            input: stepInput
+            input: stepInput,
+            // THE TWO SOURCES A GRAPH MAY REACH FOR, HANDED OVER LIKE THE INPUT BESIDE THEM
+            // (ADR-0014, ADR-0057). A node that called `Math.random()` or minted its own
+            // identity would desynchronise a replicated game on its first step; there is
+            // nothing to forbid, because there is nothing global left to reach.
+            random: this.#random,
+            createObjectId: this.#createObjectId
         };
 
         for (const object of hierarchyOrder(this.#scene)) {

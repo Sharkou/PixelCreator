@@ -1276,3 +1276,36 @@ test('the Model of a Spawn declares no fallback, and the Object of a Destroy dec
     assert.equal(registry.get('scene.spawn').params.target.label, 'Model');
     assert.equal(registry.get('scene.destroy').params.target.unset, 'Self');
 });
+
+test('Random draws from the simulation it was handed, and from nothing else', () => {
+    // THE NODE ADR-0045 §11.5 COULD NOT SHIP, AND WHY IT CAN NOW (ADR-0057). Its whole
+    // difficulty was never the arithmetic: it was that `Math.random()` desynchronises a
+    // replicated game, so the node needed somewhere to draw from that a server and a client
+    // could share. It reads `ctx.random`, which is the Runtime's seeded stream.
+    const registry = registerStandardNodes(new NodeRegistry());
+    const definition = registry.get('math.random');
+
+    assert.equal(definition.category, 'Math');
+    const ports = portsOf(definition, { id: 'n', type: 'math.random', params: {} }, {});
+    assert.deepEqual(ports.inputs.map(port => port.id), ['min', 'max']);
+    assert.deepEqual(ports.outputs.map(port => port.id), ['value']);
+    assert.equal(ports.outputs[0].type, PropertyType.NUMBER);
+
+    const bounds = { min: 5, max: 9 };
+    const drawn = [0.0, 0.5, 0.999];
+    let next = 0;
+    const stream = { between: (min, max) => min + drawn[next++] * (max - min) };
+
+    const roll = () => definition.evaluate({
+        input: port => bounds[port],
+        ctx: { random: stream }
+    }).value;
+
+    assert.equal(roll(), 5, 'the low bound is included');
+    assert.equal(roll(), 7);
+    assert.ok(roll() < 9, 'and the high bound is not');
+
+    // A GRAPH RUN WITH NO SIMULATION IS HANDED NO CHANCE, and answers the low bound rather
+    // than inventing one — the family of non-answer ADR-0034 §3.4 names.
+    assert.equal(definition.evaluate({ input: port => bounds[port], ctx: {} }).value, 5);
+});
