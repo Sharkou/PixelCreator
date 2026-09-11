@@ -1,8 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Object, Scene, Transform, Matrix } from '../../core/mod.js';
+import {
+    ComponentRegistry,
+    Matrix,
+    Object,
+    Scene,
+    Transform,
+    deserializeScene,
+    serializeScene
+} from '../../core/mod.js';
 import { Viewport } from './viewport.js';
-import { Camera, viewMatrix, worldToScreen, screenToWorld } from './camera.js';
+import { Camera, activeCamera, viewMatrix, worldToScreen, screenToWorld } from './camera.js';
 import { SceneRenderer } from './scene-renderer.js';
 import { RectangleRenderer } from './components/rectangle-renderer.js';
 
@@ -269,4 +277,156 @@ test('a camera has no position of its own', () => {
     assert.equal(lens.x, undefined);
     assert.equal(lens.y, undefined);
     assert.deepEqual(globalThis.Object.keys(lens), ['zoom']);
+});
+
+// --- which camera a game looks through -----------------------------------------------------
+//
+// THE DEFECT, STATED ONCE. The Preview read `scene.objects()` — insertion order, which is a
+// fact about how a scene was BUILT rather than about what it IS. Two clients holding the very
+// same scene, one loaded from a payload and one edited into that state, could look through
+// two different cameras, and nothing on screen would say why. It is the defect ADR-0034 §3.1
+// measured on `findByTag`, one consumer later, and it is fixed with the same primitive.
+
+/** A scene holding a camera called `name`, plus whatever `build` adds. */
+function staged(build) {
+    const registry = new ComponentRegistry();
+    registry.register(Transform);
+    registry.register(Camera);
+
+    const scene = new Scene('Level', { registry });
+    const camera = (name, parent = null) => {
+        const object = scene.add(new Object(name));
+        object.addComponent(new Transform());
+        object.addComponent(new Camera());
+        if (parent) parent.addChild(object);
+        return object;
+    };
+
+    return { scene, camera, plain: name => scene.add(new Object(name)) };
+}
+
+test('one camera is the camera', () => {
+    const it = staged();
+    const only = it.camera('Main Camera');
+
+    assert.equal(activeCamera(it.scene), only);
+});
+
+test('a scene with no camera has no camera, and is still playable', () => {
+    // `viewMatrix(null, viewport)` centres, which is what a scene without one already did.
+    const it = staged();
+    it.plain('Box');
+
+    assert.equal(activeCamera(it.scene), null);
+    assert.deepEqual(
+        viewMatrix(activeCamera(it.scene), new Viewport(800, 600)).values,
+        Matrix.compose(400, 300).values
+    );
+});
+
+test('two scenes built in different orders look through the same camera', () => {
+    // THE TEST THAT FAILS ON `scene.objects().find(…)`. Both scenes end in the same SHAPE —
+    // `Main` first among the roots, `Second` after it — and reach it by two different paths.
+    const first = staged();
+    const main = first.camera('Main');
+    const second = first.camera('Second');
+
+    const other = staged();
+    const otherSecond = other.camera('Second');
+    const otherMain = other.camera('Main');
+    // Same shape, reached the other way round: `Main` is moved in front of `Second`.
+    other.scene.reparent(otherMain, null, 0);
+
+    assert.deepEqual(first.scene.roots().map(object => object.name), ['Main', 'Second']);
+    assert.deepEqual(other.scene.roots().map(object => object.name), ['Main', 'Second']);
+
+    assert.deepEqual(
+        first.scene.objects().map(object => object.name),
+        ['Main', 'Second'],
+        'one was built in the order it is in'
+    );
+    assert.deepEqual(
+        other.scene.objects().map(object => object.name),
+        ['Second', 'Main'],
+        'and the other was not — which is the whole difference between the two orders'
+    );
+
+    assert.equal(activeCamera(first.scene), main, 'the first in canonical order');
+    assert.equal(activeCamera(other.scene), otherMain, 'and the same one over there');
+    assert.notEqual(activeCamera(other.scene), otherSecond);
+});
+
+test('the camera survives a save and a reload', () => {
+    // SERIALIZATION NORMALISES INSERTION ORDER TO CANONICAL ORDER (`serializeScene`), so a
+    // scene reloaded from a payload has a different `objects()` from the scene it was written
+    // from. Reading insertion order therefore made a reload able to change the shot.
+    const it = staged();
+    it.camera('Second');
+    const main = it.camera('Main');
+    it.scene.reparent(main, null, 0);
+
+    const reloaded = deserializeScene(
+        JSON.parse(JSON.stringify(serializeScene(it.scene))),
+        { registry: it.scene.registry }
+    );
+
+    assert.equal(activeCamera(it.scene).name, 'Main');
+    assert.equal(activeCamera(reloaded).name, 'Main', 'the same camera, before and after');
+    assert.equal(activeCamera(reloaded).id, main.id, 'and it is the same Object');
+});
+
+test('a camera parented to something is reached where the hierarchy puts it', () => {
+    // Depth first under each root (ADR-0034 §3.1), so a camera riding the player is found
+    // before a camera that is a root listed after the player — which is also the order the
+    // Hierarchy shows them in.
+    const it = staged();
+    const player = it.plain('Player');
+    const rider = it.camera('Player Camera', player);
+    it.camera('Static Camera');
+
+    assert.deepEqual(
+        it.scene.objects().map(object => object.name),
+        ['Player', 'Player Camera', 'Static Camera']
+    );
+    assert.equal(activeCamera(it.scene), rider);
+
+    // Moved behind the other root, the answer moves with it: the rule reads the shape.
+    it.scene.reparent(player, null, 1);
+    assert.equal(activeCamera(it.scene).name, 'Static Camera');
+});
+
+test('a camera nobody has switched off is the one that is used', () => {
+    // ELIGIBILITY IS THE PAIR OF QUESTIONS EVERYTHING ELSE ALREADY ASKS (ADR-0004): is the
+    // Object active, and is this component switched on. The renderer skips both, the runtime
+    // skips both, and looking through something the renderer would not draw would be the
+    // odd one out.
+    const it = staged();
+    const first = it.camera('First');
+    const second = it.camera('Second');
+
+    first.active = false;
+    assert.equal(activeCamera(it.scene), second, 'an inactive Object is not looked through');
+
+    first.active = true;
+    first.getComponent('Camera').active = false;
+    assert.equal(activeCamera(it.scene), second, 'nor is a switched-off lens');
+
+    second.getComponent('Camera').active = false;
+    assert.equal(activeCamera(it.scene), null,
+        'and none eligible reads as none, rather than falling back to a camera that is off');
+});
+
+test('a fresh camera carries no activation flag, and is eligible all the same', () => {
+    // `active` belongs to the Component CONTRACT rather than to any schema (ADR-0004), so an
+    // untouched `Camera` has none at all. The test is `!== false`, never `=== true`.
+    const it = staged();
+    const only = it.camera('Main');
+
+    assert.equal(only.getComponent('Camera').active, undefined);
+    assert.equal(activeCamera(it.scene), only);
+});
+
+test('asking a scene that is not one answers nothing rather than failing', () => {
+    assert.equal(activeCamera(null), null);
+    assert.equal(activeCamera({}), null);
 });

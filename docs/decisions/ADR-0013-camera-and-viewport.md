@@ -3,6 +3,16 @@
 - **Statut :** **accepté** (2026-08-12)
 - **Décide :** ce qu'est une caméra dans le modèle `Object → Components`, et ce qui la distingue du viewport
 - **Lié à :** ADR-0002 (Transform), ADR-0004 (Components), ADR-0012 (erreurs)
+- **Précisé le 2026-09-11 :** *laquelle*, quand une scène en porte plusieurs. `activeCamera(scene)`
+  rend **la première caméra éligible dans l'ordre canonique** — l'ordre hiérarchique
+  qu'ADR-0034 §3.1 définit et que `Runtime.step()` et `SceneRenderer` emploient déjà ; éligible
+  au sens des deux questions qu'ADR-0004 pose partout ailleurs (l'Object est actif, le
+  Component n'est pas éteint). Le Preview lisait `scene.objects()`, donc l'ordre d'insertion :
+  deux clients tenant la même scène pouvaient regarder par deux caméras différentes selon
+  lequel l'avait rechargée. **Aucune notion de caméra principale, de priorité ou de `main`
+  n'est introduite** : choisir parmi plusieurs caméras est une fonctionnalité produit que
+  personne n'a conçue, et ce qui est réparé est que la réponse dépendait de l'histoire de la
+  scène plutôt que de son état.
 
 ---
 

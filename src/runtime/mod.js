@@ -18,7 +18,7 @@ export { BlendMode, RENDERER_OPERATIONS, missingOperations, assertRenderer } fro
 export { Canvas2DRenderer } from './rendering/canvas2d.js';
 export { SceneRenderer } from './rendering/scene-renderer.js';
 export { Viewport } from './rendering/viewport.js';
-export { Camera, viewMatrix, worldToScreen, screenToWorld } from './rendering/camera.js';
+export { Camera, activeCamera, viewMatrix, worldToScreen, screenToWorld } from './rendering/camera.js';
 
 export { RectangleRenderer } from './rendering/components/rectangle-renderer.js';
 export { Sprite } from './rendering/components/sprite.js';

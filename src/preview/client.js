@@ -23,6 +23,7 @@ import {
     Canvas2DRenderer,
     Runtime,
     Viewport,
+    activeCamera,
     createGraphInterpreter,
     registerBuiltIns,
     viewMatrix
@@ -214,7 +215,13 @@ function run(mount, scene, behaviors) {
 
     // THE CAMERA IS AN OBJECT OF THE SCENE, not a setting of this page (ADR-0013). A scene
     // that ships without one is still playable, centred — `viewMatrix` says so itself.
-    const cameraOf = () => scene.objects().find(object => object.getComponent?.('Camera')) ?? null;
+    //
+    // WHICH ONE, WHEN THERE ARE SEVERAL, IS THE RUNTIME'S ANSWER AND NOT THIS PAGE'S. It used
+    // to read `scene.objects()`, whose order is a fact about how the scene was BUILT — so two
+    // clients holding the same scene could look through two different cameras depending on
+    // which of them had reloaded it. `activeCamera()` asks in canonical order, the same order
+    // the runtime simulates and the renderer draws in (ADR-0034 §3.1).
+    const cameraOf = () => activeCamera(scene);
     // THE DEVICE SCALE SITS ABOVE THE VIEW, so `zoom` keeps meaning CSS pixels per world
     // unit and a game looks the same size here as it does in the Editor. Feeding the
     // viewport device pixels instead drew every scene at 1/density — a 2x display showed a

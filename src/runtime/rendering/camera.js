@@ -48,6 +48,45 @@ export class Camera {
 }
 
 /**
+ * Which Object of a scene a game looks through.
+ *
+ * THE FIRST ELIGIBLE CAMERA IN CANONICAL ORDER, and every word of that is an existing
+ * contract rather than a new one:
+ *
+ *   canonical order   `findByComponent()` answers in hierarchy order — roots in their
+ *                     order, depth first under each — which is the one order that is a
+ *                     function of the scene's STATE rather than of its history (ADR-0034
+ *                     §3.1). `Runtime.step()` runs in it and `SceneRenderer` draws in it.
+ *   eligible          the same two questions the renderer asks of everything it draws and
+ *                     the runtime asks of everything it runs: is the Object active, and is
+ *                     this component switched on (ADR-0004, ADR-0012).
+ *   the first         no priority, no `main`, no `primary`. Picking one of several cameras
+ *                     is a product feature nobody has designed; what this fixes is that the
+ *                     answer used to depend on the order objects happened to JOIN the scene.
+ *
+ * THE BUG IT CLOSES, EXACTLY. `preview/client.js` read `scene.objects()`, whose order is a
+ * fact about how a scene was BUILT: a reparent leaves it behind, a reload rewrites it from
+ * the payload, and a deletion undone puts the object back at the end. Two clients holding
+ * the very same scene — one loaded from a snapshot, one that had been edited into that state
+ * — could therefore look through two different cameras, and nothing on screen would say why.
+ * It is the same defect ADR-0034 §3.1 measured on `findByTag`, one consumer later.
+ *
+ * NOTHING ELIGIBLE READS AS NO CAMERA, deliberately. A scene with no camera is playable and
+ * centred (`viewMatrix` says so itself), and a scene whose only camera has been switched off
+ * is the same statement made on purpose — falling back to it would make `active` mean nothing
+ * on the one component where it is the obvious way to cut between two shots.
+ *
+ * @param {object} scene - The scene to look through
+ * @returns {object|null} The Object carrying the camera, or null
+ */
+export function activeCamera(scene) {
+    const cameras = scene?.findByComponent?.(Camera.type) ?? [];
+
+    return cameras.find(object => object.active
+        && object.getComponent?.(Camera.type)?.active !== false) ?? null;
+}
+
+/**
  * Build the view matrix a renderer needs from a camera and a viewport.
  *
  * @param {object|null} camera - The Object acting as the camera; null looks at the origin
