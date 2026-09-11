@@ -58,10 +58,20 @@ export class Field extends Element {
             min-width: 0;
         }
 
+        /* EVERY VALUE CELL IS THE HEIGHT OF A CONTROL, WHATEVER IT HOLDS. A switch is 15 px
+           tall where a text box is one --px-control, so a boolean row used to be seven
+           pixels shorter than the rows around it and its toggle sat seven pixels higher than
+           the inputs above and below — read as a misalignment, and "fixed" everywhere else
+           in this industry with a margin nobody can ever remove.
+
+           The cell states the height instead, and the switch centres inside it. Nothing is
+           nudged and no width moves: min-height only ever ADDS to a cell that was too short,
+           so every other control measures exactly as it did. */
         .control {
             display: flex;
             align-items: center;
             gap: var(--px-space-1);
+            min-height: var(--px-control);
             min-width: 0;
         }
 

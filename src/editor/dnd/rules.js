@@ -26,7 +26,8 @@ import {
     PropertyType,
     Transform,
     componentSchema,
-    createId
+    createId,
+    elementOf
 } from '../../core/mod.js';
 import { ResourceKind, isFolder, canMove } from '../../project/mod.js';
 import { Sprite } from '../../runtime/mod.js';
@@ -272,8 +273,9 @@ export const RULES = [
         refuses: (payload, target) => (acceptsObject(target)
             ? null
             : `${target.label ?? target.prop} does not hold an Object reference.`),
-        describe: (payload, target) =>
-            `Assign ${payload.name || 'this Object'} to ${target.label ?? target.prop}`,
+        describe: (payload, target) => (holdsObjectList(target)
+            ? `Add ${payload.name || 'this Object'} to ${target.label ?? target.prop}`
+            : `Assign ${payload.name || 'this Object'} to ${target.label ?? target.prop}`),
         // A TARGET THAT HAS SINCE BEEN DELETED IS NOT CHECKED, deliberately. A reference to
         // an Object that is gone is a state of the scene and not a malformed value: it is
         // kept, it resolves to nothing, and it is shown in red where a human sees it
@@ -821,7 +823,7 @@ export function instantiator(resource) {
  * @returns {boolean} True when the property takes it
  */
 export function acceptsResource(target, resource) {
-    if (!target || !resource) return false;
+    if (!target || !resource || target.readonly) return false;
 
     const clause = target.accepts ?? componentClause(target);
     if (!clause) return false;
@@ -851,8 +853,24 @@ export function acceptsResource(target, resource) {
  * @returns {boolean} True when the property holds an Object reference
  */
 export function acceptsObject(target) {
+    if (!target?.component || !target.prop || target.readonly) return false;
+
+    const declared = componentSchema(target.component)?.[target.prop] ?? null;
+    if (declared?.type === PropertyType.OBJECTREF) return true;
+
+    // A LIST OF REFERENCES TAKES ONE TOO, AND THE RULE IS THE SCALAR ONE ASKED ONE LEVEL
+    // DOWN. `elementOf()` is the Core's own reader of what a list holds (ADR-0031 §3), so a
+    // `list<objectref>` becomes a drop target by declaring what it holds rather than by a
+    // second rule about lists — the same shape `portTypeOf()` and `storedValueOf()` already
+    // take at the graph boundary (ADR-0034 §3.5).
+    return elementOf(declared)?.type === PropertyType.OBJECTREF;
+}
+
+/** Whether a property row holds a LIST of Object references rather than one. */
+function holdsObjectList(target) {
     if (!target?.component || !target.prop) return false;
-    return componentSchema(target.component)?.[target.prop]?.type === PropertyType.OBJECTREF;
+    return elementOf(componentSchema(target.component)?.[target.prop] ?? null)?.type
+        === PropertyType.OBJECTREF;
 }
 
 /**
@@ -936,8 +954,22 @@ function componentClause(target) {
  * @param {string|null} id - The identity to store
  */
 function assignReference(target, id) {
-    if (target.assign) target.assign(id);
-    else target.component.setProperty(target.prop, id);
+    if (target.assign) {
+        target.assign(id);
+        return;
+    }
+
+    // A LIST IS ADDED TO, NEVER REPLACED. Dropping a second Object on a `list<objectref>`
+    // means "and this one too" — replacing would throw away the entries a creator put there,
+    // and it is the one reading `<px-list>`'s own Add button already gives the gesture.
+    if (holdsObjectList(target)) {
+        const held = target.component[target.prop];
+        const list = globalThis.Array.isArray(held) ? held : [];
+        target.component.setProperty(target.prop, [...list, id]);
+        return;
+    }
+
+    target.component.setProperty(target.prop, id);
 }
 
 /**

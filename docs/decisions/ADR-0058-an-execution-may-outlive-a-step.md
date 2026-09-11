@@ -11,8 +11,10 @@
   handle n'est pas mémoïsé), ADR-0035 (ordre de `Runtime.step()`), ADR-0056 §4 (un nœud de
   flux peut rendre une valeur), ADR-0057 (une graine, deux flux)
 - **Ferme :** le dernier point ouvert d'ADR-0045 §11.5 — `Delay`
-- **Ne décide pas :** la reprise d'une simulation à mi-partie ; les nœuds temporels qui
-  viendront après — voir §9
+- **Étendu le 2026-09-11 :** §6 — un nœud peut demander à être **réexécuté** plutôt qu'à
+  différer ce qui le suit. `Wait Until` et `Every` en découlent sans autre mécanisme
+- **Ne décide pas :** la reprise d'une simulation à mi-partie ; `Tween`, qui demande un
+  contrat de plus — voir §10
 
 ---
 
@@ -55,7 +57,7 @@ STATE PER COMPONENT […] two Controllers must each get their own first step ».
 |---|---|
 | **B — l'interprète** | L'interprète est une lecture partagée par toutes les instances du type. Y mettre l'état d'attente ferait qu'un `Delay` sur un ennemi retiendrait le tir d'un autre. |
 | **C — le Runtime, comme file d'exécutions suspendues** | Le Runtime ne connaît ni nœud, ni port, ni table de valeurs produites : il connaît des Components. Lui apprendre tout cela pour porter une liste serait un scheduler générique — et il faudrait alors écrire une passe d'annulation pour chaque façon dont un Object peut disparaître. |
-| **Sur le Component, en propriété** | Ce serait de l'état de scène : sérialisé, répliqué, montré dans l'Inspector. Une attente n'est rien de tout cela (§7). |
+| **Sur le Component, en propriété** | Ce serait de l'état de scène : sérialisé, répliqué, montré dans l'Inspector. Une attente n'est rien de tout cela (§8). |
 | **Sur le nœud** | Le graphe est immuable pour le Runtime (ADR-0016 §7) et partagé par toutes les instances. C'est le bug que §2.1 « B » décrit, une couche plus bas. |
 
 ### 2.2 Ce que le choix donne gratuitement
@@ -170,7 +172,51 @@ attente dont la fin bouge n'est pas une attente, et rien sur la toile ne le dira
 
 ---
 
-## 6. Déterminisme et budget
+## 6. Deux mots, et le second est « redemande-moi »
+
+`Delay` gare **ce qui suit** le nœud. Deux autres formes d'attente ne le peuvent pas : une
+condition doit être **relue**, et un pulse doit **repartir**. Ni l'une ni l'autre n'est un
+nœud qui a fini.
+
+> **`wait` retarde le flux que le nœud nomme. `again` ramène à CE nœud.**
+
+Une continuation `again` est garée **au nœud lui-même** plutôt qu'à ce qui le suit, donc la
+reprise ré-exécute son `execute`. C'est tout ce qu'il fallait, et cela n'ajoute **aucun état
+de nœud** nulle part :
+
+| Nœud | Ce qu'il répond | Ce que cela veut dire |
+|---|---|---|
+| `Delay` | `{ wait: s, next: 'then' }` | j'ai fini ; prends `Then` dans `s` secondes |
+| `Wait Until` | `'then'` ou `{ again: true }` | vrai à l'arrivée, sinon redemande-moi au prochain pas |
+| `Every` | `{ again: i }` puis `{ next: 'then', again: i }` | arme l'horloge, puis pulse et réarme |
+
+`again: 0` — ce que `true` veut dire — est **le prochain pas**, pas l'absence d'attente.
+C'est la seule différence de lecture avec `wait`, et la raison pour laquelle c'est un mot
+séparé plutôt qu'un drapeau sur le même.
+
+### 6.1 Une seule chose distingue les deux passages d'un nœud
+
+`io.resumed`. Un booléen, **dérivé de la continuation** et stocké nulle part : arriver par le
+fil arme l'horloge d'`Every`, revenir la fait pulser. Sans lui il aurait fallu retenir
+« quand ai-je pulsé pour la dernière fois » quelque part — c'est-à-dire inventer l'état par
+nœud et par instance que §2.1 refuse.
+
+**L'overshoot est reporté, et borné à un intervalle.** Le pas qui franchit l'échéance la
+dépasse d'une fraction ; la perdre à chaque tour fait dériver un intervalle de 1 s à 1,2 s
+quand le pas vaut 0,3 s. Le report est plafonné à un intervalle, ce qui empêche un intervalle
+de zéro — « à chaque pas » — d'accumuler une dette qu'il ne rembourserait jamais.
+
+### 6.2 Pourquoi `Every` et pas un événement `On Timer`
+
+Un nœud d'entrée est exécuté par l'interprète à **chaque** update (`runEvent`). Un événement
+répétitif devrait donc retenir quand il a pulsé pour la dernière fois, et le seul endroit
+serait un état par nœud et par instance — une seconde sorte d'état que cet ADR n'a
+délibérément pas. `On Start → Every` dit la même phrase avec les pièces qui existent, et se
+lit comme une phrase.
+
+---
+
+## 7. Déterminisme et budget
 
 Le temps vient de `ctx.deltaTime` et de rien d'autre : pas d'horloge murale, pas de `Promise`,
 pas de `setTimeout`, pas d'ordonnanceur du navigateur. Le pas est fixe et identique sur un
@@ -187,7 +233,7 @@ Ce qu'elle n'obtient pas, c'est le droit d'aller plus loin qu'un événement.
 
 ---
 
-## 7. Ce n'est pas de l'état de Scene
+## 8. Ce n'est pas de l'état de Scene
 
 Une continuation vit dans une fermeture, tenue par une WeakMap. Rien n'en atteint le Component,
 donc `serializeScene()` n'en écrit rien et il n'y a pas de champ à ignorer.
@@ -200,7 +246,7 @@ qui rejoint reçoit un instantané.
 
 ---
 
-## 8. Contrats observables
+## 9. Contrats observables
 
 | Contrat | Vérifiable par |
 |---|---|
@@ -218,20 +264,25 @@ qui rejoint reçoit un instantané.
 | Rien d'une attente n'apparaît dans un payload de scène | idem |
 | Deux Runtime, mêmes pas : mêmes reprises, payload identique | idem |
 | Un handle produit avant l'attente est encore utilisable après | idem |
+| `Wait Until` relit sa condition à chaque pas, et passe une seule fois | idem |
+| Une condition déjà vraie ne suspend rien | idem |
+| Deux exécutions d'un `Wait Until` sont retenues séparément | idem |
+| `Every` pulse après son intervalle, pas à l'entrée, et ne dérive pas | idem |
+| Un intervalle de zéro pulse une fois par pas, jamais dans un pas | idem |
 
 ---
 
-## 9. Ce que cet ADR ne décide pas, et ce qu'il rend possible
+## 10. Ce que cet ADR ne décide pas, et ce qu'il rend possible
 
 | Point ouvert | Pourquoi |
 |---|---|
 | **Reprendre une simulation à mi-partie** | §7. Même position qu'ADR-0057 §8 |
+| **`Tween`** | Il lui faut ce qu'une continuation ne porte pas : l'état du NŒUD pendant l'attente — le temps écoulé depuis son entrée. Une continuation retient *où* reprendre, jamais *ce que le nœud était en train de faire*. Le contrat manquant est donc un champ de plus sur l'entrée garée et un lecteur de plus sur `io` ; c'est une vraie extension, pas un nœud, et elle n'est pas prise ici |
 | **Annuler une attente depuis le graphe** | « arrêter ce qui attend » est un geste produit que personne n'a conçu ; rien ici ne l'empêche, et une continuation est déjà adressable par l'instance qui la tient |
 | **Un `undo` pendant une partie** | Sans objet : l'historique s'arrête à la porte du mode Play (ADR-0029 §5) |
 
-Ce que le mécanisme rend naturel, sans rien décider de plus : **`Wait Until`** (une condition
-relue à chaque reprise plutôt qu'un temps décompté), **`Every N seconds`** (une continuation qui
-se re-gare elle-même), **`Tween`** (une continuation reprise à chaque pas jusqu'à son terme, qui
-écrit une valeur interpolée au passage), et **`On Timer`**. Tous sont la même structure avec une
-condition de reprise différente — ce qui est précisément la raison de ne pas avoir nommé cet
-ADR d'après `Delay`.
+**`Wait Until` et `Every` sont arrivés le jour même** (§5), et ils n'ont rien coûté d'autre que
+le mot `again` : c'est la mesure que cet ADR décrivait bien un mécanisme et non un nœud. Ce
+qui reste naturellement à portée, avec le contrat de §10 pour `Tween` : **`Tween`**, **`Debounce`**,
+**`Cooldown`**, **`Sequence With Pauses`** — tous la même structure avec une condition de reprise
+différente.

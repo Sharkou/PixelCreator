@@ -2249,6 +2249,10 @@ export class Inspector extends Element {
             component: target,
             prop: descriptor.name,
             label: descriptor.label,
+            // A ROW A CREATOR CANNOT TYPE INTO IS A ROW A DROP MAY NOT WRITE EITHER. It was
+            // the one way round a `readonly` declaration, and it was open only because the
+            // rules had no way to see the word (ADR-0023 §3).
+            readonly: descriptor.readonly === true,
             accepts: descriptor.accepts ?? undefined
         }, { accept: descriptor.accepts?.mime ?? '' });
         // The panel drew the label; the field decides whether dragging it means

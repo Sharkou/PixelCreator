@@ -194,7 +194,7 @@ function resumeDue(compiled, state, budget) {
     // A FRESH BUDGET EACH, BECAUSE A RESUMED EXECUTION IS AN ORDINARY ONE. It walks the same
     // stack, through the same nodes, with the same bound on how far it may run in one step —
     // what it does not get is a way to run further than an event would (ADR-0058 §6).
-    for (const entry of due) walk(compiled, [entry.to], entry.produced, state, budget);
+    for (const entry of due) walk(compiled, [entry.to], entry.produced, state, budget, entry);
 }
 
 /**
@@ -386,8 +386,15 @@ function runFlow(compiled, start, state, budget) {
  * @param {object} state - The running state
  * @param {number} budget - Nodes this execution may run
  */
-function walk(compiled, stack, produced, state, budget) {
+function walk(compiled, stack, produced, state, budget, resumed = null) {
     let steps = 0;
+
+    // THE CONTINUATION THAT RE-ENTERED, AND IT APPLIES TO THE FIRST NODE ONLY. A node that
+    // asked to be run again has to be able to tell that pass from the one that arrived down a
+    // wire — `Every` starts its clock on the way in and fires on the way back — and it has to
+    // be told how far PAST its deadline this step landed, or a repeating node drifts by half
+    // a step every time round (ADR-0058 §5.1).
+    let entered = resumed;
 
     while (stack.length > 0) {
         if (++steps > budget) {
@@ -407,7 +414,14 @@ function walk(compiled, stack, produced, state, budget) {
         // `Get Property` read before a `Set Property` and keep serving the old value after
         // it — the graph would then disagree with the model it just wrote.
         const frame = { values: new Map(), produced };
-        const result = definition.execute ? definition.execute(io(compiled, node, state, frame, new Set())) : null;
+        // `<= 0` when the step overshot the deadline, `0` on the way in.
+        const overshoot = entered ? globalThis.Math.min(entered.remaining, 0) : 0;
+        const wasResumed = entered !== null;
+        entered = null;
+
+        const result = definition.execute
+            ? definition.execute(io(compiled, node, state, frame, new Set(), wasResumed))
+            : null;
 
         const values = producedValues(result);
         if (values) {
@@ -432,12 +446,55 @@ function walk(compiled, stack, produced, state, budget) {
             continue;
         }
 
+        // THE NODE ASKED TO BE ASKED AGAIN (ADR-0058 §5). It is parked at ITSELF rather than
+        // at what follows it, so resuming re-runs its `execute` — which is what lets a
+        // condition be re-read (`Wait Until`) or a clock be restarted (`Every`) without any
+        // node-local state existing anywhere. It does not stop the flow: a node may fire a
+        // continuation AND come back, which is exactly what repeating means.
+        //
+        // THE OVERSHOOT IS CARRIED, AND CLAMPED TO ONE INTERVAL. Without it a repeating node
+        // loses the fraction of a step it landed past its deadline, every time, and an
+        // interval of 1 s at 0.3 s a step drifts into 1.2 s. Clamping stops an interval of
+        // zero — which is "every step" — from accumulating a debt it can never repay.
+        const back = againOf(result);
+        if (back !== null) {
+            const carried = globalThis.Math.max(overshoot, -back);
+            state.pending?.push({
+                remaining: back + carried,
+                to: { node: node.id, port: 'in' },
+                produced
+            });
+        }
+
         // Reversed, so the first declared continuation is the first one popped.
         for (let index = continuations.length - 1; index >= 0; index--) {
             const next = compiled.flow.get(portKey(node.id, continuations[index]));
             if (next) stack.push(next.to);
         }
     }
+}
+
+/**
+ * How long a node asked to wait before being run AGAIN, or null when it asked for nothing.
+ *
+ * THE OTHER HALF OF THE SUSPENSION VOCABULARY, AND THE TWO ARE NOT THE SAME QUESTION:
+ *
+ *   `wait`   delay the flow this node names — the node is finished, `Delay`
+ *   `again`  come back to THIS node — the node is not finished, `Wait Until`, `Every`
+ *
+ * A node that asks for `0` is asking for the next step, which is the shortest wait there is
+ * and not the absence of one — that is the one place `again` reads differently from `wait`,
+ * and it is why it is a separate word rather than a flag on the same one.
+ *
+ * @param {string|string[]|object|null|undefined} result - What `execute` answered
+ * @returns {number|null} Seconds before the node is run again, or null
+ */
+function againOf(result) {
+    if (!result || typeof result !== 'object' || globalThis.Array.isArray(result)) return null;
+
+    const again = result.again;
+    if (again === true) return 0;
+    return typeof again === 'number' && globalThis.Number.isFinite(again) && again >= 0 ? again : null;
 }
 
 /**
@@ -471,9 +528,13 @@ function waitOf(result) {
  * carrying it, and the step context. Nothing global, nothing injected from an environment,
  * and no way to reach storage — which is the whole reason a graph is safe to share.
  */
-function io(compiled, node, state, frame, visiting) {
+function io(compiled, node, state, frame, visiting, resumed = false) {
     return {
         node,
+        // WHETHER THIS PASS CAME BACK OR CAME IN (ADR-0058 §5). The only thing a repeating
+        // node needs to tell its two passes apart, and it is derived from the continuation
+        // rather than stored anywhere: there is still no node-local state.
+        resumed,
         self: state.self,
         ctx: state.ctx,
         component: state.component,

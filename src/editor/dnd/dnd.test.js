@@ -451,6 +451,7 @@ const Link = defineComponent({
     label: 'Link',
     properties: {
         target: { id: 'p_target', type: PropertyType.OBJECTREF, default: null },
+        friends: { id: 'p_friends', type: PropertyType.ARRAY, of: PropertyType.OBJECTREF, default: [] },
         count: { id: 'p_count', type: PropertyType.NUMBER, default: 0 },
         label: { id: 'p_label', type: PropertyType.STRING, default: '' },
         armed: { id: 'p_armed', type: PropertyType.BOOLEAN, default: false }
@@ -1586,4 +1587,71 @@ test('an Object system property dropped on a node keeps its namespace', () => {
 
     assert.deepEqual(written, [['property', 'Object/active']],
         'the namespace travels with the property, in one write');
+});
+
+// --- an Object let go on a LIST of references ----------------------------------------------
+
+test('a list of Object references takes a drop, and adds rather than replaces', () => {
+    // THE SCALAR RULE ASKED ONE LEVEL DOWN. `elementOf()` is the Core's own reader of what a
+    // list holds (ADR-0031 §3), so this costs no second rule about lists — the same shape the
+    // graph boundary already takes for `array<objectref>` (ADR-0034 §3.5).
+    const it = linked();
+    const target = propertyTarget(it.link, 'friends');
+    const other = it.scene.add(new SceneObject('Other'));
+
+    assert.equal(acceptsObject(target), true);
+    assert.equal(canDrop(objectPayload(it.player), target).allowed, true);
+    assert.match(canDrop(objectPayload(it.player), target).reason, /^Add Player to/);
+
+    performDrop(objectPayload(it.player), target, it);
+    assert.deepEqual(it.link.friends, [it.player.id]);
+
+    performDrop(objectPayload(other), target, it);
+    assert.deepEqual(it.link.friends, [it.player.id, other.id], 'and this one too');
+});
+
+test('adding to a list of references is one Operation, so it undoes', () => {
+    const it = linked();
+    const seen = [];
+    it.scene.operations.on('operation', operation => seen.push(operation));
+
+    performDrop(objectPayload(it.player), propertyTarget(it.link, 'friends'), it);
+
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].type, 'SET_PROPERTY');
+    assert.equal(seen[0].prop, 'friends');
+    assert.deepEqual(seen[0].value, [it.player.id]);
+    assert.deepEqual(seen[0].previous, []);
+});
+
+test('a list of something else still refuses an Object, and says so', () => {
+    const Numbers = defineComponent({
+        type: 'res_numbers',
+        label: 'Numbers',
+        properties: { scores: { id: 'p_scores', type: PropertyType.ARRAY, of: PropertyType.NUMBER, default: [] } }
+    });
+    const it = linked();
+    it.scene.registry.register(Numbers);
+    const numbers = it.hero.addComponent(new Numbers());
+    const target = propertyTarget(numbers, 'scores');
+
+    assert.equal(acceptsObject(target), false);
+    assert.match(canDrop(objectPayload(it.player), target).reason, /does not hold an Object reference/);
+});
+
+test('a row a creator cannot type into is a row a drop may not write either', () => {
+    // READONLY WAS THE ONE WAY ROUND THE DECLARATION, and it was open only because the rules
+    // had no way to see the word (ADR-0023 §3).
+    const it = linked();
+    const sprite = it.hero.addComponent(new Sprite());
+
+    const locked = { ...propertyTarget(it.link, 'target'), readonly: true };
+    assert.equal(acceptsObject(locked), false);
+    assert.equal(canDrop(objectPayload(it.player), locked).allowed, false);
+    assert.equal(it.link.target, null);
+
+    const lockedResource = {
+        zone: DropZone.PROPERTY, component: sprite, prop: 'source', label: 'Source', readonly: true
+    };
+    assert.equal(acceptsResource(lockedResource, { id: 'r1', kind: 'asset', mime: 'image/png' }), false);
 });

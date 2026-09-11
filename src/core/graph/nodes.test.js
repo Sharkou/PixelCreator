@@ -1309,3 +1309,46 @@ test('Random draws from the simulation it was handed, and from nothing else', ()
     // than inventing one — the family of non-answer ADR-0034 §3.4 names.
     assert.equal(definition.evaluate({ input: port => bounds[port], ctx: {} }).value, 5);
 });
+
+test('Sign and Square Root answer the way the rest of the Math shelf answers', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const answer = (type, value) => registry.get(type).evaluate({ input: () => value }).result;
+
+    assert.deepEqual([-5, -0.1, 0, 0.1, 5].map(value => answer('math.sign', value)), [-1, -1, 0, 1, 1]);
+
+    assert.equal(answer('math.squareRoot', 9), 3);
+    assert.equal(answer('math.squareRoot', 0), 0);
+    // NOT `NaN`: a non-finite reading is `0` in `Clamp`, `Lerp`, `Delay` and `Every` too, and
+    // a NaN loose in a graph poisons everything downstream without saying where it began.
+    assert.equal(answer('math.squareRoot', -4), 0);
+    assert.equal(answer('math.squareRoot', 'nine'), 0);
+
+    for (const type of ['math.sign', 'math.squareRoot']) {
+        const definition = registry.get(type);
+        assert.equal(definition.category, 'Math');
+        const ports = portsOf(definition, { id: 'n', type, params: {} }, {});
+        assert.deepEqual(ports.inputs.map(port => port.id), ['value']);
+        assert.deepEqual(ports.outputs.map(port => port.id), ['result']);
+        assert.equal(ports.outputs[0].type, PropertyType.NUMBER);
+    }
+});
+
+test('the arithmetic a creator asks for by name is all on one shelf', () => {
+    // THE AUDIT, AS A TEST. Every one of these was asked for by name; the point of writing
+    // them down is that the next person asking gets an answer from the suite rather than
+    // from a search.
+    const registry = registerStandardNodes(new NodeRegistry());
+    const wanted = {
+        'math.absolute': 'Absolute', 'math.min': 'Min', 'math.max': 'Max',
+        'math.floor': 'Floor', 'math.ceil': 'Ceil', 'math.round': 'Round',
+        'math.modulo': 'Modulo', 'math.sign': 'Sign', 'math.squareRoot': 'Square Root',
+        'logic.and': 'And', 'logic.or': 'Or', 'logic.not': 'Not',
+        'compare.equal': 'Equal', 'compare.notEqual': 'Not Equal',
+        'compare.less': 'Less Than', 'compare.lessOrEqual': 'Less Or Equal',
+        'compare.greater': 'Greater Than', 'compare.greaterOrEqual': 'Greater Or Equal'
+    };
+
+    for (const [type, label] of globalThis.Object.entries(wanted)) {
+        assert.equal(registry.get(type)?.label, label, type);
+    }
+});

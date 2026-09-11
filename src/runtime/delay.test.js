@@ -510,3 +510,267 @@ test('a wait carries the values its execution had already produced', () => {
     assert.equal(model.getComponent('Transform').x, 7, 'and only that one moved');
     assert.deepEqual(failures, []);
 });
+
+// --- Wait Until: the same mechanism, asked a question instead of a duration ------------------
+
+/** `On Start → Wait Until(runs > 0) → mark = 1`. */
+function untilRuns() {
+    return graphOf(
+        [
+            { id: 'start', type: 'event.start', x: 0, y: 0, params: {} },
+            { id: 'read', type: 'property.get', x: 0, y: 0, params: { property: 'p_runs' } },
+            { id: 'zero', type: 'value.number', x: 0, y: 0, params: { value: 0 } },
+            { id: 'test', type: 'compare.greater', x: 0, y: 0, params: {} },
+            { id: 'hold', type: 'flow.waitUntil', x: 0, y: 0, params: {} },
+            mark('write', 1)
+        ],
+        [
+            wire('f1', ['start', 'out'], ['hold', 'in']),
+            wire('f2', ['hold', 'then'], ['write', 'in']),
+            wire('d1', ['read', 'value'], ['test', 'a']),
+            wire('d2', ['zero', 'value'], ['test', 'b']),
+            wire('d3', ['test', 'result'], ['hold', 'condition'])
+        ]
+    );
+}
+
+test('Wait Until holds while the condition is false, and the condition keeps being read', () => {
+    // THE OPPOSITE OF `Delay`, AND IT IS THE POINT: what it waits for is precisely something
+    // that changes, so capturing it on the way in would be capturing the wrong thing.
+    const it = game(untilRuns(), { step: 0.5 });
+
+    for (let step = 0; step < 5; step++) it.runtime.step();
+    assert.equal(values(it).mark, 0, 'five steps of a condition that is still false');
+
+    values(it).runs = 1;
+    it.runtime.step();
+    assert.equal(values(it).mark, 1, 'the step after it became true');
+
+    values(it).mark = 0;
+    for (let step = 0; step < 5; step++) it.runtime.step();
+    assert.equal(values(it).mark, 0, 'and it is taken once, not once per step');
+    assert.deepEqual(it.failures, []);
+});
+
+test('a condition that is already true is no wait at all', () => {
+    const it = game(untilRuns(), { step: 0.5 });
+    values(it).runs = 1;
+
+    it.runtime.step();
+
+    assert.equal(values(it).mark, 1, 'straight through, in the step that reached it');
+});
+
+test('Wait Until holds no matter how long, and costs one node a step', () => {
+    const it = game(untilRuns(), { step: 0.5 });
+    const behavior = it.behaviors.behaviorFor(values(it));
+
+    for (let step = 0; step < 200; step++) it.runtime.step();
+
+    assert.equal(behavior.waiting, 1, 'still exactly one execution held');
+    assert.equal(values(it).mark, 0);
+    assert.deepEqual(it.failures, [], 'a hundred seconds of holding is not a runaway graph');
+});
+
+test('two executions of one Wait Until are held independently', () => {
+    const it = game(graphOf(
+        [
+            { id: 'tick', type: 'event.update', x: 0, y: 0, params: {} },
+            { id: 'read', type: 'property.get', x: 0, y: 0, params: { property: 'p_runs' } },
+            { id: 'zero', type: 'value.number', x: 0, y: 0, params: { value: 0 } },
+            { id: 'test', type: 'compare.greater', x: 0, y: 0, params: {} },
+            { id: 'hold', type: 'flow.waitUntil', x: 0, y: 0, params: {} },
+            { id: 'bump', type: 'property.set', x: 0, y: 0, params: { property: 'p_mark' } },
+            { id: 'markRead', type: 'property.get', x: 0, y: 0, params: { property: 'p_mark' } },
+            { id: 'one', type: 'value.number', x: 0, y: 0, params: { value: 1 } },
+            { id: 'add', type: 'math.add', x: 0, y: 0, params: {} }
+        ],
+        [
+            wire('f1', ['tick', 'out'], ['hold', 'in']),
+            wire('f2', ['hold', 'then'], ['bump', 'in']),
+            wire('d1', ['read', 'value'], ['test', 'a']),
+            wire('d2', ['zero', 'value'], ['test', 'b']),
+            wire('d3', ['test', 'result'], ['hold', 'condition']),
+            wire('d4', ['markRead', 'value'], ['add', 'a']),
+            wire('d5', ['one', 'value'], ['add', 'b']),
+            wire('d6', ['add', 'result'], ['bump', 'value'])
+        ]
+    ), { step: 0.5 });
+
+    const behavior = it.behaviors.behaviorFor(values(it));
+
+    for (let step = 0; step < 3; step++) it.runtime.step();
+    assert.equal(behavior.waiting, 3, 'three steps started three held executions');
+    assert.equal(values(it).mark, 0);
+
+    values(it).runs = 1;
+    it.runtime.step();
+
+    // The three held executions all pass, plus the one this very step started (its condition
+    // is already true, so it goes straight through).
+    assert.equal(values(it).mark, 4, 'every held execution went through on its own account');
+    assert.equal(behavior.waiting, 0);
+});
+
+test('destroying the Object drops a Wait Until exactly as it drops a Delay', () => {
+    const it = game(untilRuns(), { step: 0.5 });
+
+    it.runtime.step();
+    it.scene.remove(it.holders[0]);
+    values(it).runs = 1;
+
+    for (let step = 0; step < 5; step++) it.runtime.step();
+
+    assert.equal(values(it).mark, 0);
+    assert.deepEqual(it.failures, []);
+});
+
+// --- Every: a pulse on an interval ------------------------------------------------------------
+
+/** `On Start → Every(interval) → runs + 1`. */
+function everySeconds(interval) {
+    return graphOf(
+        [
+            { id: 'start', type: 'event.start', x: 0, y: 0, params: {} },
+            { id: 'timer', type: 'flow.every', x: 0, y: 0, params: {}, inputs: { interval } },
+            { id: 'read', type: 'property.get', x: 0, y: 0, params: { property: 'p_runs' } },
+            { id: 'one', type: 'value.number', x: 0, y: 0, params: { value: 1 } },
+            { id: 'add', type: 'math.add', x: 0, y: 0, params: {} },
+            { id: 'write', type: 'property.set', x: 0, y: 0, params: { property: 'p_runs' } }
+        ],
+        [
+            wire('f1', ['start', 'out'], ['timer', 'in']),
+            wire('f2', ['timer', 'then'], ['write', 'in']),
+            wire('d1', ['read', 'value'], ['add', 'a']),
+            wire('d2', ['one', 'value'], ['add', 'b']),
+            wire('d3', ['add', 'result'], ['write', 'value'])
+        ]
+    );
+}
+
+test('Every pulses on its interval, and the first pulse comes after it', () => {
+    const it = game(everySeconds(1), { step: 0.5 });
+
+    it.runtime.step();
+    assert.equal(values(it).runs, 0, '"every second" is not "now, and every second"');
+
+    it.runtime.step();
+    it.runtime.step();
+    assert.equal(values(it).runs, 1, 'one second in');
+
+    it.runtime.step();
+    it.runtime.step();
+    assert.equal(values(it).runs, 2, 'and again a second later');
+    assert.deepEqual(it.failures, []);
+});
+
+test('Every keeps its cadence when the step does not divide the interval', () => {
+    // THE DRIFT THIS WOULD HAVE HAD. Re-arming at the full interval loses the fraction of a
+    // step it landed past its deadline, every time: 1 s at 0.3 s a step becomes 1.2 s, and a
+    // minute in the timer is a whole pulse behind.
+    const it = game(everySeconds(1), { step: 0.3 });
+
+    for (let step = 0; step < 101; step++) it.runtime.step();
+
+    // 100 pulses would be perfect; the clamp allows at most the one the last partial step owes.
+    assert.ok(Math.abs(it.runtime.clock.time - 30.3) < 1e-9);
+    assert.ok(values(it).runs >= 29 && values(it).runs <= 30, `${values(it).runs} pulses in 30 s`);
+});
+
+test('an interval of zero pulses every step, and never inside one', () => {
+    const it = game(everySeconds(0), { step: 0.5 });
+
+    it.runtime.step();
+    assert.equal(values(it).runs, 0, 'the step that armed it fires nothing');
+
+    it.runtime.step();
+    assert.equal(values(it).runs, 1, 'one per step');
+    it.runtime.step();
+    assert.equal(values(it).runs, 2);
+    assert.deepEqual(it.failures, [], 'never a runaway frame');
+});
+
+test('an interval that is not a number is every step, like every other reading', () => {
+    for (const interval of [NaN, Infinity, -3, 'soon']) {
+        const it = game(everySeconds(interval), { step: 0.5 });
+        it.runtime.step();
+        it.runtime.step();
+        assert.equal(values(it).runs, 1, `${interval}`);
+        assert.deepEqual(it.failures, []);
+    }
+});
+
+test('two instances of one Every keep their own cadence', () => {
+    const it = game(everySeconds(1), { step: 0.5, objects: 2 });
+
+    it.runtime.step();
+    it.holders[1].active = false;
+
+    for (let step = 0; step < 4; step++) it.runtime.step();
+    assert.equal(values(it, 0).runs, 2, 'two seconds of pulses');
+    assert.equal(values(it, 1).runs, 0, 'and none while it was off');
+
+    it.holders[1].active = true;
+    it.runtime.step();
+    it.runtime.step();
+    assert.equal(values(it, 1).runs, 1, 'it picked up where it had been held');
+});
+
+test('Every stops with the Object that was running it', () => {
+    const it = game(everySeconds(1), { step: 0.5 });
+
+    for (let step = 0; step < 3; step++) it.runtime.step();
+    assert.equal(values(it).runs, 1);
+
+    it.scene.remove(it.holders[0]);
+    for (let step = 0; step < 10; step++) it.runtime.step();
+
+    assert.equal(values(it).runs, 1, 'nothing pulsed after the Object went');
+});
+
+test('two runtimes fed the same steps pulse and hold identically', () => {
+    const run = () => {
+        const it = game(graphOf(
+            [
+                { id: 'start', type: 'event.start', x: 0, y: 0, params: {} },
+                { id: 'timer', type: 'flow.every', x: 0, y: 0, params: {}, inputs: { interval: 0.7 } },
+                { id: 'read', type: 'property.get', x: 0, y: 0, params: { property: 'p_runs' } },
+                { id: 'one', type: 'value.number', x: 0, y: 0, params: { value: 1 } },
+                { id: 'add', type: 'math.add', x: 0, y: 0, params: {} },
+                { id: 'write', type: 'property.set', x: 0, y: 0, params: { property: 'p_runs' } }
+            ],
+            [
+                wire('f1', ['start', 'out'], ['timer', 'in']),
+                wire('f2', ['timer', 'then'], ['write', 'in']),
+                wire('d1', ['read', 'value'], ['add', 'a']),
+                wire('d2', ['one', 'value'], ['add', 'b']),
+                wire('d3', ['add', 'result'], ['write', 'value'])
+            ]
+        ), { step: 0.3, objects: 2 });
+
+        const seen = [];
+        for (let step = 0; step < 20; step++) {
+            it.runtime.step();
+            seen.push(values(it, 0).runs);
+        }
+        return { seen, payload: JSON.stringify(serializeScene(it.scene)) };
+    };
+
+    const first = run();
+    const second = run();
+
+    assert.deepEqual(first.seen, second.seen);
+    assert.equal(first.payload, second.payload);
+    assert.ok(first.seen.at(-1) > 5, 'it actually pulsed');
+});
+
+test('nothing a repeating node keeps reaches a scene payload', () => {
+    const it = game(everySeconds(1), { step: 0.5 });
+    for (let step = 0; step < 5; step++) it.runtime.step();
+
+    const written = serializeScene(it.scene);
+    assert.deepEqual(
+        globalThis.Object.keys(written.objects[0].components[1].values).sort(),
+        ['mark', 'runs']
+    );
+});

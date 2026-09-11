@@ -626,8 +626,13 @@ export const STANDARD_NODES = [
         // holds the ones that START a flow. A creator looking for "when the player presses
         // jump" looks under Events, which is where every other "when" already lives.
         category: 'Events',
+        // THE NAMES A CREATOR TYPES ARE THE NAMES OTHER ENGINES GAVE THE THREE SEPARATE
+        // NODES THIS ONE REPLACED. Someone looking for `On Key Down` or `On Key Up` must land
+        // here and read the three ports, rather than conclude the engine has no such thing
+        // (ADR-0046 §6).
         keywords: ['input', 'keyboard', 'key', 'press', 'pressed', 'released', 'hold', 'held',
-            'while', 'down', 'when', 'event'],
+            'while', 'down', 'when', 'event', 'on key down', 'on key up', 'keydown', 'keyup',
+            'keypress', 'jump', 'shoot'],
         event: 'update',
         params: {
             key: {
@@ -1314,6 +1319,59 @@ export const STANDARD_NODES = [
     },
 
     {
+        type: 'flow.waitUntil',
+        label: 'Wait Until',
+        category: 'Flow',
+        keywords: ['wait', 'until', 'when', 'hold', 'pause', 'condition', 'gate'],
+        tooltip: 'Holds here until something becomes true, then carries on',
+        inputs: [flow('in'), data('condition', PropertyType.BOOLEAN, 'Condition', false)],
+        outputs: [flow('then', 'Then')],
+        // THE OPPOSITE READING OF A `Delay`, AND THE ONE WORD THAT SAYS SO. `Delay` captures
+        // its duration on the way in, because a wait whose end moves is not a wait; this one
+        // must NOT capture anything, because what it is waiting for is precisely something
+        // that changes. `again` parks it at itself, so every step re-runs this line and reads
+        // the condition afresh — no stored value, no polling, no timer (ADR-0058 §5).
+        //
+        // TRUE ON ARRIVAL MEANS NO WAIT AT ALL, which is the same shape `Delay(0)` has: a
+        // condition that already holds is not something to wait for.
+        execute: io => (io.input('condition') ? 'then' : { again: true })
+    },
+
+    {
+        type: 'flow.every',
+        label: 'Every',
+        category: 'Flow',
+        keywords: ['timer', 'repeat', 'tick', 'interval', 'loop', 'pulse', 'seconds', 'again'],
+        tooltip: 'Sends a pulse down Then, over and over, on a fixed interval',
+        inputs: [
+            flow('in'),
+            data('interval', PropertyType.NUMBER, 'Interval', 1, null,
+                'How long between pulses, in seconds')
+        ],
+        outputs: [flow('then', 'Then')],
+        // IT IS A FLOW NODE AND NOT AN `On Timer` EVENT, and the reason is the event contract
+        // rather than a preference. An entry node is run by the interpreter on EVERY update
+        // (`runEvent`), so a repeating event would have to remember when it last fired — and
+        // the only place to keep that is per-node-per-instance state, a second kind of state
+        // ADR-0058 deliberately does not have. `On Start → Every` says the same sentence with
+        // the pieces that already exist, and reads as one too (ADR-0058 §5.2).
+        //
+        // TWO PASSES, ONE NODE. Arriving down the wire starts the clock and fires nothing —
+        // "every second" means the first pulse comes after a second, not at once. Coming back
+        // fires `Then` and starts the clock again, and the interpreter carries the overshoot
+        // so the cadence does not drift.
+        //
+        // AN INTERVAL OF ZERO IS EVERY STEP, not a frozen frame: `again: 0` is parked, and a
+        // parked continuation is never due in the step that parked it. So the worst a bad
+        // interval can do is what `On Update` already does, which is the bound this node needs
+        // rather than an error message.
+        execute: io => {
+            const interval = Math.max(number(io.input('interval')), 0);
+            return io.resumed ? { next: 'then', again: interval } : { again: interval };
+        }
+    },
+
+    {
         type: 'flow.sequence',
         label: 'Sequence',
         category: 'Flow',
@@ -1479,6 +1537,24 @@ export const STANDARD_NODES = [
     unary('math.ceil', 'Ceil', value => Math.ceil(value),
         ['up', 'higher', 'ceiling', 'whole', 'integer'],
         'The whole number at or above this one'),
+
+    // WHICH WAY, AND HOW FAR — the two readings of a number the other six do not give, and
+    // both are one line through the helper the rest of this shelf already goes through.
+    //
+    // `Sign` ANSWERS -1, 0 OR 1, which is `Math.sign` and is also what a creator means by
+    // "which way is it going": multiply a speed by the sign of a difference and a thing
+    // chases another without a Branch.
+    unary('math.sign', 'Sign', value => Math.sign(value),
+        ['direction', 'positive', 'negative', 'which way', 'towards', 'polarity'],
+        'Which way a number points: -1, 0 or 1'),
+
+    // `Sqrt` OF A NEGATIVE IS `0`, NOT `NaN`, and that is the catalogue's numeric convention
+    // rather than a decision taken here: `number()` turns every non-finite reading into `0`
+    // in `Clamp`, `Lerp`, `Delay` and `Every`, and a `NaN` loose in a graph is a value that
+    // poisons everything downstream of it without ever saying where it came from.
+    unary('math.squareRoot', 'Square Root', value => (value > 0 ? Math.sqrt(value) : 0),
+        ['sqrt', 'root', 'hypotenuse', 'length', 'distance', 'magnitude'],
+        'The number that, multiplied by itself, gives this one'),
 
     // TWO NODES THAT ARE NOT ARITHMETIC BUT ARE ASKED FOR IN THE SAME BREATH. Both are one
     // line of maths a creator should never have to assemble: `Clamp` is a Greater Than, a
