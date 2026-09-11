@@ -18,11 +18,15 @@ import { RectangleRenderer } from './rendering/components/rectangle-renderer.js'
 import { Velocity } from './components/velocity.js';
 import { BoxCollider } from './collision/collider.js';
 import { Sprite } from './rendering/components/sprite.js';
+import { TextRenderer } from './rendering/components/text-renderer.js';
 import { Tilemap } from './rendering/components/tilemap.js';
+import { ScreenSpace } from './rendering/space.js';
+import { AudioSource } from './audio/audio-source.js';
 
 /** The component types the engine ships, in the order a menu should list them. */
 export const BUILT_IN = [
-    Transform, Velocity, BoxCollider, RectangleRenderer, Sprite, ParticleSystem, Tilemap, Camera
+    Transform, Velocity, BoxCollider, RectangleRenderer, Sprite, TextRenderer, ParticleSystem,
+    Tilemap, ScreenSpace, AudioSource, Camera
 ];
 
 /**

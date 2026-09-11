@@ -48,6 +48,23 @@ export { AllowAllAuthority, PredicateAuthority, allow, deny } from './operations
 
 export { Object, OBJECT_COMPONENT, objectProperties } from './object.js';
 export { duplicateObject } from './duplicate.js';
+export {
+    declarationsFrom,
+    describeSubtree,
+    freshRecords,
+    instantiateRecords,
+    referencesObjects,
+    remapValues,
+    subtreeOf
+} from './instantiate.js';
+export {
+    PREFAB_FORMAT,
+    PrefabRegistry,
+    createPrefab,
+    externalReferencesOf,
+    instantiatePrefab,
+    recordsOf
+} from './prefab.js';
 export { Scene, hierarchyOrder } from './scene.js';
 export {
     ComponentRegistry,

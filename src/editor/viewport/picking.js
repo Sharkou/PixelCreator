@@ -19,6 +19,7 @@
 // handled by the matrices instead of by special cases here.
 
 import { worldMatrix } from '../../core/mod.js';
+import { DrawSpace, drawSpaceOf } from '../../runtime/mod.js';
 
 /**
  * Side, in local units, of the square an object with no geometry is picked by.
@@ -55,16 +56,39 @@ export function editorBounds(object) {
 }
 
 /**
+ * The matrix that carries an object's local space onto the surface.
+ *
+ * TWO SPACES, ONE QUESTION, ASKED IN ONE PLACE (ADR-0060 §2). An Object under a
+ * `ScreenSpace` Component is DRAWN through the surface matrix rather than through the
+ * camera's, so picking it, outlining it and placing its resize handles have to ask the same
+ * thing — otherwise a creator would click a HUD label where it is not and see its outline
+ * somewhere else again.
+ *
+ * `screen` DEFAULTS TO `view`, so every caller that has no HUD to draw is unchanged and
+ * every test written before this passes the one matrix it always did.
+ *
+ * @param {object} object - The object
+ * @param {object} view - The view matrix in use
+ * @param {object} [screen] - The surface matrix; `view` when the caller has only one
+ * @returns {object} The matrix to carry local points with
+ */
+export function objectMatrix(object, view, screen = view) {
+    const above = drawSpaceOf(object) === DrawSpace.SCREEN ? screen : view;
+    return above.multiply(worldMatrix(object));
+}
+
+/**
  * Whether a screen point falls on an object.
  *
  * @param {object} object - The object to test
  * @param {object} view - The view matrix in use
  * @param {number} screenX - Horizontal screen coordinate
  * @param {number} screenY - Vertical screen coordinate
+ * @param {object} [screen] - The surface matrix, for a screen-space object
  * @returns {boolean} True when the point is on the object
  */
-export function hitTest(object, view, screenX, screenY) {
-    const toLocal = view.multiply(worldMatrix(object)).invert();
+export function hitTest(object, view, screenX, screenY, screen = view) {
+    const toLocal = objectMatrix(object, view, screen).invert();
     const local = toLocal.apply(screenX, screenY);
     const box = editorBounds(object);
 
@@ -85,9 +109,10 @@ export function hitTest(object, view, screenX, screenY) {
  * @param {object} view - The view matrix in use
  * @param {number} screenX - Horizontal screen coordinate
  * @param {number} screenY - Vertical screen coordinate
+ * @param {object} [screen] - The surface matrix, for screen-space objects
  * @returns {object|null} The object under the point, or null
  */
-export function pick(objects, view, screenX, screenY) {
+export function pick(objects, view, screenX, screenY, screen = view) {
     // Topmost is the largest (layer, position) pair, which is what sorting by layer and
     // walking backwards found — the scene renderer's sort is stable, so equal layers keep
     // scene order. Reading it as a single pass costs no copy and no sort, and skips the
@@ -102,7 +127,7 @@ export function pick(objects, view, screenX, screenY) {
         // Equal layers are decided by position, and i only ever grows, so a later object
         // always wins a tie: no comparison against the found index is needed.
         if (object.layer < bestLayer) continue;
-        if (!hitTest(object, view, screenX, screenY)) continue;
+        if (!hitTest(object, view, screenX, screenY, screen)) continue;
 
         found = object;
         bestLayer = object.layer;
@@ -120,10 +145,11 @@ export function pick(objects, view, screenX, screenY) {
  *
  * @param {object} object - The object
  * @param {object} view - The view matrix in use
+ * @param {object} [screen] - The surface matrix, for a screen-space object
  * @returns {{x: number, y: number}[]} The corners, clockwise from top-left
  */
-export function screenCorners(object, view) {
-    const matrix = view.multiply(worldMatrix(object));
+export function screenCorners(object, view, screen = view) {
+    const matrix = objectMatrix(object, view, screen);
     const { x, y, width, height } = editorBounds(object);
 
     return [

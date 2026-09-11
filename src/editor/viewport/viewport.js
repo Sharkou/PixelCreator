@@ -178,6 +178,8 @@ export class Viewport extends Element {
     #subject = null;
     #onError = null;
     #behaviors = null;
+    #prefabs = null;
+    #audio = null;
 
     #surface = null;
     #gridRenderer = null;
@@ -223,9 +225,11 @@ export class Viewport extends Element {
      * @param {object} [context.subject] - Where a selection INTENT is announced (ADR-0032)
      * @param {Function} [context.onError] - Receives runtime ComponentFailure reports
      * @param {object} [context.behaviors] - The `.px` graphs bound to component types
+     * @param {object} [context.prefabs] - Prefab definitions, already resolved (ADR-0061 §4)
+     * @param {object} [context.audio] - Audio output, for the session Play starts
      * @returns {Viewport} This element
      */
-    bind({ scene, camera, selection, subject = null, onError, behaviors = null }) {
+    bind({ scene, camera, selection, subject = null, onError, behaviors = null, prefabs = null, audio = null }) {
         this.#scene = scene;
         this.#camera = camera;
         this.#selection = selection;
@@ -236,6 +240,12 @@ export class Viewport extends Element {
         // rather than constructed because the host owns the Project that resolves a graph
         // and this element owns the canvas a Runtime needs (ADR-0015, ADR-0020).
         this.#behaviors = behaviors;
+        // THE SAME REASONING, ONE TRANCHE LATER. A `Spawn Prefab` and a `Play Sound` reach
+        // for things the Project owns and the Runtime may not read for itself, so they are
+        // resolved by the shell and handed over here — where the Runtime that plays is built
+        // (ADR-0060 §5, ADR-0061 §4).
+        this.#prefabs = prefabs;
+        this.#audio = audio;
 
         // TWO ROLES, AND THEY ARE NOT THE SAME OBJECT. `selection` is READ — the outline,
         // the handles and the cursor all ask it what is selected. `subject` is WRITTEN, and
@@ -467,7 +477,9 @@ export class Viewport extends Element {
         this.#runtime = new Runtime(this.#scene, {
             renderer: this.#sceneRenderer,
             onError: report => this.#onError?.(report),
-            behaviors: this.#behaviors ?? undefined
+            behaviors: this.#behaviors ?? undefined,
+            prefabs: this.#prefabs ?? undefined,
+            audio: this.#audio ?? undefined
         });
         // Edit mode: the scene is drawn every frame but never stepped.
         this.#runtime.running = false;
@@ -608,8 +620,13 @@ export class Viewport extends Element {
             this.#gridSignature = signature;
         }
 
-        this.#runtime.render({ view });
-        this.#tool.draw(this.#sceneRenderer, view, { scale: density });
+        // THE HUD IS DRAWN IN THE EDITOR TOO, at the surface's own scale rather than
+        // through the camera (ADR-0060 §2). A creator arranging a score label sees it where
+        // a player will, and panning the viewport leaves it alone — which is the whole
+        // statement `ScreenSpace` makes.
+        const screen = this.screen;
+        this.#runtime.render({ view, screen });
+        this.#tool.draw(this.#sceneRenderer, view, { scale: density, screen });
 
         const zoom = `${Math.round(this.#zoom() * 100)}%`;
         if (zoom !== this.#zoomShown) {
@@ -896,18 +913,31 @@ export class Viewport extends Element {
     #pointerAt(clientX, clientY, pointerType) {
         const device = this.#toDevice(clientX, clientY);
         const view = this.view;
+        const screen = this.screen;
         return {
             device,
             view,
+            // THE SAME POINT, IN THE OTHER SPACE (ADR-0060 §2). A tool acting on a
+            // `ScreenSpace` object has to measure in surface units, or a drag would be
+            // divided by the camera's zoom on the way into a Transform that the camera
+            // never touched. Both are computed because a tool does not know which it needs
+            // until it knows what is under the pointer.
+            screen,
             world: screenToWorld(view, ...device),
+            surface: screenToWorld(screen, ...device),
             coarse: pointerType === 'touch'
         };
+    }
+
+    /** The matrix a `ScreenSpace` object is drawn through: the surface's own scale. */
+    get screen() {
+        return Matrix.compose(0, 0, 0, this.#metrics?.scaleX ?? 1, this.#metrics?.scaleY ?? 1);
     }
 
     #refreshCursor() {
         const cursor = this.#gesture === 'pan' || this.#gesture === 'pinch'
             ? this.#pan.cursor()
-            : this.#tool.cursor(this.view);
+            : this.#tool.cursor(this.view, this.screen);
         if (this.#surface.style.cursor !== cursor) this.#surface.style.cursor = cursor;
     }
 }

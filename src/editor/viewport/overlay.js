@@ -30,8 +30,8 @@
 // weight of the handles sitting on it. One rule now: a number in this file is CSS pixels,
 // and `scale` — device pixels per CSS pixel — is what turns it into what the canvas takes.
 
-import { Matrix, worldMatrix } from '../../core/mod.js';
-import { editorBounds } from './picking.js';
+import { Matrix } from '../../core/mod.js';
+import { editorBounds, objectMatrix } from './picking.js';
 import { HANDLES } from './resize.js';
 
 /** Side of a resize handle, in CSS pixels. */
@@ -74,11 +74,12 @@ const HANDLE_FILL = '#101216';
  *
  * @param {object} object - The object
  * @param {object} view - The view matrix in use
+ * @param {object} [screen] - The surface matrix, for a screen-space object (ADR-0060 §2)
  * @returns {Array<{x: number, y: number}>|null} Corners clockwise from the box's origin,
  *   or null when the object has no drawable extent on screen
  */
-export function outlinePoints(object, view) {
-    const matrix = view.multiply(worldMatrix(object));
+export function outlinePoints(object, view, screen = view) {
+    const matrix = objectMatrix(object, view, screen);
     const box = editorBounds(object);
 
     const corners = [
@@ -106,15 +107,17 @@ export function outlinePoints(object, view) {
  * @param {number} [options.width] - Outline width in CSS pixels
  * @param {boolean} [options.pivot] - Also mark the object's origin
  * @param {number} [options.scale] - Device pixels per CSS pixel
+ * @param {object} [options.screen] - The surface matrix, for a screen-space object
  */
 export function outline(renderer, view, object, {
     color = ACCENT,
     alpha = 1,
     width = 1.5,
     pivot = false,
-    scale = 1
+    scale = 1,
+    screen = view
 } = {}) {
-    const corners = outlinePoints(object, view);
+    const corners = outlinePoints(object, view, screen);
     if (!corners) return;
 
     // At least one whole device pixel: an outline thinner than the raster is a grey haze
@@ -132,7 +135,7 @@ export function outline(renderer, view, object, {
         // The origin, not the middle of the box: the pivot is what the object rotates and
         // scales about, and on an object whose bounds are off-centre those are different
         // points. Flat on the surface, so the cross is a cross at every scale.
-        const origin = view.multiply(worldMatrix(object)).apply(0, 0);
+        const origin = objectMatrix(object, view, screen).apply(0, 0);
         if (Number.isFinite(origin.x) && Number.isFinite(origin.y)) {
             const arm = PIVOT_ARM * scale;
             renderer.setTransform(Matrix.identity());
@@ -176,10 +179,11 @@ function segment(renderer, from, to, { color, alpha, thickness }) {
  *
  * @param {object} object - The object
  * @param {object} view - The view matrix in use
+ * @param {object} [screen] - The surface matrix, for a screen-space object
  * @returns {object[]} One `{ handle, x, y }` per entry in HANDLES
  */
-export function handlePoints(object, view) {
-    const matrix = view.multiply(worldMatrix(object));
+export function handlePoints(object, view, screen = view) {
+    const matrix = objectMatrix(object, view, screen);
     const box = editorBounds(object);
     const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 
@@ -201,10 +205,11 @@ export function handlePoints(object, view) {
  *
  * @param {object} object - The object
  * @param {object} view - The view matrix in use
+ * @param {object} [screen] - The surface matrix, for a screen-space object
  * @returns {{x: number, y: number}} The two side lengths on screen
  */
-export function screenSpan(object, view) {
-    const matrix = view.multiply(worldMatrix(object));
+export function screenSpan(object, view, screen = view) {
+    const matrix = objectMatrix(object, view, screen);
     const box = editorBounds(object);
 
     const origin = matrix.apply(0, 0);
@@ -223,10 +228,11 @@ export function screenSpan(object, view) {
  * @param {object} object - The object
  * @param {object} view - The view matrix in use
  * @param {number} [reach] - Radius counting as a grab, in device pixels
+ * @param {object} [screen] - The surface matrix, for a screen-space object
  * @returns {boolean} True when handles should be offered
  */
-export function handlesFit(object, view, reach = HANDLE_REACH) {
-    const span = screenSpan(object, view);
+export function handlesFit(object, view, reach = HANDLE_REACH, screen = view) {
+    const span = screenSpan(object, view, screen);
     if (!Number.isFinite(span.x) || !Number.isFinite(span.y)) return false;
     return Math.min(span.x, span.y) >= reach * HANDLE_MIN_REACHES;
 }
@@ -240,8 +246,9 @@ export function handlesFit(object, view, reach = HANDLE_REACH) {
  * @param {object} [options] - Options
  * @param {object} [options.active] - The handle under the pointer, drawn filled
  * @param {number} [options.scale] - Device pixels per CSS pixel
+ * @param {object} [options.screen] - The surface matrix, for a screen-space object
  */
-export function handles(renderer, view, object, { active = null, scale = 1 } = {}) {
+export function handles(renderer, view, object, { active = null, scale = 1, screen = view } = {}) {
     // A whole number of device pixels: HANDLE_SIZE x 1.25 is 8.75, and a handle drawn on
     // three quarters of a pixel is a grey smudge on both of its edges.
     const size = Math.max(3, Math.round(HANDLE_SIZE * scale));
@@ -250,7 +257,7 @@ export function handles(renderer, view, object, { active = null, scale = 1 } = {
     renderer.save();
     renderer.setTransform(Matrix.identity());
 
-    for (const point of handlePoints(object, view)) {
+    for (const point of handlePoints(object, view, screen)) {
         const highlighted = active === point.handle;
         // Whole device pixels, and no radius: a resize handle is the one control in the
         // Editor that is literally made of pixels, and a blurred one is a handle you
@@ -272,13 +279,14 @@ export function handles(renderer, view, object, { active = null, scale = 1 } = {
  * @param {number} x - Horizontal screen coordinate
  * @param {number} y - Vertical screen coordinate
  * @param {number} [reach] - Radius counting as a grab, in device pixels
+ * @param {object} [screen] - The surface matrix, for a screen-space object
  * @returns {object|null} The handle, or null
  */
-export function handleAt(object, view, x, y, reach = HANDLE_REACH) {
+export function handleAt(object, view, x, y, reach = HANDLE_REACH, screen = view) {
     let closest = null;
     let best = reach;
 
-    for (const point of handlePoints(object, view)) {
+    for (const point of handlePoints(object, view, screen)) {
         const distance = Math.hypot(point.x - x, point.y - y);
         if (distance <= best) {
             best = distance;
@@ -298,10 +306,11 @@ export function handleAt(object, view, x, y, reach = HANDLE_REACH) {
  * @param {object} handle - One of HANDLES
  * @param {object} object - The object being handled
  * @param {object} view - The view matrix in use
+ * @param {object} [screen] - The surface matrix, for a screen-space object
  * @returns {string} A CSS cursor
  */
-export function handleCursor(handle, object, view) {
-    const matrix = view.multiply(worldMatrix(object));
+export function handleCursor(handle, object, view, screen = view) {
+    const matrix = objectMatrix(object, view, screen);
     const origin = matrix.apply(0, 0);
     const point = matrix.apply(handle.x, handle.y);
 

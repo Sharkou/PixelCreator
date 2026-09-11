@@ -14,6 +14,7 @@ import { hierarchyOrder } from '../../core/scene.js';
 import { worldMatrix } from '../../core/components/transform.js';
 import { Matrix } from '../../core/math/matrix.js';
 import { assertRenderer, BlendMode } from './renderer.js';
+import { DrawSpace, drawSpaceOf } from './space.js';
 import { componentFailure, rethrowLater } from '../errors.js';
 
 export class SceneRenderer {
@@ -43,13 +44,26 @@ export class SceneRenderer {
 
     /**
      * Draw a scene.
+     *
+     * TWO MATRICES, BECAUSE THERE ARE TWO SPACES (ADR-0060 §2). `view` is where the camera
+     * is looking; `screen` is the surface itself, and an Object under a `ScreenSpace`
+     * Component is drawn through it instead. They are separate arguments rather than one
+     * matrix and a flag because the caller knows something this does not: on a 2x display
+     * the device scale sits above BOTH, so a HUD label at (20, 20) has to land on the same
+     * twenty CSS pixels the world does — passing identity would draw it half-size.
+     *
+     * THERE IS NO SECOND DRAW ORDER. A HUD sits on top because its `layer` is higher, which
+     * is the ordering rule the scene already has; sorting screen-space objects after
+     * world-space ones would be a second rule a creator cannot see in the Inspector.
+     *
      * @param {object} scene - The scene to draw
      * @param {object} [options] - Options
-     * @param {Matrix} [options.view] - View transform applied above every object
+     * @param {Matrix} [options.view] - View transform applied above every world-space object
+     * @param {Matrix} [options.screen] - Transform applied above every screen-space object
      * @param {string} [options.clear] - Background colour; the surface is cleared transparent when omitted
      * @returns {number} How many objects were drawn
      */
-    render(scene, { view = Matrix.identity(), clear } = {}) {
+    render(scene, { view = Matrix.identity(), screen = Matrix.identity(), clear } = {}) {
         const renderer = this.#renderer;
 
         renderer.clear(clear);
@@ -73,8 +87,11 @@ export class SceneRenderer {
                 // The transform is only established once a component actually draws, so
                 // an object made purely of logic costs nothing.
                 if (!established) {
+                    // ASKED ONCE PER OBJECT THAT ACTUALLY DRAWS, and only then: an Object
+                    // made purely of logic costs neither the walk nor the matrix.
+                    const above = drawSpaceOf(object) === DrawSpace.SCREEN ? screen : view;
                     renderer.save();
-                    renderer.setTransform(view.multiply(worldMatrix(object)));
+                    renderer.setTransform(above.multiply(worldMatrix(object)));
                     established = true;
                     drawn++;
                 }

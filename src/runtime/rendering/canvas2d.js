@@ -166,4 +166,42 @@ export class Canvas2DRenderer {
         context.drawImage(image, x, y, width, height);
         context.globalAlpha = 1;
     }
+
+    /**
+     * Draw a line of text.
+     *
+     * THE SIZE AND THE FAMILY ARE COMPOSED HERE, and only here. A CSS font shorthand is a
+     * canvas's own dialect — `16px sans-serif` means nothing to a WebGL backend — so the
+     * contract carries the two numbers and this file, which is the one that owns a canvas,
+     * spells them the way a canvas reads them.
+     *
+     * ONE LINE, NO WRAPPING. `fillText` does not break on a newline and this does not
+     * pretend otherwise: a paragraph is a layout problem, and inventing a line height here
+     * would be the first half of a text engine nobody has designed.
+     *
+     * @param {string} text - What to draw
+     * @param {number} x - Anchor, horizontally; `align` says which edge it is
+     * @param {number} y - Anchor, vertically; `baseline` says which edge it is
+     * @param {object} [options] - { color, alpha, fontSize, fontFamily, align, baseline }
+     */
+    fillText(text, x, y, {
+        color = '#ffffff',
+        alpha = 1,
+        fontSize = 16,
+        fontFamily = 'sans-serif',
+        align = 'left',
+        baseline = 'middle'
+    } = {}) {
+        const value = globalThis.String(text ?? '');
+        if (value === '') return;
+
+        const context = this.#context;
+        context.globalAlpha = alpha;
+        context.fillStyle = color;
+        context.font = `${fontSize}px ${fontFamily}`;
+        context.textAlign = align;
+        context.textBaseline = baseline;
+        context.fillText(value, x, y);
+        context.globalAlpha = 1;
+    }
 }

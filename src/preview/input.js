@@ -19,12 +19,19 @@ import { screenToWorld } from '../runtime/mod.js';
  *
  * @param {HTMLCanvasElement} canvas - The surface the game is drawn on
  * @param {object} input - The Runtime's Input
- * @param {object} options - `{ view, density, owner }`
+ * @param {object} options - `{ view, density, owner, onGesture }`
  * @returns {{stop: Function}} A handle that unbinds everything
  */
-export function bindInput(canvas, input, { view, density = () => 1, owner = null } = {}) {
+export function bindInput(canvas, input, { view, density = () => 1, owner = null, onGesture = null } = {}) {
     const state = () => input.of(owner);
     const off = [];
+
+    // WHAT A BROWSER CALLS "the person is here" (ADR-0060 §5). Sound is refused until a
+    // real key or a real click has happened, and this is where the client learns that one
+    // has — the same two events it already listens to, reported once more to whoever cares.
+    // It is NOT part of the Input: "has this person interacted with the page yet" is a fact
+    // about a browser, not a state of the game, and a graph must never be able to read it.
+    const gesture = () => onGesture?.();
 
     const bind = (target, name, handler, options) => {
         target.addEventListener(name, handler, options);
@@ -36,6 +43,7 @@ export function bindInput(canvas, input, { view, density = () => 1, owner = null
     // produced, so a graph watching `KeyW` would stop working on an AZERTY keyboard.
     bind(globalThis, 'keydown', event => {
         if (event.repeat) return;
+        gesture();
         state().press(event.code);
     });
     bind(globalThis, 'keyup', event => state().release(event.code));
@@ -63,6 +71,7 @@ export function bindInput(canvas, input, { view, density = () => 1, owner = null
 
     bind(canvas, 'pointermove', move);
     bind(canvas, 'pointerdown', event => {
+        gesture();
         move(event);
         // `event.button` is already the numbering `InputState` documents — 0 primary,
         // 1 auxiliary, 2 secondary — so nothing is translated.

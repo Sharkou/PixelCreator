@@ -69,6 +69,12 @@ const PATHS = {
     // tree of what is in the scene"; this one says "a scene, as a thing you can open".
     layers: `<path d="M8 2.2 14 5.4 8 8.6 2 5.4z" ${S}/><path d="m2 8.6 6 3.2 6-3.2" ${S}/>`
         + `<path d="m2 11.4 6 3.2 6-3.2" ${S}/>`,
+    // A MODEL AND THE COPY IT STAMPS (ADR-0061). Two frames, the front one solid and the one
+    // behind it open: a prefab is a thing you make more of, and that is what the drawing has
+    // to say at 16 px. Deliberately NOT the Component cube — `component` is a capability an
+    // Object HAS, a prefab is a description OF Objects, and the two sat in the same panel.
+    prefab: `<rect x="5.4" y="5.4" width="8.2" height="8.2" rx="1.2" ${S}/>`
+        + `<path d="M10.6 5.4V3.6a1.2 1.2 0 0 0-1.2-1.2H3.6a1.2 1.2 0 0 0-1.2 1.2v5.8a1.2 1.2 0 0 0 1.2 1.2h1.8" ${S}/>`,
     image: `<rect x="2" y="3" width="12" height="10" rx="1.2" ${S}/>`
         + `<path d="M2.4 11.2 6 7.7l2.4 2.2L10.4 8l3.2 3" ${S}/>`
         + `<circle cx="5.6" cy="5.9" r="1" ${F}/>`,
@@ -116,6 +122,10 @@ const PATHS = {
     focus: `<path d="M2.5 5.5v-3h3M13.5 5.5v-3h-3M2.5 10.5v3h3M13.5 10.5v3h-3" ${S}/>`
         + `<circle cx="8" cy="8" r="2" ${S}/>`,
     grid: `<path d="M2 6h12M2 10h12M6 2v12M10 2v12" ${S}/>`,
+    // The SURFACE rather than the world: a frame with a label pinned inside its corner,
+    // which is exactly what a `ScreenSpace` object is for.
+    screen: `<rect x="2" y="3" width="12" height="10" rx="1.4" ${S}/>`
+        + `<path d="M4.3 5.6h4M4.3 7.8h2.6" ${S}/>`,
     // WHAT A THING DECLARES versus WHAT IS TRUE OF IT. The Inspector drew both its
     // Properties section and its Details section with the window's own glyph, so the two
     // read as the same kind of list — and they are opposites: one is the schema a creator
@@ -184,6 +194,15 @@ const PATHS = {
     'node-debug': `<rect x="5" y="5.4" width="6" height="7.2" rx="3" ${S}/>`,
     // A clock face and a hand: what a `Time` node hands over is how long something lasts,
     // and no other category glyph draws a circle with a mark in it.
+    // Quotation marks: what a creator is BUILDING when they reach for these nodes, and
+    // deliberately not the `T` that `type-text` already means — one is a shape a value has,
+    // the other is a family of nodes that make one.
+    'node-text': `<path d="M4.4 9.6c-1.2 0-2-.8-2-2s.8-2 2-2 2 .8 2 2c0 2-.8 3.4-2.4 4.4" ${S}/>`
+        + `<path d="M11.2 9.6c-1.2 0-2-.8-2-2s.8-2 2-2 2 .8 2 2c0 2-.8 3.4-2.4 4.4" ${S}/>`,
+    // A waveform, not a speaker: a speaker is a DEVICE (`sound`, used for an audio
+    // resource), a waveform is the sound itself, which is what these nodes act on.
+    'node-audio': `<path d="M2.4 8h1.4M12.2 8h1.4" ${S}/>`
+        + `<path d="M5.2 5.4v5.2M7.6 3.2v9.6M10 5.9v4.2" ${S}/>`,
     'node-time': `<circle cx="8" cy="8" r="5.2" ${S}/><path d="M8 5.2V8l2.2 1.6" ${S}/>`
         + `<path d="M5 8H2.4M11 8h2.6M5.6 5.6 4 4M10.4 5.6 12 4M5.6 11.6 4 13.2M10.4 11.6 12 13.2" ${S}/>`,
 
@@ -265,6 +284,9 @@ const COMPONENT_ICONS = {
     Transform: 'object',
     RectangleRenderer: 'rectangle',
     Sprite: 'sprite',
+    TextRenderer: 'type-text',
+    ScreenSpace: 'screen',
+    AudioSource: 'sound',
     ParticleSystem: 'particles',
     Tilemap: 'tilemap',
     Camera: 'camera'
@@ -308,6 +330,7 @@ const RESOURCE_ICONS = {
     scene: 'layers',
     component: 'graph',
     graph: 'graph',
+    prefab: 'prefab',
     asset: 'image'
 };
 
@@ -324,9 +347,11 @@ const RESOURCE_ICONS = {
  * (ADR-0026 §11, ADR-0030 §5). `folder` is the one deliberate sharing — the Project window
  * IS a folder — and it is the exception that the table above makes visible.
  *
- * THERE IS NO PREFAB GLYPH, and that is not an oversight: `design/icons.js` draws none,
- * and prefabs are not designed (ADR-0026 §7). Inventing one would be the first half of a
- * format nobody has decided.
+ * THE PREFAB GLYPH ARRIVED WITH THE DECISION IT WAS WAITING FOR (ADR-0061). It used to be
+ * absent on purpose — `design/icons.js` draws none, and a glyph invented before the format
+ * would have been the first half of a decision nobody had made. It is emphatically not the
+ * Component cube: `component` means a capability an Object HAS, a prefab is a description OF
+ * Objects, and drawing them alike would put a `.px` and a `Bullet.prefab` in one family.
  */
 export const ICON_FAMILIES = globalThis.Object.freeze({
     resource: globalThis.Object.freeze({ ...RESOURCE_ICONS }),
@@ -339,12 +364,36 @@ export const ICON_FAMILIES = globalThis.Object.freeze({
 });
 
 /**
- * The icon for a resource, from its kind.
+ * What an asset's glyph is, when its kind alone does not say.
+ *
+ * A KIND IS NOT ALWAYS THE ANSWER, AND `asset` IS THE ONE PLACE IT IS NOT (ADR-0020 §2). An
+ * image and a sound are the same KIND — a Resource whose payload lives outside the JSON —
+ * and the model is right to say so: they are referenced the same way, loaded the same way
+ * and stored the same way. What differs is what a creator is looking at, and a tile with a
+ * picture glyph on a `.mp3` is the panel saying something false (ADR-0054).
+ *
+ * MATCHED ON THE MIME PREFIX, so `audio/mpeg`, `audio/ogg` and the next one nobody has
+ * imported yet are one row rather than three.
+ */
+const ASSET_ICONS = [
+    { prefix: 'image/', icon: 'image' },
+    { prefix: 'audio/', icon: 'sound' }
+];
+
+/**
+ * The icon for a resource, from its kind — and, for an asset, from what its payload is.
  * @param {object|string} resource - A manifest entry, or a kind
  * @returns {string} An icon name
  */
 export function iconForResource(resource) {
     const kind = typeof resource === 'string' ? resource : resource?.kind;
+
+    if (kind === 'asset' && typeof resource === 'object') {
+        const mime = resource?.mime ?? '';
+        const matched = ASSET_ICONS.find(entry => mime.startsWith(entry.prefix));
+        if (matched) return matched.icon;
+    }
+
     return RESOURCE_ICONS[kind] ?? 'component';
 }
 
@@ -355,6 +404,8 @@ export function iconForResource(resource) {
  */
 export function iconForObject(object) {
     if (object.hasComponent('Camera')) return 'camera';
+    if (object.hasComponent('TextRenderer')) return 'type-text';
+    if (object.hasComponent('AudioSource')) return 'sound';
     if (object.hasComponent('Sprite')) return 'sprite';
     if (object.hasComponent('ParticleSystem')) return 'particles';
     if (object.hasComponent('Tilemap')) return 'tilemap';
@@ -411,6 +462,8 @@ export const NODE_CATEGORY_ICONS = {
     Object: 'node-scene',
     Time: 'node-time',
     Values: 'node-value',
+    Text: 'node-text',
+    Audio: 'node-audio',
     Math: 'node-math',
     Compare: 'node-compare',
     Logic: 'node-logic',

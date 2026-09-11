@@ -31,6 +31,8 @@ export class Runtime {
     #onError;
     #input;
     #behaviors;
+    #audio;
+    #prefabs;
     #running = true;
 
     // THE ONE VALUE EVERY UNCERTAIN THING IN THIS SIMULATION IS DERIVED FROM (ADR-0057). A
@@ -60,11 +62,13 @@ export class Runtime {
      * @param {Function} [options.onError] - Called with a ComponentFailure report (ADR-0012)
      * @param {Input} [options.input] - Default input, used when a step is given none
      * @param {object} [options.behaviors] - Graph behaviors bound to component types (ADR-0015)
+     * @param {object} [options.audio] - Audio output backend; omit it to run silent (ADR-0060 §5)
+     * @param {object} [options.prefabs] - Prefab definitions, already resolved (ADR-0061 §4)
      * @param {string|number} [options.seed] - What every uncertain thing in this simulation is
      *   derived from (ADR-0057). Drawn when omitted, and readable back as `runtime.seed`, so
      *   a run is always reproducible even when nobody chose one.
      */
-    constructor(scene, { clock, renderer, onError, input, behaviors, seed } = {}) {
+    constructor(scene, { clock, renderer, onError, input, behaviors, audio, prefabs, seed } = {}) {
         if (!scene) throw new TypeError('Runtime: a scene is required');
 
         // DRAWN, NEVER CONSTANT, AND ALWAYS READABLE BACK. A fixed default would make every
@@ -83,6 +87,21 @@ export class Runtime {
         // case Legacy broke by routing the keyboard through Network.users.
         this.#input = input ?? new Input();
         this.#behaviors = behaviors ?? null;
+        // A SECOND BACKEND, HANDED IN LIKE THE FIRST (ADR-0060 §5). A server constructs a
+        // Runtime without one and the simulation is identical: `Play Sound` does nothing,
+        // and `AudioSource` reconciles against nothing. Sound is an OUTPUT of the
+        // simulation, never an input to it, so its absence cannot change a single value.
+        this.#audio = audio ?? null;
+        // RESOLVED BEFORE THE SIMULATION, NEVER DURING IT (ADR-0061 §4). What arrives here is
+        // a map that is already in memory: the Project layer read the payloads, this layer
+        // only ever asks it a question and gets an answer in the same turn. That is the whole
+        // of how a prefab can be instantiated inside a step without the interpreter becoming
+        // asynchronous and without the Runtime learning what storage is.
+        this.#prefabs = prefabs ?? null;
+        // AND WHAT LEAVES THE SCENE IS TOLD SO. The subscription is the Scene's own
+        // 'removed' announcement, which `Scene.remove()` raises for the object and for
+        // every descendant under it.
+        this.#scene.on?.('removed', object => this.#detach(object));
         this.#sceneRenderer = renderer
             ? new SceneRenderer(renderer, {
                 onError: report => this.#onError(report),
@@ -137,6 +156,66 @@ export class Runtime {
     /** True when the runtime draws; false on a server. */
     get renders() {
         return this.#sceneRenderer !== null;
+    }
+
+    /** The audio output, or null when this runtime is silent. */
+    get audio() {
+        return this.#audio;
+    }
+
+    /** The resolved prefab definitions, or null when this runtime was given none. */
+    get prefabs() {
+        return this.#prefabs;
+    }
+
+    /**
+     * Let a Component go of whatever it was holding outside the simulation.
+     *
+     * `onRemoved(self, ctx)` IS THE OBJECT LEAVING THE SCENE; `onDetach(self)` IS THE
+     * COMPONENT LEAVING THE OBJECT. Two different events, named apart on purpose: the
+     * second already existed on `Object` (core/object.js) and says nothing about a Destroy,
+     * because destroying an Object does not remove its components from it.
+     *
+     * WHY THE RUNTIME AND NOT THE SCENE. Like `update` and `draw`, this hook needs the step
+     * context — the audio output, the scene, the time. The Scene is the Core's and holds
+     * none of those; the Runtime holds all three and already isolates a component that
+     * throws (ADR-0012), so the hook runs where every other component call runs.
+     *
+     * IT IS WHAT STOPS A DESTROYED ENEMY FROM GOING ON HUMMING. `AudioSource` is a
+     * reconciler: it makes the sound agree with its values on every step, and an Object
+     * that has left the scene gets no more steps — so without this the last thing it ever
+     * asked for would keep sounding until the tab closed. `Scene.remove()` recurses into
+     * the children and announces each of them, so a whole subtree is silenced.
+     *
+     * @param {object} object - The Object that has just left the scene
+     */
+    #detach(object) {
+        const components = object?.components;
+        if (!components) return;
+
+        const context = {
+            time: this.#clock.time,
+            scene: this.#scene,
+            runtime: this,
+            audio: this.#audio
+        };
+
+        for (const type of object.componentTypes()) {
+            const component = components[type];
+            if (typeof component?.onRemoved !== 'function') continue;
+
+            try {
+                component.onRemoved(object, context);
+            } catch (error) {
+                this.#onError(componentFailure({
+                    error,
+                    object,
+                    component,
+                    phase: 'removed',
+                    time: context.time
+                }));
+            }
+        }
     }
 
     /** Whether the simulation advances. Rendering continues while paused. */
@@ -224,7 +303,14 @@ export class Runtime {
             // WHAT IS TOUCHING WHAT, AS ONE SNAPSHOT THE WHOLE STEP READS (ADR-0059 §4).
             // `On Collision` and `Is Overlapping` ask this rather than measuring geometry of
             // their own, so two nodes in one step can never disagree about a hit.
-            collisions: this.#collisions
+            collisions: this.#collisions,
+            // THE OUTPUT A SOUND GOES TO, HANDED OVER LIKE THE INPUT AND THE RENDERER
+            // (ADR-0014, ADR-0060 §5). A node never reaches for a global `Audio`, so a
+            // server running the same graph is simply silent rather than broken.
+            audio: this.#audio,
+            // AND THE MODELS A `Spawn Prefab` MAY REACH, answering synchronously because
+            // they were resolved before this loop began (ADR-0061 §4).
+            prefabs: this.#prefabs
         };
 
         // DETECT FIRST, THEN BEHAVE. The transitions this step raises are worked out against

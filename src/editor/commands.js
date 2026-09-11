@@ -23,11 +23,14 @@ import {
     addObjectOperation,
     components as defaultRegistry,
     createId,
+    declarationsFrom,
+    freshRecords,
     moveComponentOperation,
     Origin,
     removeComponentOperation,
     removeObjectOperation,
     reparentOperation,
+    recordsOf,
     serializeComponent,
     serializeObject,
     worldMatrix
@@ -122,6 +125,76 @@ export function createObject(scene, {
     // The handler rebuilds the object from the payload, so what joined the scene is not
     // the instance built above — asking the scene is what returns the live one.
     return result.applied ? scene.get(object.id) : null;
+}
+
+/**
+ * Put an instance of a prefab in the scene, as one ADD_OBJECT operation.
+ *
+ * THE SAME OPERATION A DELETION UNDOES (ADR-0019, ADR-0024). `ADD_OBJECT` already carries a
+ * whole subtree — that is what makes undoing a deletion put the children back — so placing a
+ * prefab needs no operation type of its own, and `Ctrl Z` takes the whole instance away in
+ * one entry.
+ *
+ * AND IT IS NOT `instantiatePrefab()`. That one writes straight into the Scene, which is
+ * right for a graph — a spawn is a simulation output and produces no Operation (ADR-0034
+ * invariant 5) — and wrong for a creator, whose placement is an authored intent. The
+ * identities and the remapping are shared (`core/instantiate.js`); only the ending differs.
+ *
+ * THE INSTANCE IS AN ORDINARY OBJECT FROM HERE ON (ADR-0061 §9). Nothing in what is written
+ * names the prefab it came from: there is no link, no override and no revert in this
+ * tranche, so editing the prefab afterwards leaves this instance exactly as it is.
+ *
+ * @param {object} scene - The scene to place it in
+ * @param {object} definition - A prefab payload, already read
+ * @param {object} [options] - Options
+ * @param {string} [options.name] - What to call it; a unique form of the model's name otherwise
+ * @param {number} [options.x] - Horizontal world position
+ * @param {number} [options.y] - Vertical world position
+ * @param {object} [options.parent] - Object to attach the instance to
+ * @param {number} [options.index] - Rank among its siblings, or among the roots
+ * @param {string} [options.actor] - Who authored the intent
+ * @param {string} [options.batch] - Groups this into a larger history entry
+ * @returns {object|null} The instance's root, or null when the prefab could not be read
+ */
+export function placePrefab(scene, definition, {
+    name,
+    x = 0,
+    y = 0,
+    parent = null,
+    index,
+    actor,
+    batch
+} = {}) {
+    const records = recordsOf(definition);
+    if (!records || !scene) return null;
+
+    const written = freshRecords(records, { declarationsFor: declarationsFrom(scene) });
+    const [root, ...subtree] = written;
+
+    // NAMED SO TWO INSTANCES CAN BE TOLD APART IN THE HIERARCHY. The model's name is the
+    // base, and the same uniqueness the create menu already applies does the rest.
+    root.name = name ?? uniqueName(scene, root.name || 'Prefab');
+    root.parent = parent?.id ?? null;
+
+    // PLACED BY WRITING THE RECORD, NOT BY MOVING THE OBJECT AFTERWARDS. A second
+    // `setProperty` would be a second entry in the history for one gesture, and the instance
+    // would exist at the origin for one frame before it jumped.
+    const transform = root.components.find(entry => entry.type === 'Transform');
+    if (transform) {
+        transform.values = { ...transform.values, x: Math.round(x), y: Math.round(y) };
+    }
+
+    const result = scene.operations.submit(addObjectOperation({
+        object: root,
+        subtree,
+        parent: parent?.id ?? null,
+        index: index ?? null,
+        origin: Origin.EDITOR,
+        actor,
+        batch
+    }));
+
+    return result.applied ? scene.get(root.id) : null;
 }
 
 /**

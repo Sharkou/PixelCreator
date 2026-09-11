@@ -45,16 +45,19 @@ import { registerBuiltIns } from '../runtime/mod.js';
 export { registerBuiltIns };
 
 /** Groups, in the order the menu shows them. Anything unclaimed lands in the last one. */
-export const CATEGORIES = ['Rendering', 'Scene', 'Other'];
+export const CATEGORIES = ['Rendering', 'Audio', 'Scene', 'Other'];
 
 const SHIPPED = {
     Transform: { category: 'Scene', label: 'Transform' },
     RectangleRenderer: { category: 'Rendering', label: 'Rectangle' },
     Sprite: { category: 'Rendering', label: 'Sprite' },
+    TextRenderer: { category: 'Rendering', label: 'Text' },
     ParticleSystem: { category: 'Rendering', label: 'Particles' },
     Tilemap: { category: 'Rendering', label: 'Tilemap' },
     Velocity: { category: 'Scene', label: 'Velocity' },
     BoxCollider: { category: 'Scene', label: 'Box Collider' },
+    ScreenSpace: { category: 'Rendering', label: 'Screen Space' },
+    AudioSource: { category: 'Audio', label: 'Audio Source' },
     Camera: { category: 'Scene', label: 'Camera' }
 };
 

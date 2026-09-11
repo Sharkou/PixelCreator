@@ -24,6 +24,10 @@ const KIND_EXTENSIONS = {
     // thing a creator made, not of one half of it.
     [ResourceKind.COMPONENT]: '.px',
     [ResourceKind.GRAPH]: '.px',
+    // A MODEL OF AN OBJECT, AND IT SAYS SO. `.prefab` is longer than the house style would
+    // choose, and it is the word the thing is called — a creator who reads `Bullet.prefab`
+    // in a folder knows what they are looking at without opening it.
+    [ResourceKind.PREFAB]: '.prefab',
     [ResourceKind.ASSET]: ''
 };
 

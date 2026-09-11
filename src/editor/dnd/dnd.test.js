@@ -360,13 +360,42 @@ test('an object that already carries the Component refuses, and says where to ai
 
 test('a resource nothing consumes is not attachable, and no rule pretends otherwise', () => {
     const ctx = context();
-    const sound = ctx.project.add({ kind: ResourceKind.ASSET, name: 'jump.wav', mime: 'audio/wav' }, 'x');
+    // A FONT: a real file a creator could import, and one no Component reads yet. A sound
+    // used to stand here and is now a row of INSTANTIABLE (ADR-0060 §6), which is exactly
+    // what "a kind with no row is not instantiable" is supposed to allow — a new row, and
+    // nothing else changing.
+    const font = ctx.project.add({ kind: ResourceKind.ASSET, name: 'title.woff2', mime: 'font/woff2' }, 'x');
     const object = ctx.scene.add(new SceneObject('Hero'));
 
     // No row of INSTANTIABLE claims it, so the same absence refuses it in the scene and here.
-    assert.equal(instantiator(sound), null);
-    assert.equal(canDrop(resourcePayload(sound), { zone: DropZone.COMPONENTS, object }).allowed, false);
+    assert.equal(instantiator(font), null);
+    assert.equal(canDrop(resourcePayload(font), { zone: DropZone.COMPONENTS, object }).allowed, false);
     assert.equal(object.componentTypes().length, 0);
+});
+
+test('a sound is an Audio Source, which is the same sentence an image already was', () => {
+    const ctx = context();
+    const sound = ctx.project.add({ kind: ResourceKind.ASSET, name: 'jump.wav', mime: 'audio/wav' }, 'x');
+    const object = ctx.scene.add(new SceneObject('Hero'));
+
+    assert.equal(instantiator(sound)?.label, 'Sound');
+    performDrop(resourcePayload(sound), { zone: DropZone.COMPONENTS, object }, attaching(ctx));
+
+    const source = object.getComponent('AudioSource');
+    assert.ok(source, 'the Component that plays a sound is attached');
+    assert.equal(source.clip, sound.id, 'and pointed at the ResourceId, never at the bytes');
+    assert.equal(source.playing, true, 'and a drop that produced silence would answer nothing');
+});
+
+test('a sound dropped in the scene becomes an Object that plays it', () => {
+    const ctx = context();
+    const sound = ctx.project.add({ kind: ResourceKind.ASSET, name: 'theme.mp3', mime: 'audio/mpeg' }, 'x');
+
+    const result = performDrop(resourcePayload(sound), { zone: DropZone.SCENE, x: 0, y: 0 }, ctx);
+    const [object] = result.objects;
+
+    assert.ok(object.hasComponent('Transform'), 'a place in the world');
+    assert.equal(object.getComponent('AudioSource').clip, sound.id);
 });
 
 test('a folder is not a Component, whatever it is dropped on', () => {
@@ -1466,18 +1495,34 @@ test('declaring the canvas zone left every other zone answering as it did', () =
 
 // --- what is refused, and says so --------------------------------------------------------
 
-test('dragging an object into the Project panel is refused, with the reason', () => {
+test('dragging an object into the Project panel saves it as a prefab (ADR-0061)', () => {
+    // THE ROW ADR-0026 §7 REFUSED, NOW THAT THE DECISION IT WAS WAITING FOR EXISTS.
     const ctx = context();
     const object = ctx.scene.add(new SceneObject('Hero'));
-    object.addComponent(new Transform());
+    object.addComponent(new Transform(12, 34));
 
     const target = { zone: DropZone.PROJECT, parent: null, project: ctx.project };
     const verdict = canDrop(objectPayload(object), target);
 
+    assert.equal(verdict.allowed, true);
+    assert.match(verdict.reason, /Save Hero as a prefab/);
+
+    const result = performDrop(objectPayload(object), target, ctx);
+
+    assert.equal(result.resource.kind, ResourceKind.PREFAB);
+    assert.equal(result.resource.name, 'Hero.prefab', 'the object name, with the extension its kind decides');
+    assert.deepEqual(result.cleared, [], 'nothing pointed outside it');
+    assert.equal(ctx.scene.has(object), true, 'and the Object stays where it was');
+});
+
+test('a prefab dropped with no project to put it in is refused, with the reason', () => {
+    const ctx = context();
+    const object = ctx.scene.add(new SceneObject('Hero'));
+
+    const verdict = canDrop(objectPayload(object), { zone: DropZone.PROJECT, parent: null, project: null });
+
     assert.equal(verdict.allowed, false);
-    assert.match(verdict.reason, /Prefabs are not designed yet/);
-    assert.equal(performDrop(objectPayload(object), target, ctx), null);
-    assert.equal(ctx.project.resources().filter(entry => entry.name === 'Hero').length, 0);
+    assert.match(verdict.reason, /no project/);
 });
 
 test('a drop nothing knows about is simply not allowed, and says nothing', () => {
@@ -1541,7 +1586,7 @@ test('a file the object already has a Component for is refused before anything i
 });
 
 test('a file nothing consumes is not attachable, and nothing is imported trying', () => {
-    // The same absence that refuses a SOUND already in the project refuses one from the
+    // The same absence that refuses a FONT already in the project refuses one from the
     // desktop, and it is reached from the file rather than from a resource — so the refusal
     // costs the project nothing. (The components list states no sentence for a refusal yet;
     // that is the panel's gap, not this row's, and it is the same for a resource.)
@@ -1549,13 +1594,29 @@ test('a file nothing consumes is not attachable, and nothing is imported trying'
     const object = ctx.scene.add(new SceneObject('Hero'));
 
     const verdict = canDrop(
-        filesPayload([{ name: 'song.mp3', mime: 'audio/mpeg', payload: 'data:audio/mpeg;base64,AA' }]),
+        filesPayload([{ name: 'title.woff2', mime: 'font/woff2', payload: 'data:font/woff2;base64,AA' }]),
         { zone: DropZone.COMPONENTS, object }
     );
 
     assert.equal(verdict.allowed, false);
     assert.equal(ctx.project.resources(ResourceKind.ASSET).length, 0);
     assert.equal(object.componentTypes().length, 0);
+});
+
+test('a sound dragged from the desktop onto an object imports it and plays it', () => {
+    const ctx = context();
+    const object = ctx.scene.add(new SceneObject('Hero'));
+
+    const result = performDrop(
+        filesPayload([{ name: 'jump.wav', mime: 'audio/wav', payload: 'data:audio/wav;base64,AA' }]),
+        { zone: DropZone.COMPONENTS, object },
+        attaching(ctx)
+    );
+
+    const source = object.getComponent('AudioSource');
+    assert.ok(source, 'one infrastructure, two kinds of asset (ADR-0060 §6)');
+    assert.equal(source.clip, result.imported[0].id);
+    assert.equal(ctx.project.resources(ResourceKind.ASSET).length, 1, 'exactly one import');
 });
 
 test('only the first file is taken, because one Component shows one resource', () => {
@@ -1654,4 +1715,141 @@ test('a row a creator cannot type into is a row a drop may not write either', ()
         zone: DropZone.PROPERTY, component: sprite, prop: 'source', label: 'Source', readonly: true
     };
     assert.equal(acceptsResource(lockedResource, { id: 'r1', kind: 'asset', mime: 'image/png' }), false);
+});
+
+// --- prefabs (ADR-0061) -------------------------------------------------------------------
+
+test('a prefab dropped in the scene becomes an instance, placed where it landed', async () => {
+    const ctx = context();
+    const model = ctx.scene.add(new SceneObject('Bullet'));
+    model.addComponent(new Transform(0, 0));
+    model.addComponent(new RectangleRenderer(8, 8, '#ffd166'));
+
+    const { resource } = performDrop(
+        objectPayload(model),
+        { zone: DropZone.PROJECT, parent: null, project: ctx.project },
+        ctx
+    );
+
+    // The model is taken out, so what appears next can only have come from the prefab.
+    ctx.scene.remove(model);
+
+    const result = await performDrop(
+        resourcePayload(resource),
+        { zone: DropZone.SCENE, x: 140.4, y: -60.7 },
+        ctx
+    );
+
+    const [instance] = result.objects;
+    assert.equal(instance.name, 'Bullet');
+    assert.notEqual(instance.id, model.id, 'the model identity never reaches the scene');
+    assert.equal(instance.getComponent('Transform').x, 140);
+    assert.equal(instance.getComponent('Transform').y, -61);
+    assert.equal(instance.getComponent('RectangleRenderer').width, 8);
+});
+
+test('placing one is one history entry, and undo takes the whole subtree back', async () => {
+    const ctx = context();
+    const model = ctx.scene.add(new SceneObject('Turret'));
+    model.addComponent(new Transform());
+    const barrel = ctx.scene.add(new SceneObject('Barrel'));
+    barrel.addComponent(new Transform(0, -8));
+    model.addChild(barrel);
+
+    const { resource } = performDrop(
+        objectPayload(model),
+        { zone: DropZone.PROJECT, parent: null, project: ctx.project },
+        ctx
+    );
+    ctx.scene.remove(model);
+
+    const history = new History(ctx.scene.operations);
+    await performDrop(resourcePayload(resource), { zone: DropZone.SCENE, x: 0, y: 0 }, ctx);
+
+    assert.equal(ctx.scene.objects().length, 2, 'the instance and its child');
+    assert.equal(history.depth, 1, 'one gesture, one entry (ADR-0024 §4)');
+
+    history.undo();
+    assert.equal(ctx.scene.objects().length, 0, 'and the whole subtree goes back at once');
+});
+
+test('two placements are two independent instances, with two names', async () => {
+    const ctx = context();
+    const model = ctx.scene.add(new SceneObject('Enemy'));
+    model.addComponent(new Transform());
+
+    const { resource } = performDrop(
+        objectPayload(model),
+        { zone: DropZone.PROJECT, parent: null, project: ctx.project },
+        ctx
+    );
+    ctx.scene.remove(model);
+
+    const first = (await performDrop(resourcePayload(resource), { zone: DropZone.SCENE, x: 0, y: 0 }, ctx)).objects[0];
+    const second = (await performDrop(resourcePayload(resource), { zone: DropZone.SCENE, x: 40, y: 0 }, ctx)).objects[0];
+
+    assert.notEqual(first.id, second.id);
+    assert.notEqual(first.name, second.name, 'two rows a creator can tell apart');
+    assert.equal(first.name, 'Enemy');
+});
+
+test('a prefab dropped on the Hierarchy lands at the origin, because a list is not a place', async () => {
+    const ctx = context();
+    const model = ctx.scene.add(new SceneObject('Enemy'));
+    model.addComponent(new Transform(300, 200));
+
+    const { resource } = performDrop(
+        objectPayload(model),
+        { zone: DropZone.PROJECT, parent: null, project: ctx.project },
+        ctx
+    );
+    ctx.scene.remove(model);
+
+    const result = await performDrop(resourcePayload(resource), { zone: DropZone.HIERARCHY }, ctx);
+    const [instance] = result.objects;
+
+    assert.equal(instance.getComponent('Transform').x, 0);
+    assert.equal(instance.getComponent('Transform').y, 0);
+});
+
+test('the prefab rule wins over the generic resource rules, and says what it will do', () => {
+    const ctx = context();
+    const prefab = ctx.project.add({ kind: ResourceKind.PREFAB, name: 'Bullet.prefab' }, null);
+
+    assert.equal(ruleFor(resourcePayload(prefab), { zone: DropZone.SCENE }).id, 'prefab-to-scene');
+    assert.equal(ruleFor(resourcePayload(prefab), { zone: DropZone.HIERARCHY }).id, 'prefab-to-scene');
+    assert.match(canDrop(resourcePayload(prefab), { zone: DropZone.SCENE }).reason, /Place Bullet\.prefab/);
+
+    // And a prefab is not a Component: dropping one on an object's component list refuses.
+    const object = ctx.scene.add(new SceneObject('Hero'));
+    assert.equal(canDrop(resourcePayload(prefab), { zone: DropZone.COMPONENTS, object }).allowed, false);
+});
+
+test('a prefab with no payload places nothing, and does not throw', async () => {
+    const ctx = context();
+    const prefab = ctx.project.add({ kind: ResourceKind.PREFAB, name: 'Empty.prefab' }, null);
+
+    const result = await performDrop(resourcePayload(prefab), { zone: DropZone.SCENE, x: 0, y: 0 }, ctx);
+    assert.equal(result, null);
+    assert.equal(ctx.scene.objects().length, 0);
+});
+
+test('a prefab made from a subtree keeps the children, in order', () => {
+    const ctx = context();
+    const model = ctx.scene.add(new SceneObject('Ship'));
+    model.addComponent(new Transform());
+    for (const name of ['Left Wing', 'Right Wing']) {
+        const wing = ctx.scene.add(new SceneObject(name));
+        wing.addComponent(new Transform());
+        model.addChild(wing);
+    }
+
+    const { resource } = performDrop(
+        objectPayload(model),
+        { zone: DropZone.PROJECT, parent: null, project: ctx.project },
+        ctx
+    );
+
+    const definition = ctx.project.read(resource.id);
+    assert.deepEqual(definition.objects.map(record => record.name), ['Ship', 'Left Wing', 'Right Wing']);
 });

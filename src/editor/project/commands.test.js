@@ -25,13 +25,17 @@ test('the menu is built from the kinds table, grouped like every other dropdown'
         'every kind is offered, exactly once'
     );
     assert.ok(items[0].heading, 'a group opens the menu');
-    assert.deepEqual(headings, ['General', 'Scenes', 'Graphics', 'Components']);
+    assert.deepEqual(headings, ['General', 'Scenes', 'Graphics', 'Audio', 'Components']);
     assert.ok(entries.every(item => typeof item.label === 'string' && item.label !== ''));
     assert.ok(entries.every(item => typeof item.icon === 'string'));
 });
 
 test('a kind that needs a file says so, generically', () => {
     // The panel reads this flag; it never learns which kind carries it.
+    assert.equal(resourceKind('image').pick.accept, 'image/*');
+    assert.equal(resourceKind('sound').pick.accept, 'audio/*');
+    // A row is found by its own id, or failing that by the kind it makes — and two rows
+    // make an `asset`, so the kind answers with the first of them (ADR-0060 §5).
     assert.equal(resourceKind(ResourceKind.ASSET).pick.accept, 'image/*');
     assert.equal(resourceKind(ResourceKind.FOLDER).pick, undefined);
     assert.equal(resourceKind('nothing'), null);

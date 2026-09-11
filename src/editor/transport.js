@@ -48,6 +48,7 @@ export class Transport {
     #registry;
 
     #preview;
+    #prepare;
 
     #state = TransportState.EDITING;
     #snapshot = null;
@@ -62,8 +63,10 @@ export class Transport {
      * @param {object} [context.histories] - The Histories to clear when play starts
      * @param {object} [context.registry] - Component registry used to restore
      * @param {Function} [context.preview] - Opens the game in its own window
+     * @param {Function} [context.prepare] - Resolves what a session will reach for, before it
+     *   starts (ADR-0061 §4). Asynchronous, because reading the project is
      */
-    constructor({ scene, runtime, histories = null, registry = null, preview = null }) {
+    constructor({ scene, runtime, histories = null, registry = null, preview = null, prepare = null }) {
         if (!scene) throw new TypeError('Transport: expected a scene');
         if (!runtime) throw new TypeError('Transport: expected a runtime');
 
@@ -72,6 +75,22 @@ export class Transport {
         this.#histories = histories;
         this.#registry = registry;
         this.#preview = preview;
+        this.#prepare = prepare;
+    }
+
+    /**
+     * Resolve what the session is about to reach for.
+     *
+     * WHY IT IS NOT PART OF `play()`. A `Runtime.step()` may not wait on storage, and neither
+     * may `play()` — it is the state machine, it is synchronous, and every test of it is
+     * synchronous (ADR-0029). Reading a project IS asynchronous, so the two are separate
+     * calls and the button awaits the first before making the second. A caller that skips it
+     * gets a game with no prefabs resolved, which is exactly what it had before.
+     *
+     * @returns {Promise<any>} Whatever the resolver answered
+     */
+    async prepare() {
+        return this.#prepare ? this.#prepare() : null;
     }
 
     /**

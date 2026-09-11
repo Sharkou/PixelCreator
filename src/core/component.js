@@ -14,7 +14,8 @@
 //       draw(self, renderer) { }                  // rendering, client only
 //       bounds(self) { }                          // optional geometry, see below
 //       onAttach(self) { }
-//       onDetach(self) { }
+//       onDetach(self) { }                        // this Component left the Object
+//       onRemoved(self, ctx) { }                  // the Object left the Scene, see below
 //   }
 //
 // `active` — WHO READS IT, WHO WRITES IT.
@@ -33,6 +34,23 @@
 // is replicable — so a runtime that did it would let a script's failure rewrite the
 // simulation state, differently on each machine. Isolation and policy are separated for
 // exactly this reason (ADR-0012).
+//
+// `onRemoved(self, ctx)` — THE OBJECT LEFT THE SCENE, WHICH IS NOT `onDetach`.
+//
+// `onDetach(self)` fires when this Component is taken OFF an Object; `onRemoved(self, ctx)`
+// fires when the Object itself leaves the Scene, taking every Component with it. Destroying
+// an Object raises the second and not the first, because nothing was removed from it — which
+// is why a component that holds something outside the simulation needs both.
+//
+// It is optional, like `update` and `draw`, and it is called by whoever owns the context a
+// component would need: `Runtime` subscribes to the Scene's own 'removed' announcement
+// (runtime/runtime.js). The Core raises the event and names the capability; it does not call
+// it, because the Core has no audio output, no renderer and no clock to hand over.
+//
+// WHAT IT IS FOR, CONCRETELY: an `AudioSource` is a reconciler — it makes what is sounding
+// agree with its values on every step — and an Object that has left the Scene gets no more
+// steps. Without this hook the last sound it asked for would go on playing until the tab
+// closed. It is NOT a place to mutate the model: the Object is already gone.
 //
 // `bounds(self)` — AN OPTIONAL GEOMETRIC CAPABILITY, NOT A PICKING API.
 //

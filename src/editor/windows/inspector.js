@@ -573,6 +573,10 @@ export class Inspector extends Element {
             image-rendering: pixelated;
         }
 
+        .preview audio {
+            width: 100%;
+        }
+
         /* ── add ────────────────────────────────────────────────────────── */
 
         .add {
@@ -1278,6 +1282,16 @@ export class Inspector extends Element {
                     alt: resource.name || 'Preview',
                     draggable: false
                 })));
+        } else if (content.preview?.type === 'audio') {
+            // THE ONE CONTROL IN THE EDITOR THAT MAKES A NOISE, and it makes one only when
+            // a creator presses it: `controls` and nothing else — no autoplay, no loop.
+            // Importing a sound and being able to check it is the whole of it.
+            nodes.push(el('div', { class: 'preview' },
+                el('audio', {
+                    src: content.preview.source,
+                    controls: true,
+                    preload: 'metadata'
+                })));
         } else if (content.preview?.note) {
             nodes.push(el('div', { class: 'none', textContent: content.preview.note }));
         }
@@ -1377,7 +1391,10 @@ export class Inspector extends Element {
             event.stopPropagation();
             element.classList.remove('drop');
 
-            const wanted = accept.startsWith('image/') ? 'image/' : '';
+            // THE PREFIX OF WHATEVER IS ACCEPTED, not a list of families. `image/*` keeps
+            // images, `audio/*` keeps sounds, and a property that narrows itself to
+            // something nobody has imagined yet keeps that (ADR-0007).
+            const wanted = accept.endsWith('*') ? accept.slice(0, -1) : accept;
             const payload = await readDroppedFiles(event, { accept: wanted });
             if (!payload) return;
 

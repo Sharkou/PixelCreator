@@ -23,6 +23,7 @@ export { ResourceStore, MemoryResourceStore } from './store.js';
 export { Project, MANIFEST_VERSION } from './project.js';
 export { loadComponentDefinitions, bindGraph, readGraph } from './graphs.js';
 export { addScene, saveScene, loadScene, sceneResources } from './scenes.js';
+export { addPrefab, loadPrefab, loadPrefabs, prefabResources, savePrefab } from './prefabs.js';
 export { baseNameOf, extensionOf, hasValidExtension, withExtension } from './naming.js';
 export {
     KIND_LABELS,

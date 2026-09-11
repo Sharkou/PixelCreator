@@ -57,19 +57,42 @@ export const RESOURCE_KINDS = [
         category: 'Components',
         create: (project, { parent, actor }) => createComponent(project, { parent, actor })
     },
-    {
-        id: ResourceKind.ASSET,
-        label: 'Image…',
-        category: 'Graphics',
+    // TWO ROWS, ONE `create`. An image and a sound are the same KIND of Resource (ADR-0020
+    // §2) — same identity, same store, same reference in a property — and what differs is
+    // what a browser should offer in its picker. So the row carries the `accept` and the
+    // label, and the import itself is written once.
+    importer('image', 'Image…', 'Graphics', 'image/*', 'Image'),
+    importer('sound', 'Sound…', 'Audio', 'audio/*', 'Sound')
+];
+
+/**
+ * A row that imports a file of some family as an asset.
+ *
+ * @param {string} id - What the menu item is called; not a ResourceKind
+ * @param {string} label - What the menu reads
+ * @param {string} category - Which group it sits in
+ * @param {string} accept - An accept attribute for the picker
+ * @param {string} fallback - What an unnamed file is called
+ * @returns {object} The RESOURCE_KINDS row
+ */
+function importer(id, label, category, accept, fallback) {
+    return {
+        // A ROW'S ID IS NOT A ResourceKind, AND FROM HERE ON IT CANNOT BE. Two rows create
+        // the same kind — an image and a sound are both `asset` (ADR-0020 §2) — so the id
+        // says which GESTURE this is and `kind` says what it makes.
+        id,
+        kind: ResourceKind.ASSET,
+        label,
+        category,
         // A KIND MAY DECLARE THAT IT NEEDS A FILE FIRST. The panel reads this flag, not the
         // kind: it asks for a file, reads it, and hands both to `create`. That keeps the
         // window free of "if this is an image…" while letting a browser do the one thing
         // only it can — hand over a file the page was not given.
-        pick: { accept: 'image/*' },
+        pick: { accept },
         create: (project, { parent, actor, file, payload }) => {
             if (!payload) return null;
 
-            const base = (file?.name ?? 'Image').replace(/\.[^.]+$/, '');
+            const base = (file?.name ?? fallback).replace(/\.[^.]+$/, '');
             return project.add(
                 {
                     kind: ResourceKind.ASSET,
@@ -81,8 +104,8 @@ export const RESOURCE_KINDS = [
                 { actor }
             );
         }
-    }
-];
+    };
+}
 
 /**
  * The order the `+` menu's groups are drawn in.
@@ -115,7 +138,9 @@ export function resourceMenuItems() {
         // the kind (ui/icons.js), so the menu that creates one and the tile that shows it
         // afterwards read the same table — they used to carry two literals each, and the
         // Scene entry had drifted from the one the Project panel drew.
-        for (const { id, label } of group) items.push({ id, label, icon: iconForResource(id) });
+        for (const { id, kind, label } of group) {
+            items.push({ id, label, icon: iconForResource(kind ?? id) });
+        }
     }
 
     return items;
@@ -141,12 +166,20 @@ export function createResourceOfKind(project, kind, { parent = null, actor, file
 }
 
 /**
- * The creation entry for a kind, or null.
- * @param {string} kind - One of RESOURCE_KINDS' ids
+ * The creation entry for a row id, or failing that for a ResourceKind.
+ *
+ * TWO LOOKUPS, IN THAT ORDER, BECAUSE A KIND IS NO LONGER A ROW. `asset` names two rows —
+ * Image and Sound — so asking for a kind gets the first row that makes one, which is what a
+ * caller naming a kind rather than a gesture is asking for. Asking for a row by its own id
+ * is exact.
+ *
+ * @param {string} id - A row's id, or a ResourceKind
  * @returns {object|null} The entry
  */
-export function resourceKind(kind) {
-    return RESOURCE_KINDS.find(candidate => candidate.id === kind) ?? null;
+export function resourceKind(id) {
+    return RESOURCE_KINDS.find(candidate => candidate.id === id)
+        ?? RESOURCE_KINDS.find(candidate => (candidate.kind ?? candidate.id) === id)
+        ?? null;
 }
 
 /**

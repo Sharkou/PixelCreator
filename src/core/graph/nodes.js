@@ -110,8 +110,18 @@ export const NODE_CATEGORIES = [
     // move something at the same speed on every computer — where do I look?" Not under
     // `Math`, which is where you look to ADD two numbers. The nodes on it hand over what the
     // simulation knows about its own clock, and nothing else does.
-    'Events', 'Input', 'Flow', 'Time', 'Object', 'Properties', 'Transform',
-    'Values', 'Math', 'Compare', 'Logic', 'Debug'
+    //
+    // `Audio` SITS WITH `Transform` AND NOT WITH `Values`, for the same reason `Transform`
+    // does: its nodes make something HAPPEN. Moving and sounding are two outputs of one
+    // step, and a creator writing "the bullet fires and it goes bang" reads them in that
+    // order.
+    //
+    // `Text` IS ITS OWN SHELF, AND THE QUESTION THAT SETTLES IT IS "how do I put my score on
+    // the screen — where do I look?". Not under `Values`, which is where a creator looks to
+    // TYPE a literal: `Text` the node is a constant, and `To Text` and `Join Text` are the
+    // two acts that turn what a game knows into something a `TextRenderer` can show.
+    'Events', 'Input', 'Flow', 'Time', 'Object', 'Properties', 'Transform', 'Audio',
+    'Values', 'Text', 'Math', 'Compare', 'Logic', 'Debug'
 ];
 
 /**

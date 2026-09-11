@@ -70,6 +70,9 @@ import { DropPosition, canDrop as canDropRow, dropPositionAt, dropTarget } from 
 import { visibleObjects } from './search.js';
 import '../ui/window.js';
 
+/** The `…` entry that saves a row as a prefab; never a Component kind (ADR-0061 §11). */
+const SAVE_AS_PREFAB = 'save-as-prefab';
+
 /**
  * How long a click on a selected name waits to see whether it was half of a double-click.
  *
@@ -741,7 +744,22 @@ export class Hierarchy extends Element {
     #openCreateMenu(anchor, parent = null) {
         // No filter field on three entries: the search is what makes a long, categorised
         // list usable, and on a short one it is a control to skip past.
-        openMenu(anchor, createMenuItems(), kind => {
+        //
+        // AND ONE ENTRY THAT IS NOT A CREATION, ON A ROW ONLY. "Save as Prefab" acts on what
+        // was right-clicked, so it appears only when something was — and it is separated by
+        // its own heading rather than sitting among the kinds, because it answers a different
+        // question (ADR-0061 §11). The gesture it duplicates is dragging the row into the
+        // Project panel; both go through the one rule, so the two cannot drift.
+        const items = parent
+            ? [...createMenuItems(), { heading: 'Object' }, { id: SAVE_AS_PREFAB, label: 'Save as Prefab', icon: 'prefab' }]
+            : createMenuItems();
+
+        openMenu(anchor, items, kind => {
+            if (kind === SAVE_AS_PREFAB) {
+                this.#saveAsPrefab(parent);
+                return;
+            }
+
             const centre = this.#viewport?.worldCentre() ?? { x: 0, y: 0 };
             this.#announce(createObject(this.#scene, {
                 kind,
@@ -752,6 +770,27 @@ export class Hierarchy extends Element {
                 parent
             }));
         }, { label: 'objects' });
+    }
+
+    /**
+     * Save an Object and everything under it as a prefab, at the top level of the project.
+     *
+     * THROUGH THE DROP RULE, NOT BESIDE IT. Dragging this row onto the Project panel already
+     * means exactly this, and a second implementation would be a second answer to "what does
+     * saving an Object produce" (ADR-0026 §6). The top level is the honest folder for a
+     * gesture made in a window that does not know which folder the Project panel is showing.
+     *
+     * @param {object} object - The Object to model
+     */
+    #saveAsPrefab(object) {
+        const project = this.#workspace?.project ?? null;
+        if (!object || !project) return;
+
+        performDrop(
+            objectPayload(object),
+            { zone: DropZone.PROJECT, parent: null, project },
+            { ...this.#context(), report: message => console.info('[prefab]', message) }
+        );
     }
 
     /**

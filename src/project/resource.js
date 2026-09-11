@@ -43,6 +43,17 @@ export const ResourceKind = {
     SCENE: 'scene',
     COMPONENT: 'component',
     GRAPH: 'graph',
+    /**
+     * A reusable model of an Object and everything under it (ADR-0061).
+     *
+     * IT IS A KIND AND NOT A SCENE WITH A FLAG. A Scene is a place a game is played in; a
+     * prefab is a description used to make part of one. They share a payload SHAPE — both
+     * are serialized Objects — and share nothing else: a scene has roots, a camera and a
+     * name a player sees, a prefab has one root and is instantiated into somewhere else. A
+     * flag on `scene` would make every reader ask which it was holding, and the first one
+     * that forgot would open a prefab as a level.
+     */
+    PREFAB: 'prefab',
     ASSET: 'asset'
 };
 

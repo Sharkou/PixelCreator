@@ -30,6 +30,7 @@ import { OBJECT_COMPONENT, objectProperties } from '../object.js';
 import { GraphError, GraphIssueCode } from './errors.js';
 import { worldPosition } from '../components/transform.js';
 import { duplicateObject } from '../duplicate.js';
+import { instantiatePrefab } from '../prefab.js';
 
 /**
  * The param that names a property, so the Editor knows to offer a picker.
@@ -1278,12 +1279,17 @@ export const STANDARD_NODES = [
         category: 'Object',
         keywords: ['create', 'instantiate', 'clone', 'copy', 'duplicate', 'new', 'bullet',
             'enemy', 'particle', 'add'],
-        // WHAT IS INSTANTIATED IS AN OBJECT OF THE SCENE, AND THAT IS THE WHOLE DECISION.
-        // There is no prefab (ADR-0026 §7) and there cannot be one inside a step: a Resource
-        // is resolved through asynchronous storage the Runtime never reaches (ADR-0020,
-        // ADR-0034 §3.2). A live Object, on the other hand, already describes an instance
-        // completely — its components, its values, its children — so the model is an Object
-        // and no second description of what an Object is has to be invented (ADR-0056 §2).
+        // WHAT IS INSTANTIATED HERE IS AN OBJECT OF THE SCENE, AND IT STAYS THAT WAY. A live
+        // Object already describes an instance completely — its components, its values, its
+        // children — so the model is an Object and no second description of what an Object is
+        // has to be invented (ADR-0056 §2).
+        //
+        // THE OTHER KIND OF MODEL IS `Spawn Prefab`, AND IT IS A SEPARATE NODE (ADR-0061
+        // §10). A prefab is a `ResourceId` and an Object is a handle; one port holding both
+        // would have to be typed `any` and then GUESS which it had been given. What made a
+        // prefab impossible in the first place — a Resource is resolved through asynchronous
+        // storage a step may not wait for — is answered by resolving them BEFORE the
+        // simulation rather than by making this node asynchronous (ADR-0061 §4).
         tooltip: 'Creates a copy of an Object in the scene, beside the one it copies',
         params: { ...modelParam },
         inputs: [
@@ -1317,6 +1323,68 @@ export const STANDARD_NODES = [
             const spawn = () => duplicateObject(scene, model, { createId: io.ctx?.createObjectId });
 
             return { next: 'out', values: { spawned: model && scene ? spawn() : null } };
+        }
+    },
+
+    {
+        // TWO NODES, BECAUSE THERE ARE TWO KINDS OF MODEL AND NO HONEST WAY TO MAKE ONE PORT
+        // HOLD BOTH (ADR-0061 §10). A live Object travels a wire as a HANDLE; a prefab is a
+        // `ResourceId`, which is a string. A single `Model` port would have to be typed `any`
+        // and the node would then have to GUESS, at run time, whether the string it was handed
+        // names an Object of this scene or a Resource of this project — the one thing this
+        // repository refuses to make a Runtime do (ADR-0034 §3.5, ADR-0039).
+        //
+        // AND IT COSTS NO MIGRATION. `Spawn` is untouched: every graph written before this
+        // goes on meaning exactly what it meant, and a creator who never makes a prefab never
+        // meets this node. A union socket, or a `Spawn` that changed shape, would have bought
+        // one row in the menu for a migration of every existing `.px`.
+        //
+        // THE TWO ARE THE SAME MACHINERY (core/instantiate.js): fresh identities for the whole
+        // subtree, internal `objectref`s remapped through the same table, the same
+        // `restoreSubtree()`. What differs is where the description comes from.
+        type: 'scene.spawnPrefab',
+        label: 'Spawn Prefab',
+        category: 'Object',
+        keywords: ['create', 'instantiate', 'prefab', 'model', 'new', 'bullet', 'enemy',
+            'spawn', 'template', 'resource', 'add'],
+        tooltip: 'Creates an instance of a Prefab, without the Prefab existing in the scene',
+        params: {
+            prefab: {
+                type: PropertyType.RESOURCE,
+                kind: 'prefab',
+                default: null,
+                label: 'Prefab',
+                tooltip: 'The model to build from, by identity'
+            }
+        },
+        inputs: [
+            flow('in'),
+            data('prefab', PropertyType.RESOURCE, 'Prefab', null, null,
+                'A Prefab, when the graph works out which one')
+        ],
+        // THE INSTANCE COMES OUT, exactly as it does from `Spawn`, so `Set Position`,
+        // `Set Property` and `Destroy` all take it immediately (ADR-0056 §4). That is also
+        // why there is no X and no Y here: `Set Position` already says "put this Object
+        // here", and a port's default is a VALUE — an untouched `Spawn Prefab` would read
+        // `X 0  Y 0` and teleport every instance to the origin.
+        outputs: [flow('out'), data('spawned', OBJECT_TYPE, 'Spawned')],
+        execute: io => {
+            const id = io.wired('prefab') ? io.input('prefab') : io.param('prefab') ?? null;
+            const scene = io.ctx?.scene ?? null;
+            // RESOLVED FROM A MAP THAT IS ALREADY IN MEMORY (ADR-0061 §4). No storage, no
+            // await, no promise: the Project layer read every prefab before the first step
+            // and handed the result over on the context, beside the input and the clock.
+            const definition = io.ctx?.prefabs?.get?.(id) ?? null;
+
+            // A PREFAB NOBODY RESOLVED IS NOT A FAULT. An empty picker, a resource that was
+            // deleted, a headless call with no registry: all three are states of the running
+            // game, so the flow continues and the output reads as nothing — which is exactly
+            // what a creator's `Is Valid` is there to catch (ADR-0034 §3.4).
+            const spawned = definition && scene
+                ? instantiatePrefab(scene, definition, { createId: io.ctx?.createObjectId })
+                : null;
+
+            return { next: 'out', values: { spawned } };
         }
     },
 
@@ -1361,6 +1429,69 @@ export const STANDARD_NODES = [
     // port would fall back to `any` and its property picker would have nothing to offer.
     // Carrying both, the node resolves the declaration itself, so the port is typed exactly
     // and a bad wire is refused at the moment of the gesture rather than at run time.
+
+    // --- sound ---------------------------------------------------------------------------
+    //
+    // ONE NODE, BECAUSE THERE IS ONLY ONE THING A GRAPH CAN SAY ABOUT A SOUND THAT A
+    // PROPERTY CANNOT (ADR-0060 §6). A gunshot is a MOMENT: it has no state, nothing can be
+    // changed about it afterwards, and it is fired from a flow. A soundtrack is a STATE — on
+    // or off, at a volume a fade changes — and a state is a Component property, written with
+    // the `Set Property` a creator already knows. So `AudioSource.playing` is the whole of
+    // "play" and "stop" for a sustained sound, and this node is the whole of a one-shot.
+    //
+    // A `Stop Sound` WOULD HAVE NOTHING TO POINT AT. A one-shot has no handle in the graph —
+    // giving it one would put a value that cannot be serialized on a wire — and a sustained
+    // sound stops with `playing = false`. A node for it would be a second way to write a
+    // value, and the two would disagree the first time one was used inside a `Delay`.
+    //
+    // NOTHING IS RESOLVED HERE. The clip is a ResourceId and the Core never reaches storage
+    // (ADR-0020): the output the Runtime was built with turns it into something a speaker
+    // can use, the same way `Sprite.source` is resolved by whoever draws.
+
+    {
+        type: 'audio.play',
+        label: 'Play Sound',
+        category: 'Audio',
+        keywords: ['sound', 'audio', 'sfx', 'effect', 'noise', 'shoot', 'hit', 'explosion',
+            'bang', 'music', 'clip', 'sample', 'one shot'],
+        tooltip: 'Plays a sound once. For music that keeps going, use an Audio Source',
+        params: {
+            clip: {
+                type: PropertyType.RESOURCE,
+                kind: 'asset',
+                mime: 'audio/',
+                default: null,
+                label: 'Clip',
+                tooltip: 'The sound to play, by identity'
+            }
+        },
+        // A PICKER AND A PORT, THE SAME PAIR `Spawn` AND `Translate` OFFER (ADR-0039 §0.1).
+        // A sound a creator CHOOSES belongs on the card; a sound the graph COMPUTES — one of
+        // three footsteps, a note picked by pitch — can only arrive on a wire. There is no
+        // mode to set: connect something and the connection is it, leave it empty and the
+        // picker is.
+        inputs: [
+            flow('in'),
+            data('clip', PropertyType.RESOURCE, 'Clip', null, null,
+                'A sound, when the graph works out which one'),
+            data('volume', PropertyType.NUMBER, 'Volume', 1, null,
+                'From 0 to 1. Anything outside is brought back inside')
+        ],
+        outputs: [flow('out')],
+        execute: io => {
+            // WIRED BEATS PICKED, AND "WIRED" IS A STRUCTURAL QUESTION (ADR-0039 §0.3). A
+            // `Get Property` that answered null is not the same as an unconnected port, and
+            // falling back to the picker for the first would play the wrong sound silently.
+            const clip = io.wired('clip') ? io.input('clip') : io.param('clip') ?? null;
+
+            // NO CLIP, NO SOUND, AND NO COMPLAINT. An empty picker and a lookup that found
+            // nothing are states of the running game, not authoring errors (ADR-0034 §3.4).
+            // NO OUTPUT EITHER, on a server: the flow continues and the step is identical,
+            // which is what makes sound an output of the simulation and never an input.
+            if (clip) io.ctx?.audio?.play?.(clip, { volume: number(io.input('volume')) });
+            return 'out';
+        }
+    },
 
     // --- flow control ----------------------------------------------------------------
 
@@ -1607,6 +1738,63 @@ export const STANDARD_NODES = [
         outputs: [data('value', PropertyType.RESOURCE)],
         evaluate: io => ({ value: io.param('value') ?? null }),
         tooltip: 'A resource of this project, as a value a property can take'
+    },
+
+    // --- text ----------------------------------------------------------------------------
+    //
+    // A GAME KNOWS NUMBERS AND SHOWS WORDS, AND THESE TWO NODES ARE THE WHOLE BRIDGE.
+    // `TextRenderer.text` is an ordinary `string` property, so `Set Property` already writes
+    // it; what no node could do was produce the string in the first place — `typesCompatible`
+    // refuses a number on a text port, deliberately and correctly (ADR-0023: the type is what
+    // a value MEANS), so a score had no way of reaching a label.
+    //
+    // TWO NODES, NOT A FORMATTER. `"Score: {0}"` with placeholders would be a small language
+    // with its own syntax, its own errors and its own escape rules, and a creator would have
+    // to learn it before their first label worked. Converting and joining are the two acts
+    // that language would be made of, and they are already graph-shaped.
+
+    {
+        type: 'text.toText',
+        label: 'To Text',
+        category: 'Text',
+        icon: 'type-text',
+        keywords: ['string', 'convert', 'cast', 'number', 'boolean', 'stringify', 'show',
+            'display', 'score', 'label', 'hud', 'print'],
+        // ONE POLYMORPHIC PORT, AND THE TYPE SYSTEM ALREADY HAD IT. `ANY_TYPE` is the
+        // absence of a constraint rather than a union of shapes (graph/nodes.js), so this
+        // costs no new rule in `typesCompatible()` and no second kind of socket — which is
+        // what a `Number To Text` plus a `Boolean To Text` plus a `Text To Text` would have
+        // been: three nodes for one act, and a creator asked to know which of them their
+        // wire needs.
+        inputs: [data('value', ANY_TYPE, 'Value', null, null,
+            'Anything a wire carries: a number, a true/false, a word')],
+        outputs: [data('text', PropertyType.STRING, 'Text')],
+        evaluate: io => ({ text: asText(io.input('value')) }),
+        tooltip: 'Turns a value into text, so a Text Renderer can show it'
+    },
+
+    {
+        type: 'text.join',
+        label: 'Join Text',
+        category: 'Text',
+        icon: 'type-text',
+        keywords: ['concat', 'concatenate', 'append', 'combine', 'plus', 'add', 'merge',
+            'string', 'label', 'score', 'prefix', 'suffix'],
+        // BOTH PORTS ARE TEXT, AND THAT IS ON PURPOSE. Accepting `any` here would make
+        // `To Text` decorative — and would quietly re-admit the very conversion the type
+        // system refuses on every other port, so a number would read as text in one place
+        // and not in the next. The wire a creator has to draw is the statement that they
+        // meant it (ADR-0054).
+        inputs: [
+            data('a', PropertyType.STRING, 'A', '', 'Score: '),
+            data('b', PropertyType.STRING, 'B', '')
+        ],
+        outputs: [data('text', PropertyType.STRING, 'Text')],
+        // TWO PORTS, NOT N. Three pieces is two `Join Text` nodes, which reads left to right
+        // exactly as the sentence does; a variable port count would be the first node in the
+        // catalogue whose SHAPE a creator has to configure before they can wire it.
+        evaluate: io => ({ text: `${asText(io.input('a'))}${asText(io.input('b'))}` }),
+        tooltip: 'Puts two pieces of text end to end'
     },
 
     // --- arithmetic --------------------------------------------------------------------
@@ -2086,4 +2274,34 @@ function logical(type, label, apply) {
 function number(value) {
     const parsed = globalThis.Number(value);
     return globalThis.Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * A value, as the text a label shows.
+ *
+ * FOUR ANSWERS, AND NONE OF THEM IS `[object Object]`:
+ *
+ *   null / undefined   the empty string — nothing reads as nothing, not as the word "null"
+ *   a boolean          `true` / `false`, which is what a creator typed into the node
+ *   a number           its shortest exact decimal, the same on every machine; `NaN` and the
+ *                      infinities read as empty rather than leaking an arithmetic accident
+ *                      onto the screen (the reading `Divide` already gives a zero divisor)
+ *   anything else      `String()`, which covers text and a Choice — an option IS its value
+ *                      (ADR-0031 §2), so a Choice reads as the word it holds
+ *
+ * AN OBJECT HANDLE IS NOT TEXT, and answering with its class name would be a promise this
+ * cannot keep — there is no name a scene Object has that is stable enough to show. It reads
+ * as empty, which is honest, and `Get Property Object ▸ Name` is the node that answers the
+ * question that was really being asked.
+ *
+ * @param {any} value - What a wire carried
+ * @returns {string} The text
+ */
+function asText(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (typeof value === 'number') return globalThis.Number.isFinite(value) ? globalThis.String(value) : '';
+    if (typeof value === 'object') return '';
+
+    return globalThis.String(value);
 }

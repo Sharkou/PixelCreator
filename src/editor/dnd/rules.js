@@ -29,11 +29,18 @@ import {
     createId,
     elementOf
 } from '../../core/mod.js';
-import { ResourceKind, isFolder, canMove } from '../../project/mod.js';
-import { Sprite } from '../../runtime/mod.js';
+import {
+    ResourceKind,
+    addPrefab,
+    canMove,
+    isFolder,
+    uniqueResourceName,
+    withExtension
+} from '../../project/mod.js';
+import { AudioSource, Sprite } from '../../runtime/mod.js';
 import { DragKind, DropZone } from './payload.js';
 import { createResourceOfKind } from '../project/commands.js';
-import { uniqueName } from '../commands.js';
+import { placePrefab, uniqueName } from '../commands.js';
 import { propertyPath } from '../inspector/node.js';
 
 /**
@@ -72,6 +79,24 @@ const INSTANTIABLE = [
             /** Where the reference goes. The ResourceId, never the bytes (ADR-0020). */
             property: 'source',
             values: { width: 64, height: 64 }
+        }
+    },
+    {
+        // THE SECOND ROW, AND IT IS ONLY A ROW (ADR-0026 §6, ADR-0060 §6). "A sound is an
+        // Audio Source" is the same sentence "an image is a Sprite" already was, so nothing
+        // in the drop system, the Project panel or the Inspector learned a word for audio.
+        /** @param {object} resource - The manifest entry */
+        accepts: resource => resource.kind === ResourceKind.ASSET
+            && (resource.mime ?? '').startsWith('audio/'),
+        label: 'Sound',
+        consumes: {
+            Component: AudioSource,
+            property: 'clip',
+            // `playing` IS WHAT MAKES THE GESTURE ANSWER. A fresh `AudioSource` is silent on
+            // purpose — adding a Component must never make a noise nobody asked for — but
+            // dragging a sound into a game IS asking, and a drop that produced a component
+            // doing nothing at all is what ADR-0026 §6 calls the worst possible answer.
+            values: { playing: true }
         }
     }
 ];
@@ -283,6 +308,40 @@ export const RULES = [
         perform: (payload, target) => {
             assignReference(target, payload.id);
             return { assigned: payload.id };
+        }
+    },
+
+    {
+        // A PREFAB IS INSTANTIATED, NOT CONSUMED BY A COMPONENT (ADR-0061 §11). Every other
+        // row of the drop table hands a ResourceId to a property — an image becomes a
+        // `Sprite.source`, a sound becomes an `AudioSource.clip` — because those resources
+        // are things an Object HAS. A prefab is not something an Object has; it is a
+        // description of Objects, so what a drop makes is the Objects.
+        //
+        // IT READS THE PAYLOAD, WHICH IS WHY IT IS `async`. The Editor may wait — a drop is a
+        // gesture, not a simulation step — and this is the same road `component-to-object`
+        // already takes to install a `.px` before attaching it.
+        id: 'prefab-to-scene',
+        accepts: (payload, target) => payload.kind === DragKind.RESOURCE
+            && (target.zone === DropZone.SCENE || target.zone === DropZone.HIERARCHY)
+            && payload.resource?.kind === ResourceKind.PREFAB,
+        // NO REFUSAL TO STATE. A prefab dropped on a scene means exactly one thing, and
+        // whether the payload can be read is answered where the project is in hand — a
+        // `canDrop()` asked during a hover has no context and must not pretend otherwise.
+        describe: payload => `Place ${payload.resource.name || 'this prefab'} in the scene`,
+        perform: async (payload, target, context) => {
+            const definition = await context.project?.read?.(payload.resource.id) ?? null;
+            if (!definition || !context.scene) return null;
+
+            const object = placePrefab(context.scene, definition, {
+                // NO WORLD POINT FROM THE HIERARCHY, because a list of what exists is not a
+                // place. The origin is the honest default and the creator moves it.
+                x: target.zone === DropZone.SCENE ? target.x ?? 0 : 0,
+                y: target.zone === DropZone.SCENE ? target.y ?? 0 : 0
+            });
+
+            context.select?.(object);
+            return { objects: [object].filter(Boolean) };
         }
     },
 
@@ -747,15 +806,60 @@ export const RULES = [
     },
 
     {
+        // THE ROW ADR-0026 §7 LEFT EMPTY, AND THE DECISION IT WAS WAITING FOR IS ADR-0061.
+        // What a prefab IS: a Resource whose payload is a serialized subtree. What an
+        // instance's relationship to it is: none — a prefab is a model of creation, not a
+        // system of inheritance, and this tranche deliberately ships no override, no revert
+        // and no live link (ADR-0061 §9). With those two answered, the drop is a row.
         id: 'object-to-project',
         accepts: (payload, target) => payload.kind === DragKind.OBJECT && target.zone === DropZone.PROJECT,
-        // A PREFAB IS NOT A FILE FORMAT, IT IS A DECISION (ADR-0026): what a prefab is, how
-        // an instance stays connected to it, and what an override means. None of that is
-        // decided, so the drop is refused with the reason rather than half-built.
-        refuses: () => 'Prefabs are not designed yet — an object cannot be saved as a resource.',
-        describe: () => 'Prefabs are not designed yet'
+        // THE ONLY THING A VERDICT CAN CHECK IS THE TARGET. `canDrop()` is asked during a
+        // hover, with no context — that is what keeps the hover outline, the cursor and the
+        // drop itself reading one answer — so "is that Object still in the scene" is settled
+        // where the scene is in hand, and answers null there (ADR-0034 §3.4).
+        refuses: (payload, target) => (target.project ? null : 'There is no project to save this into.'),
+        describe: payload => `Save ${payload.name || 'this Object'} as a prefab`,
+        perform: (payload, target, context) => {
+            const object = context.scene?.get?.(payload.id) ?? null;
+            if (!object || !context.project) return null;
+
+            // NAMED AFTER THE OBJECT, WITH THE EXTENSION ITS KIND DECIDES AND THE UNIQUENESS
+            // EVERY OTHER RESOURCE GETS (ADR-0026 §4). No dialog: a creator who wants another
+            // name renames the tile, which is the gesture they already know.
+            const base = withExtension(object.name || 'Prefab', { kind: ResourceKind.PREFAB });
+            const parent = target.parent ?? null;
+
+            const { resource, cleared } = addPrefab(context.project, object, {
+                name: uniqueResourceName(context.project, base, parent),
+                parent,
+                index: target.index ?? null,
+                registry: context.scene?.registry ?? null
+            });
+
+            // WHAT A PREFAB COULD NOT TAKE WITH IT IS SAID OUT LOUD (ADR-0061 §6). A
+            // reference to an Object outside the subtree is of SCENE scope and cannot live in
+            // a project-scoped Resource, so it is cleared — and a creator who loses a wiring
+            // silently loses an afternoon.
+            if (cleared.length > 0) context.report?.(clearedSentence(object, cleared));
+            return { resource, cleared };
+        }
     }
 ];
+
+/**
+ * What to tell a creator about the references a prefab could not keep.
+ *
+ * @param {object} object - The Object the prefab was made from
+ * @param {object[]} cleared - `{ object, component, property }` entries
+ * @returns {string} One sentence
+ */
+function clearedSentence(object, cleared) {
+    const named = cleared.map(entry => `${entry.component} ▸ ${entry.property}`);
+    const list = named.length > 2 ? `${named.slice(0, 2).join(', ')} and ${named.length - 2} more` : named.join(' and ');
+
+    return `${object.name || 'This Object'} was saved as a prefab, but ${list} pointed at an `
+        + 'Object outside it and had to be emptied — a prefab belongs to the project, not to one scene.';
+}
 
 /**
  * The rule that would handle a drop, or null.

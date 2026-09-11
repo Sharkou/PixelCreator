@@ -245,11 +245,14 @@ test('node types group by category, in the declared order, with nothing empty', 
 
 test('a category a node invents takes its place rather than being flattened away', () => {
     const registry = registerStandardNodes(new NodeRegistry());
-    registry.register({ type: 'audio.play', label: 'Play Sound', category: 'Audio' });
+    // A category the Core has never heard of. `Audio` used to stand here and has since
+    // become a shipped one (ADR-0060 §6), which stopped the test proving anything.
+    registry.register({ type: 'net.send', label: 'Send', category: 'Networking' });
 
     const groups = groupNodes(registry);
 
-    assert.equal(groups.some(group => group.category === 'Audio'), true);
+    assert.equal(groups.some(group => group.category === 'Networking'), true);
+    assert.equal(NODE_CATEGORIES.includes('Networking'), false);
 });
 
 // --- the standard library itself --------------------------------------------------------------------
@@ -1353,4 +1356,76 @@ test('the arithmetic a creator asks for by name is all on one shelf', () => {
     for (const [type, label] of globalThis.Object.entries(wanted)) {
         assert.equal(registry.get(type)?.label, label, type);
     }
+});
+
+// --- text (ADR-0060 §4) -----------------------------------------------------------------
+
+test('To Text turns what a game knows into what a label can show', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const answer = value => registry.get('text.toText').evaluate({ input: () => value }).text;
+
+    assert.equal(answer(3), '3');
+    assert.equal(answer(0), '0');
+    assert.equal(answer(-2.5), '-2.5');
+    assert.equal(answer(true), 'true');
+    assert.equal(answer(false), 'false');
+    assert.equal(answer('already text'), 'already text');
+});
+
+test('To Text answers nothing for nothing, rather than the word "null"', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const answer = value => registry.get('text.toText').evaluate({ input: () => value }).text;
+
+    assert.equal(answer(null), '');
+    assert.equal(answer(undefined), '');
+    // An arithmetic accident must not reach the screen as one.
+    assert.equal(answer(NaN), '');
+    assert.equal(answer(Infinity), '');
+    // A handle to an Object is not text, and there is no stable name to invent for it.
+    assert.equal(answer({ id: 'obj_1' }), '');
+});
+
+test('To Text takes anything, which is the one polymorphic port the type system already had', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const definition = registry.get('text.toText');
+    const ports = portsOf(definition, { id: 'n', type: 'text.toText', params: {} }, {});
+
+    assert.equal(ports.inputs[0].type, ANY_TYPE);
+    assert.equal(ports.outputs[0].type, PropertyType.STRING);
+    assert.equal(definition.category, 'Text');
+});
+
+test('Join Text puts two pieces end to end, and an empty port contributes nothing', () => {
+    const registry = registerStandardNodes(new NodeRegistry());
+    const answer = (a, b) => registry.get('text.join').evaluate({
+        input: port => (port === 'a' ? a : b)
+    }).text;
+
+    assert.equal(answer('Score: ', '3'), 'Score: 3');
+    assert.equal(answer('', 'alone'), 'alone');
+    assert.equal(answer('alone', ''), 'alone');
+    assert.equal(answer(null, null), '');
+});
+
+test('Join Text refuses a number, which is what makes To Text mean something', () => {
+    // A number on a text port would quietly re-admit the conversion the type system
+    // refuses everywhere else — so the wire a creator draws through `To Text` is the
+    // statement that they meant it (ADR-0054).
+    assert.equal(typesCompatible(PropertyType.NUMBER, PropertyType.STRING), false);
+    assert.equal(typesCompatible(PropertyType.STRING, PropertyType.STRING), true);
+
+    const registry = registerStandardNodes(new NodeRegistry());
+    const ports = portsOf(registry.get('text.join'), { id: 'n', type: 'text.join', params: {} }, {});
+    assert.deepEqual(ports.inputs.map(port => port.type), [PropertyType.STRING, PropertyType.STRING]);
+});
+
+test('a score reaches a label with exactly two nodes', () => {
+    // The sentence the whole tranche exists for: `"Score: " + score`.
+    const registry = registerStandardNodes(new NodeRegistry());
+    const asText = registry.get('text.toText').evaluate({ input: () => 7 }).text;
+    const joined = registry.get('text.join').evaluate({
+        input: port => (port === 'a' ? 'Score: ' : asText)
+    }).text;
+
+    assert.equal(joined, 'Score: 7');
 });

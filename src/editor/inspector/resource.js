@@ -180,7 +180,12 @@ function previewFor(resource, payload) {
     const mime = resource.mime ?? '';
 
     if (typeof payload === 'string' && payload.startsWith('data:')) {
-        return { type: mime.startsWith('image/') ? 'image' : 'link', source: payload };
+        // A SOUND IS PREVIEWED BY HEARING IT (ADR-0060 §5). A picture has a thumbnail and a
+        // sound has a player; anything else is still a link, which is the honest answer for
+        // a payload nothing here knows how to show.
+        if (mime.startsWith('image/')) return { type: 'image', source: payload };
+        if (mime.startsWith('audio/')) return { type: 'audio', source: payload };
+        return { type: 'link', source: payload };
     }
 
     if (payload === null || payload === undefined) {

@@ -17,10 +17,11 @@
 
 import { Matrix, components, defineComponent } from '../core/mod.js';
 import { registerStandardNodes } from '../core/mod.js';
-import { loadComponentDefinitions, loadScene } from '../project/mod.js';
+import { loadComponentDefinitions, loadPrefabs, loadScene } from '../project/mod.js';
 import {
     Behaviors,
     Canvas2DRenderer,
+    HtmlAudioOutput,
     Runtime,
     Viewport,
     activeCamera,
@@ -72,6 +73,15 @@ export async function start(mount = document.body) {
     }));
     await loadComponentDefinitions(opened.project, { registry: components, behaviors });
 
+    // EVERY PREFAB, RESOLVED BEFORE THE FIRST STEP (ADR-0061 §4). This is the whole answer
+    // to "how can a `Spawn Prefab` read a Resource inside a simulation step": it does not —
+    // the payloads are read here, where waiting is allowed, and the Runtime is handed a map
+    // that answers now. Nothing below this line is asynchronous, and the interpreter never
+    // learns that storage exists.
+    const prefabs = await loadPrefabs(opened.project, {
+        onError: ({ resource, error }) => console.warn('[game] prefab', resource?.name ?? resource?.id, error)
+    });
+
     const scene = opened.scene
         ? await loadScene(opened.project, opened.scene, { registry: components })
         : null;
@@ -80,7 +90,21 @@ export async function start(mount = document.body) {
     }
 
     document.title = `${opened.name} — Pixel Creator`;
-    const game = run(mount, scene, behaviors);
+
+    // THE SECOND BACKEND, BUILT WHERE THE PAYLOADS ARE (ADR-0060 §5). A clip is a
+    // ResourceId in the model and stays one all the way to here; turning it into something
+    // a speaker can use needs the bundle, which is knowledge this application has and the
+    // Runtime must not. The manifest is asked first, so a Sprite's PNG handed to `Play
+    // Sound` answers nothing instead of failing to decode.
+    const audio = new HtmlAudioOutput({
+        resolve: id => {
+            const entry = opened.project.get(id);
+            if (!entry || !(entry.mime ?? '').startsWith('audio/')) return null;
+            return bundle.payloads?.[id] ?? null;
+        }
+    });
+
+    const game = run(mount, scene, behaviors, { audio, prefabs });
 
     // AND IT FOLLOWS THE EDITOR FROM HERE (ADR-0044 §3). A Preview used to be a snapshot
     // that could only be replaced by closing it and pressing the button again, which is
@@ -170,14 +194,15 @@ function applyDefinition({ resource, payload }, { behaviors, registry, schemas }
  * @param {HTMLElement} mount - Where the surface goes
  * @param {object} scene - The scene to play
  * @param {object} behaviors - The bound behaviours
+ * @param {object} [options] - `{ audio, prefabs }`, both already resolved
  * @returns {object} `{ scene, runtime, stop }`
  */
-function run(mount, scene, behaviors) {
+function run(mount, scene, behaviors, { audio = null, prefabs = null } = {}) {
     const canvas = document.createElement('canvas');
     mount.replaceChildren(canvas);
 
     const renderer = new Canvas2DRenderer(canvas.getContext('2d'));
-    const runtime = new Runtime(scene, { renderer, behaviors });
+    const runtime = new Runtime(scene, { renderer, behaviors, audio, prefabs });
     // THE ONE DIFFERENCE FROM THE EDITOR'S VIEWPORT, and it is the whole point: this one
     // runs. `running = false` is what makes the Editor draw a scene without simulating it
     // (ADR-0029 §1); a game client has no such state.
@@ -228,8 +253,20 @@ function run(mount, scene, behaviors) {
     // game at half size, and only the Preview did it.
     const view = () => Matrix.compose(0, 0, 0, density, density)
         .multiply(viewMatrix(cameraOf(), viewport));
+    // THE SURFACE, WITHOUT THE CAMERA (ADR-0060 §2). A `ScreenSpace` object is drawn through
+    // this instead of through the view, so a label at (20, 20) is twenty CSS pixels from the
+    // corner — the density is the only thing above it, for the same reason it is above the
+    // view: one unit has to mean one CSS pixel on a 2x display too.
+    const screen = () => Matrix.compose(0, 0, 0, density, density);
 
-    const input = bindInput(canvas, runtime.input, { view, density: () => globalThis.devicePixelRatio || 1 });
+    const input = bindInput(canvas, runtime.input, {
+        view,
+        density: () => globalThis.devicePixelRatio || 1,
+        // THE FIRST REAL KEY OR CLICK IS WHAT A BROWSER WAS WAITING FOR. Music a scene asked
+        // for on step one is deferred until here and then starts; a one-shot fired before it
+        // is dropped, because a sound with no cause on screen is worse than silence.
+        onGesture: () => audio?.unlock?.()
+    });
 
     let last = 0;
     let frame = null;
@@ -244,7 +281,7 @@ function run(mount, scene, behaviors) {
         last = now;
 
         if (elapsed > 0) runtime.advance(elapsed);
-        runtime.render({ view: view() });
+        runtime.render({ view: view(), screen: screen() });
     };
 
     frame = globalThis.requestAnimationFrame(tick);

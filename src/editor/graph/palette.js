@@ -54,6 +54,15 @@ export const CATEGORY_HUES = {
     // family, not a different idea, and an eighth colour would be the carnival this table
     // exists to prevent (ADR-0030 §4).
     Time: 'var(--px-hue-number)',
+    // TEXT IS TEXT, so it wears the hue a `string` port already wears — the shelf is a
+    // different family, not a different idea, and the node a creator drags out of it hands
+    // over exactly that green value (ADR-0030 §4).
+    Text: 'var(--px-hue-text)',
+    // AUDIO IS AN OUTPUT, LIKE A TRANSFORM. `Play Sound` changes what a player experiences
+    // the way `Translate` changes where a thing is, and it produces no value of its own; the
+    // property hue is what the other family of acts already wears, and a ninth colour would
+    // be the carnival this table exists to prevent.
+    Audio: 'var(--px-hue-property)',
     Debug: 'var(--px-hue-any)'
 };
 

@@ -22,6 +22,7 @@ import { componentCatalogue, registerBuiltIns } from './registry.js';
 import { addComponent, deleteObject } from './commands.js';
 import { Workspace } from './project/workspace.js';
 import { createDefinitions } from './project/definitions.js';
+import { createSession } from './project/session.js';
 import { Transport, TransportState } from './transport.js';
 import { openPreview } from './preview.js';
 import { broadcastEdits } from './live.js';
@@ -425,7 +426,26 @@ export function start(mount = document.body) {
     // further down, and the re-entrancy flag they needed.
     const subject = new Subject({ selection, workspace });
 
-    const viewport = el('px-viewport').bind({ scene, camera, selection, subject, onError: reportFailure, behaviors });
+    // WHAT A RUNNING GAME REACHES FOR BY IDENTITY, RESOLVED BEFORE IT RUNS (ADR-0061 §4).
+    // Pressing Play is the moment the Editor stops being an editor; the prefabs and the
+    // sounds this project holds are read then, and the Runtime is handed two tables that
+    // answer synchronously — never the store, which is asynchronous and which a step may
+    // not wait for.
+    const session = createSession({
+        project: workspace.project,
+        onError: ({ resource, error }) => console.warn('[session]', resource?.name ?? resource?.id, error)
+    });
+
+    const viewport = el('px-viewport').bind({
+        scene,
+        camera,
+        selection,
+        subject,
+        onError: reportFailure,
+        behaviors,
+        prefabs: session.prefabs,
+        audio: session.audio
+    });
     const hierarchy = el('px-hierarchy').bind({ scene, selection, subject, viewport, workspace });
     const inspector = el('px-inspector').bind({ scene, selection, subject, registry: components, workspace, definitions });
     const project = el('px-project').bind({ workspace, scene, selection, subject });
@@ -516,7 +536,15 @@ export function start(mount = document.body) {
         // an Editor message wearing a creator's prefix.
         preview: () => openPreview(workspace, {
             report: message => console.info('[preview]', message)
-        })
+        }),
+        // WHAT THE SESSION WILL REACH FOR, READ BEFORE THE FIRST STEP (ADR-0061 §4). The
+        // press is also the user gesture a browser waits for before it will sound, so the
+        // audio output is told about it here rather than guessing (ADR-0060 §5).
+        prepare: async () => {
+            const resolved = await session.refresh();
+            session.audio.unlock();
+            return resolved;
+        }
     });
     chrome.transport(transport);
 
@@ -825,7 +853,14 @@ function transportControls(transport) {
         type: 'button',
         title: 'Play',
         'aria-label': 'Play',
-        onclick: () => transport.play()
+        // THE PRESS IS BOTH THINGS A SESSION NEEDS: the moment to resolve what the game
+        // will reach for, and the user gesture a browser has been waiting for before it will
+        // make a sound (ADR-0060 §5). Awaited, so the first step never runs against a table
+        // that is still being filled.
+        onclick: async () => {
+            await transport.prepare?.();
+            transport.play();
+        }
     }, icon('play'));
 
     const pause = el('button', {

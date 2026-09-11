@@ -39,9 +39,22 @@
 // @property {(x, y, width, height, options?) => void} strokeRect
 // @property {(x, y, radius, options?) => void} fillCircle
 // @property {(image, x, y, width, height, options?) => void} drawImage
+// @property {(text, x, y, options?) => void} fillText
 //
 // Drawing options are `{ color, alpha, lineWidth }`, all optional. A backend applies
 // what it understands and ignores the rest.
+//
+// TEXT IS A PRIMITIVE, NOT A COMPONENT'S PRIVATE ARRANGEMENT WITH A CANVAS. `fillText`
+// takes the string and the two numbers that place it, plus `{ color, alpha, fontSize,
+// fontFamily, align, baseline }` — a font as a SIZE and a FAMILY rather than as a CSS
+// shorthand, because a WebGL backend that rasterises glyphs itself has to read the two
+// separately and must not be handed a string only a canvas can parse.
+//
+// NO `measureText`. A backend that can measure is a backend a component would ask, and a
+// component that asks a renderer a QUESTION has stopped being drawable headlessly — the
+// answer would differ between a canvas, a server and a test double, and `bounds()` would
+// start depending on which one drew last. Extent is estimated from the declaration
+// instead (`components/text-renderer.js`), which is the same number everywhere.
 
 export const BlendMode = {
     NORMAL: 'normal',
@@ -58,7 +71,8 @@ export const RENDERER_OPERATIONS = globalThis.Object.freeze([
     'fillRect',
     'strokeRect',
     'fillCircle',
-    'drawImage'
+    'drawImage',
+    'fillText'
 ]);
 
 /**

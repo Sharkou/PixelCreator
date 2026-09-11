@@ -13,6 +13,7 @@
 // editor placing a sprite at x = 137.4183 is not being precise, it is being unhelpful.
 
 import { createId, worldMatrix } from '../../../core/mod.js';
+import { DrawSpace, drawSpaceOf } from '../../../runtime/mod.js';
 import { pick } from '../picking.js';
 import {
     HANDLE_REACH,
@@ -27,6 +28,24 @@ import { beginResize, isResizable, resizeTo } from '../resize.js';
 
 /** Device pixels the pointer must travel before a press becomes a drag. */
 const DRAG_THRESHOLD = 3;
+
+/**
+ * Where the pointer is, in the space the object it is acting on lives in (ADR-0060 §2).
+ *
+ * A `ScreenSpace` object's Transform is read in SURFACE units — the camera never touches
+ * it — so a drag measured in world units would be divided by the zoom on the way in: at
+ * 200% a HUD label would follow the pointer at half speed. The viewport computes both
+ * points; this picks the one that matches what is being dragged.
+ *
+ * @param {object} object - What the gesture is acting on
+ * @param {object} pointer - `{ world, surface }` as the viewport builds it
+ * @returns {{x: number, y: number}} The pointer, in that object's space
+ */
+function pointAt(object, pointer) {
+    return object && pointer.surface && drawSpaceOf(object) === DrawSpace.SCREEN
+        ? pointer.surface
+        : pointer.world;
+}
 
 export class SelectTool {
 
@@ -56,12 +75,13 @@ export class SelectTool {
     /**
      * The cursor the viewport should show.
      * @param {object} view - The view matrix in use
+     * @param {object} [screen] - The surface matrix, for a screen-space object
      * @returns {string} A CSS cursor
      */
-    cursor(view) {
-        if (this.#drag?.mode === 'resize') return handleCursor(this.#drag.handle, this.#drag.object, view);
+    cursor(view, screen = view) {
+        if (this.#drag?.mode === 'resize') return handleCursor(this.#drag.handle, this.#drag.object, view, screen);
         if (this.#drag) return 'grabbing';
-        if (this.#handle) return handleCursor(this.#handle, this.#context.selection.object, view);
+        if (this.#handle) return handleCursor(this.#handle, this.#context.selection.object, view, screen);
         return this.#hovered ? 'grab' : 'default';
     }
 
@@ -93,13 +113,14 @@ export class SelectTool {
         // reaches of 9 device pixels around a shape 10 pixels wide leave nothing that
         // means "move me", which is exactly how a zoomed-out object became impossible to
         // drag.
-        this.#handle = selected && isResizable(selected) && handlesFit(selected, pointer.view, reach)
-            ? handleAt(selected, pointer.view, ...pointer.device, reach)
+        const screen = pointer.screen ?? pointer.view;
+        this.#handle = selected && isResizable(selected) && handlesFit(selected, pointer.view, reach, screen)
+            ? handleAt(selected, pointer.view, ...pointer.device, reach, screen)
             : null;
 
         this.#hovered = this.#handle
             ? selected
-            : pick(this.#context.scene.objects(), pointer.view, ...pointer.device);
+            : pick(this.#context.scene.objects(), pointer.view, ...pointer.device, screen);
     }
 
     /**
@@ -113,7 +134,7 @@ export class SelectTool {
         const selected = selection.object;
 
         if (this.#handle && selected) {
-            const state = beginResize(selected, this.#handle, pointer.world);
+            const state = beginResize(selected, this.#handle, pointAt(selected, pointer));
             if (state) {
                 this.#drag = { mode: 'resize', object: selected, handle: this.#handle, state, batch: createId(), started: false, from: pointer.device };
                 return;
@@ -138,7 +159,7 @@ export class SelectTool {
             batch: createId(),
             started: false,
             from: pointer.device,
-            origin: pointer.world,
+            origin: pointAt(hit, pointer),
             startX: transform.x,
             startY: transform.y,
             // Local values are relative to the parent, so a world-space drag has to be
@@ -183,8 +204,9 @@ export class SelectTool {
      * @param {object} view - The view matrix in use
      * @param {object} [options] - Options
      * @param {number} [options.scale] - Device pixels per CSS pixel
+     * @param {object} [options.screen] - The surface matrix, for a screen-space object
      */
-    draw(renderer, view, { scale = 1 } = {}) {
+    draw(renderer, view, { scale = 1, screen = view } = {}) {
         const scene = this.#context.scene;
         const selected = this.#context.selection.object;
 
@@ -192,21 +214,22 @@ export class SelectTool {
         // and a handle are one instrument and have to be one size on screen, on a 1x
         // display and on a 2x one alike (../overlay.js).
         if (this.#hovered && this.#hovered !== selected && scene.has(this.#hovered)) {
-            outline(renderer, view, this.#hovered, { alpha: 0.4, width: 1, scale });
+            outline(renderer, view, this.#hovered, { alpha: 0.4, width: 1, scale, screen });
         }
 
         if (!selected || !scene.has(selected)) return;
 
-        outline(renderer, view, selected, { pivot: true, scale });
+        outline(renderer, view, selected, { pivot: true, scale, screen });
         // Drawn under exactly the condition that makes them grabbable, so a handle is
         // never shown where pressing it would do something else.
-        if (isResizable(selected) && handlesFit(selected, view, this.#reach())) {
-            handles(renderer, view, selected, { active: this.#drag?.handle ?? this.#handle, scale });
+        if (isResizable(selected) && handlesFit(selected, view, this.#reach(), screen)) {
+            handles(renderer, view, selected, { active: this.#drag?.handle ?? this.#handle, scale, screen });
         }
     }
 
     #applyMove(drag, pointer) {
-        const delta = { x: pointer.world.x - drag.origin.x, y: pointer.world.y - drag.origin.y };
+        const now = pointAt(drag.object, pointer);
+        const delta = { x: now.x - drag.origin.x, y: now.y - drag.origin.y };
         const local = drag.toParent
             ? subtract(drag.toParent.apply(delta.x, delta.y), drag.toParent.apply(0, 0))
             : delta;
@@ -222,7 +245,7 @@ export class SelectTool {
     }
 
     #applyResize(drag, pointer) {
-        const next = resizeTo(drag.state, pointer.world);
+        const next = resizeTo(drag.state, pointAt(drag.object, pointer));
 
         this.#write(drag, drag.state.component, 'width', next.width);
         this.#write(drag, drag.state.component, 'height', next.height);

@@ -24,7 +24,8 @@ function recordingRenderer() {
         fillRect: record('fillRect'),
         strokeRect: record('strokeRect'),
         fillCircle: record('fillCircle'),
-        drawImage: record('drawImage')
+        drawImage: record('drawImage'),
+        fillText: record('fillText')
     };
 }
 
@@ -51,6 +52,7 @@ function fakeContext() {
         fill: record('fill'),
         stroke: record('stroke'),
         drawImage: record('drawImage'),
+        fillText: record('fillText'),
         save: record('save'),
         restore: record('restore')
     };
@@ -73,7 +75,7 @@ test('an incomplete backend is rejected with the missing names', () => {
     const partial = { clear() {}, save() {}, restore() {} };
 
     assert.deepEqual(missingOperations(partial).sort(), [
-        'drawImage', 'fillCircle', 'fillRect', 'setBlendMode', 'setTransform', 'strokeRect'
+        'drawImage', 'fillCircle', 'fillRect', 'fillText', 'setBlendMode', 'setTransform', 'strokeRect'
     ]);
     assert.throws(() => assertRenderer(partial), /missing required operations/);
     assert.throws(() => new SceneRenderer(partial), /missing required operations/);
