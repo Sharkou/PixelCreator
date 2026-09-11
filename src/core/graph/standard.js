@@ -1058,6 +1058,38 @@ export const STANDARD_NODES = [
         }
     },
 
+    // --- what the simulation knows about its own clock ----------------------------------
+
+    {
+        type: 'time.delta',
+        label: 'Delta Time',
+        category: 'Time',
+        keywords: ['dt', 'delta', 'frame', 'step', 'seconds', 'per second', 'speed', 'smooth'],
+        // THE NODE THAT MAKES A MOVEMENT FRAME-RATE INDEPENDENT, and until it existed the
+        // only way to reach `deltaTime` was to wire it off an `On Update` card — so a graph
+        // that moved something from an `On Key ▸ Down` had no honest way to scale the step,
+        // and a creator wrote `Translate X 5`, which is five pixels per FRAME.
+        //
+        // IT READS THE STEP AND NOTHING ELSE. Not a wall clock, not a frame counter: the
+        // fixed simulation step, the same on a server and on every client (ADR-0011).
+        outputs: [data('seconds', PropertyType.NUMBER, 'Seconds')],
+        evaluate: io => ({ seconds: io.ctx?.deltaTime ?? 0 }),
+        tooltip: 'How long one step of the game lasts, in seconds'
+    },
+
+    {
+        type: 'time.now',
+        label: 'Time',
+        category: 'Time',
+        keywords: ['elapsed', 'since', 'clock', 'seconds', 'age', 'timer'],
+        // SIMULATED TIME, NEVER THE MACHINE'S. `Clock.time` advances in whole fixed steps
+        // and is reset by the transport, so two clients that ran the same steps read the
+        // same number — which a `Date.now()` in disguise could never promise.
+        outputs: [data('seconds', PropertyType.NUMBER, 'Seconds')],
+        evaluate: io => ({ seconds: io.ctx?.time ?? 0 }),
+        tooltip: 'How long this game has been running, in seconds'
+    },
+
     {
         type: 'scene.self',
         label: 'Self',
@@ -1140,6 +1172,62 @@ export const STANDARD_NODES = [
             return { object: io.ctx?.scene?.findByTag(tag)[0] ?? null };
         },
         tooltip: 'The first Object carrying this tag, in hierarchy order'
+    },
+
+    {
+        type: 'scene.onCollision',
+        label: 'On Collision',
+        category: 'Events',
+        keywords: ['hit', 'touch', 'overlap', 'contact', 'bump', 'trigger', 'damage',
+            'enter', 'stay', 'exit', 'collide'],
+        event: 'update',
+        // THREE MOMENTS, THREE OUTPUTS, ONE CARD — the shape `On Key` already has, and for
+        // the same reason: a creator has to tell "it just hit" from "it is still touching"
+        // before their first damage tick works, and three near-identical cards is the
+        // problem one card does not have (ADR-0046 §6).
+        //
+        // `Enter` AND `Stay` ARE DISJOINT (ADR-0059 §5). The step a pair starts touching
+        // fires `Enter` and nothing else; every step after fires `Stay`. Firing both on the
+        // first step would make "damage once" and "damage while touching" the same wire, and
+        // a creator would have to subtract one from the other.
+        outputs: [
+            flow('enter', 'Enter', 'The moment they start touching — runs once per contact'),
+            flow('stay', 'Stay', 'Runs on every step AFTER the first, while they still touch'),
+            flow('exit', 'Exit', 'The moment they stop touching'),
+            data('other', OBJECT_TYPE, 'Other')
+        ],
+        // ONE FIRING PER COLLISION, NOT ONE PER STEP (ADR-0059 §5.1). Touching two enemies at
+        // once is two events with two different `Other`s, which a single firing could not
+        // carry — so the node answers a LIST of firings and the interpreter runs each with
+        // its own pushed value.
+        //
+        // IT READS THE STEP'S SNAPSHOT AND MEASURES NOTHING. The transitions were decided
+        // before any graph ran, so two graphs reacting to one hit cannot disagree about it,
+        // and a `Destroy` in the first cannot delete the second's event (ADR-0059 §4).
+        execute: io => (io.ctx?.collisions?.transitions?.(io.self) ?? [])
+            .map(({ other, phase }) => ({ next: phase, values: { other } })),
+        tooltip: 'Runs when this Object starts touching another, while it does, and when it stops'
+    },
+
+    {
+        type: 'object.isOverlapping',
+        label: 'Is Overlapping',
+        category: 'Object',
+        keywords: ['touching', 'collide', 'hit', 'overlap', 'inside', 'contact', 'check'],
+        inputs: [data('a', OBJECT_TYPE, 'A'), data('b', OBJECT_TYPE, 'B')],
+        outputs: [data('result', PropertyType.BOOLEAN, 'Result')],
+        // THE SAME SNAPSHOT `On Collision` READS, asked as a question instead of waited for
+        // (ADR-0059 §6). Measuring geometry here would be a second opinion about what
+        // touching means, and it would answer a different question from the event firing
+        // beside it in the same step.
+        //
+        // NOTHING TO ASK ABOUT IS `false`: an Object with no collider, one that has been
+        // destroyed, an empty port. All three are states of the running game rather than
+        // faults (ADR-0034 §3.4).
+        evaluate: io => ({
+            result: io.ctx?.collisions?.overlapping?.(io.input('a'), io.input('b')) === true
+        }),
+        tooltip: 'Whether two Objects are touching right now'
     },
 
     {
@@ -1372,6 +1460,66 @@ export const STANDARD_NODES = [
     },
 
     {
+        type: 'flow.tween',
+        label: 'Tween Number',
+        category: 'Flow',
+        keywords: ['animate', 'interpolate', 'lerp', 'ease', 'over time', 'fade', 'slide',
+            'smooth', 'transition', 'grow'],
+        tooltip: 'Carries a number from one value to another, over a length of time',
+        inputs: [
+            flow('in'),
+            data('from', PropertyType.NUMBER, 'From', 0),
+            data('to', PropertyType.NUMBER, 'To', 1),
+            data('duration', PropertyType.NUMBER, 'Duration', 1, null,
+                'How long the whole journey takes, in seconds')
+        ],
+        // TWO MOMENTS AND A VALUE, ON ONE CARD. `Update` is every step of the journey and
+        // `Done` is its end — disjoint, like `Enter` and `Stay`, so a creator wires the
+        // movement to one and what follows it to the other without a Branch. `Value` is
+        // pushed rather than pulled, for the reason every flow node's output is: reading it
+        // must not be able to advance the animation (ADR-0056 §4).
+        outputs: [flow('update', 'Update'), flow('done', 'Done'), data('value', PropertyType.NUMBER, 'Value')],
+        // WHAT IT KEEPS, AND WHY IT HAS TO (ADR-0058 §6.3). How far along it is belongs to
+        // THIS journey: two presses of a button start two tweens through one card, and a
+        // number stored on the node would make the second overwrite the first. It rides the
+        // continuation, so the two never meet.
+        //
+        // FROM, TO AND DURATION ARE CAPTURED ON THE WAY IN, like `Delay`'s duration and for
+        // the same reason: a journey whose destination moves halfway is not a journey, and
+        // nothing on the canvas would say the end had shifted.
+        //
+        // THE LAST STEP LANDS EXACTLY ON `To`, never on `To` minus a rounding error — a
+        // tween that ends at 99.98 is a door that never quite closes. It is assigned, not
+        // interpolated.
+        execute: io => {
+            const kept = io.kept;
+            const from = kept ? kept.from : number(io.input('from'));
+            const to = kept ? kept.to : number(io.input('to'));
+            const span = kept ? kept.span : number(io.input('duration'));
+            const elapsed = kept ? kept.elapsed + (io.ctx?.deltaTime ?? 0) : 0;
+
+            // A JOURNEY OF NO LENGTH IS OVER WHERE IT STARTED, in this very step. It is the
+            // same reading `Delay(0)` and `Every(0)` give a duration that is not one, and it
+            // keeps this node inside the ordinary budget rather than giving it a way to run
+            // one step at a time for ever.
+            // A RELATIVE TOLERANCE, THE ONE `Clock.advance()` AND `resumeDue()` ALREADY USE.
+            // Adding a step of 1/60 sixty times lands a few ulp SHORT of one second, so a
+            // bare `>=` makes a one-second tween take one step longer than it says — the
+            // same defect, met a third time, answered the same way.
+            if (!(span > 0) || elapsed >= span - span * 1e-9) {
+                return { next: ['update', 'done'], values: { value: to } };
+            }
+
+            return {
+                next: 'update',
+                values: { value: from + (to - from) * (elapsed / span) },
+                again: 0,
+                keep: { from, to, span, elapsed }
+            };
+        }
+    },
+
+    {
         type: 'flow.sequence',
         label: 'Sequence',
         category: 'Flow',
@@ -1517,6 +1665,135 @@ export const STANDARD_NODES = [
             const there = worldPosition(to);
             return { result: Math.hypot(there.x - here.x, there.y - here.y) };
         }
+    },
+
+    // --- aiming and moving, as pairs of numbers -------------------------------------------
+    //
+    // THERE IS NO VECTOR TYPE, AND THESE DO NOT INVENT ONE. ADR-0023 §2 removed it
+    // deliberately and ADR-0043 restates why: `x` and `y` are two numbers in the Transform,
+    // in the Inspector's paired row and on every existing node. A `Vector2` declared for five
+    // nodes would be a second way to say a position, and the first thing a creator would ask
+    // is which of the two the engine really uses. So a direction comes out as two ports, and
+    // composes with everything that already takes two.
+
+    {
+        type: 'math.direction',
+        label: 'Direction',
+        category: 'Math',
+        keywords: ['towards', 'aim', 'unit', 'heading', 'normalise', 'normalize', 'vector'],
+        tooltip: 'Which way one Object lies from another, as a step of length 1',
+        inputs: [data('a', OBJECT_TYPE, 'From'), data('b', OBJECT_TYPE, 'To')],
+        outputs: [
+            data('x', PropertyType.NUMBER, 'X'),
+            data('y', PropertyType.NUMBER, 'Y')
+        ],
+        // THE TWIN OF `Distance`, READ FROM THE SAME TWO OBJECTS. Multiply these two by a
+        // speed and a `Velocity` chases anything; that is the whole sentence, and it is two
+        // nodes rather than eight.
+        //
+        // TWO OBJECTS IN THE SAME PLACE HAVE NO DIRECTION BETWEEN THEM, so the answer is
+        // `0, 0` — a step of no length, which is what "it is already there" means and what
+        // every consumer of these two numbers does the right thing with.
+        evaluate: io => {
+            const from = io.input('a');
+            const to = io.input('b');
+            if (!from?.getComponent?.('Transform') || !to?.getComponent?.('Transform')) {
+                return { x: 0, y: 0 };
+            }
+
+            const here = worldPosition(from);
+            const there = worldPosition(to);
+            const length = Math.hypot(there.x - here.x, there.y - here.y);
+            if (length === 0) return { x: 0, y: 0 };
+
+            return { x: (there.x - here.x) / length, y: (there.y - here.y) / length };
+        }
+    },
+
+    {
+        type: 'math.length',
+        label: 'Length',
+        category: 'Math',
+        keywords: ['magnitude', 'size', 'hypotenuse', 'speed', 'norm', 'distance'],
+        tooltip: 'How long a pair of numbers is, taken as a step',
+        inputs: [
+            data('x', PropertyType.NUMBER, 'X', 0),
+            data('y', PropertyType.NUMBER, 'Y', 0)
+        ],
+        outputs: [data('result', PropertyType.NUMBER, 'Result')],
+        evaluate: io => ({ result: Math.hypot(number(io.input('x')), number(io.input('y'))) })
+    },
+
+    {
+        type: 'math.normalize',
+        label: 'Normalize',
+        category: 'Math',
+        keywords: ['unit', 'direction', 'one', 'scale', 'diagonal', 'speed'],
+        // THE NODE THAT FIXES DIAGONAL MOVEMENT, which is the first bug every creator writes
+        // and cannot see: two keys held at once give `1, 1`, a step of length 1.41, and the
+        // player is half again as fast on the diagonal.
+        tooltip: 'Shortens or lengthens a pair of numbers to a step of length 1',
+        inputs: [
+            data('x', PropertyType.NUMBER, 'X', 0),
+            data('y', PropertyType.NUMBER, 'Y', 0)
+        ],
+        outputs: [
+            data('x', PropertyType.NUMBER, 'X'),
+            data('y', PropertyType.NUMBER, 'Y')
+        ],
+        evaluate: io => {
+            const x = number(io.input('x'));
+            const y = number(io.input('y'));
+            const length = Math.hypot(x, y);
+            // A STEP OF NO LENGTH HAS NO DIRECTION TO KEEP, so it stays where it is rather
+            // than becoming a division by zero.
+            return length === 0 ? { x: 0, y: 0 } : { x: x / length, y: y / length };
+        }
+    },
+
+    {
+        type: 'math.moveTowards',
+        label: 'Move Towards',
+        category: 'Math',
+        keywords: ['approach', 'step', 'chase', 'follow', 'ease', 'close', 'reach'],
+        // ONE NUMBER, LIKE EVERY OTHER NODE HERE. Called twice — once for X, once for Y — it
+        // moves a point towards another without ever overshooting it, which is the behaviour
+        // a `Lerp` does not give and a creator discovers by watching something jitter.
+        tooltip: 'Steps a number towards another without ever passing it',
+        inputs: [
+            data('value', PropertyType.NUMBER, 'From', 0),
+            data('target', PropertyType.NUMBER, 'To', 0),
+            data('step', PropertyType.NUMBER, 'Max Step', 1,
+                null, 'The furthest it may move this time')
+        ],
+        outputs: [data('result', PropertyType.NUMBER, 'Result')],
+        evaluate: io => {
+            const from = number(io.input('value'));
+            const to = number(io.input('target'));
+            const step = Math.abs(number(io.input('step')));
+            const gap = to - from;
+            return { result: Math.abs(gap) <= step ? to : from + Math.sign(gap) * step };
+        }
+    },
+
+    {
+        type: 'math.angle',
+        label: 'Angle',
+        category: 'Math',
+        keywords: ['direction', 'heading', 'atan', 'rotation', 'degrees', 'face', 'look at'],
+        // DEGREES, LIKE `Rotate` AND FOR THE SAME REASON (ADR-0045 §11.3): the Core stores
+        // radians and the Inspector shows degrees, so a port named for the unit is a question
+        // with one answer. Wire this into a `Set Property ▸ Rotation`… no — into a `Rotate`,
+        // or through the Inspector's own degrees, and a thing faces what it is aimed at.
+        tooltip: 'Which way a pair of numbers points, in degrees',
+        inputs: [
+            data('x', PropertyType.NUMBER, 'X', 0),
+            data('y', PropertyType.NUMBER, 'Y', 0)
+        ],
+        outputs: [data('degrees', PropertyType.NUMBER, 'Degrees')],
+        evaluate: io => ({
+            degrees: Math.atan2(number(io.input('y')), number(io.input('x'))) * 180 / Math.PI
+        })
     },
 
     // ONE NUMBER IN, ONE OUT. `arithmetic()` takes two and these take one, which is the

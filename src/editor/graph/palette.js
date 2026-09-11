@@ -50,6 +50,10 @@ export const CATEGORY_HUES = {
     Math: 'var(--px-hue-number)',
     Compare: 'var(--px-hue-number)',
     Logic: 'var(--px-hue-boolean)',
+    // TIME IS A NUMBER, so it wears the hue every number wears — the shelf is a different
+    // family, not a different idea, and an eighth colour would be the carnival this table
+    // exists to prevent (ADR-0030 §4).
+    Time: 'var(--px-hue-number)',
     Debug: 'var(--px-hue-any)'
 };
 

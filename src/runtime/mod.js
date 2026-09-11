@@ -11,6 +11,9 @@ export { componentFailure, rethrowLater } from './errors.js';
 
 export { Input, InputState, LOCAL } from './input/input.js';
 export { Random, advance, unitOf } from './random/random.js';
+export { Velocity } from './components/velocity.js';
+export { BoxCollider, boxesOverlap, worldBox } from './collision/collider.js';
+export { Collisions, CollisionPhase } from './collision/collisions.js';
 export { Behaviors } from './scripting/behaviors.js';
 export { DEFAULT_BUDGET, createGraphInterpreter, interpretGraph } from './scripting/interpreter.js';
 

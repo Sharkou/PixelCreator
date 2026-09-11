@@ -105,7 +105,12 @@ export const NODE_CATEGORIES = [
     // asks: "I want to move my object — where do I look?" Not under `Properties`, which is
     // where you look to READ one. `Translate` and the Rotate and Scale that will join it
     // change where a thing IS, and that is a different kind of act from reading `x`.
-    'Events', 'Input', 'Flow', 'Object', 'Properties', 'Transform',
+    //
+    // `Time` IS ITS OWN SHELF, AND THE QUESTION THAT SETTLES IT IS A BEGINNER'S: "how do I
+    // move something at the same speed on every computer — where do I look?" Not under
+    // `Math`, which is where you look to ADD two numbers. The nodes on it hand over what the
+    // simulation knows about its own clock, and nothing else does.
+    'Events', 'Input', 'Flow', 'Time', 'Object', 'Properties', 'Transform',
     'Values', 'Math', 'Compare', 'Logic', 'Debug'
 ];
 

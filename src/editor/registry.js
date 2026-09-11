@@ -17,7 +17,18 @@
 // and grouping is the whole of the change. It does NOT say an Object has one renderer:
 // several renderers on one Object still work and still all draw.
 
-import { OBJECT_COMPONENT, componentDefinition, declaredProperties, objectProperties } from '../core/mod.js';
+import {
+    OBJECT_COMPONENT,
+    componentDefinition,
+    // THE REGISTRY THESE THREE FALL BACK TO, AND IT WAS NEVER IMPORTED. `describeType()`,
+    // `componentCatalogue()` and `groupTypes()` have all declared `registry = defaultRegistry`
+    // since they were written; every caller in the Editor happens to pass one, so the free
+    // variable was never evaluated and nothing failed — until the first call that omitted it,
+    // which threw a bare `ReferenceError` naming a symbol that appears nowhere in the file.
+    components as defaultRegistry,
+    declaredProperties,
+    objectProperties
+} from '../core/mod.js';
 import { baseNameOf } from '../project/mod.js';
 import { registerBuiltIns } from '../runtime/mod.js';
 
@@ -42,6 +53,8 @@ const SHIPPED = {
     Sprite: { category: 'Rendering', label: 'Sprite' },
     ParticleSystem: { category: 'Rendering', label: 'Particles' },
     Tilemap: { category: 'Rendering', label: 'Tilemap' },
+    Velocity: { category: 'Scene', label: 'Velocity' },
+    BoxCollider: { category: 'Scene', label: 'Box Collider' },
     Camera: { category: 'Scene', label: 'Camera' }
 };
 

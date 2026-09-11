@@ -21,6 +21,7 @@ import { SceneRenderer } from './rendering/scene-renderer.js';
 import { componentFailure, rethrowLater } from './errors.js';
 import { Input } from './input/input.js';
 import { Random } from './random/random.js';
+import { Collisions } from './collision/collisions.js';
 
 export class Runtime {
 
@@ -44,6 +45,11 @@ export class Runtime {
     // split by turns, so a third stream later costs a line and shifts neither of these two.
     #random;
     #ids;
+
+    // WHAT IS TOUCHING WHAT, DECIDED BEFORE ANY BEHAVIOUR RUNS (ADR-0059). It belongs to the
+    // Runtime for the same reason the clock and the input do: it is a fact about the
+    // simulation, identical on a server and on every client, and it is not a picture.
+    #collisions = new Collisions();
 
     /**
      * Create a runtime.
@@ -113,6 +119,11 @@ export class Runtime {
     /** The stream a graph draws from. Gameplay only: identities have their own. */
     get random() {
         return this.#random;
+    }
+
+    /** What is touching what, as of the last step (ADR-0059). */
+    get collisions() {
+        return this.#collisions;
     }
 
     /**
@@ -209,8 +220,19 @@ export class Runtime {
             // identity would desynchronise a replicated game on its first step; there is
             // nothing to forbid, because there is nothing global left to reach.
             random: this.#random,
-            createObjectId: this.#createObjectId
+            createObjectId: this.#createObjectId,
+            // WHAT IS TOUCHING WHAT, AS ONE SNAPSHOT THE WHOLE STEP READS (ADR-0059 §4).
+            // `On Collision` and `Is Overlapping` ask this rather than measuring geometry of
+            // their own, so two nodes in one step can never disagree about a hit.
+            collisions: this.#collisions
         };
+
+        // DETECT FIRST, THEN BEHAVE. The transitions this step raises are worked out against
+        // the Transforms the previous step left behind, before a single graph runs — so a
+        // `Destroy` inside a collision callback cannot retroactively change the set of events
+        // the step had already decided, and the second bullet to hit an enemy sees the same
+        // decision the first one did (ADR-0059 §4).
+        this.#collisions.update(this.#scene);
 
         for (const object of hierarchyOrder(this.#scene)) {
             if (!object.active) continue;

@@ -235,8 +235,10 @@ test('node types group by category, in the declared order, with nothing empty', 
     // or written, and something moves. `Transform` is its own family because of the question
     // a beginner asks — "I want to move my object, where do I look?" — which is not the
     // question `Properties` answers.
-    assert.deepEqual(groups.map(group => group.category).slice(0, 6),
-        ['Events', 'Input', 'Flow', 'Object', 'Properties', 'Transform']);
+    // `Time` sits after `Flow` because it answers the same kind of question — WHEN, and how
+    // long — and before `Object`, which is where the sentence turns to WHAT (ADR-0059).
+    assert.deepEqual(groups.map(group => group.category).slice(0, 7),
+        ['Events', 'Input', 'Flow', 'Time', 'Object', 'Properties', 'Transform']);
     assert.equal(groups.every(group => group.entries.length > 0), true);
     assert.equal(groups.flatMap(group => group.entries).length, STANDARD_NODES.length);
 });

@@ -296,15 +296,48 @@ function runEvent(compiled, event, state, budget) {
         // what it is watching. Asking it costs no new vocabulary: a definition that stays
         // silent still fires everything, which is exactly what `On Start` and `On Update`
         // want and why neither of them changed.
+        // AN EVENT MAY HAPPEN MORE THAN ONCE IN A STEP, AND EACH TIME CARRIES ITS OWN VALUES
+        // (ADR-0059 §5.1). A player touching two enemies in one step is two collisions, not
+        // one collision with two `Other`s — and a single firing could only hand over one of
+        // them. So an entry node may answer with a LIST OF FIRINGS, each its own `{ next,
+        // values }`, and every one starts a flow of its own with its own pushed values.
+        //
+        // A LIST OF STRINGS IS STILL ONE FIRING DOWN SEVERAL PORTS, which is what `On Key`
+        // answers when a key goes down and is held in the same step. The two are told apart
+        // by what the list HOLDS, which is unambiguous and needs no flag.
         const frame = { values: new Map(), produced: new Map() };
-        const fired = definition.execute
-            ? continuationsOf(definition.execute(io(compiled, node, state, frame, new Set())))
+        const answered = definition.execute
+            ? definition.execute(io(compiled, node, state, frame, new Set()))
             : flows;
 
-        for (const portId of fired) {
-            runFlow(compiled, compiled.flow.get(portKey(id, portId)), state, budget);
+        for (const firing of firingsOf(answered)) {
+            // ONE PUSHED-VALUE TABLE PER FIRING, so the second collision of a step cannot
+            // read the `Other` of the first.
+            const produced = new Map();
+            for (const [port, value] of globalThis.Object.entries(producedValues(firing) ?? {})) {
+                produced.set(portKey(id, port), value);
+            }
+
+            for (const portId of continuationsOf(firing)) {
+                const start = compiled.flow.get(portKey(id, portId));
+                if (start) walk(compiled, [start.to], produced, state, budget);
+            }
         }
     }
+}
+
+/**
+ * What an entry node answered, as a list of separate firings.
+ *
+ * @param {any} result - What `execute` answered, or the node's flow ports when it has none
+ * @returns {Array<any>} One entry per firing, each readable by `continuationsOf()`
+ */
+function firingsOf(result) {
+    const several = globalThis.Array.isArray(result)
+        && result.length > 0
+        && result.every(entry => Boolean(entry) && typeof entry === 'object');
+
+    return several ? result : [result];
 }
 
 /**
@@ -417,10 +450,13 @@ function walk(compiled, stack, produced, state, budget, resumed = null) {
         // `<= 0` when the step overshot the deadline, `0` on the way in.
         const overshoot = entered ? globalThis.Math.min(entered.remaining, 0) : 0;
         const wasResumed = entered !== null;
+        // WHAT THE NODE WAS IN THE MIDDLE OF (ADR-0058 §6.3). Opaque to the interpreter,
+        // private to THIS execution, and handed back only to the node that parked it.
+        const kept = entered?.kept ?? null;
         entered = null;
 
         const result = definition.execute
-            ? definition.execute(io(compiled, node, state, frame, new Set(), wasResumed))
+            ? definition.execute(io(compiled, node, state, frame, new Set(), wasResumed, kept))
             : null;
 
         const values = producedValues(result);
@@ -462,7 +498,8 @@ function walk(compiled, stack, produced, state, budget, resumed = null) {
             state.pending?.push({
                 remaining: back + carried,
                 to: { node: node.id, port: 'in' },
-                produced
+                produced,
+                kept: keptBy(result)
             });
         }
 
@@ -489,6 +526,28 @@ function walk(compiled, stack, produced, state, budget, resumed = null) {
  * @param {string|string[]|object|null|undefined} result - What `execute` answered
  * @returns {number|null} Seconds before the node is run again, or null
  */
+/**
+ * The private state a node asked its continuation to carry, or null.
+ *
+ * OPAQUE, AND THAT IS THE WHOLE CONTRACT. The interpreter never reads inside it, never
+ * copies it, and never hands it to anything but the node that parked it — so it is not a
+ * second kind of value, not a port, and nothing a graph or a payload can see. It exists
+ * because `where to resume` is not enough for a node that is in the MIDDLE of something: a
+ * `Tween` has to know how far along it is, and asking the graph would be asking a shared,
+ * immutable reading for a per-execution fact (ADR-0058 §6.3).
+ *
+ * PER EXECUTION, NEVER PER NODE. It rides the continuation, so two passes through one
+ * `Tween` carry two of these and neither can see the other — the same reason `pending` is a
+ * list and not a table keyed by node (§4).
+ *
+ * @param {string|string[]|object|null|undefined} result - What `execute` answered
+ * @returns {any} The value to hand back on the next pass, or null
+ */
+function keptBy(result) {
+    if (!result || typeof result !== 'object' || globalThis.Array.isArray(result)) return null;
+    return result.keep ?? null;
+}
+
 function againOf(result) {
     if (!result || typeof result !== 'object' || globalThis.Array.isArray(result)) return null;
 
@@ -528,9 +587,11 @@ function waitOf(result) {
  * carrying it, and the step context. Nothing global, nothing injected from an environment,
  * and no way to reach storage — which is the whole reason a graph is safe to share.
  */
-function io(compiled, node, state, frame, visiting, resumed = false) {
+function io(compiled, node, state, frame, visiting, resumed = false, kept = null) {
     return {
         node,
+        // WHAT THIS NODE ASKED TO KEEP LAST TIME, or null on the way in (ADR-0058 §6.3).
+        kept,
         // WHETHER THIS PASS CAME BACK OR CAME IN (ADR-0058 §5). The only thing a repeating
         // node needs to tell its two passes apart, and it is derived from the continuation
         // rather than stored anywhere: there is still no node-local state.

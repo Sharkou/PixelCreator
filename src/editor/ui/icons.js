@@ -181,7 +181,10 @@ const PATHS = {
     'node-transform': `<path d="M8 2.6v10.8M2.6 8h10.8" ${S}/>`
         + `<path d="M6.2 4.4 8 2.6l1.8 1.8M6.2 11.6 8 13.4l1.8-1.8" ${S}/>`
         + `<path d="M4.4 6.2 2.6 8l1.8 1.8M11.6 6.2 13.4 8l-1.8 1.8" ${S}/>`,
-    'node-debug': `<rect x="5" y="5.4" width="6" height="7.2" rx="3" ${S}/>`
+    'node-debug': `<rect x="5" y="5.4" width="6" height="7.2" rx="3" ${S}/>`,
+    // A clock face and a hand: what a `Time` node hands over is how long something lasts,
+    // and no other category glyph draws a circle with a mark in it.
+    'node-time': `<circle cx="8" cy="8" r="5.2" ${S}/><path d="M8 5.2V8l2.2 1.6" ${S}/>`
         + `<path d="M5 8H2.4M11 8h2.6M5.6 5.6 4 4M10.4 5.6 12 4M5.6 11.6 4 13.2M10.4 11.6 12 13.2" ${S}/>`,
 
     // Transport (ADR-0029), FILLED, as `design/icons.js` draws them. A transport is the
@@ -406,6 +409,7 @@ export const NODE_CATEGORY_ICONS = {
     // it also held the property nodes; the glyph is unchanged because what it draws — an
     // object framed and aimed at — is exactly what a reference is (ADR-0034 §3.2).
     Object: 'node-scene',
+    Time: 'node-time',
     Values: 'node-value',
     Math: 'node-math',
     Compare: 'node-compare',

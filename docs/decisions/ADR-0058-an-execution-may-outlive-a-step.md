@@ -13,8 +13,10 @@
 - **Ferme :** le dernier point ouvert d'ADR-0045 §11.5 — `Delay`
 - **Étendu le 2026-09-11 :** §6 — un nœud peut demander à être **réexécuté** plutôt qu'à
   différer ce qui le suit. `Wait Until` et `Every` en découlent sans autre mécanisme
-- **Ne décide pas :** la reprise d'une simulation à mi-partie ; `Tween`, qui demande un
-  contrat de plus — voir §10
+- **Étendu le 2026-09-11 :** §6.3 — une continuation transporte l'état **privé** du nœud
+  pendant cette exécution. C'est exactement l'extension que §10 avait consignée comme
+  manquante pour `Tween`, et rien de plus
+- **Ne décide pas :** la reprise d'une simulation à mi-partie — voir §10
 
 ---
 
@@ -214,6 +216,29 @@ serait un état par nœud et par instance — une seconde sorte d'état que cet 
 délibérément pas. `On Start → Every` dit la même phrase avec les pièces qui existent, et se
 lit comme une phrase.
 
+### 6.3 Une continuation transporte aussi ce que le nœud était en train de faire
+
+`§10` avait écrit le contrat manquant : *« une continuation retient où reprendre, jamais ce
+que le nœud était en train de faire »*. `Tween` a besoin des deux — il doit savoir de combien
+il a avancé — donc l'entrée garée gagne **un champ**, et `io` **un lecteur** :
+
+```text
+{ remaining, to, produced, kept }        ◄── ce que le nœud avait demandé de garder
+io.kept                                  ◄── null à l'aller, ce qu'il a gardé au retour
+```
+
+**Opaque, et c'est tout le contrat.** L'interprète ne lit jamais dedans, ne le copie pas, et
+ne le rend qu'au nœud qui l'a garé. Ce n'est donc ni une seconde sorte de valeur, ni un port,
+ni quoi que ce soit qu'un graphe ou un payload puisse voir.
+
+**Par EXÉCUTION, jamais par nœud.** Il voyage sur la continuation, donc deux passages dans un
+même `Tween` en portent deux et aucun ne voit l'autre — la même raison qui fait de `pending`
+une liste et non une table indexée par nœud (§4). Deux instances d'un `.px` sont
+indépendantes pour la raison d'avant : la fermeture est par Component.
+
+**Et rien de plus n'a été ajouté.** Pas de durée de vie, pas d'identité, pas de sérialisation :
+l'état meurt avec la continuation, qui meurt avec le Component (§2.2).
+
 ---
 
 ## 7. Déterminisme et budget
@@ -265,6 +290,10 @@ qui rejoint reçoit un instantané.
 | Deux Runtime, mêmes pas : mêmes reprises, payload identique | idem |
 | Un handle produit avant l'attente est encore utilisable après | idem |
 | `Wait Until` relit sa condition à chaque pas, et passe une seule fois | idem |
+| Un `Tween` part de `From`, avance, et atterrit exactement sur `To` | `runtime/gameplay.test.js` |
+| Deux `Tween` dans un même nœud ne partagent jamais leur progression | idem |
+| Une durée nulle finit dans le pas même, sur `To` | idem |
+| Rien de ce qu'un `Tween` garde n'apparaît dans un payload de scène | idem |
 | Une condition déjà vraie ne suspend rien | idem |
 | Deux exécutions d'un `Wait Until` sont retenues séparément | idem |
 | `Every` pulse après son intervalle, pas à l'entrée, et ne dérive pas | idem |
@@ -277,11 +306,11 @@ qui rejoint reçoit un instantané.
 | Point ouvert | Pourquoi |
 |---|---|
 | **Reprendre une simulation à mi-partie** | §7. Même position qu'ADR-0057 §8 |
-| **`Tween`** | Il lui faut ce qu'une continuation ne porte pas : l'état du NŒUD pendant l'attente — le temps écoulé depuis son entrée. Une continuation retient *où* reprendre, jamais *ce que le nœud était en train de faire*. Le contrat manquant est donc un champ de plus sur l'entrée garée et un lecteur de plus sur `io` ; c'est une vraie extension, pas un nœud, et elle n'est pas prise ici |
+| ~~`Tween`~~ | **Fait** (§6.3) : le champ de plus sur l'entrée garée et le lecteur de plus sur `io` sont exactement ce qui avait été consigné ici comme manquant |
 | **Annuler une attente depuis le graphe** | « arrêter ce qui attend » est un geste produit que personne n'a conçu ; rien ici ne l'empêche, et une continuation est déjà adressable par l'instance qui la tient |
 | **Un `undo` pendant une partie** | Sans objet : l'historique s'arrête à la porte du mode Play (ADR-0029 §5) |
 
-**`Wait Until` et `Every` sont arrivés le jour même** (§5), et ils n'ont rien coûté d'autre que
+**`Wait Until`, `Every` et `Tween` sont arrivés le jour même** (§6), et ils n'ont rien coûté d'autre que
 le mot `again` : c'est la mesure que cet ADR décrivait bien un mécanisme et non un nœud. Ce
 qui reste naturellement à portée, avec le contrat de §10 pour `Tween` : **`Tween`**, **`Debounce`**,
 **`Cooldown`**, **`Sequence With Pauses`** — tous la même structure avec une condition de reprise
