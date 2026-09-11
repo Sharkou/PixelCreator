@@ -6,11 +6,12 @@
 // — it is what makes `.px` the format that is safe to share.
 //
 // THIS IS THE OTHER HALF OF THE CATALOGUE. `core/graph/standard.js` says what a node IS;
-// this file says WHEN nodes run and in what order. It owns exactly the four things that
+// this file says WHEN nodes run and in what order. It owns exactly the five things that
 // are not a property of any single node:
 //
 //   flow          which node runs next, and depth-first when one node continues twice
 //   data          pulling a value from upstream, memoised inside one step
+//   suspension    an execution that outlives its step, counted down and resumed (ADR-0058)
 //   protection    a budget, and a cycle guard, so a bad graph cannot hang a frame
 //   failure       a structured GraphError, thrown, for the runtime to isolate and report
 //
@@ -83,12 +84,32 @@ export function interpretGraph(graph, { registry = defaultNodes, budget = DEFAUL
     const compiled = compile(graph, registry);
 
     return function create(component) {
-        // ONE EXECUTION STATE PER COMPONENT. `started` is the whole of it today, and it is
-        // already enough to show why the seam is a factory: two Controllers must each get
-        // their own first step (ADR-0015 §3).
+        // ONE EXECUTION STATE PER COMPONENT (ADR-0015 §3), and it is now two things.
         let started = false;
 
+        // THE EXECUTIONS THAT OUTLIVED THE STEP THAT STARTED THEM (ADR-0058). A `Delay`
+        // parks the rest of its flow here and the flow ENDS; the next steps count it down
+        // and the one that reaches zero picks it up where it stopped.
+        //
+        // A LIST, NOT A MAP KEYED BY NODE. Two `On Update` firings reaching one `Delay` are
+        // two executions of it, and a map would let the second overwrite the first — a graph
+        // that silently stopped being re-entrant, and every later timing node inheriting the
+        // defect. Appending keeps them independent and keeps the resume order the order they
+        // were suspended in, which is already canonical (ADR-0058 §4).
+        //
+        // AND IT LIVES HERE RATHER THAN ON THE RUNTIME, which is what makes the whole
+        // lifecycle free: this closure is reachable only from the `Behaviors` WeakMap keyed
+        // by the component. Destroy the Object, remove the Component, replace the Scene, drop
+        // the Runtime — the component goes, the closure goes, and the suspended executions go
+        // with it. There is no cancellation pass because there is nothing to cancel.
+        const pending = [];
+
         return {
+            /** How many executions of this instance are suspended right now. */
+            get waiting() {
+                return pending.length;
+            },
+
             /**
              * Advance this component's graph by one simulation step.
              * @param {object} self - The Object the component is attached to
@@ -100,8 +121,18 @@ export function interpretGraph(graph, { registry = defaultNodes, budget = DEFAUL
                     ctx,
                     component,
                     properties: declaredProperties(component),
-                    log
+                    log,
+                    pending
                 };
+
+                // WHAT WAS SUSPENDED BELONGS TO AN EARLIER MOMENT THAN ANYTHING THIS STEP
+                // RAISES, SO IT GOES FIRST (ADR-0058 §4). And it has to go first for a second,
+                // sharper reason: the step that REACHES a `Delay` must not also count its own
+                // `deltaTime` against it. A wait of one second reached at t = 0 ends at t = 1,
+                // not at t = 1 - dt — so a continuation parked by the `start` or `update`
+                // below is untouched until the next step, by construction rather than by a
+                // flag saying which step it was born in.
+                resumeDue(compiled, state, budget);
 
                 // `start` before `update`, on the first step and only there: a graph that
                 // initialises a property must have done so before anything reads it.
@@ -109,10 +140,61 @@ export function interpretGraph(graph, { registry = defaultNodes, budget = DEFAUL
                     started = true;
                     runEvent(compiled, 'start', state, budget);
                 }
+
                 runEvent(compiled, 'update', state, budget);
             }
         };
     };
+}
+
+/**
+ * Count down the suspended executions of one instance, and finish the ones that are due.
+ *
+ * TIME IS `deltaTime` AND NOTHING ELSE. Not a wall clock, not a frame count: the step is
+ * fixed and identical on a server and on every client (`Clock`), so counting it down is what
+ * makes two machines resume the same executions on the same steps (ADR-0011, ADR-0057).
+ * Counting FRAMES would tie a game's timing to how often a screen refreshes, which is the
+ * Legacy defect `Clock` exists to prevent.
+ *
+ * AN INSTANCE THAT DOES NOT RUN DOES NOT COUNT DOWN. `Runtime.step()` skips an inactive
+ * Object and an inactive Component entirely, so this is never called for them and their
+ * timers hold rather than run on in the dark (ADR-0004). That is not a decision taken here:
+ * it is what the step already does to everything else, read off rather than re-invented.
+ *
+ * THE DUE ONES ARE TAKEN BEFORE ANY OF THEM RUNS. A resumed flow may suspend again — the
+ * same node, or another — and an entry appended while this loop was still walking would be
+ * counted down twice in one step. Snapshotting first is what makes "one step, one decrement"
+ * true whatever a graph does with its continuation.
+ *
+ * @param {object} compiled - The compiled graph
+ * @param {object} state - The running state, carrying `pending` and the step context
+ * @param {number} budget - Nodes one execution may run
+ */
+function resumeDue(compiled, state, budget) {
+    const pending = state.pending;
+    if (!pending || pending.length === 0) return;
+
+    const elapsed = state.ctx?.deltaTime ?? 0;
+
+    // A RELATIVE TOLERANCE, AND IT IS THE ONE `Clock` ALREADY USES. Subtracting a step such
+    // as 1/60 sixty times leaves a remainder of a few ulp rather than exactly zero, so a bare
+    // `<= 0` makes a one-second wait end one step late — the same defect `Clock.advance()`
+    // documents for its accumulator, met again one layer up and answered the same way.
+    const tolerance = elapsed * 1e-9;
+    const due = [];
+    let kept = 0;
+
+    for (const entry of pending) {
+        entry.remaining -= elapsed;
+        if (entry.remaining <= tolerance) due.push(entry);
+        else pending[kept++] = entry;
+    }
+    pending.length = kept;
+
+    // A FRESH BUDGET EACH, BECAUSE A RESUMED EXECUTION IS AN ORDINARY ONE. It walks the same
+    // stack, through the same nodes, with the same bound on how far it may run in one step —
+    // what it does not get is a way to run further than an event would (ADR-0058 §6).
+    for (const entry of due) walk(compiled, [entry.to], entry.produced, state, budget);
 }
 
 /**
@@ -228,11 +310,14 @@ function runEvent(compiled, event, state, budget) {
 /**
  * What a node answered, as a list of flow ports to continue down.
  *
- * ONE SHAPE FOR FOUR ANSWERS: nothing, one port, several, or a port AND the values the node
- * produced. `Branch` returns a string, `Sequence` an array, a node with nothing to do
- * returns null, and `Spawn` returns `{ next, values }` — and both callers of `execute` have
- * to read all four the same way, or an entry node and a flow node would disagree about what
- * returning `null` means.
+ * ONE SHAPE FOR FIVE ANSWERS: nothing, one port, several, a port AND the values the node
+ * produced, or a port and a DELAY before it is taken. `Branch` returns a string, `Sequence`
+ * an array, a node with nothing to do returns null, `Spawn` returns `{ next, values }` and
+ * `Delay` returns `{ next, wait }` — and both callers of `execute` have to read them the same
+ * way, or an entry node and a flow node would disagree about what returning `null` means.
+ *
+ * `next` IS READ THE SAME WAY IN ALL OF THEM, which is why a waiting node needs no vocabulary
+ * of its own: what changes is not WHERE the flow goes, it is WHEN (`waitOf()`).
  *
  * @param {string|string[]|object|null|undefined} result - What `execute` answered
  * @returns {string[]} The flow ports to follow, in order
@@ -263,27 +348,46 @@ function producedValues(result) {
 }
 
 /**
- * Follow a flow, depth-first, until it runs out or runs over budget.
+ * Follow a flow from the connection an event fired down.
  *
- * DEPTH-FIRST IS NOT AN IMPLEMENTATION DETAIL. A `Sequence` continues twice, and a creator
- * means "everything the first branch does, then everything the second does" — not the two
- * interleaved. A stack fed in reverse gives exactly that, and gives it deterministically.
+ * @param {object} compiled - The compiled graph
+ * @param {object|null} start - The connection to follow, or null when nothing is wired
+ * @param {object} state - The running state
+ * @param {number} budget - Nodes one execution may run
  */
 function runFlow(compiled, start, state, budget) {
     if (!start) return;
 
-    const stack = [start.to];
-    let steps = 0;
-
     // WHAT THE FLOW HAS PRODUCED SO FAR, AND WHY IT OUTLIVES A FLOW STEP WHEN NOTHING ELSE
     // DOES. `Spawn` creates the Object and the node three cards later positions it, so the
     // handle has to survive from one flow step to the next — which the per-step value cache
-    // below deliberately does not do. It is scoped to THIS flow and nothing wider: it is
-    // dropped when the flow ends, it never reaches a component, a payload or a frame, and
-    // `producedFrom()` re-asks the Scene before handing an Object back. So a handle is never
-    // memoised past the moment the Scene still answers for it (ADR-0034 invariant 3,
-    // ADR-0056 §4).
-    const produced = new Map();
+    // below deliberately does not do. It is scoped to THIS execution and nothing wider: it
+    // never reaches a component, a payload or a frame, and `producedFrom()` re-asks the Scene
+    // before handing an Object back. So a handle is never memoised past the moment the Scene
+    // still answers for it (ADR-0034 invariant 3, ADR-0056 §4) — which is also what lets it
+    // travel across a `Delay` without becoming a stale reference (ADR-0058 §3).
+    walk(compiled, [start.to], new Map(), state, budget);
+}
+
+/**
+ * Walk a flow, depth-first, until it runs out, suspends, or runs over budget.
+ *
+ * DEPTH-FIRST IS NOT AN IMPLEMENTATION DETAIL. A `Sequence` continues twice, and a creator
+ * means "everything the first branch does, then everything the second does" — not the two
+ * interleaved. A stack fed in reverse gives exactly that, and gives it deterministically.
+ *
+ * IT TAKES THE STACK AND THE PRODUCED VALUES RATHER THAN BUILDING THEM, which is the whole
+ * of what suspension needed from this function: resuming is walking again from one node, with
+ * the values the execution had already produced (ADR-0058 §3).
+ *
+ * @param {object} compiled - The compiled graph
+ * @param {Array<{node: string, port: string}>} stack - Where to continue, last popped first
+ * @param {Map} produced - What this execution has pushed out of flow nodes so far
+ * @param {object} state - The running state
+ * @param {number} budget - Nodes this execution may run
+ */
+function walk(compiled, stack, produced, state, budget) {
+    let steps = 0;
 
     while (stack.length > 0) {
         if (++steps > budget) {
@@ -314,12 +418,50 @@ function runFlow(compiled, start, state, budget) {
 
         const continuations = continuationsOf(result);
 
+        // THE NODE SAID "NOT YET", AND THIS EXECUTION STOPS HERE (ADR-0058 §3). What would
+        // have been pushed onto the stack is parked instead, carrying the one thing resuming
+        // needs that the graph does not already hold: where it stopped, and what it had
+        // produced. The walk then continues with whatever else is on the stack — a `Sequence`
+        // whose first branch waits does not hold up its second.
+        const waiting = waitOf(result);
+        if (waiting !== null) {
+            for (const portId of continuations) {
+                const next = compiled.flow.get(portKey(node.id, portId));
+                if (next) state.pending?.push({ remaining: waiting, to: next.to, produced });
+            }
+            continue;
+        }
+
         // Reversed, so the first declared continuation is the first one popped.
         for (let index = continuations.length - 1; index >= 0; index--) {
             const next = compiled.flow.get(portKey(node.id, continuations[index]));
             if (next) stack.push(next.to);
         }
     }
+}
+
+/**
+ * How long a node asked to wait before its flow continues, or null when it asked for nothing.
+ *
+ * THE FIFTH SHAPE `execute` MAY ANSWER WITH, and the only one that does not continue now:
+ * `{ wait, next }` says "continue down `next`, in `wait` seconds". Everything else about the
+ * answer is read exactly as before — `next` by `continuationsOf()`, `values` by
+ * `producedValues()` — so a node that waits AND produces needs no third rule.
+ *
+ * A WAIT MUST BE A FINITE POSITIVE NUMBER, and anything else is no wait at all rather than a
+ * different kind of wait. `0`, a negative, `NaN` and `Infinity` all mean the flow continues
+ * in this very step — which is the reading the catalogue's own `number()` already gives a
+ * non-finite value everywhere else, and which keeps a waiting node bounded by the ordinary
+ * budget instead of inventing a second way to run for ever (ADR-0058 §5).
+ *
+ * @param {string|string[]|object|null|undefined} result - What `execute` answered
+ * @returns {number|null} Seconds to wait, or null
+ */
+function waitOf(result) {
+    if (!result || typeof result !== 'object' || globalThis.Array.isArray(result)) return null;
+
+    const wait = result.wait;
+    return typeof wait === 'number' && globalThis.Number.isFinite(wait) && wait > 0 ? wait : null;
 }
 
 /**

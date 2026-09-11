@@ -1282,6 +1282,38 @@ export const STANDARD_NODES = [
     },
 
     {
+        type: 'flow.delay',
+        label: 'Delay',
+        category: 'Flow',
+        keywords: ['wait', 'pause', 'timer', 'after', 'seconds', 'hold', 'later', 'cooldown'],
+        tooltip: 'Waits, then carries on down Then',
+        inputs: [
+            flow('in'),
+            // ONE SECOND, BECAUSE A CARD NOBODY HAS TOUCHED HAS TO DO SOMETHING A CREATOR CAN
+            // SEE. A default of `0` would read as a Delay and behave as a wire.
+            data('duration', PropertyType.NUMBER, 'Duration', 1, null, 'How long to wait, in seconds')
+        ],
+        outputs: [flow('then', 'Then')],
+        // IT SAYS WHEN, NOT WHETHER (ADR-0058 §3). The answer names the same flow port every
+        // other node names; what it adds is `wait`, and the interpreter parks the rest of this
+        // execution rather than walking into it. Nothing here holds a timer, mutates the node
+        // or touches the component: a node stays a pure reading of its inputs, and the state
+        // that outlives the step belongs to the instance running the graph.
+        //
+        // THE DURATION IS READ ONCE, HERE, AND CAPTURED. Re-reading it while waiting would
+        // make a `Delay` fed by a property change length halfway through — a wait whose end
+        // moves is not a wait, and nothing on the canvas would say so.
+        //
+        // A DURATION THAT IS NOT A POSITIVE FINITE NUMBER IS NO WAIT AT ALL, and that is the
+        // catalogue's own numeric convention rather than a rule invented for this node:
+        // `number()` turns `NaN`, `Infinity` and anything unreadable into `0` everywhere else,
+        // and `0` seconds of waiting is the flow carrying straight on. It also keeps this node
+        // bounded by the ordinary budget — a `Delay(0)` inside a loop is an ordinary loop,
+        // reported like any other, rather than a way to run for ever one step at a time.
+        execute: io => ({ wait: number(io.input('duration')), next: 'then' })
+    },
+
+    {
         type: 'flow.sequence',
         label: 'Sequence',
         category: 'Flow',

@@ -10,6 +10,7 @@
   ADR-0056 (une copie est le modèle)
 - **Ferme :** le point ouvert d'ADR-0045 §11.5 pour `Random` ; le point ouvert d'ADR-0056 §8
   sur le déterminisme des identités sous réplication
+- **Complété par :** ADR-0058 (2026-09-11) — `Delay`, laissé ouvert ci-dessous, est tranché : l'état d'exécution par instance, et un temps qui ne vient que de `deltaTime`
 - **Ne décide pas :** `Delay` (état d'exécution par instance, question distincte) ; le
   transport qui porterait la graine d'un serveur à ses clients ; la reprise d'une simulation
   en cours de route — voir §7
@@ -203,6 +204,6 @@ de départ plus la graine sont tout ce qu'il faut.
 |---|---|
 | **Qui envoie la graine** | Le transport n'existe pas (ADR-0042 §6 : deux fenêtres sont déjà deux clients, il leur manque un canal). Quand il existera, la graine est une chaîne de plus dans le message d'ouverture — rien ici ne bouge |
 | **Reprendre une simulation en cours** | Le contrat est « même départ + même graine + mêmes pas ». Reprendre à mi-course demanderait de sérialiser la POSITION des flux, donc d'en faire de l'état de scène. Personne n'en a besoin tant qu'un client rejoint en recevant un instantané |
-| `Delay` | Reste ouvert (ADR-0045 §11.5) : sa difficulté est l'état d'exécution par instance, pas le hasard |
+| ~~`Delay`~~ | **Tranché par ADR-0058** : l'état d'exécution par instance, à côté de `started` ; le temps vient de `deltaTime` et le déterminisme de ce même contrat |
 | **Les particules d'une copie** | Deux `ParticleSystem` copiés émettent le même motif, puisque la graine d'un émetteur est fixée à la construction (§5). C'est trop de déterminisme plutôt que pas assez, et c'est une question de rendu |
 | **La caméra choisie par `preview/client.js`** | `scene.objects().find(…)` lit l'ordre d'insertion : classe D, cela ne touche pas la simulation, mais deux clients pourraient regarder par deux caméras si une scène en portait deux |

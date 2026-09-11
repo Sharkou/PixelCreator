@@ -14,7 +14,8 @@
   seulement d'un pas de flux, à condition d'être redemandé à la Scene à chaque lecture
 - **Ferme :** le point ouvert d'ADR-0043 §8 et d'ADR-0045 §11.5 pour `Destroy` et `Spawn`
 - **Complété par :** ADR-0057 (2026-09-11) — le déterminisme des identités de §8 est tranché : un `Spawn` frappe ses identités sur le flux `seed:ids` du Runtime, jamais sur le CSPRNG de la machine
-- **Ne décide pas :** le prefab (ADR-0026 §7 reste tel quel) ; `Random` et `Delay` ; le
+- **Complété par :** ADR-0058 (2026-09-11) — une exécution suspendue emporte ce qu'elle avait produit, donc §4.1 vaut aussi par-dessus une attente
+- **Ne décide pas :** le prefab (ADR-0026 §7 reste tel quel) ; le
   déterminisme des identités sous réplication — voir §7
 
 ---
