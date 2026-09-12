@@ -248,6 +248,29 @@ test('a trigger is crossed, and still reports Enter, Stay and Exit', () => {
     assert.ok(phases.filter(phase => phase === CollisionPhase.STAY).length > 0, 'and stayed a while');
 });
 
+test('a trigger crossed entirely inside one step is still a contact', () => {
+    const it = staged();
+    const gate = it.trigger('Gate', 500, 0, { width: 4, height: 400 });
+    // A THOUSAND UNITS IN ONE STEP. The gate is four units thick and sits entirely between
+    // where the body starts and where it ends: it overlaps NEITHER position. A detector that
+    // only ever compares two snapshots cannot see this, and a bullet through a hitbox is
+    // exactly this shape.
+    const bullet = it.body('Bullet', 0, 0, { vx: 60000 });
+    const runtime = it.runtime();
+
+    runtime.step();
+    runtime.step();
+
+    const seen = runtime.collisions.transitions(bullet)
+        .filter(entry => entry.other === gate)
+        .map(entry => entry.phase);
+
+    assert.deepEqual(seen, [CollisionPhase.ENTER], 'the passage was observed');
+    near(state(bullet).x, 2000, 'and nothing slowed it down: a trigger is not a wall');
+    assert.equal(runtime.collisions.overlapping(bullet, gate), false,
+        'and it is NOT overlapping it — `Is Overlapping` is still a question about area');
+});
+
 test('a body with no collider is stopped by nothing', () => {
     const it = staged();
     it.wall('Wall', 100, 0, { width: 20, height: 400 });

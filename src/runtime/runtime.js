@@ -64,6 +64,14 @@ export class Runtime {
     #collisions = new Collisions();
 
     /**
+     * What the last movement pass passed clean through (ADR-0067 §11).
+     *
+     * IT IS CARRIED ACROSS ONE STEP, because that is where it belongs: the crossing happened
+     * at the end of the last step, and detection reads the world the last step left behind.
+     */
+    #crossings = [];
+
+    /**
      * Create a runtime.
      * @param {object} scene - The scene to run
      * @param {object} [options] - Options
@@ -411,7 +419,7 @@ export class Runtime {
         // `Destroy` inside a collision callback cannot retroactively change the set of events
         // the step had already decided, and the second bullet to hit an enemy sees the same
         // decision the first one did (ADR-0059 §4).
-        this.#collisions.update(this.#scene);
+        this.#collisions.update(this.#scene, this.#crossings);
 
         for (const object of hierarchyOrder(this.#scene)) {
             if (!object.active) continue;
@@ -462,7 +470,11 @@ export class Runtime {
         // DETECTION STAYS WHERE IT WAS, at the top, against the positions the previous step
         // left behind. `Enter`, `Stay`, `Exit` and `Is Overlapping` are untouched by this
         // line; what moved is what happens to a Transform, which those three never read.
-        moveBodies(this.#scene, { deltaTime: this.#clock.fixedStep });
+        this.#crossings = [];
+        moveBodies(this.#scene, {
+            deltaTime: this.#clock.fixedStep,
+            onCross: (body, other) => this.#crossings.push([body, other])
+        });
 
         // Closing the step is what makes `pressed()` and `released()` observable on
         // exactly one step, however many steps a frame owes.

@@ -50,6 +50,7 @@ import { canDrop, performDrop } from '../dnd/rules.js';
 import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
 import { describeType, groupTypes } from '../registry.js';
 import { FieldKind, describeComponent, isWide, objectFields, rows } from '../inspector/schema.js';
+import { gridWriter } from '../tilemap.js';
 import '../ui/window.js';
 import '../ui/field.js';
 import '../ui/resource-field.js';
@@ -2258,7 +2259,7 @@ export class Inspector extends Element {
     }
 
     #renderRow(target, descriptor, component = null) {
-        const field = this.#control(target, descriptor);
+        const field = this.#control(target, descriptor, { write: gridWriter(target, descriptor) });
         const label = el('span', { class: 'label', textContent: descriptor.label });
         const carry = component ? this.#carryHandle(target, descriptor, component) : null;
         this.#makeDroppable(field, {
@@ -2315,7 +2316,10 @@ export class Inspector extends Element {
             el('span', { class: 'label', textContent: row.label }),
             el('div', { class: 'fields pair' },
                 row.fields.flatMap((descriptor, index) => [
-                    el('px-field').bind(target, descriptor, { prefix: prefixes[index] }),
+                    el('px-field').bind(target, descriptor, {
+                        prefix: prefixes[index],
+                        write: gridWriter(target, descriptor)
+                    }),
                     // `X` names nothing on its own: the row it sits in is what a creator
                     // reads it with, and the tooltip is where that has to be said.
                     component

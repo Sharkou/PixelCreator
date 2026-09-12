@@ -36,7 +36,8 @@
 // every other at once — is the mass, the impulse and the restitution this tranche refused.
 
 import { hierarchyOrder, worldMatrix } from '../../core/mod.js';
-import { collidersOf, unionOf } from '../collision/collider.js';
+import { boxesOverlap, collidersOf, unionOf } from '../collision/collider.js';
+import { tileBoxes } from '../tilemap/collider.js';
 import { allPairs, candidatePairs } from '../collision/broad-phase.js';
 import { Body } from './body.js';
 
@@ -48,9 +49,12 @@ import { Body } from './body.js';
  * @param {number} [options.deltaTime] - The fixed step, in seconds
  * @param {boolean} [options.exhaustive] - Skip the broad phase and consider every collider,
  *   as the differential test's other half (ADR-0064 §4). Nothing in the product sets it.
+ * @param {Function} [options.onCross] - Called with `(body, other)` for each collider a body
+ *   passed CLEAN THROUGH during this step — overlapping it at neither end (ADR-0067 §11).
+ *   Omit it and nothing is computed.
  * @returns {number} How many Bodies were moved
  */
-export function moveBodies(scene, { deltaTime = 0, exhaustive = false } = {}) {
+export function moveBodies(scene, { deltaTime = 0, exhaustive = false, onCross = null } = {}) {
     if (!scene) return 0;
 
     const entries = collidersOf(scene);
@@ -95,18 +99,28 @@ export function moveBodies(scene, { deltaTime = 0, exhaustive = false } = {}) {
         mover.body.grounded = false;
 
         const entry = mover.index >= 0 ? entries[mover.index] : null;
+        // THE CORRIDOR, and it is what keeps a tilemap cheap: the cells asked for are the
+        // cells this body could reach on this step, never the cells of the level.
         const blockers = entry && entry.solid.length > 0
-            ? blockersFor(entries, near.get(mover.index))
+            ? blockersFor(entries, near.get(mover.index), stretch(entry.bounds, mover.dx, mover.dy))
             : [];
+        let middle = null;
 
         let dx = mover.dx;
         let dy = mover.dy;
+
+        // THE PATH IS AN L, AND THAT IS WHY IT CAN BE SWEPT EXACTLY. The resolution moves X,
+        // then Y; each leg is axis-aligned, so the box it sweeps out is an exact rectangle
+        // rather than the diagonal over-estimate a single union would give.
+        const start = onCross && entry ? entry.boxes.map(copy) : null;
 
         if (blockers.length > 0) {
             const horizontal = sweep(entry.solid, blockers, dx, 'x');
             dx = horizontal.allowed;
             shift(entry.boxes, dx, 0);
             if (horizontal.blocked && mover.velocity) mover.velocity.x = 0;
+
+            middle = start ? entry.boxes.map(copy) : null;
 
             const vertical = sweep(entry.solid, blockers, dy, 'y');
             dy = vertical.allowed;
@@ -120,8 +134,14 @@ export function moveBodies(scene, { deltaTime = 0, exhaustive = false } = {}) {
 
             entry.bounds = unionOf(entry.boxes);
         } else if (entry) {
-            shift(entry.boxes, dx, dy);
+            shift(entry.boxes, dx, 0);
+            middle = start ? entry.boxes.map(copy) : null;
+            shift(entry.boxes, 0, dy);
             entry.bounds = unionOf(entry.boxes);
+        }
+
+        if (onCross && entry) {
+            report(onCross, mover.object, entries, near.get(mover.index), start, middle, entry.boxes);
         }
 
         translate(mover.object, mover.transform, dx, dy);
@@ -175,16 +195,26 @@ function pairsNear(entries, movers, exhaustive) {
 
 /**
  * The solid boxes of a mover's candidates, flattened once.
+ *
+ * A TILEMAP IS EXPANDED HERE AND NOWHERE ELSE (ADR-0068 §3). Its cells are not boxes the
+ * scene holds; they are boxes computed for this body, for this step, from the corridor it
+ * sweeps — so the cost follows the character and not the size of the level.
+ *
  * @param {object[]} entries - Every colliding Object, in canonical order
  * @param {number[]|undefined} candidates - The indices the grid proposed
+ * @param {object} corridor - The world region the body can reach this step
  * @returns {object[]} The world boxes that can stop it
  */
-function blockersFor(entries, candidates) {
+function blockersFor(entries, candidates, corridor) {
     if (!candidates) return [];
 
     const boxes = [];
     for (const index of candidates) {
-        for (const box of entries[index].solid) boxes.push(box);
+        const entry = entries[index];
+        for (const box of entry.solid) boxes.push(box);
+        if (entry.grid) {
+            for (const box of tileBoxes(entry.object, entry.grid, corridor)) boxes.push(box);
+        }
     }
     return boxes;
 }
@@ -232,6 +262,57 @@ function sweep(boxes, blockers, delta, axis) {
     }
 
     return { allowed: forward ? limit : -limit, blocked };
+}
+
+/**
+ * Tell the caller about every collider this body passed clean through.
+ *
+ * WHAT A SNAPSHOT CANNOT SEE (ADR-0067 §11). A contact is reported here ONLY when the body
+ * overlapped the other box at NEITHER end of the step: an overlap at the start was already
+ * reported by the step that began there, and one at the end will be reported by the step that
+ * begins where this one stopped. What is left is the passage that falls between two
+ * snapshots — a bullet through a hitbox at three thousand units a second.
+ *
+ * IT IS NOT AN OVERLAP, AND IT IS NOT A SOLID CONTACT. Nothing here moves anything, nothing
+ * here consults `solid`, and `Is Overlapping` never learns of it.
+ *
+ * @param {Function} onCross - Called with `(body, other)`
+ * @param {object} object - The body that moved
+ * @param {object[]} entries - Every colliding Object, in canonical order
+ * @param {number[]|undefined} candidates - The indices the grid proposed
+ * @param {object[]} start - Its boxes before the movement
+ * @param {object[]|null} middle - Its boxes after the horizontal leg
+ * @param {object[]} end - Its boxes now
+ */
+function report(onCross, object, entries, candidates, start, middle, end) {
+    if (!candidates || !start) return;
+
+    for (const index of candidates) {
+        const other = entries[index];
+        let crossed = false;
+
+        for (let at = 0; at < start.length && !crossed; at++) {
+            const legs = [
+                unionOf([start[at], middle ? middle[at] : end[at]]),
+                unionOf([middle ? middle[at] : start[at], end[at]])
+            ];
+
+            for (const box of other.boxes) {
+                if (boxesOverlap(start[at], box) || boxesOverlap(end[at], box)) continue;
+                if (legs.some(leg => boxesOverlap(leg, box))) {
+                    crossed = true;
+                    break;
+                }
+            }
+        }
+
+        if (crossed) onCross(object, other.object);
+    }
+}
+
+/** A world box, copied, so a shifted one can still be compared with where it was. */
+function copy(box) {
+    return { minX: box.minX, minY: box.minY, maxX: box.maxX, maxY: box.maxY };
 }
 
 /**

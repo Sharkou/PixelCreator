@@ -7,7 +7,7 @@ import { missingOperations, assertRenderer, BlendMode } from './renderer.js';
 import { RectangleRenderer } from './components/rectangle-renderer.js';
 import { Sprite } from './components/sprite.js';
 import { ParticleSystem } from './components/particle-system.js';
-import { Tilemap } from './components/tilemap.js';
+import { Tilemap } from '../tilemap/tilemap.js';
 
 /** A backend that records calls instead of producing pixels. */
 function recordingRenderer() {

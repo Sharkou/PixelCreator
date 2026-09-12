@@ -1,4 +1,11 @@
-// A grid of coloured tiles.
+// A grid of coloured tiles — the ONE truth about what is in it (ADR-0068 §2).
+//
+// IT LIVES BESIDE `collision/`, NOT INSIDE `rendering/`, and it moved here the day its cells
+// started stopping things. A grid that draws is still a grid: the renderer asks it to draw,
+// the movement pass asks it what is occupied, and the paint tool asks it to change — three
+// readers, one array, and no copy of it anywhere. Leaving it under `rendering/` would have
+// made the physics import the renderer's tree to find out where the floor is, which is the
+// dependency this move exists to avoid.
 //
 // Kept deliberately simple: tiles are palette indices, not images, because a tileset is
 // a resource concern and resources are not part of this step. What matters here is the
@@ -68,6 +75,65 @@ export class Tilemap {
     set(column, row, value) {
         if (column < 0 || row < 0 || column >= this.columns || row >= this.rows) return;
         this.tiles[row * this.columns + column] = value;
+    }
+
+    /**
+     * The cell a point in this Object's local space falls in.
+     *
+     * FLOOR, NOT ROUND, and negatives are outside rather than wrapped to zero: a grid starts
+     * at the Object's origin and grows right and down (see `bounds()`), so -3 is not row 0.
+     *
+     * @param {number} localX - A point in the Object's own space
+     * @param {number} localY - The same, vertically
+     * @returns {{column: number, row: number}} The cell, which may be outside the grid
+     */
+    cellAt(localX, localY) {
+        return {
+            column: globalThis.Math.floor(localX / this.tileSize),
+            row: globalThis.Math.floor(localY / this.tileSize)
+        };
+    }
+
+    /**
+     * Whether a cell is inside the grid.
+     * @param {number} column - Column index
+     * @param {number} row - Row index
+     * @returns {boolean} True when the cell exists
+     */
+    contains(column, row) {
+        return column >= 0 && row >= 0 && column < this.columns && row < this.rows;
+    }
+
+    /**
+     * The cells this grid would have at another size.
+     *
+     * A GRID IS ADDRESSED BY `row * columns + column`, so changing `columns` without rebuilding
+     * the array does not resize a grid — it SHEARS it: every row after the first slides
+     * sideways by the difference. This is the rule that stops that, and it is deliberately
+     * boring: what was at (column, row) is still at (column, row), what is new is empty, and
+     * what no longer fits is gone.
+     *
+     * PURE, so the Editor can write the result and the old array in one batch and undo puts
+     * both back (ADR-0068 §5).
+     *
+     * @param {number} columns - The new width, in cells
+     * @param {number} rows - The new height, in cells
+     * @returns {number[]} The remapped cells
+     */
+    remap(columns, rows) {
+        const width = globalThis.Math.max(0, globalThis.Math.floor(columns));
+        const height = globalThis.Math.max(0, globalThis.Math.floor(rows));
+        const next = new globalThis.Array(width * height).fill(0);
+
+        const keptColumns = globalThis.Math.min(width, this.columns);
+        const keptRows = globalThis.Math.min(height, this.rows);
+        for (let row = 0; row < keptRows; row++) {
+            for (let column = 0; column < keptColumns; column++) {
+                next[row * width + column] = this.get(column, row);
+            }
+        }
+
+        return next;
     }
 
     /**

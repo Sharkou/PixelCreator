@@ -21,14 +21,15 @@ import { BoxCollider } from './collision/collider.js';
 import { Sprite } from './rendering/components/sprite.js';
 import { SpriteAnimator } from './rendering/components/sprite-animator.js';
 import { TextRenderer } from './rendering/components/text-renderer.js';
-import { Tilemap } from './rendering/components/tilemap.js';
+import { Tilemap } from './tilemap/tilemap.js';
+import { TilemapCollider } from './tilemap/collider.js';
 import { ScreenSpace } from './rendering/space.js';
 import { AudioSource } from './audio/audio-source.js';
 
 /** The component types the engine ships, in the order a menu should list them. */
 export const BUILT_IN = [
     Transform, Velocity, Body, BoxCollider, RectangleRenderer, Sprite, SpriteAnimator, TextRenderer,
-    ParticleSystem, Tilemap, ScreenSpace, AudioSource, Camera
+    ParticleSystem, Tilemap, TilemapCollider, ScreenSpace, AudioSource, Camera
 ];
 
 /**

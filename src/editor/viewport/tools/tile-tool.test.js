@@ -1,0 +1,318 @@
+// Painting a Tilemap in the Scene, and undoing a stroke (ADR-0068 §5, §6).
+//
+// NO CANVAS AND NO DOM. The tool is handed the same pointer the viewport builds and writes
+// through the same Property System every other gesture uses, so what it does is a model
+// change and a model change is testable without drawing anything.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+    ComponentRegistry,
+    Matrix,
+    Object as SceneObject,
+    Scene,
+    Transform
+} from '../../../core/mod.js';
+import { Tilemap } from '../../../runtime/mod.js';
+import { History } from '../../history.js';
+import { resizeGrid } from '../../tilemap.js';
+import { TileTool } from './tile-tool.js';
+
+const SIZE = 32;
+
+/** A scene with one Tilemap in it, a selection, and the tool that paints it. */
+function staged({ columns = 6, rows = 4, at = [0, 0], palette = ['#000000', '#ff0000', '#00ff00'] } = {}) {
+    const registry = new ComponentRegistry();
+    registry.register(Transform);
+    registry.register(Tilemap);
+
+    const scene = new Scene('Level', { registry });
+    const object = scene.add(new SceneObject('Map', { id: 'obj_map' }));
+    object.addComponent(new Transform(at[0], at[1]));
+    const tilemap = new Tilemap(SIZE, columns, rows, [], palette);
+    object.addComponent(tilemap);
+
+    const selection = { object };
+    const tool = new TileTool({ scene, selection });
+    const history = new History(scene.operations);
+
+    // The identity view: one world unit is one device pixel, which keeps the arithmetic in
+    // the test the arithmetic a reader can check.
+    const view = Matrix.identity();
+    const at2 = (worldX, worldY) => ({
+        device: [worldX, worldY],
+        view,
+        screen: view,
+        world: { x: worldX, y: worldY },
+        surface: { x: worldX, y: worldY },
+        coarse: false
+    });
+
+    /** The pointer over the middle of a cell. */
+    const over = (column, row) => at2(at[0] + column * SIZE + SIZE / 2, at[1] + row * SIZE + SIZE / 2);
+
+    return { scene, object, tilemap, selection, tool, history, over, at: at2, view };
+}
+
+/** The grid as a string, so a whole map fits in an assertion. */
+function grid(tilemap) {
+    const lines = [];
+    for (let row = 0; row < tilemap.rows; row++) {
+        let line = '';
+        for (let column = 0; column < tilemap.columns; column++) line += tilemap.get(column, row);
+        lines.push(line);
+    }
+    return lines.join('/');
+}
+
+// --- what the tool is for -------------------------------------------------------------------
+
+test('it is live only while a Tilemap is selected', () => {
+    const it = staged();
+
+    assert.ok(it.tool.target(), 'the map is selected');
+
+    it.selection.object = null;
+    assert.equal(it.tool.target(), null);
+    assert.equal(it.tool.wouldGrab(it.over(0, 0)), false, 'and it grabs nothing');
+});
+
+test('a press inside the grid is the painter, a press outside it is not', () => {
+    const it = staged();
+
+    assert.equal(it.tool.wouldGrab(it.over(0, 0)), true);
+    assert.equal(it.tool.wouldGrab(it.over(5, 3)), true, 'the last cell is inside');
+    // THE ONE SENTENCE THAT DECIDES (ADR-0068 §5). Outside the grid the Select tool has the
+    // press, which is what stops a creator from being locked into a mode.
+    assert.equal(it.tool.wouldGrab(it.over(6, 0)), false, 'one column past the end');
+    assert.equal(it.tool.wouldGrab(it.at(-10, -10)), false, 'and above and to the left of it');
+});
+
+// --- painting -------------------------------------------------------------------------------
+
+test('a press paints the cell under it, and nothing else', () => {
+    const it = staged();
+
+    it.tool.press(it.over(2, 1));
+    it.tool.release();
+
+    assert.equal(it.tilemap.get(2, 1), 1, 'the active entry, which starts at 1');
+    assert.equal(grid(it.tilemap), '000000/001000/000000/000000');
+});
+
+test('a drag paints every cell it crosses, including the ones between two samples', () => {
+    const it = staged();
+
+    it.tool.press(it.over(0, 0));
+    // A pointer is sampled once a frame: this jump is what a fast drag looks like.
+    it.tool.move(it.over(4, 0));
+    it.tool.release();
+
+    assert.equal(grid(it.tilemap), '111110/000000/000000/000000', 'no holes in the line');
+});
+
+test('crossing the same cell twice writes it once', () => {
+    const it = staged();
+    let writes = 0;
+    it.scene.operations.on('operation', () => writes++);
+
+    it.tool.press(it.over(1, 1));
+    it.tool.move(it.over(2, 1));
+    it.tool.move(it.over(1, 1));
+    it.tool.move(it.over(2, 1));
+    it.tool.release();
+
+    assert.equal(writes, 2, 'two cells, two operations, however many times they were visited');
+    assert.equal(grid(it.tilemap), '000000/011000/000000/000000');
+});
+
+test('painting the value a cell already holds is not an edit', () => {
+    const it = staged();
+    it.tool.press(it.over(0, 0));
+    it.tool.release();
+
+    let writes = 0;
+    it.scene.operations.on('operation', () => writes++);
+    it.tool.press(it.over(0, 0));
+    it.tool.release();
+
+    assert.equal(writes, 0);
+});
+
+test('entry 0 is Erase, and it is not a colour', () => {
+    const it = staged();
+    it.tool.press(it.over(1, 1));
+    it.tool.move(it.over(3, 1));
+    it.tool.release();
+    assert.equal(grid(it.tilemap), '000000/011100/000000/000000');
+
+    // The first swatch of the strip. Its position comes from the same numbers `draw()` uses.
+    it.tool.draw(recorder(), it.view, { scale: 1 });
+    it.tool.press(it.at(12 + 11, 12 + 11));
+    assert.equal(it.tool.active, 0, 'picked Empty');
+
+    it.tool.press(it.over(2, 1));
+    it.tool.release();
+    assert.equal(grid(it.tilemap), '000000/010100/000000/000000', 'and painting it clears a cell');
+});
+
+test('a swatch picks what is painted', () => {
+    // Placed clear of the strip: the swatches are drawn ON the surface, so where they are
+    // drawn they take the press — the same rule any on-screen control follows.
+    const it = staged({ at: [300, 300] });
+
+    it.tool.draw(recorder(), it.view, { scale: 1 });
+    // Third swatch: Empty, palette 1, palette 2 — at 12 + 2 * (22 + 5) + 11.
+    it.tool.press(it.at(12 + 2 * 27 + 11, 23));
+    assert.equal(it.tool.active, 2);
+
+    it.tool.press(it.over(0, 0));
+    it.tool.release();
+    assert.equal(it.tilemap.get(0, 0), 2);
+});
+
+test('the last swatch adds a colour to a palette that has none', () => {
+    const it = staged({ palette: [], at: [300, 300] });
+
+    it.tool.draw(recorder(), it.view, { scale: 1 });
+    // Two swatches only: Empty, then `+`.
+    it.tool.press(it.at(12 + 27 + 11, 23));
+
+    assert.deepEqual(it.tilemap.palette, ['#000000', '#6aa84f'],
+        'entry 0 stays unused, and the colour lands at 1 where `draw()` can find it');
+    assert.equal(it.tool.active, 1);
+
+    it.tool.press(it.over(0, 0));
+    it.tool.release();
+    assert.equal(it.tilemap.get(0, 0), 1, 'and it paints straight away');
+});
+
+test('nothing outside the grid is ever written', () => {
+    const it = staged();
+    let writes = 0;
+    it.scene.operations.on('operation', () => writes++);
+
+    it.tool.press(it.over(-1, 0));
+    it.tool.move(it.over(9, 9));
+    it.tool.release();
+    it.tool.press(it.at(-500, -500));
+    it.tool.release();
+
+    assert.equal(writes, 0);
+    assert.equal(it.tilemap.tiles.filter(Boolean).length, 0);
+});
+
+test('the map is painted where it IS, not where the origin is', () => {
+    const it = staged({ at: [500, -300] });
+
+    it.tool.press(it.over(2, 2));
+    it.tool.release();
+
+    assert.equal(it.tilemap.get(2, 2), 1, 'the pointer went through the Transform');
+});
+
+// --- one stroke, one undo ----------------------------------------------------------------
+
+test('a drag across five cells is ONE undo, and redo puts the whole stroke back', () => {
+    const it = staged();
+
+    it.tool.press(it.over(0, 2));
+    it.tool.move(it.over(2, 2));
+    it.tool.move(it.over(4, 2));
+    it.tool.release();
+
+    const painted = grid(it.tilemap);
+    assert.equal(painted, '000000/000000/111110/000000');
+    assert.equal(it.history.depth, 1, 'five cells, one entry');
+
+    it.history.undo();
+    assert.equal(grid(it.tilemap), '000000/000000/000000/000000', 'exactly the grid from before');
+
+    it.history.redo();
+    assert.equal(grid(it.tilemap), painted, 'and exactly the stroke, back again');
+});
+
+test('two strokes are two undos', () => {
+    const it = staged();
+
+    it.tool.press(it.over(0, 0));
+    it.tool.move(it.over(2, 0));
+    it.tool.release();
+
+    it.tool.press(it.over(0, 3));
+    it.tool.move(it.over(2, 3));
+    it.tool.release();
+
+    assert.equal(it.history.depth, 2);
+    it.history.undo();
+    assert.equal(grid(it.tilemap), '111000/000000/000000/000000', 'the second stroke, and only it');
+    it.history.undo();
+    assert.equal(grid(it.tilemap), '000000/000000/000000/000000');
+});
+
+// --- resizing ------------------------------------------------------------------------------
+
+test('growing keeps the level where it was, and undo brings the size back', () => {
+    const it = staged({ columns: 3, rows: 2 });
+    it.tool.press(it.over(0, 0));
+    it.tool.move(it.over(2, 0));
+    it.tool.release();
+    it.tool.press(it.over(0, 1));
+    it.tool.release();
+
+    resizeGrid(it.tilemap, 'columns', 5);
+
+    assert.equal(it.tilemap.columns, 5);
+    assert.equal(grid(it.tilemap), '11100/10000', 'the second row is still the second row');
+
+    it.history.undo();
+    assert.equal(it.tilemap.columns, 3);
+    assert.equal(grid(it.tilemap), '111/100', 'size and content, both');
+});
+
+test('shrinking crops, and undo gives the cropped cells back', () => {
+    const it = staged({ columns: 4, rows: 3 });
+    it.tool.press(it.over(3, 0));
+    it.tool.move(it.over(3, 2));
+    it.tool.release();
+
+    const before = grid(it.tilemap);
+    resizeGrid(it.tilemap, 'columns', 2);
+    assert.equal(grid(it.tilemap), '00/00/00', 'the painted column is outside now');
+
+    // THE WHOLE REASON THE TWO WRITES SHARE A BATCH (ADR-0068 §6). A dimension written on
+    // its own could only undo to "the same size, and nothing in it".
+    it.history.undo();
+    assert.equal(grid(it.tilemap), before, 'every cropped cell is back');
+
+    it.history.redo();
+    assert.equal(grid(it.tilemap), '00/00/00');
+});
+
+test('a resize is one history entry, not two', () => {
+    const it = staged({ columns: 3, rows: 3 });
+    const depth = it.history.depth;
+
+    resizeGrid(it.tilemap, 'rows', 6);
+
+    assert.equal(it.history.depth, depth + 1);
+    assert.equal(it.tilemap.tiles.length, 18, 'and the array is the size it says it is');
+});
+
+/** A renderer that records nothing: `draw()` is called here only to lay the strip out. */
+function recorder() {
+    const noop = () => {};
+    return {
+        clear: noop,
+        save: noop,
+        restore: noop,
+        setTransform: noop,
+        setBlendMode: noop,
+        fillRect: noop,
+        strokeRect: noop,
+        fillCircle: noop,
+        drawImage: noop,
+        imageSize: () => null,
+        fillText: noop
+    };
+}

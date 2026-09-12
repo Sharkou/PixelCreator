@@ -64,6 +64,7 @@ import { GUIDE_STYLES, Guides } from './guides.js';
 import { frameDelta } from '../transport.js';
 import { SelectTool } from './tools/select-tool.js';
 import { PanTool } from './tools/pan-tool.js';
+import { TileTool } from './tools/tile-tool.js';
 
 /** How much of the remaining zoom distance is covered each frame. */
 const ZOOM_EASING = 0.28;
@@ -192,6 +193,12 @@ export class Viewport extends Element {
     #guides = null;
 
     #tool = null;
+
+    /** The tilemap painter. Live only while a Tilemap is selected (ADR-0068 §5). */
+    #tiles = null;
+
+    /** Which of the two took the current press. */
+    #grabbed = null;
     #pan = null;
 
     // The surface, in both units, plus the exact ratio between them. Everything that
@@ -273,6 +280,10 @@ export class Viewport extends Element {
             subject,
             coarse: () => globalThis.matchMedia?.('(pointer: coarse)').matches ?? false
         });
+        // A SECOND TOOL, AND A ONE-LINE RULE FOR WHICH ONE ACTS (ADR-0068 §5). It is not a
+        // mode: `#toolFor()` asks the painter whether the press is inside the selected map,
+        // and the Select tool has everything else. Nothing switches, so nothing is stuck.
+        this.#tiles = new TileTool({ scene, selection });
         this.#pan = new PanTool(camera);
         return this;
     }
@@ -644,6 +655,9 @@ export class Viewport extends Element {
         const screen = this.screen;
         this.#runtime.render({ view, screen });
         this.#tool.draw(this.#sceneRenderer, view, { scale: density, screen });
+        // Drawn after the selection outline, because the grid and the swatches are what a
+        // creator is looking AT while the outline only says which map it is.
+        this.#tiles?.draw(this.#sceneRenderer, view, { scale: density, screen });
 
         const zoom = `${Math.round(this.#zoom() * 100)}%`;
         if (zoom !== this.#zoomShown) {
@@ -691,7 +705,7 @@ export class Viewport extends Element {
         // A finger has no second button, so a press on empty space is how you pan. It is
         // still one tool and three gestures: what is under the pointer decides, and a
         // press that did not travel is still a tap that deselects.
-        if (touch && !this.#tool.wouldGrab(pointer)) {
+        if (touch && !this.#toolFor(pointer).wouldGrab(pointer)) {
             event.preventDefault();
             this.#gesture = 'pan';
             this.#tap = { x: event.clientX, y: event.clientY };
@@ -701,7 +715,8 @@ export class Viewport extends Element {
         }
 
         this.#gesture = 'tool';
-        this.#tool.press(pointer);
+        this.#grabbed = this.#toolFor(pointer);
+        this.#grabbed.press(pointer);
         this.#refreshCursor();
         this.#invalidate();
     }
@@ -730,7 +745,11 @@ export class Viewport extends Element {
             this.#pan.move(this.#pointerAt(pending.clientX, pending.clientY, pending.pointerType));
             this.#snapCamera();
         } else {
-            this.#tool.move(this.#pointerAt(pending.clientX, pending.clientY, pending.pointerType));
+            const pointer = this.#pointerAt(pending.clientX, pending.clientY, pending.pointerType);
+            // A press belongs to the tool that took it until it is released; a hover belongs
+            // to both, so the painter keeps following the cursor even while nothing is held.
+            (this.#grabbed ?? this.#tool).move(pointer);
+            if (this.#grabbed !== this.#tiles) this.#tiles?.move(pointer);
         }
 
         const rect = this.#bounds();
@@ -775,7 +794,8 @@ export class Viewport extends Element {
 
         this.#tap = null;
         this.#gesture = null;
-        this.#tool.release();
+        (this.#grabbed ?? this.#tool).release();
+        this.#grabbed = null;
         this.#refreshCursor();
         this.#invalidate();
     }
@@ -793,7 +813,8 @@ export class Viewport extends Element {
 
     #abandonGesture() {
         if (this.#gesture === 'pan') this.#pan.release();
-        if (this.#gesture === 'tool') this.#tool.release();
+        if (this.#gesture === 'tool') (this.#grabbed ?? this.#tool).release();
+        this.#grabbed = null;
         this.#tap = null;
         this.#gesture = null;
     }
@@ -951,10 +972,22 @@ export class Viewport extends Element {
         return Matrix.compose(0, 0, 0, this.#metrics?.scaleX ?? 1, this.#metrics?.scaleY ?? 1);
     }
 
+    /**
+     * Which tool a press belongs to.
+     *
+     * ONE SENTENCE, AND IT IS THE WHOLE RULE (ADR-0068 §5): inside the selected Tilemap's
+     * grid — or on its palette strip — the press paints; anywhere else it selects. A creator
+     * is never in a mode they cannot leave, because leaving is clicking away.
+     */
+    #toolFor(pointer) {
+        return this.#tiles?.wouldGrab(pointer) ? this.#tiles : this.#tool;
+    }
+
     #refreshCursor() {
+        const painting = this.#tiles?.hovered || this.#grabbed === this.#tiles;
         const cursor = this.#gesture === 'pan' || this.#gesture === 'pinch'
             ? this.#pan.cursor()
-            : this.#tool.cursor(this.view, this.screen);
+            : (painting ? this.#tiles.cursor() : this.#tool.cursor(this.view, this.screen));
         if (this.#surface.style.cursor !== cursor) this.#surface.style.cursor = cursor;
     }
 }

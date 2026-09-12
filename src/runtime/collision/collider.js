@@ -18,6 +18,7 @@
 // (ADR-0014 §1, ADR-0059 §2).
 
 import { hierarchyOrder, worldMatrix } from '../../core/mod.js';
+import { mapBounds, solidGridOf } from '../tilemap/collider.js';
 
 export class BoxCollider {
 
@@ -142,8 +143,13 @@ export function boxesOverlap(a, b) {
  * the renderer already ask of everything: is the Object active, and is this component
  * switched on (ADR-0004).
  *
+ * A TILEMAP IS ONE ENTRY TOO (ADR-0068 §3). It carries no boxes — a grid does not overlap
+ * things, and this version raises no contact for its cells — but it carries `grid`, which the
+ * movement pass turns into the handful of cells a body could actually reach. That is what
+ * keeps a forty-thousand-cell level ONE thing in the spatial hash.
+ *
  * @param {object|null} scene - The scene to walk
- * @returns {Array<{object: object, boxes: object[], solid: object[], bounds: object}>}
+ * @returns {Array<{object: object, boxes: object[], solid: object[], bounds: object, grid: object|null}>}
  *   One entry per Object, in canonical order
  */
 export function collidersOf(scene) {
@@ -167,7 +173,19 @@ export function collidersOf(scene) {
             if (component.solid !== false) solid.push(box);
         }
 
-        if (boxes.length > 0) found.push({ object, boxes, solid, bounds: unionOf(boxes) });
+        const grid = solidGridOf(object);
+
+        if (boxes.length > 0) {
+            found.push({
+                object,
+                boxes,
+                solid,
+                bounds: grid ? unionOf([unionOf(boxes), mapBounds(object, grid)]) : unionOf(boxes),
+                grid
+            });
+        } else if (grid) {
+            found.push({ object, boxes, solid, bounds: mapBounds(object, grid), grid });
+        }
     }
 
     return found;

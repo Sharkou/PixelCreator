@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Pixel Creator — tile level</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #0b0b0d; }
+        body { display: grid; place-content: center; text-align: center;
+               font: 14px/1.6 ui-sans-serif, system-ui, sans-serif; color: #a8a8b3; }
+    </style>
+</head>
+<body>
+    <p><strong>Building the tile level…</strong></p>
+
+    <!--
+        THE SAME LEVEL THE TEST PLAYS (ADR-0068 §9): one Tilemap with a collider for the
+        world, one without for the sky, and five Objects in the whole scene.
+    -->
+    <script type="module">
+        import { ComponentRegistry } from '../../src/core/mod.js';
+        import { MemoryResourceStore, Project } from '../../src/project/mod.js';
+        import { registerBuiltIns } from '../../src/runtime/builtins.js';
+        import { bundleProject } from '../../src/preview/bundle.js';
+        import { previewUrl, putPreview } from '../../src/preview/store.js';
+        import { IDS, buildTileLevel } from './tiles.js';
+
+        const project = new Project('Pixel Creator Tiles', { store: new MemoryResourceStore() });
+        buildTileLevel(project, { registry: registerBuiltIns(new ComponentRegistry()) });
+
+        const bundle = bundleProject(project, project.store, { scene: IDS.scene });
+        if (!putPreview(project.id, bundle)) {
+            document.querySelector('strong').textContent = 'This browser would not store the bundle.';
+        } else {
+            location.replace(previewUrl(project.id, '../../src/preview/index.html'));
+        }
+    </script>
+</body>
+</html>

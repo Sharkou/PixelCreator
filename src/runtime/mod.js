@@ -42,4 +42,5 @@ export { AVERAGE_ADVANCE, TextRenderer } from './rendering/components/text-rende
 export { SpriteAnimator } from './rendering/components/sprite-animator.js';
 export { Sprite } from './rendering/components/sprite.js';
 export { ParticleSystem } from './rendering/components/particle-system.js';
-export { Tilemap } from './rendering/components/tilemap.js';
+export { Tilemap } from './tilemap/tilemap.js';
+export { TilemapCollider, tileBoxes } from './tilemap/collider.js';
