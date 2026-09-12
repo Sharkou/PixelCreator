@@ -28,7 +28,7 @@ Pixel Creator is a **no-code / low-code 2D multiplayer game engine** that runs e
 1. **Open the editor**: [editor.pixelcreator.io](https://editor.pixelcreator.io)
 2. **Create objects** in the hierarchy panel
 3. **Add components** (Texture, Controller, Collider...)
-4. **Press Play** and test your game!
+4. **Click Preview** and test your game!
 
 ## 📚 Documentation
 
