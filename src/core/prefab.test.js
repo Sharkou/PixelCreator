@@ -15,12 +15,12 @@ import { Transform } from './components/transform.js';
 import { duplicateObject } from './duplicate.js';
 import {
     PREFAB_FORMAT,
-    PrefabRegistry,
     createPrefab,
     externalReferencesOf,
     instantiatePrefab,
     recordsOf
 } from './prefab.js';
+import { ResourceRegistry } from './resources.js';
 
 /** A `.px` with one reference socket and one ordinary value, like a creator's own. */
 const Linked = defineComponent({
@@ -303,8 +303,8 @@ test('a prefab and a duplication are the same machinery, reached from two descri
 
 // --- the registry -----------------------------------------------------------------------------
 
-test('the registry answers now, which is the whole of why prefabs are possible', () => {
-    const prefabs = new PrefabRegistry();
+test('the registry answers now, which is the whole of why prefabs are possible (ADR-0062 §1)', () => {
+    const prefabs = new ResourceRegistry();
     const definition = { version: PREFAB_FORMAT, root: 'a', objects: [{ id: 'a' }] };
 
     assert.equal(prefabs.get('res_1'), null);

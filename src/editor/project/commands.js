@@ -19,10 +19,12 @@ import { iconForResource } from '../ui/icons.js';
 import {
     KIND_LABELS,
     ResourceKind,
+    addAnimation,
     addScene,
     uniqueResourceName,
     withExtension
 } from '../../project/mod.js';
+import { imageSize } from '../../project/image.js';
 
 /**
  * What the Project panel's `+` offers, in the order it offers it.
@@ -62,8 +64,76 @@ export const RESOURCE_KINDS = [
     // what a browser should offer in its picker. So the row carries the `accept` and the
     // label, and the import itself is written once.
     importer('image', 'Image…', 'Graphics', 'image/*', 'Image'),
-    importer('sound', 'Sound…', 'Audio', 'audio/*', 'Sound')
+    importer('sound', 'Sound…', 'Audio', 'audio/*', 'Sound'),
+    // AN ANIMATION IS BORN FROM A SHEET, because there is nothing else it could be born
+    // from. A clip with no picture names no frames, and a creator asked to make one and
+    // then to find a way to point it at an image would be holding a resource that does
+    // nothing — the "menu entry that opens nothing" the note above refuses. So this row
+    // picks an image, imports it like the row above, and reads the grid off the file.
+    {
+        id: 'animation',
+        kind: ResourceKind.ANIMATION,
+        label: 'Animation…',
+        category: 'Graphics',
+        pick: { accept: 'image/*' },
+        create: (project, { parent, actor, file, payload }) => {
+            if (!payload) return null;
+
+            const base = (file?.name ?? 'Animation').replace(/\.[^.]+$/, '');
+            const sheet = project.add(
+                {
+                    kind: ResourceKind.ASSET,
+                    name: uniqueResourceName(project, file?.name ?? base, parent),
+                    parent,
+                    mime: file?.type || 'image/png'
+                },
+                payload,
+                { actor }
+            );
+
+            return addAnimation(project, sheetGrid(sheet.id, imageSize(payload)), {
+                name: uniqueResourceName(
+                    project,
+                    withExtension(base, { kind: ResourceKind.ANIMATION }),
+                    parent
+                ),
+                parent,
+                actor
+            });
+        }
+    }
 ];
+
+/**
+ * The clip a sprite sheet most probably describes.
+ *
+ * A HORIZONTAL STRIP OF SQUARES, and that guess is the one worth making: it is what a
+ * sheet exported by Aseprite, Piskel or a tutorial looks like, and the creator who meant
+ * something else has a wrong number to correct rather than an empty form to fill. A file
+ * whose header says nothing gets 32 x 32 and one frame — honest, and visibly wrong the
+ * moment it is played, which is better than a clip that silently shows a quarter of a
+ * picture.
+ *
+ * @param {string} source - The sheet's ResourceId
+ * @param {{width: number, height: number}|null} size - What the header said
+ * @returns {object} A spec for `addAnimation()`
+ */
+function sheetGrid(source, size) {
+    const height = size?.height > 0 ? size.height : 32;
+    const width = size?.width > 0 ? size.width : height;
+    const count = globalThis.Math.max(1, globalThis.Math.round(width / height));
+
+    return {
+        source,
+        frameWidth: globalThis.Math.round(width / count),
+        frameHeight: height,
+        count,
+        columns: count,
+        first: 0,
+        fps: 12,
+        loop: true
+    };
+}
 
 /**
  * A row that imports a file of some family as an asset.

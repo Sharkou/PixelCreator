@@ -38,8 +38,8 @@ test('a session resolves prefabs and sounds, and nothing else', async () => {
     const session = createSession({ project: store });
     const counts = await session.refresh();
 
-    assert.deepEqual(counts, { prefabs: 1, sounds: 1 });
-    assert.equal(session.prefabs.has(prefab.id), true);
+    assert.deepEqual(counts, { resources: 1, sounds: 1, images: 1 });
+    assert.equal(session.resources.has(prefab.id), true);
     assert.equal(session.sounds.get(sound.id), 'data:audio/wav;base64,AA');
     assert.equal(session.sounds.has(image.id), false, 'a picture is not a sound');
 });
@@ -97,13 +97,13 @@ test('a deleted resource is forgotten, or a game would spawn what the panel no l
 
     const session = createSession({ project: store });
     await session.refresh();
-    assert.equal(session.prefabs.has(prefab.id), true);
+    assert.equal(session.resources.has(prefab.id), true);
 
     store.remove(prefab.id);
     await session.refresh();
 
-    assert.equal(session.prefabs.has(prefab.id), false);
-    assert.equal(session.prefabs.size, 0);
+    assert.equal(session.resources.has(prefab.id), false);
+    assert.equal(session.resources.size, 0);
 });
 
 test('one unreadable payload is reported and skipped', async () => {
@@ -121,11 +121,11 @@ test('one unreadable payload is reported and skipped', async () => {
     const session = createSession({ project: failing, onError: entry => reported.push(entry.resource.id) });
     await session.refresh();
 
-    assert.equal(session.prefabs.has(good.id), true);
+    assert.equal(session.resources.has(good.id), true);
     assert.deepEqual(reported, [bad.id]);
 });
 
 test('a session with no project answers honestly rather than throwing', async () => {
     const session = createSession({});
-    assert.deepEqual(await session.refresh(), { prefabs: 0, sounds: 0 });
+    assert.deepEqual(await session.refresh(), { resources: 0, sounds: 0, images: 0 });
 });

@@ -11,20 +11,25 @@
 //   project.read(id)                   the Project reads the payload, once, BEFORE the game
 //        │
 //        ▼
-//   PrefabRegistry.set(id, payload)    a plain map, in memory, that answers now
+//   ResourceRegistry.set(id, payload)  a plain map, in memory, that answers now
 //        │
 //        ▼
-//   new Runtime(scene, { prefabs })    the Runtime receives a VALUE, never an identifier
+//   new Runtime(scene, { resources })  the Runtime receives a VALUE, never an identifier
 //
 // It is exactly the shape `loadComponentDefinitions()` already has, and for exactly the same
 // reason: the Core never reaches storage, the Runtime must not, and putting the load in the
 // Editor would stop a headless server from opening a project (ADR-0011, ADR-0020).
 //
+// THE LOADING ITSELF MOVED NEXT DOOR (`project/resources.js`, ADR-0062 §1). An animation
+// needed the very same pass with one word changed, so there is one `loadDefinitions()` for
+// every definition kind; what stays here is what is specific to a PREFAB — writing one from
+// a live subtree, and the external references that cannot travel with it.
+//
 // NOTHING HERE INVENTS A FORMAT. `createPrefab()` and `instantiatePrefab()` are the Core's,
 // and a payload that round-trips through this module is byte-identical to the one the Core
 // produced — which is what makes a prefab in a bundle the same thing as a prefab in a store.
 
-import { PrefabRegistry, createPrefab } from '../core/mod.js';
+import { createAnimation, createPrefab } from '../core/mod.js';
 import { createResource, ResourceKind } from './resource.js';
 
 /**
@@ -94,42 +99,58 @@ export async function loadPrefab(project, id) {
 }
 
 /**
- * Resolve every prefab of a project into a registry a simulation can read synchronously.
- *
- * CALLED BEFORE THE FIRST STEP, AND NEVER DURING ONE. That is the whole contract: this is
- * `async`, the registry it produces is not, and the Runtime only ever sees the registry
- * (ADR-0061 §4).
- *
- * A BROKEN PAYLOAD MUST NOT STOP A PROJECT FROM OPENING, in the spirit of ADR-0012 and of
- * `loadComponentDefinitions()` beside it: it is reported through `onError` and skipped, and
- * a `Spawn Prefab` aimed at it answers nothing at run time — which is already how a node
- * whose target is gone behaves (ADR-0034 §3.4).
- *
- * @param {object} project - The project to load from
- * @param {object} [options] - Options
- * @param {PrefabRegistry} [options.prefabs] - The registry to fill; a fresh one by default
- * @param {Function} [options.onError] - Called with { resource, error } instead of throwing
- * @returns {Promise<PrefabRegistry>} The registry
- */
-export async function loadPrefabs(project, { prefabs = new PrefabRegistry(), onError } = {}) {
-    for (const resource of project.resources(ResourceKind.PREFAB)) {
-        try {
-            const definition = await project.read(resource.id);
-            if (definition) prefabs.set(resource.id, definition);
-        } catch (error) {
-            if (!onError) throw error;
-            onError({ resource, error });
-        }
-    }
-
-    return prefabs;
-}
-
-/**
  * The project's prefab resources, in manifest order.
  * @param {object} project - The project
  * @returns {object[]} The manifest entries
  */
 export function prefabResources(project) {
     return project.resources(ResourceKind.PREFAB);
+}
+
+// --- animations ----------------------------------------------------------------------------
+//
+// THE SAME THREE VERBS, ONE KIND DOWN. A clip is declared, saved and listed exactly as a
+// prefab is, because both are Resources and the Resource system is what makes that true
+// without a second identity scheme, a second store or a second undo stack (ADR-0020).
+
+/**
+ * Declare a sprite animation in the project.
+ *
+ * @param {object} project - The project to declare it in
+ * @param {object} spec - The clip, as `createAnimation()` takes it
+ * @param {object} [options] - Options
+ * @param {string} [options.name] - Displayed name
+ * @param {string|null} [options.parent] - The folder it goes in
+ * @param {string} [options.id] - Existing ResourceId, used when loading a manifest
+ * @param {number} [options.index] - Rank in the manifest
+ * @param {string} [options.actor] - Who authored the intent
+ * @param {string} [options.batch] - Groups this into a larger history entry
+ * @returns {object|null} The manifest entry, or null when the operation was refused
+ */
+export function addAnimation(project, spec, { name = 'New Animation.animation', parent = null, id, index, actor, batch } = {}) {
+    const resource = createResource({ kind: ResourceKind.ANIMATION, id, name, parent });
+    return project.add(resource, createAnimation(spec), { index, actor, batch });
+}
+
+/**
+ * Write a clip's payload again.
+ *
+ * @param {object} project - The project
+ * @param {string} id - The clip's ResourceId
+ * @param {object} spec - The clip, as `createAnimation()` takes it
+ * @param {object} [options] - Options
+ * @param {string} [options.actor] - Who authored the intent
+ * @returns {object|null} The manifest entry, or null when the resource is unknown
+ */
+export function saveAnimation(project, id, spec, { actor } = {}) {
+    return project.save(id, createAnimation(spec), { actor });
+}
+
+/**
+ * The project's animation resources, in manifest order.
+ * @param {object} project - The project
+ * @returns {object[]} The manifest entries
+ */
+export function animationResources(project) {
+    return project.resources(ResourceKind.ANIMATION);
 }

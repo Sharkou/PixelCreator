@@ -8,6 +8,7 @@
 // the model, the components or the scene renderer changes when it does.
 
 import { BlendMode } from './renderer.js';
+import { noImages } from './images.js';
 
 const COMPOSITE_OPERATION = {
     [BlendMode.NORMAL]: 'source-over',
@@ -19,6 +20,7 @@ export class Canvas2DRenderer {
     #context;
     #width;
     #height;
+    #images;
 
     /**
      * Create the backend.
@@ -26,11 +28,15 @@ export class Canvas2DRenderer {
      * @param {object} [options] - Options
      * @param {number} [options.width] - Surface width, read from the canvas when omitted
      * @param {number} [options.height] - Surface height, read from the canvas when omitted
+     * @param {object} [options.images] - Where a ResourceId becomes a drawable picture
+     *   (ADR-0062 §2). A backend built without one draws no pictures, which is exactly what
+     *   a surface with no project behind it should do.
      */
-    constructor(context, { width, height } = {}) {
+    constructor(context, { width, height, images } = {}) {
         if (!context) throw new TypeError('Canvas2DRenderer: a 2D context is required');
 
         this.#context = context;
+        this.#images = images ?? noImages();
         this.#width = width ?? context.canvas?.width ?? 0;
         this.#height = height ?? context.canvas?.height ?? 0;
 
@@ -150,21 +156,55 @@ export class Canvas2DRenderer {
         context.globalAlpha = 1;
     }
 
+    /** Where this backend's pictures come from. */
+    get images() {
+        return this.#images;
+    }
+
     /**
-     * Draw an image.
-     * @param {object} image - Anything the context accepts as an image source
+     * Draw a picture.
+     *
+     * THE IDENTITY ARRIVES, NEVER THE PIXELS (ADR-0062 §2). A Component names what it wants
+     * drawn and this file answers for it, which is what keeps an `ImageBitmap` — a value
+     * that could never be serialized — out of the model entirely.
+     *
+     * A PICTURE THAT IS NOT DECODED YET DRAWS NOTHING, and the next frame draws it. There is
+     * no placeholder and no wait: `get()` starts the decode and answers what it has.
+     *
+     * @param {string} source - The image's ResourceId
      * @param {number} x - Left edge
      * @param {number} y - Top edge
      * @param {number} width - Destination width
      * @param {number} height - Destination height
-     * @param {object} [options] - { alpha }
+     * @param {object} [options] - `{ alpha, clip }`
      */
-    drawImage(image, x, y, width, height, { alpha = 1 } = {}) {
-        if (!image) return;
+    drawImage(source, x, y, width, height, { alpha = 1, clip = null } = {}) {
+        const image = this.#images.get(source);
+        if (!image || width <= 0 || height <= 0) return;
+
         const context = this.#context;
         context.globalAlpha = alpha;
-        context.drawImage(image, x, y, width, height);
+
+        // A CLIP IS A RECTANGLE OF THE SOURCE, which is the whole of what a spritesheet
+        // needs (ADR-0062 §4): nine arguments instead of five, and no second primitive.
+        //
+        // AND THERE IS NO `flipX`. Mirroring is `Transform.rotationY = 180°`, which ADR-0050
+        // settled by REMOVING a `flipX` boolean: under an orthographic projection a rotation
+        // about the vertical axis IS a horizontal scale by `cos θ`, so the matrix already
+        // does it exactly — and says `45` where a boolean could only say "back".
+        if (clip) context.drawImage(image, clip.x, clip.y, clip.width, clip.height, x, y, width, height);
+        else context.drawImage(image, x, y, width, height);
+
         context.globalAlpha = 1;
+    }
+
+    /**
+     * The natural pixel size of a picture, or null when it is not decoded yet.
+     * @param {string} source - The image's ResourceId
+     * @returns {{width: number, height: number}|null} Its size
+     */
+    imageSize(source) {
+        return this.#images.size(source);
     }
 
     /**

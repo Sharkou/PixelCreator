@@ -126,6 +126,17 @@ const PATHS = {
     // which is exactly what a `ScreenSpace` object is for.
     screen: `<rect x="2" y="3" width="12" height="10" rx="1.4" ${S}/>`
         + `<path d="M4.3 5.6h4M4.3 7.8h2.6" ${S}/>`,
+    // A FILM STRIP: a row of cells with perforations, which is what a sprite sheet IS and
+    // what a `.animation` names. Deliberately not the Timeline panel's glyph — a resource
+    // that borrows a panel's drawing reads as "this row is that panel" (ADR-0026 §11).
+    frames: `<rect x="1.8" y="4" width="12.4" height="8" rx="1" ${S}/>`
+        + `<path d="M6 4v8M10 4v8" ${S}/>`
+        + `<path d="M1.8 6.2h1.1M1.8 9.8h1.1M13.1 6.2h1.1M13.1 9.8h1.1" ${S}/>`,
+    // THE CAPABILITY, NOT THE FILE. A shape with the trail of where it has just been:
+    // `SpriteAnimator` is something an Object DOES, and the strip above is something a
+    // project HOLDS — the two families stay drawn apart.
+    animate: `<rect x="7.4" y="4.2" width="7" height="7.6" rx="1" ${S}/>`
+        + `<path d="M5 5.4v5.2M2.6 6.6v2.8" ${S}/>`,
     // WHAT A THING DECLARES versus WHAT IS TRUE OF IT. The Inspector drew both its
     // Properties section and its Details section with the window's own glyph, so the two
     // read as the same kind of list — and they are opposites: one is the schema a creator
@@ -201,6 +212,10 @@ const PATHS = {
         + `<path d="M11.2 9.6c-1.2 0-2-.8-2-2s.8-2 2-2 2 .8 2 2c0 2-.8 3.4-2.4 4.4" ${S}/>`,
     // A waveform, not a speaker: a speaker is a DEVICE (`sound`, used for an audio
     // resource), a waveform is the sound itself, which is what these nodes act on.
+    // A FRAME AND THE ONE BEHIND IT, MOVING: what an animation IS, and distinct from the
+    // film strip a `.animation` resource wears — one is a family of nodes, the other a file.
+    'node-animation': `<rect x="6" y="4.6" width="7.6" height="7.6" rx="1" ${S}/>`
+        + `<path d="M3.8 5.8v5.2M1.8 7v2.8" ${S}/>`,
     'node-audio': `<path d="M2.4 8h1.4M12.2 8h1.4" ${S}/>`
         + `<path d="M5.2 5.4v5.2M7.6 3.2v9.6M10 5.9v4.2" ${S}/>`,
     'node-time': `<circle cx="8" cy="8" r="5.2" ${S}/><path d="M8 5.2V8l2.2 1.6" ${S}/>`
@@ -284,6 +299,7 @@ const COMPONENT_ICONS = {
     Transform: 'object',
     RectangleRenderer: 'rectangle',
     Sprite: 'sprite',
+    SpriteAnimator: 'animate',
     TextRenderer: 'type-text',
     ScreenSpace: 'screen',
     AudioSource: 'sound',
@@ -331,6 +347,7 @@ const RESOURCE_ICONS = {
     component: 'graph',
     graph: 'graph',
     prefab: 'prefab',
+    animation: 'frames',
     asset: 'image'
 };
 
@@ -464,6 +481,7 @@ export const NODE_CATEGORY_ICONS = {
     Values: 'node-value',
     Text: 'node-text',
     Audio: 'node-audio',
+    Animation: 'node-animation',
     Math: 'node-math',
     Compare: 'node-compare',
     Logic: 'node-logic',

@@ -158,3 +158,72 @@ test('every creation is one Operation, so every creation undoes', () => {
         assert.equal(invert(invert(operation)).type, operation.type);
     }
 });
+
+
+// --- an animation, from the sheet it animates -------------------------------------------
+
+/** A 128 x 32 PNG header: four square frames, which is what the row must read. */
+const SHEET = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAAAgCAYAAAAVQmJ5AAAAE0lEQVR42u3BAQ0AAADCoPdPbQ8HFAAAAABJRU5ErkJggg==';
+
+test('an animation is created from a sheet, and the grid is read off the file', async () => {
+    const project = new Project('Game');
+    const clip = createResourceOfKind(project, 'animation', {
+        file: { name: 'walk.png', type: 'image/png' },
+        payload: SHEET
+    });
+
+    assert.equal(clip.kind, ResourceKind.ANIMATION);
+    assert.equal(clip.name, 'walk.animation', 'named after the picture, not after the kind');
+
+    const payload = await project.read(clip.id);
+    assert.equal(payload.count, 4, '128 wide over 32 tall is four square frames');
+    assert.deepEqual([payload.frameWidth, payload.frameHeight], [32, 32]);
+    assert.equal(payload.columns, 4, 'a strip, so every frame is on one row');
+    assert.equal(payload.loop, true);
+
+    // THE SHEET CAME WITH IT. A clip whose source is not in the project would name nothing.
+    const sheet = project.get(payload.source);
+    assert.equal(sheet.kind, ResourceKind.ASSET);
+    assert.equal(sheet.name, 'walk.png');
+    assert.equal(await project.read(sheet.id), SHEET, 'byte for byte, as it was chosen');
+});
+
+test('the row asks for a picture, and refuses to invent one', () => {
+    assert.equal(resourceKind('animation').pick.accept, 'image/*');
+    // No file, no clip: the panel never reaches `create` without one, and if it did there
+    // is nothing honest to make.
+    assert.equal(createResourceOfKind(new Project('Game'), 'animation'), null);
+});
+
+test('a picture whose header says nothing still makes a clip that plays', async () => {
+    const project = new Project('Game');
+    const clip = createResourceOfKind(project, 'animation', {
+        // A format the header reader does not know. It is still imported — the browser
+        // will draw it — but nothing can be said about its grid.
+        file: { name: 'mystery.webp', type: 'image/webp' },
+        payload: 'data:image/webp;base64,UklGRhIAAABXRUJQVlA4TAYAAAAvAAAAAA=='
+    });
+
+    const payload = await project.read(clip.id);
+    // One frame of 32, which is visibly wrong the moment it is played rather than
+    // invisibly wrong for ever.
+    assert.deepEqual([payload.count, payload.frameWidth, payload.frameHeight], [1, 32, 32]);
+});
+
+test('creating a clip is TWO resources and still one undo', () => {
+    const project = new Project('Game');
+    const history = new History(project.operations);
+    const clip = createResourceOfKind(project, 'animation', {
+        file: { name: 'walk.png', type: 'image/png' },
+        payload: SHEET
+    });
+
+    assert.equal(project.resources().length, 2);
+    // COUNTER-PROOF, and it is the honest one: two `add` intents are two Operations, so a
+    // creator who changes their mind presses undo twice. Making it one would mean a batch,
+    // and a batch is a decision about what a gesture IS — not a detail of this row.
+    assert.equal(history.depth, 2);
+    history.undo();
+    assert.equal(project.has(clip.id), false);
+    assert.equal(project.resources().length, 1, 'the sheet is a resource of its own');
+});

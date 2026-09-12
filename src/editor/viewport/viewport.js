@@ -178,7 +178,8 @@ export class Viewport extends Element {
     #subject = null;
     #onError = null;
     #behaviors = null;
-    #prefabs = null;
+    #resources = null;
+    #images = null;
     #audio = null;
 
     #surface = null;
@@ -225,11 +226,22 @@ export class Viewport extends Element {
      * @param {object} [context.subject] - Where a selection INTENT is announced (ADR-0032)
      * @param {Function} [context.onError] - Receives runtime ComponentFailure reports
      * @param {object} [context.behaviors] - The `.px` graphs bound to component types
-     * @param {object} [context.prefabs] - Prefab definitions, already resolved (ADR-0061 §4)
+     * @param {object} [context.resources] - Resolved definitions (ADR-0061 §4, ADR-0062 §1)
+     * @param {object} [context.images] - Where a ResourceId becomes a drawable picture
      * @param {object} [context.audio] - Audio output, for the session Play starts
      * @returns {Viewport} This element
      */
-    bind({ scene, camera, selection, subject = null, onError, behaviors = null, prefabs = null, audio = null }) {
+    bind({
+        scene,
+        camera,
+        selection,
+        subject = null,
+        onError,
+        behaviors = null,
+        resources = null,
+        images = null,
+        audio = null
+    }) {
         this.#scene = scene;
         this.#camera = camera;
         this.#selection = selection;
@@ -244,7 +256,10 @@ export class Viewport extends Element {
         // for things the Project owns and the Runtime may not read for itself, so they are
         // resolved by the shell and handed over here — where the Runtime that plays is built
         // (ADR-0060 §5, ADR-0061 §4).
-        this.#prefabs = prefabs;
+        this.#resources = resources;
+        // A CREATOR HAS TO SEE THEIR SPRITES WHILE THEY ARRANGE THEM, so the cache reaches
+        // the surface in EDIT mode and not only when Play is pressed (ADR-0062 §2).
+        this.#images = images;
         this.#audio = audio;
 
         // TWO ROLES, AND THEY ARE NOT THE SAME OBJECT. `selection` is READ — the outline,
@@ -473,12 +488,14 @@ export class Viewport extends Element {
         );
 
         this.#gridRenderer = new Canvas2DRenderer(grid.getContext('2d'));
-        this.#sceneRenderer = new Canvas2DRenderer(scene.getContext('2d', { alpha: true }));
+        this.#sceneRenderer = new Canvas2DRenderer(scene.getContext('2d', { alpha: true }), {
+            images: this.#images ?? undefined
+        });
         this.#runtime = new Runtime(this.#scene, {
             renderer: this.#sceneRenderer,
             onError: report => this.#onError?.(report),
             behaviors: this.#behaviors ?? undefined,
-            prefabs: this.#prefabs ?? undefined,
+            resources: this.#resources ?? undefined,
             audio: this.#audio ?? undefined
         });
         // Edit mode: the scene is drawn every frame but never stepped.

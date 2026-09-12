@@ -13,7 +13,15 @@
 // finger: delete sits in the Hierarchy row, framing is a double-click, deselecting is a
 // tap on empty space. A tablet must never hit a wall (docs/architecture/EDITOR.md).
 
-import { Object, Scene, Transform, components, observe, registerStandardNodes } from '../core/mod.js';
+import {
+    Object,
+    Scene,
+    Transform,
+    componentLabel,
+    components,
+    observe,
+    registerStandardNodes
+} from '../core/mod.js';
 import { Behaviors, Camera, createGraphInterpreter } from '../runtime/mod.js';
 import { Selection } from './selection.js';
 import { Subject } from './subject.js';
@@ -21,10 +29,13 @@ import { Layout } from './layout.js';
 import { componentCatalogue, registerBuiltIns } from './registry.js';
 import { addComponent, deleteObject } from './commands.js';
 import { Workspace } from './project/workspace.js';
+import { ResourceKind, loadComponentDefinitions } from '../project/mod.js';
 import { createDefinitions } from './project/definitions.js';
 import { createSession } from './project/session.js';
+import { createAutosave } from './project/autosave.js';
+import { openLibrary } from './project/library.js';
 import { Transport, TransportState } from './transport.js';
-import { openPreview } from './preview.js';
+import { exportGame, openPreview } from './preview.js';
 import { broadcastEdits } from './live.js';
 import { KeyboardInput, PointerInput } from './input.js';
 import { fillStarterScene } from './project/starter.js';
@@ -366,10 +377,17 @@ const shellStyles = sheet(`
 
 /**
  * Build and mount the Editor.
+ *
+ * ASYNCHRONOUS FROM HERE ON, AND FOR ONE REASON: a project now outlives the tab (ADR-0065).
+ * Opening one reads a manifest, and reading is asynchronous by contract (ADR-0020 §4) — so
+ * the shell waits once, at the door, and everything below it is unchanged.
+ *
  * @param {HTMLElement} [mount] - Where the shell goes
- * @returns {object} The editor context: { scene, camera, selection, layout, viewport }
+ * @param {object} [options] - Options
+ * @param {object} [options.library] - Where projects are kept; this browser's by default
+ * @returns {Promise<object>} The editor context: { scene, camera, selection, layout, viewport }
  */
-export function start(mount = document.body) {
+export async function start(mount = document.body, { library = null } = {}) {
     installDocumentStyles();
     document.adoptedStyleSheets = [...document.adoptedStyleSheets, shellStyles];
     registerBuiltIns(components);
@@ -378,10 +396,18 @@ export function start(mount = document.body) {
     // without accepting it (editor/registry.js, ADR-0027).
     registerStandardNodes();
 
-    const scene = fillStarterScene(new Scene('Untitled Scene', { registry: components }));
     const selection = new Selection();
     const camera = createEditorCamera();
     const layout = new Layout();
+
+    // WHAT THIS BROWSER ALREADY HOLDS (ADR-0065 §4). The last project a creator opened, the
+    // newest one otherwise, and a brand new one the first time anyone runs this. A host with
+    // no storage falls back to memory and the Editor behaves exactly as it did before —
+    // which is the honest degradation, not a blank screen.
+    const projects = library ?? await openLibrary({
+        onError: error => console.warn('[project] this browser would not keep projects:', error)
+    });
+    const opened = await projects.resume({ name: 'Untitled Project' });
 
     // THE SCENE IS A RESOURCE, not a loose model the shell happens to hold. Declaring it
     // is what gives it an identity that survives storage, a payload the Project panel can
@@ -390,8 +416,15 @@ export function start(mount = document.body) {
     //
     // It starts in memory. An IndexedDB store is a swap of one implementation, which is
     // the whole reason `ResourceStore` is an interface.
-    const workspace = new Workspace({ components });
-    const sceneResource = workspace.create(scene);
+    const workspace = new Workspace({ components, project: opened.project });
+
+    // A PROJECT THAT WAS SAVED IS REOPENED; ONE THAT IS BRAND NEW GETS SOMETHING TO LOOK AT.
+    // The starter scene is not a fixture the Editor depends on — it is what an empty project
+    // shows on its first morning, and a project that already has scenes never sees it.
+    const restored = opened.fresh ? null : await reopen(workspace, components);
+    const scene = restored?.scene ?? fillStarterScene(new Scene('Untitled Scene', { registry: components }));
+    const sceneResource = restored?.resource ?? workspace.create(scene);
+
     const histories = workspace.histories;
     const history = workspace.history;
 
@@ -407,12 +440,28 @@ export function start(mount = document.body) {
     // somewhere to talk to (core/graph/standard.js).
     const behaviors = new Behaviors(createGraphInterpreter({ log: reportLog }));
 
+    // AND IT KEEPS ITSELF (ADR-0065 §2). Every payload that changed and the manifest itself,
+    // written after a short quiet period — never per keystroke, and never anywhere near a
+    // simulation step.
+    const autosave = createAutosave({
+        workspace,
+        store: opened.store,
+        onError: error => console.warn('[project] this change could not be saved:', error)
+    });
+
     const definitions = createDefinitions({
         project: workspace.project,
         registry: components,
         workspace,
         scene,
-        behaviors
+        behaviors,
+        // A `.px` THAT CANNOT RUN SAYS SO, ONCE, WITH THE NODE THAT CAUSED IT (ADR-0064 §6).
+        // Its Component still attaches and still carries its properties; what is withheld is
+        // the behaviour, which is the difference between a graph that does nothing and a
+        // graph nobody told you about.
+        onInvalid: ({ component, issues }) => reportLog(
+            `${componentLabel(component)} is not running: ${issues[0]?.message ?? 'its graph cannot be run.'}`
+        )
     });
 
     // EVERY PREVIEW OF THIS PROJECT FOLLOWS FROM HERE (ADR-0044 §3). Nothing is pushed
@@ -443,7 +492,8 @@ export function start(mount = document.body) {
         subject,
         onError: reportFailure,
         behaviors,
-        prefabs: session.prefabs,
+        resources: session.resources,
+        images: session.images,
         audio: session.audio
     });
     const hierarchy = el('px-hierarchy').bind({ scene, selection, subject, viewport, workspace });
@@ -510,7 +560,7 @@ export function start(mount = document.body) {
         timeline
     );
 
-    const chrome = titlebar(scene, layout, workspace);
+    const chrome = titlebar(scene, layout, workspace, projects);
     const shell = el('div', { class: 'shell' },
         chrome.element,
         el('div', { class: 'workspace' }, stack, rightSplit, columnRight)
@@ -690,7 +740,22 @@ export function start(mount = document.body) {
     bindDragAndDrop({ shell, scene, subject, viewport, graph: () => docs.graph, workspace, hierarchy, inspector, project, definitions });
     bindShortcuts({ scene, selection, subject, viewport, history, workspace });
 
-    return { scene, camera, selection, subject, layout, viewport, history, histories, workspace, transport, definitions };
+    return {
+        scene,
+        camera,
+        selection,
+        subject,
+        layout,
+        viewport,
+        history,
+        histories,
+        workspace,
+        transport,
+        definitions,
+        autosave,
+        projects,
+        store: opened.store
+    };
 }
 
 /**
@@ -722,7 +787,7 @@ export function createEditorCamera() {
 //
 // There is still no Ctrl K bar: there is no command registry to search. It is named in the
 // report rather than mocked up here.
-function titlebar(scene, layout, workspace) {
+function titlebar(scene, layout, workspace, projects = null) {
     const buttons = TOGGLES.map(toggle => {
         const button = el('button', {
             class: 'ghost',
@@ -785,11 +850,68 @@ function titlebar(scene, layout, workspace) {
         type: 'button',
         title: 'Share',
         'aria-label': 'Share',
+        // AS FAR AS PUBLISHING GOES WITHOUT A BACKEND, AND IT IS FURTHER THAN "not built
+        // yet" (ADR-0066 §2). What comes out is the bundle a Preview plays: put it on any
+        // static host and `preview/index.html#u/<url>` is a playable game with no Editor
+        // anywhere near it. Hosting it FOR a creator needs accounts and permissions, which
+        // is a decision nobody has made — so the menu says which half exists.
         onclick: () => openMenu(share, [
             { heading: 'Share' },
-            { id: 'soon', label: 'Publishing is not built yet', icon: 'share' }
-        ], () => {}, { label: 'sharing' })
+            { id: 'export', label: 'Export game…', icon: 'share' },
+            { heading: 'Hosting' },
+            { id: 'soon', label: 'Publishing to a URL needs an account', icon: 'info' }
+        ], choice => {
+            if (choice !== 'export') return;
+            const written = exportGame(workspace, { report: message => console.info('[export]', message) });
+            if (written) console.info('[export]', written.name, `${Math.round(written.bytes / 1024)} KB`);
+        }, { label: 'sharing' })
     }, icon('share'));
+
+    // THE TWO VERBS AN EDITOR CANNOT DO WITHOUT ONCE ANYTHING PERSISTS (ADR-0065 §4). New,
+    // and the list of what is already here — no dashboard, no thumbnails, no folders of
+    // projects. It hangs off the product mark because that is where every editor of this
+    // kind puts it, and it says out loud when this browser will not keep anything.
+    const library = el('button', {
+        class: 'ghost',
+        type: 'button',
+        title: 'Projects',
+        'aria-label': 'Projects',
+        onclick: async () => {
+            const items = [{ heading: 'Project' }, { id: '@new', label: 'New Project', icon: 'plus' }];
+
+            if (projects) {
+                const held = await projects.projects();
+                const current = workspace?.project?.id ?? null;
+
+                if (held.length > 0) items.push({ heading: 'Open' });
+                for (const entry of held) {
+                    items.push({
+                        id: entry.id,
+                        label: `${entry.name || 'Untitled Project'}${entry.id === current ? '  ·  open' : ''}`,
+                        icon: 'folder'
+                    });
+                }
+
+                // SAID, NOT HIDDEN. A private window keeps nothing, and a creator who is not
+                // told will find out by losing an afternoon (ADR-0054).
+                if (!projects.persistent) {
+                    items.push({ heading: 'Storage' });
+                    items.push({ id: '@volatile', label: 'This browser is not keeping projects', icon: 'info' });
+                }
+            }
+
+            openMenu(library, items, choice => {
+                if (choice === '@volatile') return;
+                // A PROJECT IS A DOCUMENT, AND OPENING ONE IS OPENING A DOCUMENT. Rebuilding
+                // the shell in place would mean rebinding every window, every history and
+                // every registry; reloading the page with the choice remembered is what a
+                // browser is for, and it is the same path a creator takes tomorrow morning.
+                if (choice === '@new') globalThis.localStorage?.removeItem('pixel-creator:last-project');
+                else globalThis.localStorage?.setItem('pixel-creator:last-project', choice);
+                globalThis.location?.reload?.();
+            }, { label: 'projects' });
+        }
+    }, icon('folder'));
 
     const profile = el('button', {
         class: 'avatar',
@@ -818,6 +940,7 @@ function titlebar(scene, layout, workspace) {
         el('div', { class: 'spacer' }),
         el('div', { class: 'toggles' }, buttons),
         el('div', { class: 'gap' }),
+        library,
         preview,
         share,
         profile
@@ -1559,4 +1682,32 @@ function reportFailure(report) {
         `[runtime] ${report.phase}() failed on ${report.type} of "${report.object?.name}"`,
         report.error
     );
+}
+
+/**
+ * Put a saved project back on screen: its `.px` types, then its first scene.
+ *
+ * THE ORDER MATTERS AND IS THE WHOLE FUNCTION. A scene names Component types by ResourceId,
+ * so a scene deserialized before its `.px` files are registered rebuilds every one of them as
+ * a `MissingComponent` — which is exactly right for a type that is really gone (ADR-0021) and
+ * exactly wrong for one that simply had not been read yet.
+ *
+ * @param {object} workspace - The Workspace holding the project
+ * @param {object} registry - The ComponentRegistry to fill
+ * @returns {Promise<{scene: object, resource: object}|null>} What was opened
+ */
+async function reopen(workspace, registry) {
+    const project = workspace.project;
+
+    try {
+        await loadComponentDefinitions(project, { registry });
+    } catch (error) {
+        console.warn('[project] a Component could not be loaded:', error);
+    }
+
+    const [first] = project.resources(ResourceKind.SCENE);
+    if (!first) return null;
+
+    const scene = await workspace.open(first.id, { registry });
+    return scene ? { scene, resource: first } : null;
 }

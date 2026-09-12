@@ -37,6 +37,9 @@ export {
 } from './commands.js';
 export { History, Histories } from './history.js';
 export { Workspace } from './project/workspace.js';
+export { exportGame, openPreview, playableUrl } from './preview.js';
+export { QUIET, createAutosave } from './project/autosave.js';
+export { createSession } from './project/session.js';
 export {
     RESOURCE_CATEGORIES,
     RESOURCE_KINDS,

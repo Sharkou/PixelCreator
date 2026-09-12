@@ -15,14 +15,22 @@
 // `owner` each and a transport between them — the two things ADR-0011 and ADR-0014 left
 // open, and neither of them is a change to this file's shape.
 
-import { Matrix, components, defineComponent } from '../core/mod.js';
+import { Matrix, components, createId, defineComponent, runnable } from '../core/mod.js';
 import { registerStandardNodes } from '../core/mod.js';
-import { loadComponentDefinitions, loadPrefabs, loadScene } from '../project/mod.js';
+import {
+    checkGraph,
+    imageResources,
+    loadComponentDefinitions,
+    loadDefinitions,
+    loadScene
+} from '../project/mod.js';
 import {
     Behaviors,
     Canvas2DRenderer,
     HtmlAudioOutput,
+    ImageCache,
     Runtime,
+    SessionState,
     Viewport,
     activeCamera,
     createGraphInterpreter,
@@ -30,9 +38,10 @@ import {
     viewMatrix
 } from '../runtime/mod.js';
 import { openBundle } from './bundle.js';
-import { idFromHash, resolvePreview } from './store.js';
+import { requestFromHash, resolveRequest } from './store.js';
 import { LiveMessage, openLiveChannel } from './live.js';
 import { bindInput } from './input.js';
+import { Input } from '../runtime/input/input.js';
 
 /**
  * Open whatever this page was pointed at, and play it.
@@ -41,16 +50,20 @@ import { bindInput } from './input.js';
  * @returns {Promise<object|null>} The running game, or null when there is nothing to run
  */
 export async function start(mount = document.body) {
-    const id = idFromHash(globalThis.location?.hash ?? '');
-    if (!id) return fail(mount, 'No game to play', 'This page needs a game to open.');
+    const request = requestFromHash(globalThis.location?.hash ?? '');
+    if (!request) return fail(mount, 'No game to play', 'This page needs a game to open.');
 
-    const bundle = await resolvePreview(id);
+    const bundle = await resolveRequest(request);
     // A LINK THAT NAMES NOTHING GETS A SENTENCE, NEVER A BLANK PAGE. A preview belongs to
     // the browser that made it, so a link opened elsewhere lands here — and being told why
-    // is the difference between a limitation and a bug (ADR-0042 §4).
+    // is the difference between a limitation and a bug (ADR-0042 §4). A published game says
+    // something different, because a different thing went wrong (ADR-0066 §2).
     if (!bundle) {
-        return fail(mount, 'This preview is not here',
-            'A preview lives in the browser that created it. Open it from the editor that made it.');
+        return request.kind === 'url'
+            ? fail(mount, 'This game could not be fetched',
+                'The link points at a bundle that is not there, or that this page may not read.')
+            : fail(mount, 'This preview is not here',
+                'A preview lives in the browser that created it. Open it from the editor that made it.');
     }
 
     let opened;
@@ -71,15 +84,23 @@ export async function start(mount = document.body) {
     const behaviors = new Behaviors(createGraphInterpreter({
         log: value => console.log('[game]', value)
     }));
-    await loadComponentDefinitions(opened.project, { registry: components, behaviors });
+    await loadComponentDefinitions(opened.project, {
+        registry: components,
+        behaviors,
+        // A `.px` WHOSE WIRES NAME PORTS THAT DO NOT EXIST IS NOT RUN (ADR-0064 §6). The type
+        // is still registered and objects still carry it; what is withheld is the behaviour,
+        // and the reason reaches the console a game already talks to.
+        onInvalid: ({ component, issues }) => console.warn('[game] this .px is not running:',
+            issues[0]?.message ?? 'its graph cannot be run.', component)
+    });
 
-    // EVERY PREFAB, RESOLVED BEFORE THE FIRST STEP (ADR-0061 §4). This is the whole answer
-    // to "how can a `Spawn Prefab` read a Resource inside a simulation step": it does not —
-    // the payloads are read here, where waiting is allowed, and the Runtime is handed a map
-    // that answers now. Nothing below this line is asynchronous, and the interpreter never
-    // learns that storage exists.
-    const prefabs = await loadPrefabs(opened.project, {
-        onError: ({ resource, error }) => console.warn('[game] prefab', resource?.name ?? resource?.id, error)
+    // EVERY DEFINITION, RESOLVED BEFORE THE FIRST STEP (ADR-0061 §4, ADR-0062 §1). This is
+    // the whole answer to "how can a `Spawn Prefab` read a Resource inside a simulation
+    // step": it does not — the payloads are read here, where waiting is allowed, and the
+    // Runtime is handed one map that answers now. Nothing below this line is asynchronous,
+    // and the interpreter never learns that storage exists.
+    const resources = await loadDefinitions(opened.project, {
+        onError: ({ resource, error }) => console.warn('[game]', resource?.name ?? resource?.id, error)
     });
 
     const scene = opened.scene
@@ -104,7 +125,28 @@ export async function start(mount = document.body) {
         }
     });
 
-    const game = run(mount, scene, behaviors, { audio, prefabs });
+    // AND THE PICTURES, DECODED BEFORE THE FIRST FRAME (ADR-0062 §2). `preload()` is the one
+    // place a game may wait for a picture: a first frame with holes in it is exactly what a
+    // loading step exists to prevent. Anything imported later still arrives through `get()`,
+    // one frame late and without a wait.
+    const images = new ImageCache({ resolve: id => bundle.payloads?.[id] ?? null });
+    await images.preload(imageResources(opened.project));
+
+    // WHAT SURVIVES A CHANGE OF SCENE, AND IT BELONGS TO THE PAGE (ADR-0063 §5). A Runtime
+    // is built per scene; this outlives all of them, which is exactly why it cannot live in
+    // one.
+    const session = new SessionState();
+
+    const game = run(mount, scene, behaviors, {
+        audio,
+        resources,
+        images,
+        session,
+        // THE OTHER HALF OF `Load Scene` (ADR-0063 §2). The simulation records a request and
+        // this performs it, between frames, where waiting is allowed: read the Resource,
+        // build the Scene, throw the old Runtime away and make a new one on the new world.
+        loadScene: id => loadScene(opened.project, id, { registry: components })
+    });
 
     // AND IT FOLLOWS THE EDITOR FROM HERE (ADR-0044 §3). A Preview used to be a snapshot
     // that could only be replaced by closing it and pressing the button again, which is
@@ -185,7 +227,19 @@ function applyDefinition({ resource, payload }, { behaviors, registry, schemas }
     // once and identified by object identity, so binding a fresh payload replaces the
     // running behaviour on the next step, on every instance, with nothing to reload
     // (ADR-0016 §7).
-    if (payload.graph) behaviors.bind(Component, payload.graph);
+    //
+    // AND IT IS JUDGED BY THE SAME RULE AS THE LOAD (ADR-0064 §6). An edit that breaks a wire
+    // must not start running here just because it arrived over a channel rather than out of
+    // the store — otherwise "it works in the Preview" and "it works" would be two things.
+    if (!payload.graph) return;
+
+    const issues = checkGraph(payload.graph, { component: Component });
+    if (!runnable(issues)) {
+        console.warn('[game] this .px is not running:', issues[0]?.message ?? 'its graph cannot be run.');
+        return;
+    }
+
+    behaviors.bind(Component, payload.graph);
 }
 
 /**
@@ -194,19 +248,91 @@ function applyDefinition({ resource, payload }, { behaviors, registry, schemas }
  * @param {HTMLElement} mount - Where the surface goes
  * @param {object} scene - The scene to play
  * @param {object} behaviors - The bound behaviours
- * @param {object} [options] - `{ audio, prefabs }`, both already resolved
+ * A SCENE CHANGE REPLACES THE RUNTIME, NOT THE PAGE (ADR-0063 §3). What is per-SCENE is
+ * rebuilt — the world, the behaviours' execution state, the collisions, the clock — and what
+ * is per-PROJECT or per-PLAYER is handed straight to the next one: the canvas, the renderer,
+ * the decoded pictures, the audio output, the resolved definitions, the Input the player is
+ * holding keys down on, and the session values. So a transition costs one `new Runtime` and
+ * no reload, no re-decode and no lost keypress.
+ *
+ * @param {HTMLElement} mount - Where the surface goes
+ * @param {object} first - The scene to start on
+ * @param {object} behaviors - The bound behaviours
+ * @param {object} [options] - `{ audio, resources, images, session, loadScene }`
  * @returns {object} `{ scene, runtime, stop }`
  */
-function run(mount, scene, behaviors, { audio = null, prefabs = null } = {}) {
+function run(mount, first, behaviors, {
+    audio = null,
+    resources = null,
+    images = null,
+    session = null,
+    loadScene: readScene = null
+} = {}) {
     const canvas = document.createElement('canvas');
     mount.replaceChildren(canvas);
 
-    const renderer = new Canvas2DRenderer(canvas.getContext('2d'));
-    const runtime = new Runtime(scene, { renderer, behaviors, audio, prefabs });
-    // THE ONE DIFFERENCE FROM THE EDITOR'S VIEWPORT, and it is the whole point: this one
-    // runs. `running = false` is what makes the Editor draw a scene without simulating it
-    // (ADR-0029 §1); a game client has no such state.
-    runtime.running = true;
+    const renderer = new Canvas2DRenderer(canvas.getContext('2d'), { images: images ?? undefined });
+
+    // THE ONE THING THAT OUTLIVES A SCENE AND IS NOT A RESOURCE: what the player is holding
+    // down. A fresh Input on every transition would drop a key that never comes back up,
+    // which is a stuck key and the one bug nobody would connect to a scene change.
+    const input = new Input();
+
+    // THE SEED IS DERIVED, NOT REDRAWN (ADR-0063 §3, ADR-0057). A session started from one
+    // seed reaches the same third scene twice, because each Runtime's seed is a function of
+    // the session's and of which scene it is running.
+    const seed = createId();
+
+    let scene = first;
+    let runtime = null;
+
+    const build = (world, at) => {
+        const next = new Runtime(world, {
+            renderer,
+            behaviors,
+            audio,
+            resources,
+            session,
+            input,
+            seed: `${seed}:${at}`,
+            onSceneRequest: id => swap(id)
+        });
+        // THE ONE DIFFERENCE FROM THE EDITOR'S VIEWPORT, and it is the whole point: this one
+        // runs. `running = false` is what makes the Editor draw a scene without simulating it
+        // (ADR-0029 §1); a game client has no such state.
+        next.running = true;
+        return next;
+    };
+
+    // ONE TRANSITION AT A TIME. Two `Load Scene` asks in two consecutive frames while the
+    // first read is still in flight would build two Runtimes on one canvas; the second ask
+    // is simply dropped, and a graph that meant it asks again on the next frame.
+    let loading = false;
+    const swap = async id => {
+        if (loading || !readScene) return;
+        loading = true;
+
+        try {
+            const next = await readScene(id);
+            // A SCENE THAT CANNOT BE READ LEAVES THE GAME EXACTLY WHERE IT IS. A deleted
+            // resource and a typo are states of the project, not reasons to show a blank
+            // canvas (ADR-0034 §3.4).
+            if (!next) return;
+
+            // DISPOSED BEFORE THE NEXT ONE EXISTS: every Object leaves the old scene, so
+            // every `AudioSource` on it stops and every suspended `Delay` becomes
+            // unreachable. A level's music must not outlive the level.
+            runtime.dispose();
+            scene = next;
+            runtime = build(next, id);
+        } catch (error) {
+            console.warn('[game] this scene could not be opened', error);
+        } finally {
+            loading = false;
+        }
+    };
+
+    runtime = build(scene, scene.id ?? 'first');
 
     // THREE SIZES, AND THEY ARE NOT THE SAME NUMBER — the arrangement the Editor's surface
     // already uses (`editor/viewport/viewport.js`), transcribed because this page has no
@@ -259,7 +385,7 @@ function run(mount, scene, behaviors, { audio = null, prefabs = null } = {}) {
     // view: one unit has to mean one CSS pixel on a 2x display too.
     const screen = () => Matrix.compose(0, 0, 0, density, density);
 
-    const input = bindInput(canvas, runtime.input, {
+    const bound = bindInput(canvas, input, {
         view,
         density: () => globalThis.devicePixelRatio || 1,
         // THE FIRST REAL KEY OR CLICK IS WHAT A BROWSER WAS WAITING FOR. Music a scene asked
@@ -280,6 +406,7 @@ function run(mount, scene, behaviors, { audio = null, prefabs = null } = {}) {
         const elapsed = last === 0 ? 0 : Math.min((now - last) / 1000, 0.25);
         last = now;
 
+        // READ FRESH EVERY FRAME, because a scene change replaces it between two of them.
         if (elapsed > 0) runtime.advance(elapsed);
         runtime.render({ view: view(), screen: screen() });
     };
@@ -287,12 +414,21 @@ function run(mount, scene, behaviors, { audio = null, prefabs = null } = {}) {
     frame = globalThis.requestAnimationFrame(tick);
 
     return {
-        scene,
-        runtime,
+        // GETTERS, NOT VALUES. What is playing changes when a scene does, and a caller
+        // holding the first one would be holding a world nobody is running.
+        get scene() {
+            return scene;
+        },
+        get runtime() {
+            return runtime;
+        },
+        get session() {
+            return session;
+        },
         stop: () => {
             if (frame !== null) globalThis.cancelAnimationFrame(frame);
             frame = null;
-            input.stop();
+            bound.stop();
         }
     };
 }

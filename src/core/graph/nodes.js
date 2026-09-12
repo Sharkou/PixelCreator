@@ -120,7 +120,11 @@ export const NODE_CATEGORIES = [
     // the screen — where do I look?". Not under `Values`, which is where a creator looks to
     // TYPE a literal: `Text` the node is a constant, and `To Text` and `Join Text` are the
     // two acts that turn what a game knows into something a `TextRenderer` can show.
-    'Events', 'Input', 'Flow', 'Time', 'Object', 'Properties', 'Transform', 'Audio',
+    //
+    // `Animation` SITS WITH `Transform` AND `Audio`, for the third time and the same reason:
+    // its nodes make something HAPPEN rather than produce a value. Moving, sounding and
+    // animating are three outputs of one step.
+    'Events', 'Input', 'Flow', 'Time', 'Object', 'Properties', 'Transform', 'Animation', 'Audio',
     'Values', 'Text', 'Math', 'Compare', 'Logic', 'Debug'
 ];
 

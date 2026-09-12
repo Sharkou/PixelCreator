@@ -5,6 +5,7 @@
 // renderer and therefore never draws.
 
 export { Runtime } from './runtime.js';
+export { SessionState } from './session-state.js';
 export { registerBuiltIns } from './builtins.js';
 export { Clock } from './clock/clock.js';
 export { componentFailure, rethrowLater } from './errors.js';
@@ -28,6 +29,7 @@ export { DEFAULT_BUDGET, createGraphInterpreter, interpretGraph } from './script
 
 export { BlendMode, RENDERER_OPERATIONS, missingOperations, assertRenderer } from './rendering/renderer.js';
 export { Canvas2DRenderer } from './rendering/canvas2d.js';
+export { ImageCache, defaultDecoder, noImages } from './rendering/images.js';
 export { SceneRenderer } from './rendering/scene-renderer.js';
 export { Viewport } from './rendering/viewport.js';
 export { Camera, activeCamera, viewMatrix, worldToScreen, screenToWorld } from './rendering/camera.js';
@@ -35,6 +37,7 @@ export { DrawSpace, ScreenSpace, drawSpaceOf } from './rendering/space.js';
 
 export { RectangleRenderer } from './rendering/components/rectangle-renderer.js';
 export { AVERAGE_ADVANCE, TextRenderer } from './rendering/components/text-renderer.js';
+export { SpriteAnimator } from './rendering/components/sprite-animator.js';
 export { Sprite } from './rendering/components/sprite.js';
 export { ParticleSystem } from './rendering/components/particle-system.js';
 export { Tilemap } from './rendering/components/tilemap.js';

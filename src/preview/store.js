@@ -94,13 +94,82 @@ export function previewUrl(id, base = '../preview/index.html') {
 }
 
 /**
+ * What a client page was opened with: a stored preview, or a bundle to fetch.
+ *
+ * TWO SHAPES, AND THE SECOND ONE IS WHAT PUBLISHING IS (ADR-0066 §2). `#p/<id>` names a
+ * bundle this browser stored — a preview, which only works on the machine that made it and
+ * says so. `#u/<url>` names a bundle sitting anywhere a browser can fetch from, which is a
+ * game somebody else can play. The seam ADR-0042 §3 promised is this function and the one
+ * below it: the client never learns which it was handed.
+ *
+ * @param {string} hash - `location.hash`
+ * @returns {{kind: string, value: string}|null} What was asked for, or null
+ */
+export function requestFromHash(hash) {
+    const preview = /^#p\/(.+)$/.exec(hash ?? '');
+    if (preview) return { kind: 'preview', value: preview[1] };
+
+    const published = /^#u\/(.+)$/.exec(hash ?? '');
+    if (published) {
+        try {
+            return { kind: 'url', value: globalThis.decodeURIComponent(published[1]) };
+        } catch {
+            return null;
+        }
+    }
+
+    return null;
+}
+
+/**
  * The identifier a client page was opened with.
  * @param {string} hash - `location.hash`
  * @returns {string|null} The id, or null
  */
 export function idFromHash(hash) {
-    const match = /^#p\/(.+)$/.exec(hash ?? '');
-    return match ? match[1] : null;
+    const request = requestFromHash(hash);
+    return request?.kind === 'preview' ? request.value : null;
+}
+
+/**
+ * The bundle a request names, wherever it lives.
+ *
+ * ONE FUNCTION, TWO ORIGINS, AND THE CLIENT KNOWS NEITHER. A stored preview is read out of
+ * this browser; a published game is fetched. The day a bundle comes from a Pixel Creator
+ * server instead of from a URL a creator pasted, it is a third branch here and nothing in
+ * `client.js` is touched.
+ *
+ * @param {{kind: string, value: string}|null} request - As `requestFromHash()` answered
+ * @param {object} [options] - `{ storage, fetch }`
+ * @returns {Promise<object|null>} The bundle, or null
+ */
+export async function resolveRequest(request, { storage, fetch = globalThis.fetch } = {}) {
+    if (!request) return null;
+    if (request.kind === 'preview') return resolvePreview(request.value, storage ?? defaultStorage());
+
+    if (request.kind === 'url' && typeof fetch === 'function') {
+        try {
+            const answer = await fetch(request.value);
+            return answer?.ok ? await answer.json() : null;
+        } catch {
+            // A GAME THAT CANNOT BE FETCHED IS A LINK THAT IS WRONG, not a crash. The client
+            // shows the sentence it already shows for a preview that is not here.
+            return null;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * The URL that runs a bundle somebody has hosted.
+ *
+ * @param {string} url - Where the bundle file is
+ * @param {string} [base] - Where the client page lives
+ * @returns {string} A URL
+ */
+export function publishedUrl(url, base = '../preview/index.html') {
+    return `${base}#u/${globalThis.encodeURIComponent(url)}`;
 }
 
 /** The browser's local storage, or null where there is none. */

@@ -63,6 +63,9 @@ export const CATEGORY_HUES = {
     // property hue is what the other family of acts already wears, and a ninth colour would
     // be the carnival this table exists to prevent.
     Audio: 'var(--px-hue-property)',
+    // ANIMATION IS AN OUTPUT TOO, and wears what the other two families of acts wear. A
+    // tenth colour would be the carnival this table exists to prevent (ADR-0030 §4).
+    Animation: 'var(--px-hue-property)',
     Debug: 'var(--px-hue-any)'
 };
 

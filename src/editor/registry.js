@@ -51,6 +51,7 @@ const SHIPPED = {
     Transform: { category: 'Scene', label: 'Transform' },
     RectangleRenderer: { category: 'Rendering', label: 'Rectangle' },
     Sprite: { category: 'Rendering', label: 'Sprite' },
+    SpriteAnimator: { category: 'Rendering', label: 'Sprite Animator' },
     TextRenderer: { category: 'Rendering', label: 'Text' },
     ParticleSystem: { category: 'Rendering', label: 'Particles' },
     Tilemap: { category: 'Rendering', label: 'Tilemap' },

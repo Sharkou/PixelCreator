@@ -30,7 +30,11 @@ function behaviorsSpy() {
 
 function controllerProject() {
     const project = new Project('My game');
-    const graph = { version: 1, nodes: ['On Update'], connections: [] };
+    // A REAL, EMPTY GRAPH. It used to hold `nodes: ['On Update']` — a string where a node
+    // record goes — which nothing ever read, because nothing judged a graph before running
+    // it. Something does now (ADR-0064 §6), and a payload that could never have run must not
+    // be what proves the plumbing works.
+    const graph = { version: 1, nodes: [], connections: [] };
     // ONE `.px`: identity, properties and behaviour in one payload (ADR-0026). The
     // definition's `type` IS the ResourceId of its own resource (ADR-0021), so the entry is
     // declared first and written once its id exists.
@@ -63,7 +67,7 @@ test('an unknown kind is refused', () => {
     assert.throws(() => createResource({ kind: 'document' }), /unknown resource kind/);
     assert.deepEqual(
         globalThis.Object.values(ResourceKind),
-        ['folder', 'scene', 'component', 'graph', 'prefab', 'asset']
+        ['folder', 'scene', 'component', 'graph', 'prefab', 'animation', 'asset']
     );
 });
 

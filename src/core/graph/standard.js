@@ -1371,10 +1371,12 @@ export const STANDARD_NODES = [
         execute: io => {
             const id = io.wired('prefab') ? io.input('prefab') : io.param('prefab') ?? null;
             const scene = io.ctx?.scene ?? null;
-            // RESOLVED FROM A MAP THAT IS ALREADY IN MEMORY (ADR-0061 §4). No storage, no
-            // await, no promise: the Project layer read every prefab before the first step
-            // and handed the result over on the context, beside the input and the clock.
-            const definition = io.ctx?.prefabs?.get?.(id) ?? null;
+            // RESOLVED FROM A MAP THAT IS ALREADY IN MEMORY (ADR-0061 §4, ADR-0062 §1). No
+            // storage, no await, no promise: the Project layer read every definition before
+            // the first step and handed one table over on the context, beside the input and
+            // the clock. `recordsOf()` refuses a payload that is not a prefab, which is what
+            // lets one table hold every kind without the Runtime ever guessing.
+            const definition = io.ctx?.resources?.get?.(id) ?? null;
 
             // A PREFAB NOBODY RESOLVED IS NOT A FAULT. An empty picker, a resource that was
             // deleted, a headless call with no registry: all three are states of the running
@@ -1429,6 +1431,186 @@ export const STANDARD_NODES = [
     // port would fall back to `any` and its property picker would have nothing to offer.
     // Carrying both, the node resolves the declaration itself, so the port is typed exactly
     // and a bad wire is refused at the moment of the gesture rather than at run time.
+
+    // --- changing the world, and carrying something across ---------------------------------
+    //
+    // A `Load Scene` DOES NOT LOAD A SCENE, AND THAT IS THE ARCHITECTURE (ADR-0063 §2). A
+    // Scene is a Resource, a Resource is read through asynchronous storage, and a step may
+    // not wait — the same sentence that shaped prefabs (ADR-0061 §4) and pictures (ADR-0062).
+    // Prefabs answered it by resolving everything BEFORE the simulation; a scene cannot,
+    // because loading one throws the simulation away. So this node ASKS: it records a
+    // request, the step finishes normally on the scene it was already running, and
+    // `Runtime.advance()` hands the request to the application between frames.
+    //
+    // WHICH IS ALSO WHY THERE IS NO `Scene Loaded` OUTPUT AND NO `Then` PORT. There is no
+    // "after" for this node's flow to continue into: by the time a scene has been read, the
+    // graph that asked, the Component it belonged to and the Object it sat on are gone.
+
+    {
+        type: 'scene.load',
+        label: 'Load Scene',
+        category: 'Object',
+        keywords: ['scene', 'level', 'menu', 'restart', 'change', 'go to', 'next', 'switch',
+            'game over', 'title', 'transition'],
+        tooltip: 'Asks for a different Scene. The current one keeps running until it arrives',
+        params: {
+            scene: {
+                type: PropertyType.RESOURCE,
+                kind: 'scene',
+                default: null,
+                label: 'Scene',
+                tooltip: 'The Scene to go to, by identity'
+            }
+        },
+        inputs: [
+            flow('in'),
+            data('scene', PropertyType.RESOURCE, 'Scene', null, null,
+                'A Scene, when the graph works out which one')
+        ],
+        // A FLOW OUT, BECAUSE THE STEP CARRIES ON. Nothing has happened yet: the nodes after
+        // this one run on the scene that is still there, which is the honest reading of a
+        // request that will be honoured between frames.
+        outputs: [flow('out')],
+        execute: io => {
+            const scene = io.wired('scene') ? io.input('scene') : io.param('scene') ?? null;
+
+            // NOTHING CHOSEN, NOTHING REQUESTED, AND NO COMPLAINT — the same reading every
+            // other node gives an empty picker (ADR-0034 §3.4). A Runtime with no application
+            // behind it records the ask and nothing more, which is what a headless step does.
+            if (scene) io.ctx?.requestScene?.(scene);
+            return 'out';
+        }
+    },
+
+    {
+        type: 'session.get',
+        label: 'Get Session Value',
+        category: 'Values',
+        icon: 'type-resource',
+        keywords: ['session', 'global', 'variable', 'score', 'lives', 'carry', 'between',
+            'scene', 'persist', 'remember', 'read'],
+        tooltip: 'Reads a value that survives a change of Scene',
+        params: {
+            key: {
+                type: PropertyType.STRING,
+                default: '',
+                label: 'Key',
+                placeholder: 'score',
+                tooltip: 'The name this value is kept under'
+            }
+        },
+        // `any`, BECAUSE THREE TYPES SHARE ONE SHELF (ADR-0063 §5). A session holds a number,
+        // a true/false or a word; typing this port would mean three nodes, and the type
+        // system already has the one name for "no constraint".
+        outputs: [data('value', ANY_TYPE, 'Value')],
+        evaluate: io => ({ value: io.ctx?.session?.get?.(io.param('key') ?? '') ?? null })
+    },
+
+    {
+        type: 'session.set',
+        label: 'Set Session Value',
+        category: 'Values',
+        icon: 'type-resource',
+        keywords: ['session', 'global', 'variable', 'score', 'lives', 'carry', 'between',
+            'scene', 'persist', 'remember', 'write'],
+        tooltip: 'Keeps a value across a change of Scene',
+        params: {
+            key: {
+                type: PropertyType.STRING,
+                default: '',
+                label: 'Key',
+                placeholder: 'score',
+                tooltip: 'The name to keep this value under'
+            }
+        },
+        inputs: [flow('in'), data('value', ANY_TYPE, 'Value')],
+        outputs: [flow('out')],
+        execute: io => {
+            // A VALUE A SESSION CANNOT CARRY CLEARS THE KEY RATHER THAN BEING STORED
+            // (runtime/session-state.js): an Object handle names a scene that is about to be
+            // thrown away, and reading it back after the transition would be a lie.
+            io.ctx?.session?.set?.(io.param('key') ?? '', io.input('value'));
+            return 'out';
+        }
+    },
+
+    // --- animation -------------------------------------------------------------------------
+    //
+    // ONE NODE, AND IT EXISTS FOR THE ONE THING `Set Property` CANNOT SAY (ADR-0062 §4).
+    // `SpriteAnimator.clip` is an ordinary `resource` property, so choosing an animation is
+    // already `Set Property` — and by the reasoning ADR-0060 §6 gives `AudioSource`, that
+    // should have been the end of it. It is not, because of a difference a creator meets
+    // within a minute: writing the SAME clip twice is a no-op, so "play the attack again"
+    // would do nothing at all. Restarting is a MOMENT, and a moment is a node.
+    //
+    // IT IS NOT AN `On Animation Finished` EITHER. An entry node is run on every update
+    // (`interpreter.js`), so a one-shot event would need per-node-per-instance memory of
+    // whether it had already fired — the second kind of state ADR-0058 deliberately does not
+    // have. `Animation Finished` is a QUESTION, asked from `On Update`, and it says the same
+    // thing with the pieces that already exist.
+
+    {
+        type: 'animation.play',
+        label: 'Play Animation',
+        category: 'Animation',
+        keywords: ['animation', 'clip', 'sprite', 'walk', 'idle', 'attack', 'death', 'frame',
+            'animate', 'start', 'restart', 'set animation'],
+        tooltip: 'Plays an animation on this Object, from its first frame',
+        params: {
+            ...targetParam,
+            clip: {
+                type: PropertyType.RESOURCE,
+                kind: 'animation',
+                default: null,
+                label: 'Clip',
+                tooltip: 'The animation to play, by identity'
+            }
+        },
+        inputs: [
+            flow('in'),
+            data('object', OBJECT_TYPE, 'Object'),
+            data('clip', PropertyType.RESOURCE, 'Clip', null, null,
+                'An animation, when the graph works out which one')
+        ],
+        outputs: [flow('out')],
+        execute: io => {
+            // WIRED BEATS PICKED, AND "WIRED" IS A STRUCTURAL QUESTION (ADR-0039 §0.3).
+            const clip = io.wired('clip') ? io.input('clip') : io.param('clip') ?? null;
+            const animator = targetObject(io)?.getComponent?.('SpriteAnimator') ?? null;
+
+            // NO ANIMATOR, NO ANIMATION, AND NO COMPLAINT. An Object that carries no
+            // `SpriteAnimator` and a clip nobody chose are both states of the running game
+            // rather than authoring errors (ADR-0034 §3.4).
+            if (animator && clip) {
+                animator.clip = clip;
+                // REWOUND HERE RATHER THAN IN THE COMPONENT, because this is the only place
+                // that knows a creator ASKED. The component rewinds when the clip CHANGES;
+                // asking for the same clip again is what this node adds.
+                animator.playingClip = null;
+                animator.playing = true;
+            }
+
+            return 'out';
+        }
+    },
+
+    {
+        type: 'animation.finished',
+        label: 'Animation Finished',
+        category: 'Animation',
+        keywords: ['animation', 'done', 'ended', 'complete', 'over', 'finished', 'clip'],
+        tooltip: 'Whether the animation on this Object has reached its last frame',
+        params: { ...targetParam },
+        inputs: [data('object', OBJECT_TYPE, 'Object')],
+        outputs: [data('result', PropertyType.BOOLEAN, 'Result',
+            null, null, 'True on a clip that has ended; a looping clip never ends')],
+        // AN OBJECT WITH NO ANIMATOR HAS NOTHING PLAYING, so it reads as finished — which is
+        // what a `Branch` waiting for a death animation should conclude about a thing that
+        // has no death animation, rather than waiting for ever.
+        evaluate: io => ({
+            result: targetObject(io)?.getComponent?.('SpriteAnimator')?.finished !== false
+        })
+    },
 
     // --- sound ---------------------------------------------------------------------------
     //

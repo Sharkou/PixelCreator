@@ -54,6 +54,14 @@ export const ResourceKind = {
      * that forgot would open a prefab as a level.
      */
     PREFAB: 'prefab',
+    /**
+     * A sprite animation: a strip of a picture, and how fast to walk it (ADR-0062 §4).
+     *
+     * A RESOURCE RATHER THAN A FIELD ON EVERY INSTANCE, for the reason ADR-0026 §1 gives a
+     * `.px` and ADR-0061 gives a prefab: ten enemies playing `Walk` name one clip, retiming
+     * it retimes all ten, and an instance carries an identity instead of a copy.
+     */
+    ANIMATION: 'animation',
     ASSET: 'asset'
 };
 

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Pixel Creator — demo</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #0b0b0d; }
+        body { display: grid; place-content: center; gap: 1rem; text-align: center;
+               font: 14px/1.6 ui-sans-serif, system-ui, sans-serif; color: #a8a8b3; }
+        strong { color: #e8e8ee; font-size: 15px; }
+        canvas { image-rendering: pixelated; background: #17171c; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <p><strong>Building the demo…</strong><br><span id="status">three scenes, two prefabs, one animation</span></p>
+    <p id="sheets"></p>
+
+    <!--
+        THE SAME DESCRIPTION THE TEST PLAYS, PUT ON A SCREEN. `tools/demo/game.js` builds the
+        project; this page only draws the three sheets a browser can draw and a Node test
+        cannot, then hands the bundle to the game client through the door the Editor uses.
+    -->
+    <script type="module">
+        import { ComponentRegistry } from '../../src/core/mod.js';
+        import { MemoryResourceStore, Project } from '../../src/project/mod.js';
+        import { registerBuiltIns } from '../../src/runtime/builtins.js';
+        import { bundleProject } from '../../src/preview/bundle.js';
+        import { previewUrl, putPreview } from '../../src/preview/store.js';
+        import { IDS, buildDemo } from './game.js';
+
+        const status = document.getElementById('status');
+
+        /** Draw into an offscreen canvas and hand back a PNG data URL. */
+        function sheet(width, height, draw) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const context = canvas.getContext('2d');
+            context.imageSmoothingEnabled = false;
+            draw(context);
+            document.getElementById('sheets').append(canvas);
+            return canvas.toDataURL('image/png');
+        }
+
+        /** Four 32 x 32 frames of a walk: the same body, the legs moving under it. */
+        const player = sheet(128, 32, context => {
+            const legs = [[10, 20], [8, 22], [10, 20], [22, 8]];
+            for (let frame = 0; frame < 4; frame++) {
+                const left = frame * 32;
+                context.fillStyle = '#7dd3fc';
+                context.fillRect(left + 11, 6, 10, 14);
+                context.fillStyle = '#fde68a';
+                context.fillRect(left + 12, 2, 8, 6);
+                context.fillStyle = '#0ea5e9';
+                context.fillRect(left + legs[frame][0], 20, 4, 10);
+                context.fillRect(left + legs[frame][1], 20, 4, 10);
+            }
+        });
+
+        const enemy = sheet(32, 32, context => {
+            context.fillStyle = '#f87171';
+            context.fillRect(4, 6, 24, 20);
+            context.fillStyle = '#111';
+            context.fillRect(10, 12, 4, 4);
+            context.fillRect(18, 12, 4, 4);
+        });
+
+        const bullet = sheet(8, 8, context => {
+            context.fillStyle = '#fde047';
+            context.fillRect(1, 0, 6, 8);
+            context.fillRect(0, 1, 8, 6);
+        });
+
+        /** A short 8-bit tone, written as a WAV because that is what an AudioSource takes. */
+        function tone(frequency, seconds) {
+            const rate = 8000;
+            const count = Math.floor(rate * seconds);
+            const bytes = new Uint8Array(44 + count);
+            const view = new DataView(bytes.buffer);
+            const ascii = (at, text) => {
+                for (let index = 0; index < text.length; index++) view.setUint8(at + index, text.charCodeAt(index));
+            };
+
+            ascii(0, 'RIFF');
+            view.setUint32(4, 36 + count, true);
+            ascii(8, 'WAVEfmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, rate, true);
+            view.setUint32(28, rate, true);
+            view.setUint16(32, 1, true);
+            view.setUint16(34, 8, true);
+            ascii(36, 'data');
+            view.setUint32(40, count, true);
+
+            for (let index = 0; index < count; index++) {
+                const decay = 1 - index / count;
+                const wave = Math.sin(2 * Math.PI * frequency * (index / rate)) * decay;
+                bytes[44 + index] = Math.round(128 + Math.max(-1, Math.min(1, wave)) * 100);
+            }
+
+            let binary = '';
+            for (const byte of bytes) binary += String.fromCharCode(byte);
+            return 'data:audio/wav;base64,' + btoa(binary);
+        }
+
+        const project = new Project('Pixel Creator Demo', { store: new MemoryResourceStore() });
+        buildDemo(project, {
+            registry: registerBuiltIns(new ComponentRegistry()),
+            images: { player, enemy, bullet },
+            sounds: { shoot: tone(880, 0.08), hit: tone(180, 0.16) }
+        });
+
+        const bundle = bundleProject(project, project.store, { scene: IDS.menu });
+        if (!putPreview(project.id, bundle)) {
+            status.textContent = 'This browser would not store the bundle.';
+        } else {
+            location.replace(previewUrl(project.id, '../../src/preview/index.html'));
+        }
+    </script>
+</body>
+</html>

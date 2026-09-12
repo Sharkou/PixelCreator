@@ -30,6 +30,7 @@ function fakeContext() {
         fill: record('fill'),
         stroke: record('stroke'),
         drawImage: record('drawImage'),
+        imageSize: () => null,
         fillText: record('fillText'),
         save: record('save'),
         restore: record('restore')

@@ -20,10 +20,21 @@ export {
     isResourceId
 } from './resource.js';
 export { ResourceStore, MemoryResourceStore } from './store.js';
+export { MemoryArea, PersistentResourceStore, listProjects } from './persistence.js';
+export { DATABASE, IndexedDbArea, STORE, VERSION, available, openDatabase } from './indexeddb.js';
 export { Project, MANIFEST_VERSION } from './project.js';
-export { loadComponentDefinitions, bindGraph, readGraph } from './graphs.js';
+export { checkGraph, loadComponentDefinitions, bindGraph, readGraph } from './graphs.js';
 export { addScene, saveScene, loadScene, sceneResources } from './scenes.js';
-export { addPrefab, loadPrefab, loadPrefabs, prefabResources, savePrefab } from './prefabs.js';
+export {
+    addAnimation,
+    addPrefab,
+    animationResources,
+    loadPrefab,
+    prefabResources,
+    saveAnimation,
+    savePrefab
+} from './prefabs.js';
+export { DEFINITION_KINDS, imageResources, loadDefinitions } from './resources.js';
 export { baseNameOf, extensionOf, hasValidExtension, withExtension } from './naming.js';
 export {
     KIND_LABELS,

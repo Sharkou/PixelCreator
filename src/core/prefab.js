@@ -25,8 +25,10 @@
 // THE RUNTIME RESOLVES IT SYNCHRONOUSLY, AND THAT IS THE WHOLE ARCHITECTURAL CONSTRAINT
 // (ADR-0061 §4). A Resource is read through asynchronous storage, and a `Runtime.step()` may
 // not wait — so nothing here reaches storage and nothing here is `async`. Definitions are
-// read BEFORE the simulation, by the layer that may (project/prefabs.js), and handed to the
-// Runtime as a `PrefabRegistry`: a plain map that answers now.
+// read BEFORE the simulation, by the layer that may (project/resources.js), and handed to
+// the Runtime as a `ResourceRegistry`: a plain map that answers now. That registry used to
+// be called `PrefabRegistry` and used to live here; it is one table for every definition
+// kind now, because an animation needed the very same one (ADR-0062 §1).
 //
 // IDENTITIES ARE NEVER THE MODEL'S. A definition carries the ObjectIds the subtree had when
 // it was authored, and they are remapped on every instantiation through the same table
@@ -168,71 +170,6 @@ export function recordsOf(definition) {
     if (at === -1) return null;
 
     return at === 0 ? objects : [objects[at], ...objects.filter((_, index) => index !== at)];
-}
-
-/**
- * The prefab definitions a simulation can reach, by ResourceId.
- *
- * A MAP, AND ON PURPOSE NOTHING MORE (ADR-0061 §4). What the Runtime needs is one question
- * answered without waiting — "what is this ResourceId a model of" — and everything that
- * could make that question asynchronous is upstream of it: reading the store, opening a
- * bundle, following an edit. This is the value those produce, and it lives in the Core
- * because the node that reads it is the Core's and because it holds nothing but data.
- *
- * IT IS NOT A CACHE. A cache decides when to refill itself; this is filled by whoever owns
- * the project and never refills itself, so there is no policy in it to get wrong.
- */
-export class PrefabRegistry {
-
-    #definitions = new globalThis.Map();
-
-    /**
-     * Declare what a ResourceId is a model of.
-     * @param {string} id - The prefab's ResourceId
-     * @param {object} definition - The payload
-     * @returns {object} The definition, as stored
-     */
-    set(id, definition) {
-        this.#definitions.set(id, definition);
-        return definition;
-    }
-
-    /**
-     * Look a prefab up.
-     * @param {string} id - The prefab's ResourceId
-     * @returns {object|null} The definition, or null
-     */
-    get(id) {
-        return this.#definitions.get(id) ?? null;
-    }
-
-    /**
-     * Tell whether a prefab is known.
-     * @param {string} id - The prefab's ResourceId
-     * @returns {boolean} True when it is
-     */
-    has(id) {
-        return this.#definitions.has(id);
-    }
-
-    /**
-     * Forget one.
-     * @param {string} id - The prefab's ResourceId
-     * @returns {boolean} True when there was one
-     */
-    delete(id) {
-        return this.#definitions.delete(id);
-    }
-
-    /** Every known ResourceId, in the order they were declared. */
-    ids() {
-        return [...this.#definitions.keys()];
-    }
-
-    /** How many prefabs are resolved. */
-    get size() {
-        return this.#definitions.size;
-    }
 }
 
 /**

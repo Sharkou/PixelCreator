@@ -14,7 +14,8 @@ import { MemoryResourceStore } from './store.js';
 import { ResourceKind } from './resource.js';
 import { baseNameOf, extensionOf, withExtension } from './naming.js';
 import { childrenOf, descendantsOf } from './folders.js';
-import { addPrefab, loadPrefab, loadPrefabs, prefabResources, savePrefab } from './prefabs.js';
+import { addPrefab, loadPrefab, prefabResources, savePrefab } from './prefabs.js';
+import { loadDefinitions } from './resources.js';
 
 function world() {
     const registry = new ComponentRegistry();
@@ -144,7 +145,7 @@ test('every prefab is resolved into a registry that answers synchronously', asyn
     const enemy = addPrefab(store, bulletIn(scene, { name: 'Enemy' }), { name: 'Enemy.prefab' }).resource;
     store.add({ kind: ResourceKind.SCENE, name: 'Level.scene' }, { version: 2 });
 
-    const prefabs = await loadPrefabs(store);
+    const prefabs = await loadDefinitions(store);
 
     assert.equal(prefabs.size, 2, 'only prefabs, and every one of them');
     assert.deepEqual(prefabs.ids().sort(), [bullet.id, enemy.id].sort());
@@ -157,7 +158,7 @@ test('a prefab with no payload yet is simply absent, not a broken entry', async 
     const store = project();
     store.add({ kind: ResourceKind.PREFAB, name: 'Empty.prefab' }, null);
 
-    const prefabs = await loadPrefabs(store);
+    const prefabs = await loadDefinitions(store);
     assert.equal(prefabs.size, 0);
 });
 
@@ -174,7 +175,7 @@ test('one unreadable payload does not stop a project from opening', async () => 
     };
 
     const reported = [];
-    const prefabs = await loadPrefabs(failing, { onError: entry => reported.push(entry.resource.id) });
+    const prefabs = await loadDefinitions(failing, { onError: entry => reported.push(entry.resource.id) });
 
     assert.equal(prefabs.has(good.id), true);
     assert.deepEqual(reported, [bad.id]);
@@ -185,8 +186,8 @@ test('an existing registry can be filled again, which is what a refresh is', asy
     const store = project();
     addPrefab(store, bulletIn(scene));
 
-    const first = await loadPrefabs(store);
-    const second = await loadPrefabs(store, { prefabs: first });
+    const first = await loadDefinitions(store);
+    const second = await loadDefinitions(store, { resources: first });
 
     assert.equal(second, first);
     assert.equal(second.size, 1);

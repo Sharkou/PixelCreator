@@ -28,6 +28,7 @@ const KIND_EXTENSIONS = {
     // choose, and it is the word the thing is called — a creator who reads `Bullet.prefab`
     // in a folder knows what they are looking at without opening it.
     [ResourceKind.PREFAB]: '.prefab',
+    [ResourceKind.ANIMATION]: '.animation',
     [ResourceKind.ASSET]: ''
 };
 

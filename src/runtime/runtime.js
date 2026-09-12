@@ -32,8 +32,17 @@ export class Runtime {
     #input;
     #behaviors;
     #audio;
-    #prefabs;
+    #resources;
+    #session;
     #running = true;
+
+    // WHAT THE SIMULATION ASKED FOR, AND WHAT THE APPLICATION WILL DO ABOUT IT (ADR-0063 §2).
+    // A `Load Scene` cannot load a scene: reading one is asynchronous and a step may not
+    // wait. So the node RECORDS a request, the step finishes, and `advance()` hands it to
+    // whoever owns the loading — between frames, where waiting is allowed.
+    #requested = null;
+    #onSceneRequest;
+    #unwatch = null;
 
     // THE ONE VALUE EVERY UNCERTAIN THING IN THIS SIMULATION IS DERIVED FROM (ADR-0057). A
     // server sends it, a replay quotes it, a bug report pastes it — and two runs of it are
@@ -63,12 +72,17 @@ export class Runtime {
      * @param {Input} [options.input] - Default input, used when a step is given none
      * @param {object} [options.behaviors] - Graph behaviors bound to component types (ADR-0015)
      * @param {object} [options.audio] - Audio output backend; omit it to run silent (ADR-0060 §5)
-     * @param {object} [options.prefabs] - Prefab definitions, already resolved (ADR-0061 §4)
+     * @param {object} [options.resources] - Resolved definitions — prefabs, animations —
+     *   as one `ResourceRegistry` (ADR-0062 §1)
+     * @param {object} [options.session] - Values carried across scene changes (ADR-0063 §5)
+     * @param {Function} [options.onSceneRequest] - Called between frames with the ResourceId
+     *   a graph asked to load. Absent, a request is recorded and nothing happens, which is
+     *   what a headless caller and the Editor's Play mode both want
      * @param {string|number} [options.seed] - What every uncertain thing in this simulation is
      *   derived from (ADR-0057). Drawn when omitted, and readable back as `runtime.seed`, so
      *   a run is always reproducible even when nobody chose one.
      */
-    constructor(scene, { clock, renderer, onError, input, behaviors, audio, prefabs, seed } = {}) {
+    constructor(scene, { clock, renderer, onError, input, behaviors, audio, resources, session, onSceneRequest, seed } = {}) {
         if (!scene) throw new TypeError('Runtime: a scene is required');
 
         // DRAWN, NEVER CONSTANT, AND ALWAYS READABLE BACK. A fixed default would make every
@@ -97,11 +111,13 @@ export class Runtime {
         // only ever asks it a question and gets an answer in the same turn. That is the whole
         // of how a prefab can be instantiated inside a step without the interpreter becoming
         // asynchronous and without the Runtime learning what storage is.
-        this.#prefabs = prefabs ?? null;
+        this.#resources = resources ?? null;
+        this.#session = session ?? null;
+        this.#onSceneRequest = onSceneRequest ?? null;
         // AND WHAT LEAVES THE SCENE IS TOLD SO. The subscription is the Scene's own
         // 'removed' announcement, which `Scene.remove()` raises for the object and for
         // every descendant under it.
-        this.#scene.on?.('removed', object => this.#detach(object));
+        this.#unwatch = this.#scene.on?.('removed', object => this.#detach(object)) ?? null;
         this.#sceneRenderer = renderer
             ? new SceneRenderer(renderer, {
                 onError: report => this.#onError(report),
@@ -163,9 +179,66 @@ export class Runtime {
         return this.#audio;
     }
 
-    /** The resolved prefab definitions, or null when this runtime was given none. */
-    get prefabs() {
-        return this.#prefabs;
+    /** The resolved definitions this simulation may reach, or null when given none. */
+    get resources() {
+        return this.#resources;
+    }
+
+    /** The values carried across scene changes, or null when this runtime has none. */
+    get session() {
+        return this.#session;
+    }
+
+    /** The scene a graph has asked for and nobody has loaded yet, or null. */
+    get requestedScene() {
+        return this.#requested;
+    }
+
+    /**
+     * Ask for a different scene.
+     *
+     * IT RECORDS AND RETURNS (ADR-0063 §2). Nothing is loaded, nothing is replaced and no
+     * promise is made: the step it was called from finishes normally, on the scene it was
+     * already running. That is what lets `Load Scene` be an ordinary synchronous node in an
+     * interpreter that must never wait.
+     *
+     * THE LAST ASK IN A STEP WINS, deliberately. Two `Load Scene` nodes reached in one step
+     * is a graph saying two things; loading both in turn would play a scene for zero frames,
+     * and refusing would make the order of two flows into an error a creator cannot see.
+     *
+     * @param {string} id - The scene's ResourceId
+     * @returns {string|null} What is now requested
+     */
+    requestScene(id) {
+        this.#requested = id || null;
+        return this.#requested;
+    }
+
+    /** Forget a pending request, without loading anything. */
+    clearSceneRequest() {
+        this.#requested = null;
+    }
+
+    /**
+     * Let everything this runtime is driving go.
+     *
+     * WHAT A SCENE CHANGE THROWS AWAY (ADR-0063 §3). Removing the roots announces every
+     * Object's departure, so each Component's `onRemoved` runs and an `AudioSource` stops —
+     * a level's music must not outlive the level. The suspended executions of `Delay`,
+     * `Tween` and `Every` need no cancelling: they live in closures reachable only from the
+     * `Behaviors` WeakMap keyed by their Component, so they go when the Components do
+     * (ADR-0058).
+     *
+     * IT IS NOT A `stop()`. Nothing here touches the loop, the renderer or the audio output:
+     * those belong to the application, and the next Runtime is handed the very same ones.
+     */
+    dispose() {
+        this.#running = false;
+        this.#requested = null;
+
+        for (const root of [...this.#scene.roots()]) this.#scene.remove(root);
+        this.#unwatch?.();
+        this.#unwatch = null;
     }
 
     /**
@@ -238,6 +311,17 @@ export class Runtime {
 
         const steps = this.#clock.advance(elapsedSeconds);
         for (let i = 0; i < steps; i++) this.step(input);
+
+        // BETWEEN FRAMES, NEVER INSIDE ONE (ADR-0063 §2). Every step of this frame has run
+        // on the scene it started on; only now is the application told that a graph wants a
+        // different one. The handler may be asynchronous — it has to be, it reads a Resource
+        // — and by the time it answers, this Runtime has been disposed and replaced.
+        const requested = this.#requested;
+        if (requested !== null) {
+            this.#requested = null;
+            this.#onSceneRequest?.(requested);
+        }
+
         return steps;
     }
 
@@ -308,9 +392,17 @@ export class Runtime {
             // (ADR-0014, ADR-0060 §5). A node never reaches for a global `Audio`, so a
             // server running the same graph is simply silent rather than broken.
             audio: this.#audio,
-            // AND THE MODELS A `Spawn Prefab` MAY REACH, answering synchronously because
-            // they were resolved before this loop began (ADR-0061 §4).
-            prefabs: this.#prefabs
+            // AND THE DEFINITIONS A `Spawn Prefab` OR A `SpriteAnimator` MAY REACH,
+            // answering synchronously because they were resolved before this loop began
+            // (ADR-0061 §4, ADR-0062 §1).
+            resources: this.#resources,
+            // WHAT SURVIVES A CHANGE OF SCENE, handed over like everything else a graph may
+            // reach (ADR-0063 §5). Absent, `Set Session Value` writes nowhere and
+            // `Get Session Value` reads nothing — which is what a headless step does.
+            session: this.#session,
+            // AND THE ONE THING A STEP MAY ASK OF THE APPLICATION (ADR-0063 §2). It records;
+            // it does not load, and it does not wait.
+            requestScene: id => this.requestScene(id)
         };
 
         // DETECT FIRST, THEN BEHAVE. The transitions this step raises are worked out against

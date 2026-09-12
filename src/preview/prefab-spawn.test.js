@@ -13,7 +13,7 @@ import {
     ComponentRegistry,
     NodeRegistry,
     Object as SceneObject,
-    PrefabRegistry,
+    ResourceRegistry,
     Scene,
     Transform,
     createPrefab,
@@ -23,14 +23,14 @@ import {
     registerStandardNodes,
     serializeScene
 } from '../core/mod.js';
-import { Project, MemoryResourceStore, ResourceKind, addPrefab, addScene, loadPrefabs, loadScene } from '../project/mod.js';
-import { bundleProject, openBundle } from '../preview/bundle.js';
-import { Behaviors } from './scripting/behaviors.js';
-import { createGraphInterpreter } from './scripting/interpreter.js';
-import { registerBuiltIns } from './builtins.js';
-import { Clock } from './clock/clock.js';
-import { Runtime } from './runtime.js';
-import { RectangleRenderer } from './rendering/components/rectangle-renderer.js';
+import { Project, MemoryResourceStore, ResourceKind, addPrefab, addScene, loadDefinitions, loadScene } from '../project/mod.js';
+import { bundleProject, openBundle } from './bundle.js';
+import { Behaviors } from '../runtime/scripting/behaviors.js';
+import { createGraphInterpreter } from '../runtime/scripting/interpreter.js';
+import { registerBuiltIns } from '../runtime/builtins.js';
+import { Clock } from '../runtime/clock/clock.js';
+import { Runtime } from '../runtime/runtime.js';
+import { RectangleRenderer } from '../runtime/rendering/components/rectangle-renderer.js';
 
 const nodes = registerStandardNodes(new NodeRegistry());
 
@@ -96,13 +96,13 @@ function world(graph, { seed = 'alpha', prefabs = null } = {}) {
     spawner.addComponent(new Transform());
     spawner.addComponent(new Component());
 
-    const table = prefabs ?? new PrefabRegistry();
+    const table = prefabs ?? new ResourceRegistry();
     if (!prefabs) table.set('res_bullet', bulletDefinition());
 
     return {
         scene,
         prefabs: table,
-        runtime: new Runtime(scene, { behaviors, prefabs: table, clock: new Clock(), seed })
+        runtime: new Runtime(scene, { behaviors, resources: table, clock: new Clock(), seed })
     };
 }
 
@@ -163,11 +163,11 @@ test('several spawns are several independent instances', () => {
 });
 
 test('a prefab nobody resolved spawns nothing, and the flow continues', () => {
-    const it = world(SPAWN_THEN_PLACE, { prefabs: new PrefabRegistry() });
+    const it = world(SPAWN_THEN_PLACE, { prefabs: new ResourceRegistry() });
     const failures = [];
     const runtime = new Runtime(it.scene, {
         behaviors: it.runtime.behaviors,
-        prefabs: new PrefabRegistry(),
+        resources: new ResourceRegistry(),
         clock: new Clock(),
         onError: report => failures.push(report)
     });
@@ -234,7 +234,7 @@ test('a prefab travels in a bundle and is resolved before the first step', async
     const opened = openBundle(bundle);
     assert.equal(opened.project.get(prefab.id).kind, ResourceKind.PREFAB);
 
-    const prefabs = await loadPrefabs(opened.project);
+    const prefabs = await loadDefinitions(opened.project);
     const scene = await loadScene(opened.project, opened.scene, { registry });
 
     // AND FROM HERE NOTHING WAITS. This is what a `Runtime.step()` is handed.

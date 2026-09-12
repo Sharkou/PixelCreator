@@ -51,7 +51,14 @@ import { reconcileScene } from './reconcile.js';
  * @param {object} [context.behaviors] - The runtime's Behaviors host, when there is one
  * @returns {{install: Function, refresh: Function, types: Function}} The installer
  */
-export function createDefinitions({ project, registry, workspace = null, scene = null, behaviors = null }) {
+export function createDefinitions({
+    project,
+    registry,
+    workspace = null,
+    scene = null,
+    behaviors = null,
+    onInvalid = null
+}) {
     /** ResourceId -> the revision the registered class was built from. */
     const installed = new globalThis.Map();
 
@@ -184,7 +191,11 @@ export function createDefinitions({ project, registry, workspace = null, scene =
         // carries and hands it over (project/graphs.js). It is a fresh payload on every
         // pass, so `Behaviors` sees a new identity and replaces the running behaviour on
         // the next step, which is the invalidation ADR-0016 §7 describes.
-        if (behaviors) await bindGraph(project, Component, behaviors);
+        // THE SAME DOOR, AND THEREFORE THE SAME VERDICT (ADR-0064 §6). A `.px` whose wires
+        // name ports that do not exist is not bound, so the Component attaches and carries
+        // its properties while its behaviour stays withheld — and the reason is said out loud
+        // instead of showing up as an object that quietly stopped moving.
+        if (behaviors) await bindGraph(project, Component, behaviors, { onInvalid });
 
         // ONE BATCH FOR THE WHOLE RECONCILIATION, so a creator who did not like what
         // declaring a property did to their scene takes it back in one gesture.

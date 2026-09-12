@@ -29,6 +29,7 @@ function recordingRenderer() {
         strokeRect: record('strokeRect'),
         fillCircle: record('fillCircle'),
         drawImage: record('drawImage'),
+        imageSize: () => null,
         fillText: record('fillText')
     };
 }

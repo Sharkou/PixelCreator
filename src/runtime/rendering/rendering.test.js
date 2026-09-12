@@ -25,6 +25,7 @@ function recordingRenderer() {
         strokeRect: record('strokeRect'),
         fillCircle: record('fillCircle'),
         drawImage: record('drawImage'),
+        imageSize: () => null,
         fillText: record('fillText')
     };
 }
@@ -52,6 +53,7 @@ function fakeContext() {
         fill: record('fill'),
         stroke: record('stroke'),
         drawImage: record('drawImage'),
+        imageSize: () => null,
         fillText: record('fillText'),
         save: record('save'),
         restore: record('restore')
@@ -75,7 +77,8 @@ test('an incomplete backend is rejected with the missing names', () => {
     const partial = { clear() {}, save() {}, restore() {} };
 
     assert.deepEqual(missingOperations(partial).sort(), [
-        'drawImage', 'fillCircle', 'fillRect', 'fillText', 'setBlendMode', 'setTransform', 'strokeRect'
+        'drawImage', 'fillCircle', 'fillRect', 'fillText', 'imageSize',
+        'setBlendMode', 'setTransform', 'strokeRect'
     ]);
     assert.throws(() => assertRenderer(partial), /missing required operations/);
     assert.throws(() => new SceneRenderer(partial), /missing required operations/);
@@ -285,16 +288,22 @@ test('RectangleRenderer can stroke instead of filling', () => {
     assert.equal(renderer.of('strokeRect').length, 1);
 });
 
-test('Sprite draws nothing until its image is resolved', () => {
+test('Sprite hands the backend an identity, never a decoded picture (ADR-0062 §2)', () => {
     const renderer = recordingRenderer();
-    const sprite = new Sprite('hero.png', 16, 16);
+    const sprite = new Sprite('res_hero', 16, 16);
 
     sprite.draw(null, renderer);
+
+    const [call] = renderer.of('drawImage');
+    assert.equal(call.args[0], 'res_hero', 'the ResourceId, and nothing that could not be saved');
+    assert.deepEqual(call.args.slice(1, 5), [-8, -8, 16, 16]);
+});
+
+test('a Sprite pointed at nothing draws nothing', () => {
+    const renderer = recordingRenderer();
+    new Sprite(null, 16, 16).draw(null, renderer);
+
     assert.equal(renderer.of('drawImage').length, 0);
-
-    sprite.image = { width: 16, height: 16 };
-    sprite.draw(null, renderer);
-    assert.deepEqual(renderer.of('drawImage')[0].args.slice(1, 5), [-8, -8, 16, 16]);
 });
 
 test('Tilemap uses the uniform draw signature', () => {

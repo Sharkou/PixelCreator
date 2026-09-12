@@ -407,7 +407,14 @@ export class Project {
         // `null` over the payload the store already holds. Opening a project reads the
         // manifest and NOTHING else (ADR-0020); the Scene rebuilds the same way, through
         // `scene.add()` rather than through its pipeline.
-        for (const resource of data.resources ?? []) project.#declare(resource);
+        // VERBATIM, IN THE ORDER THE MANIFEST HAS THEM. Declaring each entry through the
+        // ordinary placement rule re-derived a position from its parent — and an entry whose
+        // folder has no siblings YET lands at the end of the flat list rather than beside it.
+        // So a project saved as `Assets, hero.png, Level.scene` reopened as
+        // `Assets, Level.scene, …, hero.png`: the order a creator arranged survived the
+        // store and was lost on the way back in. The manifest IS the order (ADR-0026 §5);
+        // rebuilding is construction, and construction copies rather than re-deciding.
+        for (const resource of data.resources ?? []) project.#adopt(resource);
         return project;
     }
 
@@ -519,6 +526,22 @@ export class Project {
 
         const folder = entries.findIndex(([id]) => id === parent);
         return folder === -1 ? entries.length : folder + 1;
+    }
+
+    /**
+     * Take a manifest entry exactly as written, with no placement rule applied.
+     *
+     * ONLY `deserialize()` USES THIS, and only because the order it is reading IS the
+     * authoritative one. Every other path goes through `#declare()`, where a rank among
+     * siblings is turned into a position in the flat list.
+     *
+     * @param {object} resource - The entry as the manifest holds it
+     * @returns {object} The reactive entry
+     */
+    #adopt(resource) {
+        const entry = makeReactive({ ...resource });
+        this.#resources.set(entry.id, entry);
+        return entry;
     }
 
     #insert(entry, index) {

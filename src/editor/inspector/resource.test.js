@@ -130,3 +130,53 @@ test('a kind the table says nothing about still inspects', () => {
 test('describing nothing is nothing, not an empty panel', () => {
     assert.equal(describeResource(null), null);
 });
+
+// --- the two kinds a creator makes without typing anything -------------------------------
+
+test('a clip reports its sheet by name, its grid and its speed', () => {
+    const project = new Project('Game');
+    const sheet = project.add({ kind: ResourceKind.ASSET, name: 'walk.png', mime: 'image/png' }, 'data:,');
+    const clip = project.add({ kind: ResourceKind.ANIMATION, name: 'Walk.animation' }, null);
+
+    const description = describeResource(clip, {
+        project,
+        payload: { source: sheet.id, frameWidth: 32, frameHeight: 32, count: 4, columns: 4, fps: 12, loop: true }
+    });
+    const facts = new Map(description.metadata.map(field => [field.label, field.value]));
+
+    assert.equal(description.kindName, 'Animation');
+    // THE SHEET IS NAMED, NOT IDENTIFIED. A ResourceId in a panel tells nobody anything —
+    // and the name is the one this panel's own header shows, extension derived away.
+    assert.equal(facts.get('Sheet'), 'walk');
+    assert.equal(facts.get('Frames'), 4);
+    assert.equal(facts.get('Frame size'), '32 x 32');
+    assert.equal(facts.get('Speed'), '12 fps');
+    assert.equal(facts.get('Loop'), 'Yes');
+
+    // Everything but the name is a fact about the clip, and facts are not typed into.
+    assert.deepEqual(description.fields.filter(field => !field.readonly).map(field => field.name), ['name']);
+});
+
+test('a clip whose sheet was deleted says so instead of showing an identifier', () => {
+    const project = new Project('Game');
+    const clip = project.add({ kind: ResourceKind.ANIMATION, name: 'Walk.animation' }, null);
+
+    const description = describeResource(clip, { project, payload: { source: 'res_gone', count: 2 } });
+    const facts = new Map(description.metadata.map(field => [field.label, field.value]));
+
+    assert.equal(facts.get('Sheet'), 'Missing');
+});
+
+test('a prefab reports how many Objects it would make', () => {
+    const project = new Project('Game');
+    const prefab = project.add({ kind: ResourceKind.PREFAB, name: 'Enemy.prefab' }, null);
+
+    const description = describeResource(prefab, {
+        project,
+        payload: { root: { name: 'Enemy', children: [{ name: 'Gun', children: [] }, { name: 'Shadow' }] } }
+    });
+    const facts = new Map(description.metadata.map(field => [field.label, field.value]));
+
+    assert.equal(description.kindName, 'Prefab');
+    assert.equal(facts.get('Objects'), 3, 'the root counts: it is an Object too');
+});

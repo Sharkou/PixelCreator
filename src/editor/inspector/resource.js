@@ -59,6 +59,27 @@ const BY_KIND = {
             readonly('nodes', 'Nodes', payload?.nodes?.length ?? null)
         ]
     },
+    // A PREFAB IS A SUBTREE (ADR-0061), so what it can honestly report is how big that
+    // subtree is. It is not editable here for the same reason a Scene is not: it is opened,
+    // not typed into.
+    [ResourceKind.PREFAB]: {
+        fields: (resource, { payload }) => [
+            readonly('objects', 'Objects', countObjects(payload?.root))
+        ]
+    },
+    // A CLIP IS FOUR NUMBERS AND A PICTURE (ADR-0062 §4). They are shown, and they are
+    // read-only — see the note at the top of the file about what may be written here.
+    [ResourceKind.ANIMATION]: {
+        fields: (resource, { project, payload }) => [
+            readonly('source', 'Sheet', nameOf(project, payload?.source)),
+            readonly('frames', 'Frames', payload?.count ?? null),
+            readonly('frame', 'Frame size', payload?.frameWidth && payload?.frameHeight
+                ? `${payload.frameWidth} x ${payload.frameHeight}`
+                : null),
+            readonly('fps', 'Speed', payload?.fps ? `${payload.fps} fps` : null),
+            readonly('loop', 'Loop', payload?.loop === undefined ? null : (payload.loop ? 'Yes' : 'No'))
+        ]
+    },
     [ResourceKind.ASSET]: {
         // THE SIZE IS READ FROM THE PICTURE, NEVER GUESSED. "How big is this?" is the
         // first question a creator asks of an image, and the header of every format the
@@ -86,6 +107,8 @@ export const KIND_NAMES = {
     [ResourceKind.SCENE]: 'Scene',
     [ResourceKind.COMPONENT]: 'Component',
     [ResourceKind.GRAPH]: 'Graph',
+    [ResourceKind.PREFAB]: 'Prefab',
+    [ResourceKind.ANIMATION]: 'Animation',
     [ResourceKind.ASSET]: 'Asset'
 };
 
@@ -220,6 +243,25 @@ function countOf(project, id) {
 
 function countKeys(value) {
     return value && typeof value === 'object' ? globalThis.Object.keys(value).length : 0;
+}
+
+/** How many Objects a serialized subtree carries, root included. */
+function countObjects(record) {
+    if (!record || typeof record !== 'object') return null;
+    const children = globalThis.Array.isArray(record.children) ? record.children : [];
+    return children.reduce((total, child) => total + (countObjects(child) ?? 0), 1);
+}
+
+/**
+ * What a resource is called, for a field that shows a reference.
+ *
+ * THE NAME, AND THE IDENTIFIER WHEN THERE IS NO NAME. A ResourceId is opaque (ADR-0010)
+ * and printing one in a panel tells a creator nothing; printing nothing at all would hide
+ * that the reference is dangling, which is the one thing worth seeing.
+ */
+function nameOf(project, id) {
+    if (!id) return null;
+    return baseNameOf(project?.get?.(id)) || 'Missing';
 }
 
 /**

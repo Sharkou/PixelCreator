@@ -12,7 +12,7 @@
 // rather than two games that happen to look alike (ADR-0044 §2).
 
 import { bundleProject } from '../preview/bundle.js';
-import { previewUrl, putPreview } from '../preview/store.js';
+import { previewUrl, publishedUrl, putPreview } from '../preview/store.js';
 
 /**
  * Bundle what is being edited and open it in a game window.
@@ -81,4 +81,71 @@ function fail(report, message, result = null) {
     report?.(message);
     if (result) console.info('[preview]', message, result.url);
     return result;
+}
+
+/**
+ * Write the whole game out as one file a creator can host anywhere (ADR-0066 §2).
+ *
+ * THIS IS AS FAR AS PUBLISHING GOES WITHOUT A BACKEND, AND IT GOES FURTHER THAN IT SOUNDS.
+ * What comes out is the very bundle a Preview plays — manifest, every payload, which scene
+ * opens — so dropping it on any static host and opening
+ * `…/preview/index.html#u/<that url>` is a playable game, on somebody else's machine, with
+ * no Editor anywhere near it. The one thing Pixel Creator cannot do yet is host it FOR the
+ * creator, and that is a decision about accounts and permissions rather than about a format.
+ *
+ * A DOWNLOAD, NOT A DIALOG. A browser will hand a file to a person without asking anyone's
+ * permission; everything past that — a URL, a name, a visibility, an update — needs a server
+ * that knows who is asking.
+ *
+ * @param {object} workspace - The Workspace holding the project and its store
+ * @param {object} [options] - Options
+ * @param {Function} [options.save] - How a file is handed over; a download by default
+ * @param {Function} [options.report] - Where to say what went wrong
+ * @returns {{name: string, bytes: number}|null} What was written, or null
+ */
+export function exportGame(workspace, { save = download, report = null } = {}) {
+    const project = workspace?.project ?? null;
+    if (!project) return fail(report, 'There is no project to export.');
+
+    for (const resource of workspace.opened?.() ?? []) workspace.save({ id: resource.id });
+
+    const scene = (workspace.opened?.() ?? []).find(resource => resource.kind === 'scene') ?? null;
+    const bundle = bundleProject(project, project.store, { scene: scene?.id ?? null });
+    const text = globalThis.JSON.stringify(bundle);
+
+    // NAMED AFTER THE PROJECT, WITH AN EXTENSION THAT SAYS WHAT IT IS. `.pxgame.json` is a
+    // JSON file first — anything can read it, and a creator can see what is in it — and a
+    // Pixel Creator game second.
+    const name = `${(project.name || 'game').replace(/[^\w.-]+/g, '-')}.pxgame.json`;
+    save(name, text);
+
+    return { name, bytes: text.length };
+}
+
+/**
+ * The link that plays a bundle a creator has hosted.
+ *
+ * @param {string} url - Where they put the file
+ * @param {string} [base] - Where the client page lives
+ * @returns {string} A URL anyone can open
+ */
+export function playableUrl(url, base) {
+    return publishedUrl(url, base);
+}
+
+/** Hand a file to the person at the keyboard. */
+function download(name, text) {
+    const blob = new globalThis.Blob([text], { type: 'application/json' });
+    const href = globalThis.URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+
+    // REVOKED, BUT NOT IN THIS TURN. Releasing the object URL before the browser has started
+    // the download cancels it in some engines; a frame later it is safely done with.
+    globalThis.setTimeout(() => globalThis.URL.revokeObjectURL(href), 1000);
 }

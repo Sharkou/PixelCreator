@@ -38,7 +38,17 @@
 // @property {(x, y, width, height, options?) => void} fillRect
 // @property {(x, y, width, height, options?) => void} strokeRect
 // @property {(x, y, radius, options?) => void} fillCircle
-// @property {(image, x, y, width, height, options?) => void} drawImage
+// @property {(source, x, y, width, height, options?) => void} drawImage
+//     Draw a picture. `source` is a **ResourceId**, never a decoded image: the backend
+//     resolves it and holds whatever its own pixels are made of — an `ImageBitmap` here, a
+//     GL texture in a WebGL backend, nothing at all on a server (ADR-0062 §2). A picture
+//     that is not decoded yet draws nothing and the next frame draws it.
+//
+// @property {(source) => {width, height}|null} imageSize
+//     The natural pixel size of a picture, or null when it is not decoded yet. It is a fact
+//     about the RESOURCE and is the same number in every backend, which is why it may be
+//     asked here — unlike text metrics, which depend on who rasterises (ADR-0060 §3).
+//
 // @property {(text, x, y, options?) => void} fillText
 //
 // Drawing options are `{ color, alpha, lineWidth }`, all optional. A backend applies
@@ -72,6 +82,7 @@ export const RENDERER_OPERATIONS = globalThis.Object.freeze([
     'strokeRect',
     'fillCircle',
     'drawImage',
+    'imageSize',
     'fillText'
 ]);
 

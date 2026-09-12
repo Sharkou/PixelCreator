@@ -1,11 +1,18 @@
 // The wire between an Editor and the Previews of one project (ADR-0044 §3).
+//
+// IT LIVES UNDER `editor/` BECAUSE IT REACHES BOTH ENDS, and only one direction is allowed.
+// `preview/` may never import `editor/` — a game client that could import the Editor would
+// ship it (ADR-0042 §2) — so a test of the wire written next to `preview/live.js` was itself
+// the one forbidden edge, and `tools/layers` had been reporting it as an unexplained
+// violation on `master`. The channel it tests is unchanged and still imports nothing of the
+// Editor's; what moved is the test, to the side of the wire that is allowed to see both.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Object as SceneObject, Scene, Transform, ComponentRegistry } from '../core/mod.js';
-import { Workspace } from '../editor/project/workspace.js';
-import { broadcastEdits } from '../editor/live.js';
-import { LiveMessage, forwardOperations, openLiveChannel, sendDefinition } from './live.js';
+import { Workspace } from './project/workspace.js';
+import { broadcastEdits } from './live.js';
+import { LiveMessage, forwardOperations, openLiveChannel, sendDefinition } from '../preview/live.js';
 
 /** Every channel of one name, so two "pages" can meet the way BroadcastChannel lets them. */
 function channels() {

@@ -27,19 +27,19 @@ import {
     registerStandardNodes,
     serializeScene
 } from '../core/mod.js';
-import { MemoryResourceStore, Project, ResourceKind, addPrefab, addScene, loadPrefabs, loadScene } from '../project/mod.js';
-import { bundleProject, openBundle } from '../preview/bundle.js';
-import { Behaviors } from './scripting/behaviors.js';
-import { createGraphInterpreter } from './scripting/interpreter.js';
-import { registerBuiltIns } from './builtins.js';
-import { Clock } from './clock/clock.js';
-import { Runtime } from './runtime.js';
-import { Input } from './input/input.js';
-import { BoxCollider } from './collision/collider.js';
-import { Velocity } from './components/velocity.js';
-import { RectangleRenderer } from './rendering/components/rectangle-renderer.js';
-import { TextRenderer } from './rendering/components/text-renderer.js';
-import { ScreenSpace } from './rendering/space.js';
+import { MemoryResourceStore, Project, ResourceKind, addPrefab, addScene, loadDefinitions, loadScene } from '../project/mod.js';
+import { bundleProject, openBundle } from './bundle.js';
+import { Behaviors } from '../runtime/scripting/behaviors.js';
+import { createGraphInterpreter } from '../runtime/scripting/interpreter.js';
+import { registerBuiltIns } from '../runtime/builtins.js';
+import { Clock } from '../runtime/clock/clock.js';
+import { Runtime } from '../runtime/runtime.js';
+import { Input } from '../runtime/input/input.js';
+import { BoxCollider } from '../runtime/collision/collider.js';
+import { Velocity } from '../runtime/components/velocity.js';
+import { RectangleRenderer } from '../runtime/rendering/components/rectangle-renderer.js';
+import { TextRenderer } from '../runtime/rendering/components/text-renderer.js';
+import { ScreenSpace } from '../runtime/rendering/space.js';
 
 // --- writing a graph without writing JSON by hand ------------------------------------------
 
@@ -335,7 +335,7 @@ async function play(built, { seed = 'demo' } = {}) {
     }
 
     // RESOLVED BEFORE THE FIRST STEP. This is the only `await` in the whole game path.
-    const prefabs = await loadPrefabs(opened.project);
+    const resources = await loadDefinitions(opened.project);
     const scene = await loadScene(opened.project, opened.scene, { registry });
 
     const audio = recordingAudio();
@@ -343,7 +343,7 @@ async function play(built, { seed = 'demo' } = {}) {
     const failures = [];
     const runtime = new Runtime(scene, {
         behaviors,
-        prefabs,
+        resources,
         audio,
         input,
         seed,
@@ -351,7 +351,7 @@ async function play(built, { seed = 'demo' } = {}) {
         onError: report => failures.push(report)
     });
 
-    return { scene, runtime, audio, input, failures, prefabs };
+    return { scene, runtime, audio, input, failures, resources };
 }
 
 /** Hold Space for one step, then run `steps` more. */
@@ -510,7 +510,7 @@ test('the played scene saves and reloads with its instances and without the pref
     assert.equal(payload.includes(ENEMY), false);
 });
 
-test('a Runtime with no audio and no prefabs plays the same simulation, silently', async () => {
+test('a Runtime with no audio and no resources plays the same simulation, silently', async () => {
     const built = buildProject();
     const it = await play(built);
     placeEnemies(it);

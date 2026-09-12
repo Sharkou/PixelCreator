@@ -57,9 +57,18 @@ export {
     remapValues,
     subtreeOf
 } from './instantiate.js';
+export { ResourceRegistry } from './resources.js';
+export {
+    ANIMATION_FORMAT,
+    animationOf,
+    createAnimation,
+    durationOf,
+    frameAt,
+    frameAtTime,
+    frameCount
+} from './animation.js';
 export {
     PREFAB_FORMAT,
-    PrefabRegistry,
     createPrefab,
     externalReferencesOf,
     instantiatePrefab,
