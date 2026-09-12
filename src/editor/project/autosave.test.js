@@ -178,6 +178,66 @@ test('a save that fails leaves the model dirty, so the next quiet period tries a
     autosave.stop();
 });
 
+/** An area that can be told to refuse payload writes, the way a full quota does. */
+class RefusingArea extends MemoryArea {
+
+    refuse = false;
+
+    async put(key, value) {
+        if (this.refuse && key.includes('payload')) throw new Error('quota exceeded');
+        return super.put(key, value);
+    }
+}
+
+test('a payload write the store refuses is reported, kept dirty, and holds the manifest back', async () => {
+    // THE PAYLOADS FIRST, AND THE MANIFEST ONLY ONCE THEY LANDED. A refused scene write used
+    // to be invisible here: the model was marked clean, the manifest went out naming a
+    // revision the store never took, and the work was gone at the next reload.
+    const registry = new ComponentRegistry();
+    registry.register(Transform);
+    const area = new RefusingArea();
+    const store = new PersistentResourceStore(area, 'proj_1');
+    const project = new Project('My Game', { store });
+    const workspace = new Workspace({ components: registry, project });
+    const scene = new Scene('Level', { registry });
+    const player = scene.add(new SceneObject('Player'));
+    player.addComponent(new Transform(1, 2));
+    const resource = workspace.create(scene);
+    await project.settled();
+
+    const manifests = [];
+    const writeManifest = store.saveManifest.bind(store);
+    store.saveManifest = manifest => (manifests.push(manifest), writeManifest(manifest));
+
+    const timer = clock();
+    const failures = [];
+    const autosave = createAutosave({ workspace, store, onError: error => failures.push(error.message), ...timer });
+
+    area.refuse = true;
+    player.setProperty('x', 5);
+    timer.tick();
+    await autosave.flush();
+    await settle();
+
+    assert.deepEqual(failures, ['quota exceeded'], 'said, not swallowed');
+    assert.equal(manifests.length, 0, 'the manifest waits for the payload it would name');
+    assert.equal(workspace.dirty, true, 'the scene is unsaved work again');
+    assert.equal(autosave.pending(), true);
+    assert.equal(timer.waiting, 1, 'and the next quiet period tries again');
+
+    area.refuse = false;
+    timer.tick();
+    await autosave.flush();
+    await settle();
+
+    assert.equal((await store.read(resource.id)).objects[0].components[0].values.x, 5, 'then the scene lands');
+    assert.equal(manifests.length, 1, 'and the manifest goes out after it');
+    assert.equal(workspace.dirty, false);
+    assert.equal(autosave.pending(), false);
+    assert.equal(timer.waiting, 0, 'and nothing re-arms on success');
+    autosave.stop();
+});
+
 test('stopping releases everything, so a closed editor writes nothing more', async () => {
     const it = world();
     const timer = clock();

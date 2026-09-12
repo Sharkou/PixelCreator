@@ -52,7 +52,8 @@ import { createResource, ResourceKind } from './resource.js';
  * @param {object} [options.registry] - ComponentRegistry resolving the types
  * @param {string} [options.actor] - Who authored the intent
  * @param {string} [options.batch] - Groups this into a larger history entry
- * @returns {{resource: object|null, cleared: object[]}} The manifest entry and what was dropped
+ * @returns {{resource: Promise<object|null>, cleared: object[]}} The manifest entry once
+ *   written, and what was dropped
  */
 export function addPrefab(project, object, { name, parent = null, id, index, registry, actor, batch } = {}) {
     const { definition, cleared } = createPrefab(object, { registry, scene: object?.scene ?? null });
@@ -79,7 +80,8 @@ export function addPrefab(project, object, { name, parent = null, id, index, reg
  * @param {object} [options] - Options
  * @param {object} [options.registry] - ComponentRegistry resolving the types
  * @param {string} [options.actor] - Who authored the intent
- * @returns {{resource: object|null, cleared: object[]}} The manifest entry and what was dropped
+ * @returns {{resource: Promise<object|null>, cleared: object[]}} The manifest entry once
+ *   written, and what was dropped
  */
 export function savePrefab(project, id, object, { registry, actor } = {}) {
     const { definition, cleared } = createPrefab(object, { registry, scene: object?.scene ?? null });
@@ -163,7 +165,8 @@ export function addTileset(project, spec, { name = 'New Tileset.tileset', parent
  * @param {object} spec - The cutting, as `createTileset()` takes it
  * @param {object} [options] - Options
  * @param {string} [options.actor] - Who authored the intent
- * @returns {object|null} The manifest entry, or null when the resource is unknown
+ * @returns {Promise<object|null>} The manifest entry once written; null when the resource is
+ *   unknown or the store refused the write
  */
 export function saveTileset(project, id, spec, { actor } = {}) {
     return project.save(id, createTileset(spec), { actor });
@@ -186,7 +189,8 @@ export function tilesetResources(project) {
  * @param {object} spec - The clip, as `createAnimation()` takes it
  * @param {object} [options] - Options
  * @param {string} [options.actor] - Who authored the intent
- * @returns {object|null} The manifest entry, or null when the resource is unknown
+ * @returns {Promise<object|null>} The manifest entry once written; null when the resource is
+ *   unknown or the store refused the write
  */
 export function saveAnimation(project, id, spec, { actor } = {}) {
     return project.save(id, createAnimation(spec), { actor });

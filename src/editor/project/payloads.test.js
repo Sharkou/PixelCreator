@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { MemoryArea, PersistentResourceStore, Project, ResourceKind } from '../../project/mod.js';
+import { MemoryArea, MemoryResourceStore, PersistentResourceStore, Project, ResourceKind } from '../../project/mod.js';
 import { PayloadCache } from './payloads.js';
 
 /** A project whose store answers later, which is the one a browser actually keeps. */
@@ -14,8 +14,37 @@ function slow() {
     return Project.deserialize(declared.serialize(), { store });
 }
 
+/**
+ * Everything a fixture proxy does not intercept, answered by the real project.
+ *
+ * BOUND, because a method reached through a Proxy runs with the proxy as `this`, and a class
+ * method reading a private field refuses that. The cache asks `has()` as well as `read()`.
+ */
+const through = (target, prop) => (typeof target[prop] === 'function' ? target[prop].bind(target) : target[prop]);
+
 /** Let every queued read and write land. */
 const settle = () => new globalThis.Promise(resolve => globalThis.setTimeout(resolve, 0));
+
+test('a payload the project no longer declares is dropped once the redraw is over', async () => {
+    // A DELETED PICTURE MUST NOT BE HELD FOR THE LIFE OF THE PANEL. Nothing removed an entry
+    // but `clear()`, so forty pictures thrown away were forty data URLs kept in memory.
+    const store = new MemoryResourceStore();
+    const project = new Project('Game', { store });
+    const cache = new PayloadCache();
+    const gone = project.add({ kind: ResourceKind.ASSET, name: 'gone.png', mime: 'image/png' }, 'data:image/png;base64,AA');
+    const kept = project.add({ kind: ResourceKind.ASSET, name: 'kept.png', mime: 'image/png' }, 'data:image/png;base64,BB');
+    const record = { ...gone };
+
+    assert.equal(cache.payload(project, gone), 'data:image/png;base64,AA');
+    await project.remove(gone.id);
+
+    // The panel redraws what is left, and the sweep rides on that redraw.
+    assert.equal(cache.payload(project, kept), 'data:image/png;base64,BB');
+    await new Promise(resolve => globalThis.queueMicrotask(resolve));
+
+    assert.equal(cache.payload(project, record), null, 'asked again, and the store has nothing');
+    assert.equal(cache.payload(project, kept), 'data:image/png;base64,BB', 'what is still declared is still held');
+});
 
 test('a payload that is not here yet reads as nothing, and arrives', async () => {
     const project = slow();
@@ -37,7 +66,7 @@ test('one revision is asked for once, however many times it is drawn', async () 
 
     let reads = 0;
     const counting = new globalThis.Proxy(project, {
-        get: (target, prop) => (prop === 'read' ? id => (reads++, target.read(id)) : target[prop])
+        get: (target, prop) => (prop === 'read' ? id => (reads++, target.read(id)) : through(target, prop))
     });
 
     const cache = new PayloadCache();
@@ -69,7 +98,7 @@ test('a folder has no payload and no size, so neither is ever asked for', async 
 
     let reads = 0;
     const counting = new globalThis.Proxy(project, {
-        get: (target, prop) => (prop === 'read' ? id => (reads++, target.read(id)) : target[prop])
+        get: (target, prop) => (prop === 'read' ? id => (reads++, target.read(id)) : through(target, prop))
     });
 
     const cache = new PayloadCache();
@@ -101,7 +130,7 @@ test('a payload that cannot be read leaves the view drawing what it has', async 
     const failing = new globalThis.Proxy(project, {
         get: (target, prop) => (prop === 'read'
             ? () => globalThis.Promise.reject(new Error('unreadable'))
-            : target[prop])
+            : through(target, prop))
     });
 
     const cache = new PayloadCache();

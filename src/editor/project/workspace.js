@@ -502,17 +502,35 @@ export class Workspace {
      * @param {object} [options] - Options
      * @param {string} [options.id] - Which editor; the one being worked in by default
      * @param {string} [options.actor] - Who authored the intent
-     * @returns {boolean} True when something was written
+     * CLEAN THE MOMENT IT IS ASKED, DIRTY AGAIN THE MOMENT IT IS REFUSED. Clean now, because
+     * an edit that lands while the write is in flight has to make the document dirty AGAIN
+     * — clearing the flag only once the store answered would erase that edit's claim. Dirty
+     * again on refusal, because `Project.save()` answers nothing when the store would not
+     * take the bytes, and a document the store does not hold is unsaved work whatever the
+     * last `Ctrl S` believed. The `dirty` announced then is what re-arms the autosave, so
+     * the next quiet period tries again (ADR-0065 §2).
+     *
+     * @returns {Promise<boolean>} True once the store took the write; false when there was
+     *   nothing to write, or the store refused it and the document is dirty again
      */
     save({ id = this.#working, actor } = {}) {
         const editor = this.#editors.get(id);
-        if (!editor) return false;
-        if (!editor.dirty) return false;
+        if (!editor) return globalThis.Promise.resolve(false);
+        if (!editor.dirty) return globalThis.Promise.resolve(false);
 
-        EDITORS[editor.kind].save(this.#project, editor.resource.id, editor.model, { actor });
+        const written = EDITORS[editor.kind].save(this.#project, editor.resource.id, editor.model, { actor });
         this.#setDirty(editor, false);
-        this.#emitter.emit('saved', { resource: editor.resource, model: editor.model, scene: this.#sceneOf(editor) });
-        return true;
+
+        return globalThis.Promise.resolve(written).then(entry => {
+            if (entry) {
+                this.#emitter.emit('saved', { resource: editor.resource, model: editor.model, scene: this.#sceneOf(editor) });
+                return true;
+            }
+            // Still the editor of that resource: one closed while the write was in flight has
+            // nothing left to be dirty.
+            if (this.#editors.get(editor.resource.id) === editor) this.#setDirty(editor, true);
+            return false;
+        });
     }
 
     /**

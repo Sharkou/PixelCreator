@@ -64,8 +64,10 @@ sous le **même `batch`**, donc la règle 4 laisse derrière elle une entrée qu
 abandonne et l'Editor retire cette entrée (`History.forget()`), à trois conditions qui la
 gardent inoffensive :
 
-- elle ne peut être que **celle du dessus** — abandonner est la dernière chose qui s'est
-  produite ; un `batch` plus bas appartient à un geste qui, lui, est allé au bout ;
+- seule **l'entrée du dessus** est retirée, et seulement si elle porte ce `batch`. Si une
+  opération étrangère s'est intercalée pendant le geste — un `Delete` ou un `Ctrl D` pressé
+  le bouton enfoncé — la partie du geste d'avant l'intrusion reste sur la pile : une
+  entrée qui ne change rien à l'écran, jamais une inversion fausse ;
 - **rien n'est muté** : retirer une entrée n'émet aucune Operation, donc la règle 3 tient ;
 - **la pile de redo n'y perd rien** : elle avait déjà été vidée par la première opération du
   geste, avant qu'on sache qu'il serait abandonné.

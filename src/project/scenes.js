@@ -62,7 +62,8 @@ export function addScene(project, scene, { name, parent = null, id, index, actor
  * @param {object} scene - The scene to store
  * @param {object} [options] - Options
  * @param {string} [options.actor] - Who authored the intent
- * @returns {object|null} The manifest entry, or null when the resource is unknown
+ * @returns {Promise<object|null>} The manifest entry once written; null when the resource is
+ *   unknown or the store refused the write
  */
 export function saveScene(project, id, scene, { actor } = {}) {
     return project.save(id, serializeScene(scene), { actor });

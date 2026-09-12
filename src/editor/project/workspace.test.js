@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ComponentRegistry, Object, Origin, Scene, Transform, registerStandardNodes } from '../../core/mod.js';
-import { MemoryResourceStore, Project, ResourceKind } from '../../project/mod.js';
+import { MemoryArea, MemoryResourceStore, PersistentResourceStore, Project, ResourceKind } from '../../project/mod.js';
 import { createResourceOfKind } from './commands.js';
 import { Workspace } from './workspace.js';
 
@@ -71,6 +71,44 @@ test('an authored operation makes the workspace dirty, saving makes it clean', (
     assert.equal(workspace.dirty, false);
     assert.deepEqual(seen, [true, false]);
     assert.equal(workspace.project.read(resource.id).objects[0].name, 'Heroine');
+});
+
+/** An area that can be told to refuse payload writes, the way a full quota does. */
+class RefusingArea extends MemoryArea {
+
+    refuse = false;
+
+    async put(key, value) {
+        if (this.refuse && key.includes('payload')) throw new Error('quota exceeded');
+        return super.put(key, value);
+    }
+}
+
+test('a save the store refuses puts the document back to dirty', async () => {
+    // CLEAN WHEN ASKED, DIRTY AGAIN WHEN REFUSED. The flag used to clear the moment the write
+    // was asked for and never hear back, so a full quota left a document marked saved whose
+    // bytes the store never took.
+    const area = new RefusingArea();
+    const workspace = new Workspace({ project: new Project('Game', { store: new PersistentResourceStore(area, 'p') }) });
+    const scene = sceneWithOne();
+    const resource = workspace.create(scene);
+    await workspace.project.settled();
+
+    const seen = [];
+    workspace.on('dirty', payload => seen.push(payload.dirty));
+
+    area.refuse = true;
+    scene.objects()[0].setProperty('name', 'Heroine');
+    const asked = workspace.save();
+    assert.equal(workspace.dirty, false, 'clean the moment it is asked, so a later edit can dirty it again');
+    assert.equal(await asked, false, 'but the store refused');
+    assert.equal(workspace.dirty, true, 'so it is unsaved work again');
+    assert.deepEqual(seen, [true, false, true]);
+
+    area.refuse = false;
+    assert.equal(await workspace.save(), true, 'and the next save lands');
+    assert.equal(workspace.dirty, false);
+    assert.equal((await workspace.project.read(resource.id)).objects[0].name, 'Heroine');
 });
 
 test('a plain write is not unsaved work, because it is not an intent', () => {
@@ -455,7 +493,7 @@ test('save writes the editor being worked in, not the tab that is showing', asyn
     assert.equal(workspace.activeId, component.id, 'the graph is the active editor');
 
     scene.objects()[0].setProperty('name', 'Heroine');
-    assert.equal(workspace.save(), true);
+    assert.equal(await workspace.save(), true);
     assert.equal(workspace.project.read(sceneResource.id).objects[0].name, 'Heroine');
     assert.equal(workspace.project.read(component.id).properties.speed, undefined);
 
@@ -476,7 +514,7 @@ test('save falls back to the active editor when the last intent was the manifest
     workspace.select(component.id);
     assert.equal(workspace.context, 'project');
 
-    assert.equal(workspace.save(), true);
+    assert.equal(await workspace.save(), true);
     assert.equal(workspace.project.read(component.id).properties.speed.default, 3);
 });
 

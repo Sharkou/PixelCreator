@@ -83,9 +83,15 @@ export function createAutosave({
                 // THE PAYLOADS FIRST. `Workspace.save()` writes through the Project, which
                 // writes through the store — so by the time the manifest is written, every
                 // revision it mentions is a revision the store actually holds.
-                for (const resource of workspace.opened?.() ?? []) {
-                    workspace.save({ id: resource.id });
-                }
+                const writes = (workspace.opened?.() ?? []).map(resource => workspace.save({ id: resource.id }));
+                await globalThis.Promise.all(writes);
+
+                // AND EVERY OTHER WRITE THE PROJECT ASKED FOR — an import, a replaced picture,
+                // a deletion undone — none of which anybody awaits (ADR-0020 §4). A store that
+                // refused one of them throws here, the manifest is held back, and the failure
+                // is reported below: a manifest naming a revision the store never took would
+                // declare, on reload, content that is not there.
+                await workspace.project?.settled?.();
 
                 await store.saveManifest?.(workspace.project.serialize());
                 saves++;

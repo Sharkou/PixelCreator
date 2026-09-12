@@ -41,7 +41,7 @@ Aucun fichier de `legacy/` n'a été modifié.
 ### État vérifié (2026-09-12)
 
 ```bash
-tools/test.sh                  # 2265 tests, 2265 passés
+tools/test.sh                  # 2300 tests, 2300 passés
 node tools/layers/run.js       # v2 : 0 violation, 0 import mort — legacy : 1 violation + 2 imports morts, trackés
 node tools/parity/run.js       # 39 identical, 0 problems
 node tools/check-css-literals.js

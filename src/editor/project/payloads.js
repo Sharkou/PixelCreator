@@ -33,6 +33,9 @@ export class PayloadCache {
      */
     #values = new globalThis.Map();
 
+    /** Set while a sweep of what the project no longer declares is scheduled. */
+    #sweeping = false;
+
     /**
      * A resource's payload, as far as it is known right now.
      *
@@ -43,6 +46,7 @@ export class PayloadCache {
      */
     payload(project, resource, onArrival) {
         if (!project || !resource || !hasPayload(resource)) return null;
+        this.#sweep(project);
         return this.#resolve(
             this.#key(resource, 'payload'),
             resource.revision ?? 0,
@@ -61,6 +65,7 @@ export class PayloadCache {
      */
     size(project, resource, onArrival) {
         if (!project?.store?.size || !resource || !hasPayload(resource)) return null;
+        this.#sweep(project);
         return this.#resolve(
             this.#key(resource, 'size'),
             resource.revision ?? 0,
@@ -76,6 +81,29 @@ export class PayloadCache {
 
     #key(resource, what) {
         return `${resource.id}:${what}`;
+    }
+
+    /**
+     * Drop what the project no longer declares, once the current redraw is over.
+     *
+     * A DELETED PICTURE MUST NOT BE HELD FOR THE LIFE OF THE PANEL. Nothing removed an entry
+     * but `clear()`, and a panel is rebound once per project — so every payload ever deleted
+     * stayed in memory, forty megabytes of data URLs for forty pictures a creator had thrown
+     * away. A panel redraws when the manifest changes and asks for what it still shows, so
+     * the sweep rides on that: scheduled at most once per turn, it runs after the rows have
+     * asked, and it costs one lookup per entry held.
+     *
+     * @param {object} project - The project whose manifest decides what is still declared
+     */
+    #sweep(project) {
+        if (this.#sweeping || typeof project?.has !== 'function') return;
+        this.#sweeping = true;
+        globalThis.queueMicrotask(() => {
+            this.#sweeping = false;
+            for (const key of this.#values.keys()) {
+                if (!project.has(key.slice(0, key.lastIndexOf(':')))) this.#values.delete(key);
+            }
+        });
     }
 
     #resolve(key, revision, read, onArrival) {

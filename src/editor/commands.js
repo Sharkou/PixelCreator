@@ -406,12 +406,13 @@ export function reparentObject(scene, object, parent = null, index, {
 
     const batch = createId();
     const world = preserveWorld ? worldMatrix(object) : null;
+    const previousParent = object.parent?.id ?? null;
 
     const result = scene.operations.submit(reparentOperation({
         object: object.id,
         parent: parent?.id ?? null,
         index: index ?? null,
-        previousParent: object.parent?.id ?? null,
+        previousParent,
         previousIndex: scene.indexOf(object),
         origin: Origin.EDITOR,
         actor,
@@ -421,6 +422,14 @@ export function reparentObject(scene, object, parent = null, index, {
     if (!result.applied || !preserveWorld) {
         return { applied: result.applied, batch, sheared: false };
     }
+
+    // A REORDER CHANGES NO GEOMETRY, SO NONE IS WRITTEN. Under the same parent the local
+    // matrix IS the world it always was; deriving it again through `decompose()` is where an
+    // object with a collapsed axis came back half a turn round with its `scaleY` flipped — a
+    // zero column carries no rotation, so that matrix has two readings and the one written
+    // was not the one authored. Nothing to preserve is nothing to touch: the rank moved, and
+    // the history holds one operation for it.
+    if (previousParent === (parent?.id ?? null)) return { applied: true, batch, sheared: false };
 
     const transform = object.getComponent('Transform');
     if (!transform) return { applied: true, batch, sheared: false };

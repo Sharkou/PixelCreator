@@ -37,7 +37,14 @@ export async function openPreview(workspace, { open = defaultOpen, report = null
     // exists to remove. Every OPEN editor is asked, not just the active one: a `.px` edited in
     // another tab is part of this game too — and one that has changed nothing is left alone,
     // because that is what `Workspace.save()` means.
-    for (const resource of workspace.opened?.() ?? []) workspace.save({ id: resource.id });
+    await globalThis.Promise.all((workspace.opened?.() ?? []).map(resource => workspace.save({ id: resource.id })));
+    // A STORE THAT REFUSED THE WRITE MEANS THE BUNDLE WOULD PLAY THE VERSION BEFORE IT, and
+    // saying so beats a window that quietly shows yesterday's scene (ADR-0065 §2).
+    try {
+        await project.settled?.();
+    } catch (error) {
+        return fail(report, `The latest changes could not be saved, so the preview would not show them: ${error.message}`);
+    }
 
     const scene = (workspace.opened?.() ?? []).find(resource => resource.kind === 'scene') ?? null;
     const bundle = await bundleProject(project, project.store, { scene: scene?.id ?? null });
@@ -112,7 +119,12 @@ export async function exportGame(workspace, { save = download, report = null } =
     const project = workspace?.project ?? null;
     if (!project) return fail(report, 'There is no project to export.');
 
-    for (const resource of workspace.opened?.() ?? []) workspace.save({ id: resource.id });
+    await globalThis.Promise.all((workspace.opened?.() ?? []).map(resource => workspace.save({ id: resource.id })));
+    try {
+        await project.settled?.();
+    } catch (error) {
+        return fail(report, `The latest changes could not be saved, so the file would not hold them: ${error.message}`);
+    }
 
     const scene = (workspace.opened?.() ?? []).find(resource => resource.kind === 'scene') ?? null;
     const bundle = await bundleProject(project, project.store, { scene: scene?.id ?? null });

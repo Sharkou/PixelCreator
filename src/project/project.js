@@ -56,6 +56,25 @@ export class Project {
     #resources = new Map();
 
     /**
+     * The intents that READ before they write, taken one at a time.
+     *
+     * `setPayload()` and `remove()` carry `previous` — what undo restores — and read it from
+     * the store before submitting. Two of them issued in one turn both read before either had
+     * written, so the second carried the state from before the FIRST: undoing it skipped an
+     * edit, and the history described a sequence that never happened. The store already
+     * orders a read after the writes queued before it (persistence.js); what has to be ordered
+     * is the moment the read is ASKED, and that is here.
+     */
+    #turn = globalThis.Promise.resolve();
+
+    /**
+     * Writes the store is still performing, and the ones it refused since `settled()` last
+     * asked. See `#track()`.
+     */
+    #pending = new globalThis.Set();
+    #refused = [];
+
+    /**
      * Create a project.
      * @param {string} [name] - Display name
      * @param {object} [options] - Options
@@ -198,6 +217,11 @@ export class Project {
      * @returns {Promise<boolean>} True when the resource was removed
      */
     async remove(id, { actor, batch } = {}) {
+        if (!this.#resources.has(id)) return false;
+        return this.#inTurn(() => this.#removeNow(id, { actor, batch }));
+    }
+
+    async #removeNow(id, { actor, batch }) {
         const resource = this.#resources.get(id);
         if (!resource) return false;
 
@@ -268,14 +292,23 @@ export class Project {
      * @param {string} [options.actor] - Who authored the intent
      * @param {string} [options.batch] - Groups this into a larger history entry, for a
      *   gesture that creates a resource AND writes its first payload
-     * @returns {object|null} The manifest entry, or null when the resource is unknown
+     * ASKED NOW, LANDED LATER, AND THE ANSWER SAYS WHICH (ADR-0020 §4). The write is queued
+     * and the bookkeeping stamped before this returns — a save is a synchronous model
+     * mutation, and is right to be — but the store may still refuse it: a quota that is
+     * full, a transaction that aborts. The promise answers the entry once the bytes have
+     * landed and NOTHING when they have not; the refusal is kept for `settled()`, which is
+     * how the autosave learns of it and holds the manifest back. It never rejects, because
+     * most callers do not await it, and an unheld rejection is the one report nobody reads.
+     *
+     * @returns {Promise<object|null>} The manifest entry once written; null when the resource
+     *   is unknown or the store refused the write
      */
     save(id, payload, { actor, batch } = {}) {
         const resource = this.#resources.get(id);
-        if (!resource) return null;
+        if (!resource) return globalThis.Promise.resolve(null);
 
         const group = batch ?? createId();
-        this.#store.write(snapshot(resource), payload);
+        const written = this.#track(this.#store.write(snapshot(resource), payload));
 
         // NOT AN INTENTION, AND THEREFORE NOT UNDOABLE (ADR-0069 §2). `revision` and
         // `modified` are facts ABOUT a write: nobody asked for them, and "take back the
@@ -289,7 +322,7 @@ export class Project {
         // Batched with the revision, so `modified` never drifts from the revision it
         // belongs to.
         this.setProperty(id, 'modified', Date.now(), bookkeeping);
-        return resource;
+        return globalThis.Promise.resolve(written).then(() => resource, () => null);
     }
 
     /**
@@ -308,6 +341,11 @@ export class Project {
      * @returns {Promise<object>} { applied, operation, decision }
      */
     async setPayload(id, payload, { actor, batch } = {}) {
+        if (!this.#resources.has(id)) return { applied: false, operation: null, decision: null };
+        return this.#inTurn(() => this.#setPayloadNow(id, payload, { actor, batch }));
+    }
+
+    async #setPayloadNow(id, payload, { actor, batch }) {
         const resource = this.#resources.get(id);
         if (!resource) return { applied: false, operation: null, decision: null };
 
@@ -481,6 +519,65 @@ export class Project {
         return project;
     }
 
+    /**
+     * Run one read-then-write intent after every one asked before it.
+     *
+     * A failure ends its own turn and nobody else's: the chain is reset to settled whatever
+     * `work` did, so one refused write cannot wedge every later edit of the project.
+     *
+     * @param {Function} work - The intent, answering a promise
+     * @returns {Promise<any>} What the intent answered
+     */
+    #inTurn(work) {
+        const run = this.#turn.then(work);
+        this.#turn = run.then(() => undefined, () => undefined);
+        return run;
+    }
+
+    /**
+     * Hold a write the store is performing, so a refusal is not lost.
+     *
+     * NOBODY AWAITS A WRITE, BY DESIGN: `add()`, `save()` and the operation handlers are
+     * synchronous model mutations (persistence.js). So the promise a store answered was
+     * dropped, and a write it refused — a full quota, an aborted transaction — rejected where
+     * nothing listened: the model said "saved", the store held the old bytes, and the work
+     * was gone at the next reload. What is held here is answered by `settled()`.
+     *
+     * @param {any} written - What the store answered; a plain value from a store that answers
+     *   at once, which needs no holding
+     * @returns {any} The same, so a caller may still await it
+     */
+    #track(written) {
+        if (typeof written?.then !== 'function') return written;
+
+        this.#pending.add(written);
+        written.then(
+            () => this.#pending.delete(written),
+            error => {
+                this.#pending.delete(written);
+                this.#refused.push(error);
+            }
+        );
+        return written;
+    }
+
+    /**
+     * Wait for every write asked so far, and say whether the store took them all.
+     *
+     * WHAT AN AUTOSAVE ASKS BEFORE IT WRITES THE MANIFEST (ADR-0065 §2): a manifest naming
+     * a revision the store never received would declare, on reload, content the store does
+     * not hold. The first refusal since the last call is thrown — the store's own error,
+     * unchanged — and the others are let go with it: what matters is that the document is
+     * still dirty and the next quiet period tries again.
+     *
+     * @returns {Promise<void>} Resolves once everything asked has landed
+     */
+    async settled() {
+        await globalThis.Promise.allSettled([...this.#pending]);
+        const refused = this.#refused.splice(0);
+        if (refused.length > 0) throw refused[0];
+    }
+
     #registerHandlers() {
         // A `parent` naming a missing folder, something that is not a folder, the entry
         // itself, or one of its own descendants is REFUSED. Here rather than only in
@@ -495,7 +592,7 @@ export class Project {
             if (this.#resources.has(operation.resource.id)) return false;
 
             const entry = this.#declare(operation.resource, operation.index);
-            this.#store.write(snapshot(entry), operation.payload);
+            this.#track(this.#store.write(snapshot(entry), operation.payload));
             return true;
         }, { resolveTarget: false });
 
@@ -528,7 +625,7 @@ export class Project {
             const entry = this.#resources.get(operation.target.object);
             if (!entry) return false;
 
-            this.#store.write(snapshot(entry), operation.payload);
+            this.#track(this.#store.write(snapshot(entry), operation.payload));
             applyProperty(entry, 'revision', entry.revision + 1, operation.origin);
             applyProperty(entry, 'modified', Date.now(), operation.origin);
             return true;
@@ -539,7 +636,7 @@ export class Project {
             if (!this.#resources.has(id)) return false;
 
             this.#resources.delete(id);
-            this.#store.delete(id);
+            this.#track(this.#store.delete(id));
             return true;
         }, { resolveTarget: false });
     }

@@ -198,6 +198,84 @@ test('replacing a payload on a store that answers later can be undone', async ()
     assert.deepEqual(await project.read(resource.id), { tileWidth: 16 });
 });
 
+test('two payload edits issued in one turn each carry the state the other left', async () => {
+    // BOTH READ BEFORE EITHER WROTE. `previous` is read from the store, and a second edit
+    // asked while the first read was in flight carried the state from before the first — so
+    // undoing it skipped an edit, and the history described a sequence that never happened.
+    // The store orders a read after the writes queued before it; what has to be ordered is
+    // the moment the read is asked.
+    for (const store of [new MemoryResourceStore(), new PersistentResourceStore(new MemoryArea(), 'p')]) {
+        const project = new Project('Game', { store });
+        const resource = project.add({ kind: ResourceKind.TILESET, name: 'World.tileset' }, { v: 0 });
+
+        const edits = [];
+        project.operations.on('operation', operation => { if (operation.type === 'SET_PAYLOAD') edits.push(operation); });
+        await Promise.all([project.setPayload(resource.id, { v: 1 }), project.setPayload(resource.id, { v: 2 })]);
+
+        assert.deepEqual(edits.map(edit => edit.previous), [{ v: 0 }, { v: 1 }], 'each carries what the one before it wrote');
+        project.operations.submit(invert(edits[1]));
+        assert.deepEqual(await project.read(resource.id), { v: 1 }, 'so one undo is one step back, not two');
+    }
+});
+
+test('a removal asked right after an edit carries the edited payload', async () => {
+    const project = new Project('Game', { store: new PersistentResourceStore(new MemoryArea(), 'p') });
+    const resource = project.add({ kind: ResourceKind.TILESET, name: 'World.tileset' }, { v: 0 });
+
+    const announced = [];
+    project.operations.on('operation', operation => announced.push(operation));
+    const edit = project.setPayload(resource.id, { v: 1 });
+    const removal = project.remove(resource.id);
+    await Promise.all([edit, removal]);
+
+    assert.deepEqual(announced.at(-1).payload, { v: 1 }, 'not the payload from before the edit');
+    project.operations.submit(invert(announced.at(-1)));
+    assert.deepEqual(await project.read(resource.id), { v: 1 }, 'and undoing the delete brings the edit back');
+});
+
+/** An area that can be told to refuse payload writes, the way a full quota does. */
+class RefusingArea extends MemoryArea {
+
+    refuse = false;
+
+    async put(key, value) {
+        if (this.refuse && key.includes('payload')) throw new Error('quota exceeded');
+        return super.put(key, value);
+    }
+}
+
+test('a write the store refuses answers nothing, and settled() says why', async () => {
+    // NOBODY AWAITS A WRITE, BY DESIGN — so a refusal used to reject where nothing listened:
+    // the model said "saved", the store held the old bytes, and the work was gone at reload.
+    const area = new RefusingArea();
+    const project = new Project('Game', { store: new PersistentResourceStore(area, 'p') });
+    const resource = project.add({ kind: ResourceKind.GRAPH, name: 'Controller' }, { nodes: ['a'] });
+    await project.settled();
+
+    area.refuse = true;
+    assert.equal(await project.save(resource.id, { nodes: ['b'] }), null, 'not written');
+    assert.equal(project.get(resource.id).revision, 2, 'the model moved on regardless');
+    await assert.rejects(project.settled(), /quota exceeded/, "the store's own error, unchanged");
+    assert.deepEqual(await project.read(resource.id), { nodes: ['a'] }, 'the store still holds the old bytes');
+
+    area.refuse = false;
+    assert.equal(await project.save(resource.id, { nodes: ['b'] }), project.get(resource.id), 'and the next write lands');
+    await project.settled();
+    assert.deepEqual(await project.read(resource.id), { nodes: ['b'] });
+});
+
+test('a refused write asked by an operation reaches settled() too', async () => {
+    // An import, a replaced picture, a deletion undone: each writes through a handler that
+    // cannot await. The refusal is held all the same, and reported once.
+    const area = new RefusingArea();
+    const project = new Project('Game', { store: new PersistentResourceStore(area, 'p') });
+    area.refuse = true;
+
+    project.add({ kind: ResourceKind.ASSET, name: 'hero.png', mime: 'image/png' }, 'data:image/png;base64,AA');
+    await assert.rejects(project.settled(), /quota exceeded/);
+    await project.settled();
+});
+
 test('removing something the project does not declare is refused', async () => {
     const project = new Project('Game');
 
@@ -218,7 +296,7 @@ test('resources keep their manifest order, and can be listed by kind', () => {
     assert.equal(project.resources(ResourceKind.GRAPH)[0].id, graph.id);
 });
 
-test('saving a payload bumps the revision', () => {
+test('saving a payload bumps the revision', async () => {
     const project = new Project('Game');
     const resource = project.add({ kind: ResourceKind.GRAPH, name: 'Controller' }, { nodes: [] });
 
@@ -227,7 +305,7 @@ test('saving a payload bumps the revision', () => {
 
     assert.equal(project.get(resource.id).revision, 2, 'so Behaviors knows the graph changed');
     assert.deepEqual(project.read(resource.id), { nodes: ['a'] });
-    assert.equal(project.save('nothing', {}), null);
+    assert.equal(await project.save('nothing', {}), null);
 });
 
 test('a manifest round-trips', () => {

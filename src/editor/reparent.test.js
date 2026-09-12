@@ -297,25 +297,32 @@ test('an object turned a quarter turn about Y keeps a placement a model can hold
     assert.equal(transform.rotationY, Math.PI / 2, 'with the turn left alone');
 });
 
-test('a reorder among siblings leaves the numbers a turned object was given', () => {
+test('a reparent leaves the numbers a turned object was given', () => {
     // `decompose()` reports an UNSIGNED horizontal scale, so an object whose horizontal
     // factor is negative — turned past 90° about Y — decomposes into the OTHER of the two
     // readings of its matrix. Writing that one back mirrored `scaleX` and moved `rotationX`
-    // by half a turn on a drop that changed nothing but a rank.
+    // by half a turn. Under a parent placed at the origin the local values ARE the world
+    // ones, so what comes back has to be exactly what went in.
     const target = scene();
-    const first = place(target, createObject(target, { kind: 'empty' }), 0, 0);
+    const parent = place(target, createObject(target, { kind: 'empty' }), 5, 5);
     const turned = place(target, createObject(target, { kind: 'empty' }), 10, 20,
         { rotation: 0.3, scaleX: 2, scaleY: 1.5 });
     turned.getComponent('Transform').rotationY = Math.PI;
 
     const before = worldMatrix(turned);
-    const result = reparentObject(target, turned, null, 0);
+    const operations = [];
+    target.operations.on('operation', operation => operations.push(operation));
+    const result = reparentObject(target, turned, parent);
 
     assert.equal(result.applied, true);
     assert.equal(result.sheared, false);
-    assert.deepEqual(target.roots(), [turned, first], 'it did move');
+    assert.equal(turned.parent, parent, 'it did move');
+    assert.ok(operations.some(operation => operation.type === 'SET_PROPERTY' && operation.prop === 'x'),
+        'and the geometry pass ran, which is what this test is about');
 
     const transform = turned.getComponent('Transform');
+    assert.equal(round(transform.x), 5, 'placed under the parent');
+    assert.equal(round(transform.y), 15);
     assert.equal(round(transform.scaleX), 2, 'the authored scale, sign and all');
     assert.equal(round(transform.scaleY), 1.5);
     assert.equal(round(transform.rotationX), 0.3, 'and no half turn added to the rotation');
@@ -327,19 +334,45 @@ test('a mirrored object keeps its mirror', () => {
     // into the rotation `decompose()` reports, and writing that back turned every flipped
     // sprite the right way round and spun it half a turn instead.
     const target = scene();
-    const first = place(target, createObject(target, { kind: 'empty' }), 0, 0);
+    const parent = place(target, createObject(target, { kind: 'empty' }), 0, 0);
     const flipped = place(target, createObject(target, { kind: 'empty' }), 10, 20,
         { rotation: 0.3, scaleX: -1.5, scaleY: 1 });
 
     const before = worldMatrix(flipped);
-    reparentObject(target, flipped, null, 0);
+    reparentObject(target, flipped, parent);
 
     const transform = flipped.getComponent('Transform');
     assert.equal(round(transform.scaleX), -1.5, 'still facing the way it was drawn');
     assert.equal(round(transform.scaleY), 1);
     assert.equal(round(transform.rotationX), 0.3);
     assert.ok(worldMatrix(flipped).equals(before, 1e-9));
-    assert.deepEqual(target.roots(), [flipped, first]);
+    assert.equal(flipped.parent, parent);
+});
+
+test('a reorder among siblings writes the rank and nothing else', () => {
+    // NO GEOMETRY PASS FOR A REORDER. Under the same parent the local matrix is the world it
+    // always was, and re-deriving it is where an object with a collapsed axis came back half a
+    // turn round with its `scaleY` flipped: a zero column carries no rotation, so `decompose()`
+    // has two readings of that matrix and picked the one nobody authored.
+    const target = scene();
+    const first = place(target, createObject(target, { kind: 'empty' }), 0, 0);
+    const flat = place(target, createObject(target, { kind: 'empty' }), 10, 20,
+        { rotation: 0.3, scaleX: 0, scaleY: -1 });
+
+    const operations = [];
+    target.operations.on('operation', operation => operations.push(operation));
+    const result = reparentObject(target, flat, null, 0);
+
+    assert.equal(result.applied, true);
+    assert.deepEqual(target.roots(), [flat, first]);
+    assert.deepEqual(operations.map(operation => operation.type), ['REPARENT'], 'one operation, the rank');
+
+    const transform = flat.getComponent('Transform');
+    assert.deepEqual(
+        [transform.rotationX, transform.scaleX, transform.scaleY],
+        [0.3, 0, -1],
+        'exactly the numbers it was given'
+    );
 });
 
 function round(value) {

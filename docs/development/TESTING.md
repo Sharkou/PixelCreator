@@ -3,7 +3,7 @@
 ## IMPLÉMENTÉ — état au 2026-09-12
 
 ```bash
-tools/test.sh                  # 2265 tests (node --test, zéro dépendance)
+tools/test.sh                  # 2300 tests (node --test, zéro dépendance)
 node tools/layers/run.js       # règles de couches + imports morts
 node tools/parity/run.js       # 39 scénarios capturés depuis Legacy
 node tools/check-css-literals.js
