@@ -51,7 +51,13 @@ export class Tilemap {
         this.tileSize = tileSize;
         this.columns = columns;
         this.rows = rows;
-        this.tiles = tiles;
+        // A GRID OF n BY m HAS n TIMES m CELLS, and it has them from the first moment. A
+        // short array reads the same — `get()` answers 0 for what is not there — but it
+        // writes differently: a patch that fills index 6 of an empty array leaves five
+        // holes, and a hole is `null` in a saved file where a creator expects a zero
+        // (ADR-0069 §5). Filling it once, here, costs one allocation and removes the
+        // question from everywhere else.
+        this.tiles = dense(tiles, columns * rows);
         this.palette = palette;
     }
 
@@ -170,4 +176,22 @@ export class Tilemap {
             height: this.rows * this.tileSize
         };
     }
+}
+
+/**
+ * An array of exactly `length` cells, keeping what was given and filling the rest with 0.
+ *
+ * @param {number[]} tiles - What the caller had
+ * @param {number} length - How many cells the grid declares
+ * @returns {number[]} A dense array
+ */
+function dense(tiles, length) {
+    const source = globalThis.Array.isArray(tiles) ? tiles : [];
+    if (source.length === length && !source.includes(undefined)) return source;
+
+    const next = new globalThis.Array(globalThis.Math.max(0, length)).fill(0);
+    for (let at = 0; at < globalThis.Math.min(source.length, next.length); at++) {
+        next[at] = source[at] ?? 0;
+    }
+    return next;
 }

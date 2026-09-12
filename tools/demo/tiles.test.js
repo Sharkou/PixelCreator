@@ -177,3 +177,17 @@ test('one cell painted at runtime becomes a wall with nothing rebuilt', async ()
     const wallFace = -480 + 11 * TILE;
     near(it.at().x, wallFace - 16, 'stopped by a cell painted after the level was loaded');
 });
+
+test('the camera goes with the player, through a bundle and back', async () => {
+    const it = await play();
+    const camera = it.find('Main Camera');
+
+    assert.ok(camera.getComponent('Follow'), 'the Component survived the crossing');
+    it.step(60);
+    it.hold('ArrowRight', 60);
+
+    const player = it.at();
+    const seat = camera.getComponent('Transform');
+    near(seat.x, player.x, 'the camera is where the player is');
+    near(seat.y, player.y - 40, 'held a little above it, as the offset says');
+});

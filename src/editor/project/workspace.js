@@ -34,7 +34,7 @@
 // was announced since the last save". A flag set by hand would be a second source of truth,
 // and the first thing to go stale.
 
-import { ComponentDefinition, Emitter, nodes as defaultNodes } from '../../core/mod.js';
+import { ComponentDefinition, Emitter, Origin, nodes as defaultNodes } from '../../core/mod.js';
 import {
     Project,
     ResourceKind,
@@ -147,7 +147,11 @@ export class Workspace {
         // this the Inspector would go on editing something the project no longer declares,
         // which is the incoherent state a panel-owned selection always ends up in.
         project.operations.on('operation', operation => {
-            this.#context = project.id;
+            // WHAT A CREATOR DID, NOT WHAT A WRITE LEFT BEHIND (ADR-0069 §2). A save stamps
+            // `revision` and `modified` on the manifest; letting that move the context made
+            // the autosave announce, six hundred milliseconds after every edit, that the
+            // creator was now working in the manifest — which is where `Ctrl Z` then went.
+            if (authored(operation)) this.#context = project.id;
             if (operation.type !== 'REMOVE_RESOURCE') return;
 
             const id = operation.target.object;
@@ -587,7 +591,8 @@ export class Workspace {
         // network is not reported as locally modified, which is correct: there is nothing
         // of this creator's to lose.
         const editor = { resource, kind: resource.kind, model, history, dirty: false, open: false, unsubscribe: null };
-        editor.unsubscribe = model.operations.on('operation', () => {
+        editor.unsubscribe = model.operations.on('operation', operation => {
+            if (!authored(operation)) return;
             this.#context = resource.id;
             this.#setDirty(editor, true);
         });
@@ -634,4 +639,18 @@ export class Workspace {
         editor.dirty = dirty;
         this.#emitter.emit('dirty', { resource: editor.resource, dirty });
     }
+}
+
+/**
+ * Whether an operation is something a creator asked for.
+ *
+ * The same question `History` asks, for the same reason and with the same answer: an
+ * Editor API stamps `EDITOR`, and everything else — the bookkeeping of a write, the output
+ * of a simulation, a change that arrived already decided — is not an intention (ADR-0069 §2).
+ *
+ * @param {object} operation - The operation announced on a pipeline
+ * @returns {boolean} True when it says what the creator is doing
+ */
+function authored(operation) {
+    return operation?.origin === Origin.EDITOR;
 }

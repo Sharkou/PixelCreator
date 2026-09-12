@@ -219,9 +219,13 @@ export class Project {
      * @param {object} [options] - Options
      * @param {string} [options.actor] - Who authored the intent
      * @param {string} [options.batch] - Groups related operations into one history entry
+     * @param {string} [options.origin] - Where the mutation came from; an Editor intent by
+     *   default. `Origin.LOCAL` says "nobody asked for this" — the bookkeeping of a save is
+     *   the one that does, and it is what keeps undo aimed at what a creator was editing
+     *   (ADR-0069 §2)
      * @returns {object} { applied, operation, decision }
      */
-    setProperty(id, prop, value, { actor, batch } = {}) {
+    setProperty(id, prop, value, { actor, batch, origin = Origin.EDITOR } = {}) {
         const resource = this.#resources.get(id);
         if (!resource) return { applied: false, operation: null, decision: null };
         if (prop === 'id') throw new Error('Project.setProperty: a ResourceId is immutable (ADR-0020)');
@@ -232,7 +236,7 @@ export class Project {
             prop,
             value,
             previous: resource[prop],
-            origin: Origin.EDITOR,
+            origin,
             actor,
             batch
         }));
@@ -259,10 +263,19 @@ export class Project {
 
         const group = batch ?? createId();
         this.#store.write(snapshot(resource), payload);
-        this.setProperty(id, 'revision', resource.revision + 1, { actor, batch: group });
-        // Batched with the revision, so a save is one history entry and `modified` never
-        // drifts from the revision it belongs to.
-        this.setProperty(id, 'modified', Date.now(), { actor, batch: group });
+
+        // NOT AN INTENTION, AND THEREFORE NOT UNDOABLE (ADR-0069 §2). `revision` and
+        // `modified` are facts ABOUT a write: nobody asked for them, and "take back the
+        // fact that this was saved" is not a sentence. Stamped as an Editor intent, they
+        // were two things — an entry on the manifest's undo stack, and, worse, a claim
+        // that the manifest was the document being worked in. Six hundred milliseconds
+        // after any edit the autosave made that claim, and `Ctrl Z` stopped reaching the
+        // scene the creator was looking at.
+        const bookkeeping = { actor, batch: group, origin: Origin.LOCAL };
+        this.setProperty(id, 'revision', resource.revision + 1, bookkeeping);
+        // Batched with the revision, so `modified` never drifts from the revision it
+        // belongs to.
+        this.setProperty(id, 'modified', Date.now(), bookkeeping);
         return resource;
     }
 

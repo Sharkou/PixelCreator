@@ -7,7 +7,7 @@
 //
 //   node tools/bench-tilemap.mjs
 
-import { ComponentRegistry, Object as SceneObject, Scene, Transform } from '../src/core/mod.js';
+import { ComponentRegistry, Matrix, Object as SceneObject, Scene, Transform } from '../src/core/mod.js';
 import { BoxCollider } from '../src/runtime/collision/collider.js';
 import { Velocity } from '../src/runtime/components/velocity.js';
 import { Body } from '../src/runtime/physics/body.js';
@@ -79,5 +79,65 @@ for (const row of rows) {
         pad(row.bodies, 8),
         pad(row.ms.toFixed(4), 10),
         pad((row.ms * 1000 / row.bodies).toFixed(2), 10)
+    ].join(''));
+}
+
+// --- what a stroke costs the undo stack ------------------------------------------------
+//
+// THE SECOND CLAIM (ADR-0069 §4): the history remembers the STROKE, never the map. Counted
+// in values rather than in milliseconds, because that is the number that does not move
+// between machines — and the number that was a hundred million before.
+
+const { History } = await import('../src/editor/history.js');
+const { TileTool } = await import('../src/editor/viewport/tools/tile-tool.js');
+
+/** How many values an operation asks the history to remember. */
+function carried(operation) {
+    const size = value => (Array.isArray(value) ? value.length : 1);
+    if (operation.type === 'SET_CELLS') return operation.cells.length * 2;
+    if (operation.type === 'SET_PROPERTY') return size(operation.value) + size(operation.previous);
+    return 1;
+}
+
+/** Paint `cells` cells in one stroke, and count what the history was handed. */
+function strokeCost(side, cells) {
+    const registry = new ComponentRegistry();
+    registry.register(Transform);
+    registry.register(Tilemap);
+
+    const scene = new Scene('Paint', { registry });
+    const object = scene.add(new SceneObject('Map'));
+    object.addComponent(new Transform(0, 0));
+    object.addComponent(new Tilemap(32, side, side, [], ['#000000', '#6aa84f']));
+
+    const history = new History(scene.operations);
+    let values = 0;
+    scene.operations.on('operation', operation => { values += carried(operation); });
+
+    const tool = new TileTool({ scene, selection: { object } });
+    const at = (column, row) => ({
+        device: [column * 32 + 16, row * 32 + 16],
+        view: Matrix.identity(),
+        world: { x: column * 32 + 16, y: row * 32 + 16 }
+    });
+
+    tool.press(at(0, 3));
+    tool.move(at(cells - 1, 3));
+    tool.release();
+
+    return { values, entries: history.depth };
+}
+
+console.log('');
+console.log('map        cells  stroke  history entries  values remembered');
+console.log('-------  -------  ------  ---------------  -----------------');
+for (const side of [100, 1000]) {
+    const cost = strokeCost(side, 100);
+    console.log([
+        pad(`${side}x${side}`, 7),
+        pad(side * side, 9),
+        pad(100, 8),
+        pad(cost.entries, 17),
+        pad(cost.values, 19)
     ].join(''));
 }

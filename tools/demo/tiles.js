@@ -23,6 +23,7 @@ import {
     Body,
     BoxCollider,
     Camera,
+    Follow,
     RectangleRenderer,
     ScreenSpace,
     TextRenderer,
@@ -43,7 +44,7 @@ export const SCRIPTS = PLATFORM_SCRIPTS.filter(script => script.type === PLATFOR
 
 /** The grid. Thirty by sixteen, thirty-two units a cell, placed so the middle is the origin. */
 export const TILE = 32;
-export const COLUMNS = 30;
+export const COLUMNS = 60;
 export const ROWS = 16;
 export const ORIGIN = [-480, -256];
 
@@ -126,6 +127,12 @@ export function buildTileLevel(project, { registry }) {
         18, 'system-ui, sans-serif', '#e8e8ee', 'left'));
     hud.addChild(title);
 
+    // A LEVEL WIDER THAN THE WINDOW NEEDS A CAMERA THAT GOES WITH IT (ADR-0069 §10). One
+    // Component and one picker, sitting where five nodes used to be needed.
+    // THE IDENTITY, NEVER THE HANDLE (ADR-0034 §3.5): what is stored in a scene file is an
+    // id, and what a running graph is handed is the Object.
+    camera.addComponent(new Follow(player.id, 0, -40));
+
     const resource = addScene(project, scene, { name: 'Tiles.scene', id: IDS.scene });
-    return { scene, resource, objects: { level, sky, player } };
+    return { scene, resource, objects: { level, sky, player, camera } };
 }

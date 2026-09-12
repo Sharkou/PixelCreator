@@ -36,7 +36,7 @@
 // state, not project data. Undo does not rewind a simulation, for the same reason a plain
 // write is not an Operation (ADR-0003).
 
-import { createId, invert, invertible } from '../core/mod.js';
+import { Origin, createId, invert, invertible } from '../core/mod.js';
 
 export class History {
 
@@ -132,6 +132,14 @@ export class History {
     }
 
     #record(operation) {
+        // ONLY WHAT SOMEBODY MEANT (ADR-0069 §2). Every operation an Editor API produces is
+        // stamped `EDITOR`; what is not is either bookkeeping that accompanies a write
+        // (`LOCAL`), output of a running simulation (`RUNTIME`), or a change that arrived
+        // from somewhere else already decided (`NETWORK`). None of those is a thing this
+        // creator did, so none of them belongs on the stack that takes back what they did —
+        // and `Ctrl Z` must never mean "undo the last thing anyone did in any tab"
+        // (ADR-0044: the Editor is the authority, and a follower announces nothing back).
+        if (operation.origin !== Origin.EDITOR) return;
         if (this.#actor !== null && operation.actor !== this.#actor) return;
         // A type with no inversion rule is not silently dropped from the stack in the
         // middle of a batch — it is simply not recorded, and the batch it belonged to

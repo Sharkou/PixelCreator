@@ -316,3 +316,93 @@ function recorder() {
         fillText: noop
     };
 }
+
+// --- what a stroke costs the history ---------------------------------------------------
+
+/**
+ * How many VALUES an operation asks the history to remember.
+ *
+ * THE MEASUREMENT THE OLD SHAPE FAILED (ADR-0069 §4). A `SET_PROPERTY` on `tiles` carries
+ * the whole grid twice; a `SET_CELLS` carries two numbers per cell it touched. Counting
+ * values rather than milliseconds is what makes this a stable proof rather than a
+ * stopwatch: it is the same number on every machine.
+ */
+function carried(operation) {
+    const size = value => (globalThis.Array.isArray(value) ? value.length : 1);
+    if (operation.type === 'SET_CELLS') return operation.cells.length * 2;
+    if (operation.type === 'SET_PROPERTY') return size(operation.value) + size(operation.previous);
+    return 1;
+}
+
+/** Paint a horizontal run of cells, as one stroke. */
+function stroke(it, row, from, to) {
+    const values = [];
+    it.scene.operations.on('operation', operation => values.push(carried(operation)));
+
+    it.tool.press(it.over(from, row));
+    it.tool.move(it.over(to, row));
+    it.tool.release();
+
+    return values.reduce((total, count) => total + count, 0);
+}
+
+test('a stroke costs the history the cells it painted, not the cells of the map', () => {
+    const small = staged({ columns: 100, rows: 100 });
+    const huge = staged({ columns: 1000, rows: 1000 });
+
+    const onSmall = stroke(small, 3, 0, 99);
+    const onHuge = stroke(huge, 3, 0, 99);
+
+    assert.equal(onSmall, onHuge, 'the same stroke, the same cost, on a map a hundred times bigger');
+    // A hundred cells, each remembering what it was and what it became.
+    assert.equal(onHuge, 200);
+    assert.equal(huge.history.depth, 1, 'and it is still one undo');
+});
+
+test('COUNTER-PROOF: a whole-array write would have cost the map, a hundred times over', () => {
+    // What the old shape did, measured with the same ruler: one `SET_PROPERTY` per cell,
+    // each carrying the grid before and the grid after.
+    const it = staged({ columns: 1000, rows: 1000 });
+    const cells = 100;
+    const grid = new globalThis.Array(1000 * 1000).fill(0);
+
+    const before = carried({ type: 'SET_PROPERTY', value: grid, previous: grid }) * cells;
+    const now = stroke(it, 3, 0, 99);
+
+    assert.equal(before, 200_000_000, 'two hundred million values for a hundred cells');
+    assert.equal(now, 200);
+    assert.ok(before / now === 1_000_000, 'a million times less, and the drawing is identical');
+});
+
+test('a patch names every cell once, whatever the pointer did', () => {
+    const it = staged();
+    const patches = [];
+    it.scene.operations.on('operation', operation => patches.push(operation));
+
+    it.tool.press(it.over(1, 1));
+    it.tool.move(it.over(3, 1));
+    it.tool.move(it.over(1, 1));
+    it.tool.release();
+
+    const indices = patches.flatMap(operation => operation.cells.map(cell => cell.index));
+    assert.equal(new globalThis.Set(indices).size, indices.length, 'no index twice');
+    assert.equal(indices.length, 3, 'three cells were painted, and only three');
+});
+
+test('the grid a patch leaves behind is a plain array, exactly as it is saved', () => {
+    const it = staged({ columns: 4, rows: 3 });
+
+    it.tool.press(it.over(1, 1));
+    it.tool.move(it.over(2, 1));
+    it.tool.release();
+
+    // NOTHING OF THE HISTORY REACHES THE MODEL (ADR-0069 §4). What a project file holds is
+    // this array and nothing else: no indices, no `previous`, no patch.
+    assert.deepEqual(it.tilemap.tiles, [0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0]);
+    assert.ok(globalThis.Array.isArray(it.tilemap.tiles));
+
+    it.history.undo();
+    assert.deepEqual(it.tilemap.tiles, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    it.history.redo();
+    assert.deepEqual(it.tilemap.tiles, [0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0]);
+});

@@ -24,6 +24,17 @@ import { IndexedDbArea, available } from '../../project/indexeddb.js';
 export const LAST_OPENED = 'pixel-creator:last-project';
 
 /**
+ * What is remembered when a creator asked for a NEW project.
+ *
+ * FORGETTING WHICH ONE WAS OPEN IS NOT THE SAME AS ASKING FOR ANOTHER (ADR-0069 §6). With
+ * nothing remembered, `resume()` falls back to the most recently modified project — which is
+ * exactly right for a browser that lost its local storage, and exactly wrong for `New
+ * Project`: the creator pressed it, the page reloaded, and the project they already had came
+ * straight back. So the intention is written down rather than erased.
+ */
+export const NEW_PROJECT = '@new';
+
+/**
  * Open the library this browser can offer.
  *
  * @param {object} [options] - Options
@@ -51,7 +62,9 @@ export async function openLibrary({ area = null, onError = null } = {}) {
     // exactly where this repository was yesterday.
     if (!store) store = new MemoryArea();
 
-    return {
+    // NAMED, so `resume()` can answer "a new one" with the very same `create()` a menu calls
+    // rather than with a second copy of it (ADR-0069 §6).
+    const library = {
         area: store,
 
         /** Whether what is saved will still be here tomorrow. */
@@ -115,6 +128,8 @@ export async function openLibrary({ area = null, onError = null } = {}) {
          */
         resume: async ({ name = 'Untitled Project' } = {}) => {
             const last = recall();
+            // Asked for, and therefore honoured before anything is looked up.
+            if (last === NEW_PROJECT) return library.create(name);
             if (last) {
                 const opened = await openOne(store, last);
                 if (opened) return opened;
@@ -146,6 +161,8 @@ export async function openLibrary({ area = null, onError = null } = {}) {
             return true;
         }
     };
+
+    return library;
 }
 
 async function openOne(area, id) {

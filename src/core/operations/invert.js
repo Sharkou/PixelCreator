@@ -57,6 +57,12 @@ const RULES = {
         previous: operation.value
     }),
 
+    // Every cell swaps the two values it already carries, and the ORDER is kept: a patch
+    // is a set of independent indices, so reversing it would say the same thing (ADR-0069 §4).
+    [OperationType.SET_CELLS]: operation => ({
+        cells: operation.cells.map(cell => ({ index: cell.index, value: cell.previous, previous: cell.value }))
+    }),
+
     // Adding and removing are each other's inverse, and both carry the whole subtree with
     // its parent and rank — so undoing a deletion restores the shape, not just the node.
     [OperationType.ADD_OBJECT]: operation => ({

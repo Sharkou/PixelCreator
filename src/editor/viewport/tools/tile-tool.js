@@ -24,7 +24,7 @@
 // is a strip of swatches, not an editor: adding a colour is one button, and CHANGING one is
 // still the Inspector's list, where it always was.
 
-import { Matrix, createId, worldMatrix } from '../../../core/mod.js';
+import { Matrix, Origin, createId, setCellsOperation, worldMatrix } from '../../../core/mod.js';
 import { Tilemap } from '../../../runtime/mod.js';
 
 /** The colour the Editor marks things with, the same one the overlay uses. */
@@ -124,7 +124,7 @@ export class TileTool {
         // ONE BATCH FOR THE WHOLE DRAG. Everything written until `release()` is one entry in
         // the history, however many cells it turns out to be.
         this.#stroke = { batch: createId(), last: cell, value: this.#active };
-        this.#paint(target, cell);
+        this.#paint(target, [cell]);
     }
 
     /**
@@ -143,8 +143,8 @@ export class TileTool {
         if (!this.#stroke) return;
 
         // The pointer is sampled once a frame; a drag that crossed three cells since the
-        // last sample painted three cells, not one.
-        for (const step of line(this.#stroke.last, cell ?? this.#stroke.last)) this.#paint(target, step);
+        // last sample painted three cells, not one — and they go out as ONE patch.
+        this.#paint(target, line(this.#stroke.last, cell ?? this.#stroke.last));
         if (cell) this.#stroke.last = cell;
     }
 
@@ -190,32 +190,51 @@ export class TileTool {
     // --- the model ------------------------------------------------------------------------
 
     /**
-     * Write one cell.
+     * Write the cells of one pointer sample, as ONE patch.
      *
-     * A WHOLE ARRAY, BECAUSE THAT IS WHAT A PROPERTY IS. `tiles` is one value; writing it is
-     * one Operation with the grid before and the grid after, which is what makes undo exact
-     * and replication possible without a new kind of operation (ADR-0003). The array is
-     * rebuilt to its full length on the way, so a grid saved short is repaired rather than
-     * left with holes.
+     * WHAT CHANGED, NOT WHAT IT BECAME (ADR-0069 §4). A `SET_PROPERTY` on `tiles` carries the
+     * whole grid twice — before and after — so painting fifty cells of a thousand-square map
+     * used to leave a hundred million numbers in the undo stack for fifty cells of intent.
+     * A `SET_CELLS` carries an index, the value it had and the value it takes, for the cells
+     * actually touched: the cost of a stroke is the length of the stroke.
+     *
+     * THE MODEL IS UNTOUCHED BY THIS. `tiles` is still one array on the Component, written
+     * through the same property write by the pipeline that applies the operation — the
+     * compact form lives between the Editor and the history, and never in the file.
+     *
+     * @param {object} target - `{ object, tilemap }`
+     * @param {Array<{column: number, row: number}>} cells - The cells this sample crossed
      */
-    #paint(target, cell) {
+    #paint(target, cells) {
         const { tilemap } = target;
-        if (!tilemap.contains(cell.column, cell.row)) return;
-
         const value = this.#stroke ? this.#stroke.value : this.#active;
-        // NOTHING TO SAY, NOTHING WRITTEN. Crossing a cell twice in one stroke, or painting
-        // grass onto grass, is not an edit.
-        if (tilemap.get(cell.column, cell.row) === value) return;
+        const patch = [];
+        const seen = new globalThis.Set();
 
-        const next = new globalThis.Array(tilemap.columns * tilemap.rows);
-        for (let row = 0; row < tilemap.rows; row++) {
-            for (let column = 0; column < tilemap.columns; column++) {
-                next[row * tilemap.columns + column] = tilemap.get(column, row);
-            }
+        for (const cell of cells) {
+            if (!tilemap.contains(cell.column, cell.row)) continue;
+
+            const index = cell.row * tilemap.columns + cell.column;
+            // NOTHING TO SAY, NOTHING WRITTEN. Crossing a cell twice in one sample, or
+            // painting grass onto grass, is not an edit — and a patch that named the same
+            // index twice would be two opinions about one cell.
+            if (seen.has(index) || tilemap.get(cell.column, cell.row) === value) continue;
+
+            seen.add(index);
+            patch.push({ index, value, previous: tilemap.get(cell.column, cell.row) });
         }
-        next[cell.row * tilemap.columns + cell.column] = value;
 
-        tilemap.setProperty('tiles', next, { batch: this.#stroke?.batch });
+        if (patch.length === 0) return;
+
+        // Submitted through the Object, because that is what holds the pipeline a scene's
+        // operations travel on — the same one `setProperty` reaches from a component.
+        target.object.operations.submit(setCellsOperation({
+            target: { object: target.object.id, component: Tilemap.type },
+            prop: 'tiles',
+            cells: patch,
+            origin: Origin.EDITOR,
+            batch: this.#stroke?.batch
+        }));
     }
 
     /** Choose what is painted; the last swatch appends a colour instead. */

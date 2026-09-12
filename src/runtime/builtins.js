@@ -16,6 +16,7 @@ import { Camera } from './rendering/camera.js';
 import { ParticleSystem } from './rendering/components/particle-system.js';
 import { RectangleRenderer } from './rendering/components/rectangle-renderer.js';
 import { Velocity } from './components/velocity.js';
+import { Follow } from './components/follow.js';
 import { Body } from './physics/body.js';
 import { BoxCollider } from './collision/collider.js';
 import { Sprite } from './rendering/components/sprite.js';
@@ -28,7 +29,7 @@ import { AudioSource } from './audio/audio-source.js';
 
 /** The component types the engine ships, in the order a menu should list them. */
 export const BUILT_IN = [
-    Transform, Velocity, Body, BoxCollider, RectangleRenderer, Sprite, SpriteAnimator, TextRenderer,
+    Transform, Velocity, Body, Follow, BoxCollider, RectangleRenderer, Sprite, SpriteAnimator, TextRenderer,
     ParticleSystem, Tilemap, TilemapCollider, ScreenSpace, AudioSource, Camera
 ];
 

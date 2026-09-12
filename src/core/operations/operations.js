@@ -51,6 +51,19 @@ export class Operations {
         this.register(OperationType.SET_PROPERTY, (operation, target) => {
             applyProperty(target, operation.prop, operation.value, operation.origin);
         });
+        // THE SAME WRITE, THROUGH THE SAME DOOR (ADR-0069 §4). A patch reads the array the
+        // target holds, copies it, changes the indices it names and writes the result back
+        // as one property write — so a Change is announced exactly as it is for any other
+        // property, and nothing downstream learns that a second kind of operation exists.
+        this.register(OperationType.SET_CELLS, (operation, target) => {
+            const current = target?.[operation.prop];
+            if (!globalThis.Array.isArray(current)) return false;
+
+            const next = [...current];
+            for (const cell of operation.cells) next[cell.index] = cell.value;
+            applyProperty(target, operation.prop, next, operation.origin);
+            return true;
+        });
     }
 
     get authority() {

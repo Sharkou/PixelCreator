@@ -29,11 +29,12 @@ import { Layout } from './layout.js';
 import { componentCatalogue, registerBuiltIns } from './registry.js';
 import { addComponent, deleteObject } from './commands.js';
 import { Workspace } from './project/workspace.js';
+import { applyShortcut, shortcutFor } from './shortcuts.js';
 import { ResourceKind, loadComponentDefinitions } from '../project/mod.js';
 import { createDefinitions } from './project/definitions.js';
 import { createSession } from './project/session.js';
 import { createAutosave } from './project/autosave.js';
-import { openLibrary } from './project/library.js';
+import { LAST_OPENED, NEW_PROJECT, openLibrary } from './project/library.js';
 import { Transport, TransportState } from './transport.js';
 import { exportGame, openPreview } from './preview.js';
 import { broadcastEdits } from './live.js';
@@ -426,7 +427,6 @@ export async function start(mount = document.body, { library = null } = {}) {
     const sceneResource = restored?.resource ?? workspace.create(scene);
 
     const histories = workspace.histories;
-    const history = workspace.history;
 
     // A `.px` IS A COMPONENT, and something has to register it as a type before an object
     // can carry one. The Project layer owns that step (project/definitions.js); the shell
@@ -738,7 +738,7 @@ export async function start(mount = document.body, { library = null } = {}) {
 
 
     bindDragAndDrop({ shell, scene, subject, viewport, graph: () => docs.graph, workspace, hierarchy, inspector, project, definitions });
-    bindShortcuts({ scene, selection, subject, viewport, history, workspace });
+    bindShortcuts({ scene, selection, subject, viewport, workspace });
 
     return {
         scene,
@@ -747,7 +747,12 @@ export async function start(mount = document.body, { library = null } = {}) {
         subject,
         layout,
         viewport,
-        history,
+        // A GETTER, NEVER A SNAPSHOT (ADR-0069 §3). Handing out the stack that happened to
+        // be active at boot is how a shortcut, a menu or a test comes to act on a document
+        // nobody is looking at any more.
+        get history() {
+            return workspace.activeHistory;
+        },
         histories,
         workspace,
         transport,
@@ -906,8 +911,11 @@ function titlebar(scene, layout, workspace, projects = null) {
                 // the shell in place would mean rebinding every window, every history and
                 // every registry; reloading the page with the choice remembered is what a
                 // browser is for, and it is the same path a creator takes tomorrow morning.
-                if (choice === '@new') globalThis.localStorage?.removeItem('pixel-creator:last-project');
-                else globalThis.localStorage?.setItem('pixel-creator:last-project', choice);
+                // `New Project` REMEMBERS THAT IT WAS ASKED FOR (ADR-0069 §6). Removing the
+                // key instead said "no preference", and no preference means "the most
+                // recently modified one" — so the button reopened the project it was
+                // pressed in.
+                globalThis.localStorage?.setItem(LAST_OPENED, choice === '@new' ? NEW_PROJECT : choice);
                 globalThis.location?.reload?.();
             }, { label: 'projects' });
         }
@@ -1265,48 +1273,21 @@ function within(element, clientX, clientY) {
     return clientX >= box.left && clientX < box.right && clientY >= box.top && clientY < box.bottom;
 }
 
-function bindShortcuts({ scene, selection, subject, viewport, history, workspace }) {
-    /**
-     * The stack `Ctrl Z` acts on.
-     *
-     * ONE STACK PER RESOURCE, so the shortcut has to say WHICH resource the creator is
-     * working in (ADR-0024). The Workspace answers it, from the last intent that was
-     * authored — not from the selection, which a deletion clears: the undo that would put
-     * a deleted resource back must not be aimed at the scene (ADR-0025).
-     *
-     * @returns {object|null} The History to act on
-     */
-    const active = () => workspace?.activeHistory ?? history;
-
+function bindShortcuts({ scene, selection, subject, viewport, workspace }) {
     globalThis.addEventListener('keydown', event => {
         // Undo is the one shortcut that must work while a field has focus — a creator
-        // mid-edit expects Ctrl Z to take back the last thing they did, and letting the
-        // browser undo the input's text instead is the wrong answer.
-        if (event.metaKey || event.ctrlKey) {
-            const key = event.key.toLowerCase();
-            // Save is bound here and not in a window because it saves what is OPEN, which
-            // is a fact about the workspace rather than about any one panel.
-            if (key === 's') {
-                event.preventDefault();
-                // Which editor gets written is the Workspace's answer, not this file's:
-                // save and undo ask one question — which editor is being worked in — and
-                // asking it in two places is how they came to disagree (ADR-0024).
-                workspace?.save();
-                return;
-            }
-            if (key === 'z' && !event.shiftKey) {
-                const stack = active();
-                if (stack?.canUndo) event.preventDefault();
-                stack?.undo();
-                return;
-            }
-            if ((key === 'z' && event.shiftKey) || key === 'y') {
-                const stack = active();
-                if (stack?.canRedo) event.preventDefault();
-                stack?.redo();
-            }
+        // mid-edit expects Ctrl Z to take back the last thing they did. What it acts on is
+        // asked for at the moment it is pressed, never captured (ADR-0069 §3): which
+        // document is being edited is the Workspace's answer, and save and undo ask that one
+        // question in one place — asking it in two is how they came to disagree (ADR-0024).
+        const shortcut = shortcutFor(event);
+        if (shortcut) {
+            // Only a keystroke that DID something is taken from the page. With nothing of
+            // ours to undo, the browser's own text undo still happens in a focused field.
+            if (applyShortcut(shortcut, { workspace })) event.preventDefault();
             return;
         }
+        if (event.metaKey || event.ctrlKey) return;
 
         if (isEditing()) return;
 

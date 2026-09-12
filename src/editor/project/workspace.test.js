@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ComponentRegistry, Object, Scene, Transform, registerStandardNodes } from '../../core/mod.js';
+import { ComponentRegistry, Object, Origin, Scene, Transform, registerStandardNodes } from '../../core/mod.js';
 import { MemoryResourceStore, Project, ResourceKind } from '../../project/mod.js';
 import { createResourceOfKind } from './commands.js';
 import { Workspace } from './workspace.js';
@@ -536,4 +536,64 @@ test('a workspace given no components still opens a `.px`', async () => {
 
     // Nothing to resolve against, so the port says so rather than guessing (ADR-0034 §3.3).
     assert.equal(model.graph.portsOf(node).inputs.find(port => port.id === 'value').type, 'any');
+});
+
+// --- what undo is aimed at ----------------------------------------------------------------
+
+test('saving does not move undo off the document that was being edited', async () => {
+    // THE DEFECT THIS TEST EXISTS FOR. `Ctrl Z` did nothing in the running Editor, for every
+    // kind of edit, in any project old enough to have autosaved once. The context followed
+    // whichever pipeline had emitted LAST — and a save writes `revision` and `modified` on
+    // the manifest, which is a project operation. So six hundred milliseconds after any
+    // edit, undo was aimed at the manifest, where the only thing to take back was the
+    // bookkeeping of the save itself.
+    const workspace = new Workspace({ project: new Project('Game', { store: new MemoryResourceStore() }) });
+    const scene = sceneWithOne();
+    const resource = workspace.create(scene);
+    await workspace.open(resource.id, { registry: registry() });
+
+    scene.objects()[0].setProperty('name', 'Heroine');
+    assert.equal(workspace.activeHistory, workspace.histories.get(resource.id), 'the scene is the context');
+
+    workspace.save();
+
+    assert.equal(workspace.activeHistory, workspace.histories.get(resource.id),
+        'and it still is: a save is not something a creator did');
+    assert.equal(workspace.activeHistory.canUndo, true);
+
+    workspace.activeHistory.undo();
+    assert.equal(scene.objects()[0].name, 'Hero', 'the rename came back');
+});
+
+test('the bookkeeping of a save is not an entry in any history', () => {
+    const workspace = new Workspace({ project: new Project('Game', { store: new MemoryResourceStore() }) });
+    const scene = sceneWithOne();
+    const resource = workspace.create(scene);
+    const created = workspace.projectHistory.depth;
+
+    scene.objects()[0].setProperty('name', 'Heroine');
+    workspace.save();
+    workspace.save();
+
+    // `revision` and `modified` are facts about a write, not intentions. Undoing one would
+    // mean telling the manifest that a save it performed had not happened.
+    assert.equal(workspace.projectHistory.depth, created,
+        'two saves, and the manifest stack is where it was');
+    assert.equal(workspace.project.get(resource.id).revision > 0, true, 'though the revision did move');
+});
+
+test('an operation that nobody authored is not undoable', () => {
+    // ADR-0044: the Editor is the authority and a follower announces nothing back. If a
+    // remote operation ever did reach a model here, `Ctrl Z` must not mean "take back the
+    // last thing anyone did in any tab".
+    const workspace = new Workspace();
+    const scene = sceneWithOne();
+    const resource = workspace.create(scene);
+    const history = workspace.histories.get(resource.id) ?? workspace.projectHistory;
+    const depth = history.depth;
+
+    scene.objects()[0].setProperty('name', 'Elsewhere', { origin: Origin.NETWORK });
+
+    assert.equal(scene.objects()[0].name, 'Elsewhere', 'it was applied');
+    assert.equal(history.depth, depth, 'and it is not on this creator\u2019s stack');
 });

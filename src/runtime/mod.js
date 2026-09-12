@@ -13,6 +13,7 @@ export { componentFailure, rethrowLater } from './errors.js';
 export { Input, InputState, LOCAL } from './input/input.js';
 export { Random, advance, unitOf } from './random/random.js';
 export { Velocity } from './components/velocity.js';
+export { Follow } from './components/follow.js';
 export {
     AUDIO_OPERATIONS,
     SilentAudio,

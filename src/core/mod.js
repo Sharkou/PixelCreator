@@ -23,6 +23,7 @@ export {
 export {
     OperationType,
     createOperation,
+    setCellsOperation,
     setPropertyOperation,
     addObjectOperation,
     removeObjectOperation,

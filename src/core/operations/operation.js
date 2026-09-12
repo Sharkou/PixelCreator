@@ -24,6 +24,20 @@
 
 export const OperationType = {
     SET_PROPERTY: 'SET_PROPERTY',
+    /**
+     * A handful of INDICES of an array-valued property, each with the value it had and the
+     * value it takes (ADR-0069 §4).
+     *
+     * `SET_PROPERTY` carries the whole value, which is right for a number, a colour or a
+     * name and ruinous for a grid: painting fifty cells of a thousand-square Tilemap wrote
+     * fifty operations, each holding two copies of a million numbers. What a creator did
+     * was fifty cells; what the history remembered was a hundred million values.
+     *
+     * IT IS NOT A SECOND KIND OF VALUE. The property is still one array and the model still
+     * holds exactly that array; this says WHICH PART of it changed, which is a description
+     * of a mutation rather than a second copy of the thing mutated.
+     */
+    SET_CELLS: 'SET_CELLS',
 
     // Scene scope.
     ADD_OBJECT: 'ADD_OBJECT',
@@ -124,6 +138,32 @@ export function setPropertyOperation({ target, prop, value, previous, origin, ac
         prop,
         value,
         previous,
+        origin,
+        actor,
+        batch
+    });
+}
+
+/**
+ * Build a SET_CELLS operation.
+ *
+ * @param {object} spec - Operation fields
+ * @param {object} spec.target - { object: id, component: type name or null }
+ * @param {string} spec.prop - The array property being patched
+ * @param {Array<{index: number, value: any, previous: any}>} spec.cells - What changed
+ * @param {string} spec.origin - One of Origin
+ * @param {string} [spec.actor] - Who authored it
+ * @param {string} [spec.batch] - History grouping
+ * @returns {object} A frozen Operation
+ */
+export function setCellsOperation({ target, prop, cells, origin, actor, batch }) {
+    return createOperation({
+        type: OperationType.SET_CELLS,
+        target,
+        prop,
+        // Frozen with the operation, so a caller that goes on painting cannot rewrite what
+        // the history remembers — the same promise `previous` makes for SET_PROPERTY.
+        cells: cells.map(cell => globalThis.Object.freeze({ ...cell })),
         origin,
         actor,
         batch
