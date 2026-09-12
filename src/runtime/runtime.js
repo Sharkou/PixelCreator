@@ -22,6 +22,7 @@ import { componentFailure, rethrowLater } from './errors.js';
 import { Input } from './input/input.js';
 import { Random } from './random/random.js';
 import { Collisions } from './collision/collisions.js';
+import { moveBodies } from './physics/move.js';
 
 export class Runtime {
 
@@ -451,6 +452,17 @@ export class Runtime {
                 }
             }
         }
+
+        // AND THEN THE BODIES MOVE (ADR-0067 §4). Last, on purpose: a graph that read a key
+        // and set a velocity earlier in THIS step has already run, so the character answers
+        // the key it was pressed on rather than one step later. It is also the only order in
+        // which a body can be stopped at all — "how far did it get" cannot be answered
+        // halfway through a walk that is still changing the speeds it depends on.
+        //
+        // DETECTION STAYS WHERE IT WAS, at the top, against the positions the previous step
+        // left behind. `Enter`, `Stay`, `Exit` and `Is Overlapping` are untouched by this
+        // line; what moved is what happens to a Transform, which those three never read.
+        moveBodies(this.#scene, { deltaTime: this.#clock.fixedStep });
 
         // Closing the step is what makes `pressed()` and `released()` observable on
         // exactly one step, however many steps a frame owes.

@@ -5,10 +5,11 @@
 // the Inspector — so "why did that miss?" would have no answer on screen. A beginner has to
 // be able to SEE exactly what collides, which means reading it off a row.
 //
-// IT DECIDES NOTHING ABOUT WHAT HAPPENS NEXT. There is no `solid`, no `trigger`, no mass and
-// no bounce, because this tranche resolves nothing: a collision is an OVERLAP and an EVENT
-// (ADR-0059). A `trigger` flag that made no observable difference would be a word copied
-// from another engine to promise behaviour this engine does not have.
+// IT SAYS WHETHER IT BLOCKS, AND NOTHING MORE (ADR-0067 §2). ADR-0059 refused a `trigger`
+// flag while nothing resolved anything — "a word copied from another engine to promise
+// behaviour this engine does not have". The behaviour arrived, so the word did: `solid` is
+// read by the movement pass and by nothing else. There is still no mass, no bounce and no
+// friction, because none of those is a sentence this engine can finish.
 //
 // `runtime/collision/`, BESIDE `clock/`, `input/` AND `random/`. Overlap is simulation state:
 // it is a function of the Transforms the step just produced, it must be identical on a
@@ -16,7 +17,7 @@
 // for the same reason it holds no input — an `Object` does not collide, a SIMULATION does
 // (ADR-0014 §1, ADR-0059 §2).
 
-import { worldMatrix } from '../../core/mod.js';
+import { hierarchyOrder, worldMatrix } from '../../core/mod.js';
 
 export class BoxCollider {
 
@@ -25,6 +26,16 @@ export class BoxCollider {
     static schema = {
         width: { type: 'number', default: 32, min: 0 },
         height: { type: 'number', default: 32, min: 0 },
+        // THE ONE WORD THAT SEPARATES A WALL FROM A COIN. On by default, because a box a
+        // creator drew around a crate is a crate: a beginner who wants a wall has to type
+        // nothing, and a beginner who wants a pickup unticks one box and still gets every
+        // `On Collision` event (ADR-0067 §2). It changes nothing for an Object with no
+        // `Body` anywhere near it — what is solid is what a MOVING thing is stopped by.
+        solid: {
+            type: 'boolean',
+            default: true,
+            tooltip: 'Blocks Objects that have a Body. Off means it only detects'
+        },
         // WHERE THE BOX SITS RELATIVE TO THE OBJECT'S ORIGIN. A character whose feet are the
         // origin needs its box above it; without an offset the only way to say that is to
         // move the Object, which moves everything else with it.
@@ -38,12 +49,14 @@ export class BoxCollider {
      * @param {number} [height] - Height in local units
      * @param {number} [offsetX] - Horizontal offset from the Object's origin
      * @param {number} [offsetY] - Vertical offset from the Object's origin
+     * @param {boolean} [solid] - Whether it stops a Body, or only detects it
      */
-    constructor(width = 32, height = 32, offsetX = 0, offsetY = 0) {
+    constructor(width = 32, height = 32, offsetX = 0, offsetY = 0, solid = true) {
         this.width = width;
         this.height = height;
         this.offsetX = offsetX;
         this.offsetY = offsetY;
+        this.solid = solid;
     }
 
     /**
@@ -114,4 +127,74 @@ export function worldBox(object, collider) {
  */
 export function boxesOverlap(a, b) {
     return a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY;
+}
+
+/**
+ * Every Object with a live collider, with its world boxes — in canonical order.
+ *
+ * ONE WALK, TWO READERS, AND THEY ASK DIFFERENT QUESTIONS OF IT (ADR-0067 §3). `Collisions`
+ * asks which pairs overlap; the movement pass asks what a Body is stopped by. Both need the
+ * same list, computed the same way, from the same rules about what is switched off — and a
+ * second walk that drifted from this one would be two disagreeing answers to "what is in
+ * this scene", which is precisely the defect a shared list cannot have.
+ *
+ * WHAT IS SWITCHED OFF DOES NOT COLLIDE, and the two questions are the two the runtime and
+ * the renderer already ask of everything: is the Object active, and is this component
+ * switched on (ADR-0004).
+ *
+ * @param {object|null} scene - The scene to walk
+ * @returns {Array<{object: object, boxes: object[], solid: object[], bounds: object}>}
+ *   One entry per Object, in canonical order
+ */
+export function collidersOf(scene) {
+    const found = [];
+    if (!scene) return found;
+
+    for (const object of hierarchyOrder(scene)) {
+        if (!object.active) continue;
+
+        const components = object.components;
+        const boxes = [];
+        const solid = [];
+        for (const type of globalThis.Object.keys(components)) {
+            const component = components[type];
+            if (type !== BoxCollider.type || component.active === false) continue;
+
+            const box = worldBox(object, component);
+            boxes.push(box);
+            // `solid` IS READ AS "NOT EXPLICITLY OFF", so a collider serialized before the
+            // flag existed is a wall, which is what it looked like on screen.
+            if (component.solid !== false) solid.push(box);
+        }
+
+        if (boxes.length > 0) found.push({ object, boxes, solid, bounds: unionOf(boxes) });
+    }
+
+    return found;
+}
+
+/**
+ * The one rectangle that contains every box of an Object.
+ *
+ * WHAT THE BROAD PHASE PARTITIONS. An Object with two hitboxes is one thing in the grid,
+ * because the pair is a pair of OBJECTS (ADR-0059 §5) — partitioning by box would propose the
+ * same pair twice and would have to deduplicate what it had just split.
+ *
+ * @param {object[]} boxes - World boxes
+ * @returns {{minX: number, minY: number, maxX: number, maxY: number}} Their union
+ */
+export function unionOf(boxes) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const box of boxes) {
+        if (box.minX < minX) minX = box.minX;
+        if (box.minY < minY) minY = box.minY;
+        if (box.maxX > maxX) maxX = box.maxX;
+        if (box.maxY > maxY) maxY = box.maxY;
+    }
+
+    return { minX, minY, maxX, maxY };
 }

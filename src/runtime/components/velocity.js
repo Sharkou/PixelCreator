@@ -18,6 +18,13 @@
 // two numbers like any other schema. There is no integration pass, no second loop and no
 // system — `ParticleSystem` already proved the shape.
 //
+// A `Body` TAKES THE MOVEMENT OVER, AND THIS STEPS ASIDE (ADR-0067 §4). A Body is the
+// statement "the world can stop me", and stopping something means deciding how far it got —
+// which cannot be decided here, in the middle of the component walk, before the graphs that
+// set this very speed have run. So when a live Body sits beside it, this integrates nothing
+// and the Runtime's movement pass moves the Object instead. Without one, nothing changed:
+// a bullet, a particle, a drifting cloud still moves exactly where its numbers say.
+//
 // LOCAL SPACE, LIKE `Translate` AND FOR THE SAME REASON (ADR-0002). `Transform.x` is a
 // position in the PARENT's space, so a velocity is a speed in that space too: a crate moving
 // on a boat moves relative to the boat. A world-space velocity would need the inverse of the
@@ -55,6 +62,11 @@ export class Velocity {
     update(self, ctx) {
         const transform = self.getComponent?.('Transform') ?? null;
         if (!transform) return;
+
+        // The Body moves it, after every graph in this step has had its say. A Body switched
+        // off moves nothing, so this takes the movement back — what is off is off.
+        const body = self.getComponent?.('Body') ?? null;
+        if (body && body.active !== false) return;
 
         const elapsed = ctx?.deltaTime ?? 0;
         transform.x += this.x * elapsed;

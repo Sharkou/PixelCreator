@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Pixel Creator — platformer</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #0b0b0d; }
+        body { display: grid; place-content: center; text-align: center;
+               font: 14px/1.6 ui-sans-serif, system-ui, sans-serif; color: #a8a8b3; }
+    </style>
+</head>
+<body>
+    <p><strong>Building the platformer…</strong></p>
+
+    <!--
+        THE SAME SCENE THE TEST PLAYS, PUT ON A SCREEN (ADR-0067 §9). `tools/demo/platform.js`
+        builds it out of the public API; this page only hands the bundle to the game client
+        through the door the Editor uses.
+    -->
+    <script type="module">
+        import { ComponentRegistry } from '../../src/core/mod.js';
+        import { MemoryResourceStore, Project } from '../../src/project/mod.js';
+        import { registerBuiltIns } from '../../src/runtime/builtins.js';
+        import { bundleProject } from '../../src/preview/bundle.js';
+        import { previewUrl, putPreview } from '../../src/preview/store.js';
+        import { IDS, buildPlatformer } from './platform.js';
+
+        const project = new Project('Pixel Creator Platformer', { store: new MemoryResourceStore() });
+        buildPlatformer(project, { registry: registerBuiltIns(new ComponentRegistry()) });
+
+        const bundle = bundleProject(project, project.store, { scene: IDS.scene });
+        if (!putPreview(project.id, bundle)) {
+            document.querySelector('strong').textContent = 'This browser would not store the bundle.';
+        } else {
+            location.replace(previewUrl(project.id, '../../src/preview/index.html'));
+        }
+    </script>
+</body>
+</html>

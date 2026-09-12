@@ -22,8 +22,10 @@ export {
 } from './audio/audio.js';
 export { HtmlAudioOutput } from './audio/html-audio.js';
 export { AudioSource } from './audio/audio-source.js';
-export { BoxCollider, boxesOverlap, worldBox } from './collision/collider.js';
+export { BoxCollider, boxesOverlap, collidersOf, unionOf, worldBox } from './collision/collider.js';
 export { Collisions, CollisionPhase } from './collision/collisions.js';
+export { Body } from './physics/body.js';
+export { moveBodies } from './physics/move.js';
 export { Behaviors } from './scripting/behaviors.js';
 export { DEFAULT_BUDGET, createGraphInterpreter, interpretGraph } from './scripting/interpreter.js';
 
