@@ -184,19 +184,31 @@ export class Project {
      * The payload travels with the operation, which is what lets the removal be undone —
      * and what makes deleting a component definition recoverable rather than final.
      *
+     * ASYNCHRONOUS, BECAUSE READING THAT PAYLOAD IS (ADR-0020 §4). It used to take whatever
+     * `read()` answered and put it straight in the operation, which is a payload against the
+     * in-memory store and a `Promise` against the one a browser keeps projects in — so undo
+     * restored a resource whose content was an unreadable object, and writing it back raised
+     * an error nobody was awaiting. What travels now is the payload; the operation, its
+     * inverse and the history entry are unchanged.
+     *
      * @param {string} id - The ResourceId
      * @param {object} [options] - Options
      * @param {string} [options.actor] - Who authored the intent
      * @param {string} [options.batch] - Groups related operations into one history entry
-     * @returns {boolean} True when the resource was removed
+     * @returns {Promise<boolean>} True when the resource was removed
      */
-    remove(id, { actor, batch } = {}) {
+    async remove(id, { actor, batch } = {}) {
         const resource = this.#resources.get(id);
         if (!resource) return false;
 
+        const payload = await this.#store.read(id);
+        // Read back, because reading is a turn of the event loop and the manifest may have
+        // moved in it — a second delete of the same resource, a replicated one, an undo.
+        if (!this.#resources.has(id)) return false;
+
         const result = this.#operations.submit(removeResourceOperation({
             resource: snapshot(resource),
-            payload: this.#store.read(id),
+            payload,
             index: this.resources().indexOf(resource),
             origin: Origin.EDITOR,
             actor,
@@ -293,16 +305,21 @@ export class Project {
      * @param {object} [options] - Options
      * @param {string} [options.actor] - Who authored the intent
      * @param {string} [options.batch] - Groups related operations into one history entry
-     * @returns {object} { applied, operation, decision }
+     * @returns {Promise<object>} { applied, operation, decision }
      */
-    setPayload(id, payload, { actor, batch } = {}) {
+    async setPayload(id, payload, { actor, batch } = {}) {
         const resource = this.#resources.get(id);
         if (!resource) return { applied: false, operation: null, decision: null };
+
+        // AWAITED, LIKE `remove()`'s. `previous` is what undo restores; a promise there is a
+        // payload a creator cannot get back (ADR-0020 §4).
+        const previous = await this.#store.read(id);
+        if (!this.#resources.has(id)) return { applied: false, operation: null, decision: null };
 
         return this.#operations.submit(setPayloadOperation({
             target: { object: id, component: null },
             payload,
-            previous: this.#store.read(id),
+            previous,
             origin: Origin.EDITOR,
             actor,
             batch
@@ -398,9 +415,9 @@ export class Project {
      * @param {string} id - The ResourceId
      * @param {object} [options] - Options
      * @param {string} [options.actor] - Who authored the intent
-     * @returns {number} How many resources were removed
+     * @returns {Promise<number>} How many resources were removed
      */
-    removeTree(id, { actor } = {}) {
+    async removeTree(id, { actor } = {}) {
         const resource = this.#resources.get(id);
         if (!resource) return 0;
 
@@ -411,8 +428,11 @@ export class Project {
         const doomed = [...descendantsOf(this, resource), resource].reverse();
 
         let removed = 0;
+        // IN ORDER, ONE AT A TIME. Each removal reads a payload, so they are awaited in turn
+        // rather than raced: the batch's operations must arrive in the order whose inverse
+        // restores a folder before the entries that name it.
         for (const entry of doomed) {
-            if (this.remove(entry.id, { actor, batch })) removed++;
+            if (await this.remove(entry.id, { actor, batch })) removed++;
         }
         return removed;
     }

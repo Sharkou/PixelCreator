@@ -1,6 +1,6 @@
 # État de la migration
 
-**Dernière mise à jour :** 2026-08-17
+**Dernière mise à jour :** 2026-09-12
 
 ## Phase actuelle
 
@@ -38,12 +38,15 @@ Aucun fichier de `legacy/` n'a été modifié.
 | **4.2** | **Project / Resource UX** (ADR-0025) : dossiers comme `Resource` et hiérarchie par lien `parent` (`MANIFEST_VERSION = 2`), menu `+` extensible par table de kinds, navigation à fil d'Ariane, déplacement par glisser-déposer, suppression d'arbre en un `batch`, renommage validé (une opération, pas une par frappe), sélection et désélection de ressource dans le `Workspace`, panneau `Resource` de l'Inspector piloté par `describeResource()`, import et remplacement d'image, icônes de ressources distinctes des icônes de fenêtres |
 | **4.1** | **Intégration Editor ↔ Project** : `Workspace`, scène déclarée comme `Resource`, `Ctrl S`, état « non enregistré » dérivé du pipeline, `<px-project>` listant le manifeste réel, reparentage et réordonnancement par glisser-déposer (Hierarchy et Inspector), vérification des imports morts dans `tools/layers/` |
 
-### État vérifié (2026-08-18, après étape 4.4)
+### État vérifié (2026-09-12)
 
 ```bash
-tools/test.sh              # 882 tests, 882 passés
-node tools/layers/run.js   # v2 : 0 violation, 0 import mort — legacy : 1 violation + 2 imports morts, trackés
-node tools/parity/run.js   # 39 identical, 0 problems
+tools/test.sh                  # 2265 tests, 2265 passés
+node tools/layers/run.js       # v2 : 0 violation, 0 import mort — legacy : 1 violation + 2 imports morts, trackés
+node tools/parity/run.js       # 39 identical, 0 problems
+node tools/check-css-literals.js
+node tools/check-boot.js
+node tools/check-exports.js
 ```
 
 Vérifié aussi dans le navigateur, sans erreur console : dépôt d'une ligne de Hierarchy sur
@@ -72,8 +75,10 @@ Inspector ↔ Hierarchy, `lock` / `visible` / delete par ligne, déplacement et
 redimensionnement aux poignées, pan, zoom, cadrage, création par glisser depuis la
 toolbar, seams persistées, repli de la colonne droite sous 760 px.
 
-`src/` contient `core/`, `runtime/`, `editor/` et `project/`. **`network/` n'existe pas
-encore.**
+`src/` contient `core/`, `project/`, `runtime/`, `editor/` et `preview/`. **`network/`
+n'existe pas encore** : ce qu'un transport aurait à porter existe déjà — une Operation — et le
+canal vivant entre un Editor et ses aperçus en est la première démonstration (ADR-0044,
+ADR-0071).
 
 ### Ce que les étapes 3 et 3.1 ont ajouté au Core
 
@@ -92,36 +97,80 @@ raison de même nature.
 désactivé depuis l'Editor produisait une Operation réplicable puis se perdait à la
 sauvegarde suivante. Voir `../architecture/CORE.md` §Serialization.
 
+### Passe de revue du 2026-09-12 — ce qu'elle a trouvé
+
+Une relecture complète du code actif, doublée d'un parcours réel dans le navigateur. Ce
+qu'elle a corrigé, par famille :
+
+**Un store qui peut attendre n'était pas attendu** (ADR-0020 §4). `ResourceStore.read()` est
+asynchrone depuis qu'il existe un store persistant (ADR-0065), et quatre appelants lisaient sa
+réponse comme une valeur :
+
+| Où | Ce qu'un créateur voyait |
+|---|---|
+| `preview/bundle.js` | **Preview et Export étaient cassés** : chaque charge utile partait comme une `Promise`, que `JSON.stringify` écrit `{}` |
+| `windows/project.js`, `ui/resource-field.js` | aucune vignette d'image dans un projet enregistré |
+| `windows/inspector.js` | la taille d'une ressource restait vide |
+| `Project.remove()`, `Project.setPayload()` | annuler une suppression rendait une ressource **sans son contenu** |
+
+`PersistentResourceStore.read()` passe désormais par la même file que `write()` : une lecture
+juste après une sauvegarde répondait l'état d'avant.
+
+**L'Editor écrivait sans arrêt.** L'autosave écoutait sa propre comptabilité — `dirty: false`
+après une écriture, et les `SET_PROPERTY` `Origin.LOCAL` de `save()` — donc chaque écriture en
+demandait une autre : **21 écritures IndexedDB en trois secondes sur un Editor que personne ne
+touchait**, et une `revision` qui montait toute seule, invalidant tous les caches qui en
+dépendent. Mesuré à zéro après correction (ADR-0069 §2).
+
+**Trois types livrés n'avaient pas de nom.** `Body`, `Follow` et `TilemapCollider` étaient dans
+`runtime/builtins.js` et pas dans la table de l'Editor : le menu Add Component offrait
+`TilemapCollider` — le nom de classe — sous `Other`, deux étagères plus loin que le `Tilemap`
+qu'il complète. Un test parcourt désormais `BUILT_IN` et échoue si un type n'a ni étagère ni
+glyphe.
+
+**Un reparentage écrasait la seconde moitié de la rotation.** `decompose()` rend le produit
+`scaleX · cos(rotationY)` ; l'écrire dans `scaleX` sans toucher `rotationY` appliquait le
+cosinus deux fois — un objet tourné de 60° perdait la moitié de sa largeur à chaque
+réorganisation dans la Hierarchy, en silence (ADR-0051).
+
+**Un graphe en construction s'arrêtait.** Le validateur classe « aucune propriété choisie »
+en avertissement pour qu'un graphe en cours d'écriture tourne ; l'interprète jetait dessus, à
+chaque pas, et une exception déroule tout le `walk` — donc tout ce qui était câblé après le
+nœud non visé ne tournait plus. Voir ADR-0072, qui décide aussi du plafond d'attentes
+suspendues et de l'isolation d'une exécution reprise qui échoue.
+
+**Un aperçu ne suivait que deux modèles sur trois.** Voir ADR-0071.
+
+Et quelques manques réels : `Ctrl D` (le Core savait dupliquer, rien dans l'Editor ne
+l'atteignait), `Escape` qui abandonne un geste au lieu de le valider, un dépôt sur une
+`list<resource>`, l'icône et l'étiquette des cinq composants qui n'en avaient pas.
+
 ### Laissé volontairement pour plus tard
 
 | Sujet | Pourquoi |
 |---|---|
 | Adaptateur navigateur pour l'input | Appartient à la couche qui possède le DOM, pas au runtime (ADR-0014) |
-| Adaptateur IndexedDB de `ResourceStore` | L'interface et l'implémentation mémoire existent ; l'échange est local à `project/store.js` (ADR-0020) |
 | Ouvrir une **seconde** scène depuis le panneau Project | Demande de rebrancher toutes les fenêtres sur une autre `Scene`. `Workspace` ouvre et ferme réellement, et tient plusieurs éditeurs ; ouvrir une scène ferme donc l'autre (ADR-0027 §10) |
-| Valeur en ligne sur une entrée de nœud non connectée | Une entrée libre rend le défaut déclaré par son port. Un champ à même le nœud est un confort réel et une question de rendu ; il ne change pas le format (ADR-0027) |
 | Sélection multiple, copier/coller et commentaires dans le graphe | Chacun est un geste avec ses propres questions ; en livrer la moitié rend une toile imprévisible |
-| Glisser une propriété vers la toile | `Get` ou `Set` : deviner à la place du créateur est le comportement magique qu'ADR-0026 refuse. Le menu de création propose les deux, explicitement (ADR-0027 §11) |
 | Migration des instances quand une définition change | Décision d'Editor, pas de runtime (ADR-0016) |
-| Play / Pause dans l'Editor | Demande un instantané de scène restauré à l'arrêt ; `serializeScene()` existe, l'échange de scène reste à concevoir |
-| Timeline fonctionnelle | Demande le système d'animation |
-| Prefab (Object → Project) | Ce qu'un prefab contient, comment une instance y reste liée, ce qu'un override signifie : rien n'est décidé. Le dépôt est refusé **en le disant** (ADR-0026 §7) |
-| Vignettes et import de sons | L'import d'images existe ; le reste demande des décodeurs et une grille, pas un modèle |
+| Timeline fonctionnelle | Demande un modèle d'édition d'animation, que le format de clip (ADR-0062 §4) ne donne pas à lui seul |
 | Renderer présenté comme un type unique dans l'Inspector | Question UX ouverte : un `Type ▼` affirmerait un seul renderer par Object, ce que le modèle n'impose pas |
-| `runtime/physics/`, `animation/`, `audio/` | Domaines non entamés |
+| Publier un jeu à une URL | `Export game…` écrit le bundle qu'un aperçu lit ; l'héberger demande des comptes et des permissions, qui sont des décisions de produit (ADR-0066 §2) |
+| `network/` | Ce qu'un transport porterait — une Operation — existe ; le canal vivant entre un Editor et ses aperçus en est la première démonstration (ADR-0044, ADR-0071) |
 
-### Prochaine action
+### Ce qui a été livré depuis
 
-**Étape 5 — un Component utilisateur qui tourne dans la scène.** L'enchaînement du modèle
-est complet : créer un `.px`, déclarer ses propriétés, câbler son graphe, le valider,
-l'interpréter. Ce qui manque est le dernier maillon d'UX — **attacher** un Component
-utilisateur à un Object depuis le menu Add Component, ce qui demande que
-`loadComponentDefinitions()` soit appelé au chargement du projet et que le registre soit
-rafraîchi quand une définition est enregistrée — puis **Play**, qui demande l'instantané de
-scène restauré à l'arrêt.
+Les lignes suivantes étaient dans la table ci-dessus et n'y sont plus, parce qu'elles existent :
 
-Les briques existent toutes : `defineComponent()`, `ComponentRegistry.register({ replace })`,
-`Behaviors`, `createGraphInterpreter()`, `loadComponentDefinitions()`.
+| Sujet | Où |
+|---|---|
+| Adaptateur IndexedDB de `ResourceStore` | `project/persistence.js`, `project/indexeddb.js` (ADR-0065) |
+| Play / Pause / Stop dans l'Editor | `editor/transport.js` (ADR-0029) |
+| Prefab (Object → Project) | `core/prefab.js`, `project/prefabs.js` (ADR-0061) |
+| Import de sons | `runtime/audio/`, règle de dépôt `audio → AudioSource` (ADR-0060) |
+| `runtime/physics/`, `animation/`, `audio/` | Les trois domaines existent (ADR-0059, ADR-0062, ADR-0067) |
+| Valeur en ligne sur une entrée de nœud non connectée | `node.inputs` (ADR-0031 §1) |
+| Glisser une propriété vers la toile | Le menu propose `Get` et `Set`, explicitement (ADR-0037, ADR-0053) |
 
 ### Décisions d'interface encore ouvertes
 
@@ -129,12 +178,15 @@ Elles bloquent des éléments que la maquette dessine et que le code refuse d'in
 
 | Sujet | Pourquoi c'est ouvert |
 |---|---|
-| Transport Play / Pause / Stop | Demande l'instantané de scène restauré à l'arrêt (voir plus haut). Le titlebar n'en porte **aucun** bouton plutôt qu'un bouton mort |
 | Barre de commandes `Ctrl K` | Il n'existe aucun registre de commandes à interroger. `openMenu()` place une liste, il ne la construit pas. Un système de commandes est un travail à part entière |
 | Couleurs de famille | La direction A du prototype donne `--hue-*: var(--accent)` : les quatre teintes n'existent **que** dans la direction B. La décision retenue les limite à l'icône d'en-tête d'un panneau, mais leur valeur n'est pas arrêtée, donc aucun token de famille n'a été introduit |
 | `px-tabs` | Plus aucun consommateur depuis la scission de `px-dock`. La primitive est conservée et enregistrée ; la supprimer est une décision, pas un nettoyage |
 
 ## Décisions validées
+
+**La table ci-dessous s'arrête à ADR-0027, et c'est délibéré :** elle relève les décisions de
+la Phase 0 et de la première tranche d'implémentation. La liste **complète et à jour** des ADR
+est dans [`../README.md`](../README.md).
 
 | Sujet | Décision | Référence |
 |---|---|---|

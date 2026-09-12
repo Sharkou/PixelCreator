@@ -6,6 +6,7 @@ import { ComponentRegistry, Object as SceneObject, Scene, Transform } from '../c
 import { MemoryResourceStore, Project } from '../project/mod.js';
 import { Workspace } from './project/workspace.js';
 import { Shortcut, applyShortcut, shortcutFor } from './shortcuts.js';
+import { Selection } from './selection.js';
 
 const key = (value, extra = {}) => ({ key: value, ctrlKey: false, metaKey: false, shiftKey: false, ...extra });
 
@@ -154,4 +155,61 @@ test('closing an editor takes its stack with it', async () => {
     assert.equal(it.workspace.histories.get(it.resource.id), null, 'no listener left behind');
     // The manifest is still there, and undo falls back to it rather than to nothing.
     assert.equal(it.workspace.activeHistory, it.workspace.projectHistory);
+});
+
+// --- duplicate -------------------------------------------------------------------------
+
+test('Ctrl D is duplicate, and Ctrl Shift D is nothing', () => {
+    assert.equal(shortcutFor(key('d', { ctrlKey: true })), Shortcut.DUPLICATE);
+    assert.equal(shortcutFor(key('d', { metaKey: true })), Shortcut.DUPLICATE);
+    assert.equal(shortcutFor(key('D', { ctrlKey: true })), Shortcut.DUPLICATE);
+    assert.equal(shortcutFor(key('d', { ctrlKey: true, shiftKey: true })), null);
+});
+
+test('duplicate copies the selected object and selects the copy', async () => {
+    const it = await staged();
+    const selection = new Selection();
+    selection.set(it.hero);
+
+    assert.equal(applyShortcut(Shortcut.DUPLICATE, { workspace: it.workspace, scene: it.scene, selection }), true);
+
+    assert.equal(it.scene.size, 2);
+    assert.notEqual(selection.object, it.hero, 'the copy is what you carry on editing');
+    assert.equal(selection.object.name, 'Hero 2');
+});
+
+test('duplicate with nothing selected does nothing, and still claims the key', async () => {
+    // AN UNCLAIMED `Ctrl D` IS THE BROWSER'S BOOKMARK DIALOG, which is the last thing a
+    // creator who pressed it over an empty selection wants on top of their scene.
+    const it = await staged();
+    const selection = new Selection();
+
+    assert.equal(applyShortcut(Shortcut.DUPLICATE, { workspace: it.workspace, scene: it.scene, selection }), true);
+    assert.equal(it.scene.size, 1);
+});
+
+test('duplicate does not reach through a name being typed, and leaves the key alone there', async () => {
+    // A FIELD IS THE ONE PLACE `Ctrl D` MEANS SOMETHING ELSE: it is forward-delete in a text
+    // field on macOS, so claiming it to do nothing with it would break what was meant.
+    const it = await staged();
+    const selection = new Selection();
+    selection.set(it.hero);
+
+    const claimed = applyShortcut(Shortcut.DUPLICATE, {
+        workspace: it.workspace, scene: it.scene, selection, editing: true
+    });
+
+    assert.equal(claimed, false, 'the field keeps its own keystroke');
+    assert.equal(it.scene.size, 1, 'and nothing was copied');
+});
+
+test('Ctrl S always claims the key, even when there is nothing left to write', async () => {
+    const it = await staged();
+
+    it.hero.setProperty('name', 'Heroine');
+    assert.equal(applyShortcut(Shortcut.SAVE, { workspace: it.workspace }), true);
+    // Nothing is dirty now, so `Workspace.save()` writes nothing — and the browser must
+    // still not be left to offer a download of the page.
+    assert.equal(it.workspace.dirty, false);
+    assert.equal(applyShortcut(Shortcut.SAVE, { workspace: it.workspace }), true);
 });

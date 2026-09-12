@@ -492,6 +492,13 @@ export class Workspace {
      * while the creator was moving objects. Undo has always asked this question this way
      * (`activeHistory`), and the two now agree by construction (ADR-0024).
      *
+     * A SAVE WRITES WHAT CHANGED, AND NOTHING ELSE. An editor that has authored nothing since
+     * its last write is already what the store holds, so writing it again is not a save: it
+     * puts a payload nobody edited through the store, bumps a `revision` every cache keyed on
+     * one then throws away, and stamps `modified` with a time at which nothing was modified.
+     * The autosave asks for every open editor on every quiet period, so "nothing changed" is
+     * the ordinary case rather than the exception.
+     *
      * @param {object} [options] - Options
      * @param {string} [options.id] - Which editor; the one being worked in by default
      * @param {string} [options.actor] - Who authored the intent
@@ -500,6 +507,7 @@ export class Workspace {
     save({ id = this.#working, actor } = {}) {
         const editor = this.#editors.get(id);
         if (!editor) return false;
+        if (!editor.dirty) return false;
 
         EDITORS[editor.kind].save(this.#project, editor.resource.id, editor.model, { actor });
         this.#setDirty(editor, false);

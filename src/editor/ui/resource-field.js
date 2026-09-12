@@ -32,6 +32,7 @@ import { pickFile, readAsDataUrl } from './file.js';
 import { DropZone, filesPayload } from '../dnd/payload.js';
 import { performDrop } from '../dnd/rules.js';
 import { ResourceKind, isFolder } from '../../project/mod.js';
+import { PayloadCache } from '../project/payloads.js';
 
 /** The picker entry that opens a file dialog rather than choosing something that exists. */
 const IMPORT = '\u0000import';
@@ -129,6 +130,18 @@ export class ResourceField extends Element {
     #descriptor = null;
     #project = null;
     #write = null;
+
+    /**
+     * Payloads read back from the store, against the revision they were read at.
+     *
+     * REPLACED BY THE PANEL'S OWN WHEN THERE IS ONE. The Inspector builds a fresh
+     * `<px-resource>` on every render, so a cache that only ever lived here was empty every
+     * time: the thumbnail fell back to the file-type glyph and asked the store again on each
+     * redraw — and the panel redraws when the payload lands, when the size lands, and when a
+     * definition attaches. A creator picking a sprite watched it blink back to a grey glyph
+     * three times for one click.
+     */
+    #payloads = new PayloadCache();
     /** What a rule needs to import: the project, the workspace, the open folder. */
     #context = null;
 
@@ -141,9 +154,17 @@ export class ResourceField extends Element {
      * @param {object} [options.project] - The project its resources are looked up in
      * @param {Function} [options.write] - (value) => void; `setProperty` by default
      * @param {object} [options.context] - What a rule needs to import: project, workspace, folder
+     * @param {object} [options.payloads] - A `PayloadCache` the panel owns, so a control the
+     *   panel rebuilds does not lose what was already read
      * @returns {ResourceField} This control
      */
-    bind(target, descriptor, { project = null, write = null, context = null } = {}) {
+    bind(target, descriptor, { project = null, write = null, context = null, payloads = null } = {}) {
+        // A SHARED CACHE OUTLIVES THIS ELEMENT AND AN OWN ONE DOES NOT, which is the whole
+        // reason the panel may hand one in. Without it, rebinding to another project is the
+        // one case worth forgetting for — and clearing unconditionally would ask the store
+        // again, on every redraw, for a thumbnail it has already been given.
+        if (payloads) this.#payloads = payloads;
+        else if (project !== this.#project) this.#payloads.clear();
         this.#target = target;
         this.#descriptor = descriptor;
         this.#project = project;
@@ -215,10 +236,16 @@ export class ResourceField extends Element {
         }
     }
 
+    /**
+     * The picture a reference points at, when it is one.
+     *
+     * AWAITED, BECAUSE A REAL PROJECT'S STORE IS (ADR-0020 §4). Read synchronously, a
+     * persistent store answers a promise rather than a data URL, so a `Sprite`'s source
+     * showed a generic glyph in every saved project — the one place a creator looks to check
+     * they picked the right image.
+     */
     #thumbnail(resource) {
-        const payload = resource && this.#project?.read
-            ? this.#project.read(resource.id)
-            : null;
+        const payload = this.#payloads.payload(this.#project, resource, () => this.#render());
         const drawable = typeof payload === 'string' && payload.startsWith('data:image/');
 
         return el('span', { class: 'thumb' }, drawable

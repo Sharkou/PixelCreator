@@ -228,7 +228,7 @@ test('a prefab travels in a bundle and is resolved before the first step', async
     const sceneResource = addScene(project, level, { name: 'Level.scene' });
 
     // THE CROSSING. Everything the game needs is JSON from here on (ADR-0042 §2).
-    const bundle = bundleProject(project, store, { scene: sceneResource.id });
+    const bundle = await bundleProject(project, store, { scene: sceneResource.id });
     assert.ok(bundle.payloads[prefab.id], 'the definition travels with the manifest');
 
     const opened = openBundle(bundle);

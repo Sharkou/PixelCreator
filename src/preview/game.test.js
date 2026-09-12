@@ -322,7 +322,7 @@ function recordingAudio() {
  */
 async function play(built, { seed = 'demo' } = {}) {
     // THE WHOLE CROSSING, AND IT IS THE ONE THE PREVIEW BUTTON MAKES (ADR-0042 §2).
-    const bundle = bundleProject(built.project, built.store, { scene: built.sceneResource.id });
+    const bundle = await bundleProject(built.project, built.store, { scene: built.sceneResource.id });
     const opened = openBundle(bundle);
 
     const registry = registerBuiltIns(new ComponentRegistry());

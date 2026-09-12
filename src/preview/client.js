@@ -18,6 +18,7 @@
 import { Matrix, components, createId, defineComponent, runnable } from '../core/mod.js';
 import { registerStandardNodes } from '../core/mod.js';
 import {
+    DEFINITION_KINDS,
     checkGraph,
     imageResources,
     loadComponentDefinitions,
@@ -117,11 +118,17 @@ export async function start(mount = document.body) {
     // a speaker can use needs the bundle, which is knowledge this application has and the
     // Runtime must not. The manifest is asked first, so a Sprite's PNG handed to `Play
     // Sound` answers nothing instead of failing to decode.
+    //
+    // READ THROUGH THE STORE, NOT OFF THE BUNDLE. `openBundle()` has already written every
+    // payload into a `MemoryResourceStore`, which answers synchronously — and which the live
+    // channel writes into when the Editor imports or replaces something (`followEdits()`
+    // below). Reading the frozen bundle instead meant a sound added after the window opened
+    // could never be heard in it.
     const audio = new HtmlAudioOutput({
         resolve: id => {
             const entry = opened.project.get(id);
             if (!entry || !(entry.mime ?? '').startsWith('audio/')) return null;
-            return bundle.payloads?.[id] ?? null;
+            return opened.store.read(id) ?? null;
         }
     });
 
@@ -129,7 +136,7 @@ export async function start(mount = document.body) {
     // place a game may wait for a picture: a first frame with holes in it is exactly what a
     // loading step exists to prevent. Anything imported later still arrives through `get()`,
     // one frame late and without a wait.
-    const images = new ImageCache({ resolve: id => bundle.payloads?.[id] ?? null });
+    const images = new ImageCache({ resolve: id => opened.store.read(id) ?? null });
     await images.preload(imageResources(opened.project));
 
     // WHAT SURVIVES A CHANGE OF SCENE, AND IT BELONGS TO THE PAGE (ADR-0063 §5). A Runtime
@@ -154,7 +161,7 @@ export async function start(mount = document.body) {
     // nudge. What arrives is an Operation, the same record the Editor's own history holds,
     // and applying one announces nothing back — so this page still cannot author anything
     // (ADR-0042 §5 holds).
-    const live = followEdits(opened, { scene, behaviors, registry: components });
+    const live = followEdits(opened, { scene, behaviors, registry: components, resources, images });
     const stop = game.stop;
     return { ...game, stop: () => { live.close(); stop(); } };
 }
@@ -162,12 +169,21 @@ export async function start(mount = document.body) {
 /**
  * Apply what the Editor of this project says, for as long as the page is open.
  *
+ * THREE THINGS CHANGE, AND ALL THREE ARRIVE AS OPERATIONS. A SCENE is a state this page is
+ * living in, so it is kept in step by the operations that changed it. A `.px` is a definition
+ * this page READS, so it is sent whole. And the MANIFEST is a third model with a pipeline of
+ * its own (project/project.js) — a picture imported, a tileset recut, a clip retimed, a prefab
+ * replaced — addressed by the project's own identity. No message kind was invented for it:
+ * "what crosses is an Operation" is exactly what ADR-0044 says, and a manifest operation is
+ * one. Without it the Editor's viewport redrew and every open Preview went on showing the
+ * definitions the window was opened with.
+ *
  * @param {object} opened - What `openBundle()` answered
- * @param {object} context - `{ scene, behaviors, registry }`
+ * @param {object} context - `{ scene, behaviors, registry, resources, images, Channel }`
  * @returns {{close: Function}} A handle that stops following
  */
-function followEdits(opened, { scene, behaviors, registry }) {
-    const channel = openLiveChannel(opened.project?.id);
+export function followEdits(opened, { scene, behaviors, registry, resources, images, Channel } = {}) {
+    const channel = openLiveChannel(opened.project?.id, Channel ? { Channel } : {});
     if (!channel) return { close: () => {} };
 
     /**
@@ -185,6 +201,15 @@ function followEdits(opened, { scene, behaviors, registry }) {
     channel.onmessage = event => {
         const message = event?.data ?? null;
 
+        if (message?.kind === LiveMessage.OPERATION && message.resource === opened.project?.id) {
+            // THE MANIFEST, through the very same door. Applying writes the entry AND its
+            // payload into the store this page resolves everything from, so what is left is
+            // to drop what was resolved FROM the old payload.
+            opened.project.operations.apply(message.operation);
+            reresolve(opened, message.operation, { resources, images });
+            return;
+        }
+
         if (message?.kind === LiveMessage.OPERATION && message.resource === opened.scene) {
             // APPLIED, NOT SUBMITTED. `apply()` performs an already-authoritative change
             // without arbitrating it and without announcing it, which is the whole of what
@@ -197,6 +222,39 @@ function followEdits(opened, { scene, behaviors, registry }) {
     };
 
     return { close: () => channel.close?.() };
+}
+
+/**
+ * Forget what a manifest change made stale, and read back what it replaced.
+ *
+ * THE SAME TWO TABLES `editor/project/session.js` KEEPS, AND THE SAME RULE (ADR-0062 §1): a
+ * definition is resolved into a registry a step reads synchronously, and a picture is a
+ * decode the cache holds. Neither notices that a payload moved, so this says so — and says it
+ * for exactly one resource, because an Operation names one.
+ *
+ * @param {object} opened - What `openBundle()` answered
+ * @param {object} operation - The manifest operation that was just applied
+ * @param {object} tables - `{ resources, images }`
+ */
+function reresolve(opened, operation, { resources, images }) {
+    const id = operation?.target?.object ?? operation?.resource?.id ?? null;
+    if (!id) return;
+
+    // The entry is gone from the manifest after a removal, so the operation's own copy is
+    // what answers for it.
+    const entry = opened.project.get(id) ?? operation?.resource ?? null;
+    const kind = entry?.kind ?? null;
+
+    if ((entry?.mime ?? '').startsWith('image/')) {
+        images?.invalidate(id);
+        return;
+    }
+
+    if (!DEFINITION_KINDS.includes(kind)) return;
+
+    const payload = opened.store.read(id) ?? null;
+    if (payload) resources?.set(id, payload);
+    else resources?.delete(id);
 }
 
 /**

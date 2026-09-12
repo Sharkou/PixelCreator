@@ -40,6 +40,14 @@ const PATHS = {
     object: `<path d="M3 5.5V3.5h2M11 3.5h2v2M13 10.5v2h-2M5 12.5H3v-2" ${S}/>`
         + `<circle cx="8" cy="8" r="1.35" ${F}/>`,
     rectangle: `<rect x="2.5" y="4" width="11" height="8" rx="1" ${S}/>`,
+    // A SPEED, A HITBOX AND A THING THAT FALLS. Three components shipped without a glyph and
+    // wore the generic one, which put `Velocity`, `Body` and both colliders under the same
+    // mark as a Component nobody can name.
+    velocity: `<path d="M2.4 8h8.4" ${S}/><path d="M7.6 4.6 11.2 8l-3.6 3.4" ${S}/>`
+        + `<path d="M2.4 4.8h3M2.4 11.2h3" ${S}/>`,
+    collider: `<rect x="2.5" y="4" width="11" height="8" rx="1" ${S} stroke-dasharray="2.6 2"/>`,
+    body: `<rect x="4.6" y="3" width="6.8" height="6.8" rx="1" ${S}/>`
+        + `<path d="M2.2 12.6h11.6" ${S}/>`,
     circle: `<circle cx="8" cy="8" r="5" ${S}/>`,
     camera: `<path d="M1.8 5.5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1z" ${S}/>`
         + `<path d="M9.8 8 14.2 5.5v5L9.8 10.5z" ${S}/>`,
@@ -294,7 +302,16 @@ export function icon(name, size = IconSize.SM) {
     return span;
 }
 
-/** Component type name -> icon, for types the engine ships. */
+/**
+ * Component type name -> icon, for types the engine ships.
+ *
+ * EVERY SHIPPED TYPE HAS A ROW, and `editor/registry.test.js` walks `BUILT_IN` and fails
+ * when one does not: five of the fifteen had none, so a scene's `Velocity`, `Body`, `Follow` and both colliders wore the
+ * same generic mark as a `.px` nobody had named yet.
+ *
+ * THE TWO COLLIDERS SHARE ONE GLYPH ON PURPOSE. They are the same idea applied to a box and
+ * to a grid, and the label beside the icon is what tells them apart.
+ */
 const COMPONENT_ICONS = {
     Transform: 'object',
     RectangleRenderer: 'rectangle',
@@ -305,7 +322,12 @@ const COMPONENT_ICONS = {
     AudioSource: 'sound',
     ParticleSystem: 'particles',
     Tilemap: 'tilemap',
-    Camera: 'camera'
+    Camera: 'camera',
+    Velocity: 'velocity',
+    Body: 'body',
+    Follow: 'focus',
+    BoxCollider: 'collider',
+    TilemapCollider: 'collider'
 };
 
 /**

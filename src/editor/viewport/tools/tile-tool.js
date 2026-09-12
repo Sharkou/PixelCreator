@@ -148,7 +148,12 @@ export class TileTool {
 
         // ONE BATCH FOR THE WHOLE DRAG. Everything written until `release()` is one entry in
         // the history, however many cells it turns out to be.
-        this.#stroke = { batch: createId(), last: cell, value: this.#active };
+        //
+        // AND WHAT EACH CELL HELD WHEN THE STROKE FOUND IT, so the drag can be given up.
+        // `before` holds one entry per cell, never one per sample: a stroke that crosses its
+        // own path puts back what was there before the FIRST crossing, which is the only
+        // reading of "this never happened".
+        this.#stroke = { batch: createId(), last: cell, value: this.#active, before: new globalThis.Map() };
         this.#paint(target, [cell]);
     }
 
@@ -176,6 +181,55 @@ export class TileTool {
     /** End the stroke. The next one is a new batch, and a second undo. */
     release() {
         this.#stroke = null;
+    }
+
+    /**
+     * Give up the stroke, putting back every cell it painted.
+     *
+     * ABANDONING IS NOT RELEASING, AND THIS IS THE TOOL THAT COULD NOT TELL. A stroke writes
+     * AS IT GOES — that is what makes the map follow the cursor — so `release()` has
+     * nothing left to commit, and the viewport's fallback to it committed the whole drag:
+     * Escape mid-paint, or a pointer the browser took away mid-paint, left a level nobody
+     * finished drawing.
+     *
+     * THE PUTTING BACK BELONGS TO THE GESTURE'S OWN BATCH, exactly as `select-tool.js` does
+     * it: one entry in the history rather than two that cancel each other — and the batch is
+     * answered so the shell can drop that entry altogether (editor/history.js).
+     *
+     * @returns {string|null} The batch the stroke was written under, when there was one
+     */
+    cancel() {
+        const stroke = this.#stroke;
+        this.#stroke = null;
+        if (!stroke || stroke.before.size === 0) return null;
+
+        // The map may have gone with the selection while the pointer was down. There is then
+        // nothing to put anything back into, and nothing of it was committed either.
+        const target = this.target();
+        if (!target) return null;
+
+        const { tilemap } = target;
+        const cells = [];
+
+        for (const [index, before] of stroke.before) {
+            const column = index % tilemap.columns;
+            const row = (index - column) / tilemap.columns;
+            const now = tilemap.get(column, row);
+            if (now === before) continue;
+            cells.push({ index, value: before, previous: now });
+        }
+
+        if (cells.length === 0) return null;
+
+        target.object.operations.submit(setCellsOperation({
+            target: { object: target.object.id, component: Tilemap.type },
+            prop: 'tiles',
+            cells,
+            origin: Origin.EDITOR,
+            batch: stroke.batch
+        }));
+
+        return stroke.batch;
     }
 
     /**
@@ -243,10 +297,12 @@ export class TileTool {
             // NOTHING TO SAY, NOTHING WRITTEN. Crossing a cell twice in one sample, or
             // painting grass onto grass, is not an edit — and a patch that named the same
             // index twice would be two opinions about one cell.
-            if (seen.has(index) || tilemap.get(cell.column, cell.row) === value) continue;
+            const previous = tilemap.get(cell.column, cell.row);
+            if (seen.has(index) || previous === value) continue;
 
             seen.add(index);
-            patch.push({ index, value, previous: tilemap.get(cell.column, cell.row) });
+            if (this.#stroke && !this.#stroke.before.has(index)) this.#stroke.before.set(index, previous);
+            patch.push({ index, value, previous });
         }
 
         if (patch.length === 0) return;

@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ComponentRegistry, Object as SceneObject, PropertyType, Scene, Transform, defineComponent } from '../core/mod.js';
+import { ComponentRegistry, Object as SceneObject, PropertyType, Scene, Transform, defineComponent, invert } from '../core/mod.js';
 import { RectangleRenderer } from '../runtime/mod.js';
 import { Project, ResourceKind } from '../project/mod.js';
 import { createResourceOfKind } from './project/commands.js';
 import { MISSING_LABEL, describeType, groupTypes, registerBuiltIns } from './registry.js';
 import { Selection } from './selection.js';
-import { addComponent, availableComponents, createObject, deleteObject, pointSocketAt, removeComponent, uniqueName } from './commands.js';
+import { addComponent, availableComponents, createObject, deleteObject, duplicateObject, pointSocketAt, removeComponent, uniqueName } from './commands.js';
 
 function registry() {
     return registerBuiltIns(new ComponentRegistry());
@@ -172,7 +172,7 @@ test('an unknown type is grouped rather than dropped', () => {
     const groups = groupTypes(['res_mystery'], known);
     assert.deepEqual(groups, [{
         category: 'Other',
-        entries: [{ type: 'res_mystery', label: 'Mystery', category: 'Other' }]
+        entries: [{ type: 'res_mystery', label: 'Mystery', category: 'Other', note: null }]
     }]);
 });
 
@@ -194,7 +194,7 @@ test('a `.px` with no label of its own is called what the project calls it', () 
         'the resource name, without the extension: this names a TYPE, beside Sprite and Transform');
 });
 
-test('a `.px` removed from the Project leaves a NAME behind, never an identity', () => {
+test('a `.px` removed from the Project leaves a NAME behind, never an identity', async () => {
     // THE STATE A DELETION REALLY LEAVES, and it has two halves that used to disagree.
     // ADR-0021 §4 keeps the instance as a placeholder holding its values; what a creator
     // reads above those values must say the definition is gone. It said so only while the
@@ -205,7 +205,7 @@ test('a `.px` removed from the Project leaves a NAME behind, never an identity',
 
     const known = registry();
     known.register(defineComponent({ type: resource.id, properties: {} }));
-    project.remove(resource.id);
+    await project.remove(resource.id);
 
     assert.equal(describeType(resource.id, known, { project }).label, MISSING_LABEL,
         'while the class is still registered');
@@ -355,4 +355,91 @@ test('the writes are authored, so one gesture is one undo on the scene', () => {
     const writes = it.submitted.filter(operation => operation.prop === 'target');
     assert.equal(writes.length, 2, 'two instances, two authored writes');
     assert.ok(writes.every(operation => operation.batch === batch), 'under one batch');
+});
+
+test('a name that already ends in a number is counted on, not counted again', () => {
+    const scene = sceneWith();
+    const crate = createObject(scene, { kind: 'rectangle' });
+    crate.name = 'Crate 2';
+
+    assert.equal(uniqueName(scene, 'Crate 2'), 'Crate 3');
+    assert.equal(uniqueName(scene, 'Crate'), 'Crate', 'a free name is left alone');
+
+    crate.name = 'Crate';
+    assert.equal(uniqueName(scene, 'Crate'), 'Crate 2');
+});
+
+// --- duplicating (ADR-0056, ADR-0019) -----------------------------------------------------
+
+test('a duplicate is a copy of the whole subtree, beside its model', () => {
+    const scene = sceneWith();
+    const model = createObject(scene, { kind: 'rectangle', x: 30, y: -10 });
+    const child = createObject(scene, { kind: 'empty', parent: model });
+    const after = createObject(scene, { kind: 'empty' });
+
+    const copy = duplicateObject(scene, model);
+
+    assert.notEqual(copy, null);
+    assert.notEqual(copy.id, model.id, 'a fresh identity');
+    assert.equal(copy.name, 'Rectangle 2', 'named so the two can be told apart');
+    assert.equal(copy.x, 30);
+    assert.equal(copy.y, -10);
+    assert.equal(copy.children.length, 1);
+    assert.notEqual(copy.children[0].id, child.id, 'and so is every child');
+
+    assert.deepEqual(scene.roots().map(root => root.name),
+        ['Rectangle', 'Rectangle 2', 'Empty 2'],
+        'immediately after its model, not at the end');
+    assert.equal(after.name, 'Empty 2');
+});
+
+test('a duplicate is one authored operation, so one Ctrl Z takes it back', () => {
+    const scene = sceneWith();
+    const model = createObject(scene, { kind: 'rectangle' });
+    createObject(scene, { kind: 'empty', parent: model });
+
+    const seen = [];
+    scene.operations.on('operation', operation => seen.push(operation));
+    const copy = duplicateObject(scene, model);
+
+    assert.equal(seen.length, 1, 'one operation for the whole subtree');
+    assert.equal(seen[0].type, 'ADD_OBJECT');
+    assert.equal(seen[0].origin, 'editor', 'an intent, not a simulation output');
+
+    scene.operations.submit(invert(seen[0]));
+    assert.equal(scene.has(copy), false);
+    assert.equal(scene.has(model), true, 'and the model is untouched');
+});
+
+test('a reference into the copied subtree follows the copy; one pointing out does not', () => {
+    const Link = defineComponent({
+        type: 'res_link_dup',
+        label: 'Link',
+        properties: { target: { id: 'p_target', type: PropertyType.OBJECTREF, default: null } }
+    });
+    const known = registry();
+    known.register(Link);
+    const scene = sceneWith(known);
+
+    const model = createObject(scene, { kind: 'empty' });
+    const child = createObject(scene, { kind: 'empty', parent: model });
+    const outsider = createObject(scene, { kind: 'empty' });
+
+    const inward = addComponent(model, 'res_link_dup', known);
+    inward.target = child.id;
+    const outward = addComponent(child, 'res_link_dup', known);
+    outward.target = outsider.id;
+
+    const copy = duplicateObject(scene, model);
+
+    assert.equal(copy.getComponent('res_link_dup').target, copy.children[0].id,
+        'the copy names its own child, not the model’s');
+    assert.equal(copy.children[0].getComponent('res_link_dup').target, outsider.id,
+        'and what was never copied is still named');
+});
+
+test('duplicating something the scene does not hold is refused, not thrown', () => {
+    const scene = sceneWith();
+    assert.equal(duplicateObject(scene, null), null);
+    assert.equal(duplicateObject(scene, new SceneObject('Detached')), null);
 });

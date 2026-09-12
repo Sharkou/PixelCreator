@@ -36,9 +36,9 @@ import {
     GRAPH_VERSION,
     GraphError,
     GraphIssueCode,
-    OBJECT_TYPE,
     PortDirection,
     PortKind,
+    carriesObjects,
     declaredProperties,
     migrateNode,
     nodes as defaultNodes,
@@ -56,6 +56,23 @@ import {
  * hang a creator would notice as one.
  */
 export const DEFAULT_BUDGET = 4096;
+
+/**
+ * How many executions of one component may be suspended at once (ADR-0058).
+ *
+ * THE BUDGET BOUNDS ONE WALK; THIS BOUNDS HOW MANY THERE ARE. A `Delay` or an `Every` wired
+ * to `On Update` suspends once per step and the pile never shrinks — `waiting` reached 600
+ * after ten seconds at sixty steps, each one counted down and resumed every step with a full
+ * budget of its own. Nothing bounded it, so a bad graph hung the frame by a route the budget
+ * could not see, and it did so gradually, which is the hardest kind to diagnose.
+ *
+ * IT IS NOT A COLLAPSE INTO ONE. ADR-0058 §3 is explicit that two passes through one `Delay`
+ * wait independently, so the list stays a list; what is added is a ceiling, and reaching it
+ * is a stated failure — the same answer the budget gives, one scope up. Two hundred and fifty
+ * six is far past any honest graph: a shooter's bullets are Objects with their own component
+ * each, not two hundred waits on one.
+ */
+export const MAX_PENDING = 256;
 
 /**
  * Build the interpreter `Behaviors` is constructed with.
@@ -132,7 +149,17 @@ export function interpretGraph(graph, { registry = defaultNodes, budget = DEFAUL
                 // not at t = 1 - dt — so a continuation parked by the `start` or `update`
                 // below is untouched until the next step, by construction rather than by a
                 // flag saying which step it was born in.
-                resumeDue(compiled, state, budget);
+                // AND A WAIT THAT FAILS DOES NOT CANCEL THE STEP. `resumeDue` isolates one
+                // suspended execution from the next; raising its failure HERE rather than
+                // there is the same sentence one level up — `On Update` is not work that a
+                // `Delay` which went wrong has anything to do with. The failure still reaches
+                // the Runtime, once the step has done what it could (ADR-0012).
+                let failure = null;
+                try {
+                    resumeDue(compiled, state, budget);
+                } catch (error) {
+                    failure = error;
+                }
 
                 // `start` before `update`, on the first step and only there: a graph that
                 // initialises a property must have done so before anything reads it.
@@ -142,6 +169,7 @@ export function interpretGraph(graph, { registry = defaultNodes, budget = DEFAUL
                 }
 
                 runEvent(compiled, 'update', state, budget);
+                if (failure) throw failure;
             }
         };
     };
@@ -194,7 +222,51 @@ function resumeDue(compiled, state, budget) {
     // A FRESH BUDGET EACH, BECAUSE A RESUMED EXECUTION IS AN ORDINARY ONE. It walks the same
     // stack, through the same nodes, with the same bound on how far it may run in one step —
     // what it does not get is a way to run further than an event would (ADR-0058 §6).
-    for (const entry of due) walk(compiled, [entry.to], entry.produced, state, budget, entry);
+    //
+    // AND ONE THAT FAILS DOES NOT TAKE THE OTHERS WITH IT. The due entries were removed from
+    // `pending` before any of them ran — they have to be, or a re-suspension would be counted
+    // down twice — so a throw part-way through this loop used to delete every execution after
+    // it, permanently: two branches of a `Sequence` behind a `Delay`, one node failing, and
+    // the other branch never resumed again. The FIRST failure still reaches the Runtime,
+    // which is what ADR-0012 asks — a step reports one error, as it always has; what it no
+    // longer does is cancel work it has nothing to do with.
+    let failure = null;
+    for (const entry of due) {
+        try {
+            walk(compiled, [entry.to], entry.produced, state, budget, entry);
+        } catch (error) {
+            failure ??= error;
+        }
+    }
+    if (failure) throw failure;
+}
+
+/**
+ * Park a continuation, or refuse when this instance is already holding too many.
+ *
+ * THE CEILING IS STATED, NEVER SILENT. Dropping the wait would make a graph stop working for
+ * a reason nothing on screen mentions; refusing it raises the same structured failure the
+ * budget raises, which the Runtime isolates and reports against the node that asked
+ * (ADR-0012, ADR-0058).
+ *
+ * @param {object} state - The running state, carrying `pending`
+ * @param {object} entry - The continuation to park
+ * @param {object} node - The node that asked, for the report
+ */
+function suspend(state, entry, node) {
+    const pending = state.pending;
+    if (!pending) return;
+
+    if (pending.length >= MAX_PENDING) {
+        throw new GraphError(
+            GraphIssueCode.BUDGET_EXCEEDED,
+            `This Component is already waiting on ${MAX_PENDING} things at once; `
+                + 'a timing node reached from On Update starts a new wait on every step.',
+            { node: node?.id ?? null }
+        );
+    }
+
+    pending.push(entry);
 }
 
 /**
@@ -427,7 +499,13 @@ function walk(compiled, stack, produced, state, budget, resumed = null) {
     // wire — `Every` starts its clock on the way in and fires on the way back — and it has to
     // be told how far PAST its deadline this step landed, or a repeating node drifts by half
     // a step every time round (ADR-0058 §5.1).
-    let entered = resumed;
+    //
+    // ONLY A NODE THAT PARKED AT ITSELF IS RESUMING. A `wait` parks at the node AFTER the one
+    // that waited (see below), so the first node of that walk never suspended anything — and
+    // marking it resumed told the node a lie: an `Every` behind a `Delay` read `io.resumed`,
+    // decided it was coming back from its own interval, and fired on arrival instead of after
+    // it. An `again` parks at the node itself, and that one really is a return.
+    let entered = resumed?.again ? resumed : null;
 
     while (stack.length > 0) {
         if (++steps > budget) {
@@ -477,7 +555,7 @@ function walk(compiled, stack, produced, state, budget, resumed = null) {
         if (waiting !== null) {
             for (const portId of continuations) {
                 const next = compiled.flow.get(portKey(node.id, portId));
-                if (next) state.pending?.push({ remaining: waiting, to: next.to, produced });
+                if (next) suspend(state, { remaining: waiting, to: next.to, produced }, node);
             }
             continue;
         }
@@ -495,12 +573,14 @@ function walk(compiled, stack, produced, state, budget, resumed = null) {
         const back = againOf(result);
         if (back !== null) {
             const carried = globalThis.Math.max(overshoot, -back);
-            state.pending?.push({
+            suspend(state, {
                 remaining: back + carried,
                 to: { node: node.id, port: 'in' },
                 produced,
-                kept: keptBy(result)
-            });
+                kept: keptBy(result),
+                // PARKED AT ITSELF, so the pass that picks this up is a RETURN and says so.
+                again: true
+            }, node);
         }
 
         // Reversed, so the first declared continuation is the first one popped.
@@ -693,10 +773,17 @@ function producedFrom(definition, node, portId, state, frame) {
 
     const value = frame.produced.get(key);
     const port = portOf(definition, node, PortDirection.OUTPUT, portId, { properties: state.properties });
-    if (port?.type !== OBJECT_TYPE) return value;
+    if (!carriesObjects(port?.type)) return value;
 
     const scene = state.ctx?.scene ?? null;
     if (typeof scene?.has !== 'function') return value;
+
+    // A LIST OF HANDLES IS THE SAME SENTENCE, ELEMENT BY ELEMENT — and it is the shape
+    // `portTypeOf()` gives a property declared `list<objectref>` (ADR-0034 §3.5). A dead
+    // entry reads as nothing and KEEPS ITS SLOT, exactly as `portValueOf()` answers on the
+    // way in; dropping it would renumber a list a graph may be indexing into.
+    if (globalThis.Array.isArray(value)) return value.map(item => (scene.has(item) ? item : null));
+
     return scene.has(value) ? value : null;
 }
 
@@ -739,7 +826,12 @@ function defaultOf(compiled, node, portId, state) {
     // record carrying an `id` and a `name` is indistinguishable from a real handle to a node
     // that duck-types. There is nothing worth checking, so nothing is checked — an
     // unconnected `object` port yields nothing, always, whatever the payload says.
-    if (port?.type === OBJECT_TYPE) return null;
+    // A LIST OF HANDLES IS THE SAME SENTENCE, and it was not asked: the guard compared the
+    // type to `object` and an `array<object>` port is not that string, so a payload could
+    // hand a list of forged records through and `storedValueOf()` would map them to stored
+    // scene identities. `carriesObjects()` is the Core's own reading of the type
+    // (core/graph/nodes.js), asked once rather than spelled out twice.
+    if (carriesObjects(port?.type)) return null;
 
     if (node.inputs && portId in node.inputs) return node.inputs[portId];
 

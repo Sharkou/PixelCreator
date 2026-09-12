@@ -223,13 +223,16 @@ export const RULES = [
         id: 'files-to-content',
         accepts: (payload, target) => payload.kind === DragKind.FILES && target.zone === DropZone.CONTENT,
         describe: () => 'Replace this content',
-        perform: (payload, target, context) => {
+        // ASYNC, BECAUSE REPLACING CONTENT IS AN OPERATION AND AN OPERATION CARRIES WHAT IT
+        // REPLACES. Reading the previous payload is storage, and storage may wait (ADR-0020
+        // §4) — the same road `prefab-to-scene` already takes for the same reason.
+        perform: async (payload, target, context) => {
             const entry = payload.entries[0];
             if (!entry || !target.resource) return null;
 
             // THE SAME PATH AS THE `Replace…` BUTTON: one way to replace content, whichever
             // gesture asked for it.
-            return { replaced: replaceContent(target.resource, entry, context) };
+            return { replaced: await replaceContent(target.resource, entry, context) };
         }
     },
 
@@ -240,7 +243,9 @@ export const RULES = [
         accepts: (payload, target) => payload.kind === DragKind.RESOURCE
             && target.zone === DropZone.PROPERTY
             && acceptsResource(target, payload.resource),
-        describe: (payload, target) => `Assign to ${target.label ?? target.prop}`,
+        describe: (payload, target) => (holdsReferenceList(target)
+            ? `Add ${payload.resource?.name || 'this resource'} to ${target.label ?? target.prop}`
+            : `Assign to ${target.label ?? target.prop}`),
         perform: (payload, target) => {
             assignReference(target, payload.resource.id);
             return { assigned: payload.resource.id };
@@ -298,7 +303,7 @@ export const RULES = [
         refuses: (payload, target) => (acceptsObject(target)
             ? null
             : `${target.label ?? target.prop} does not hold an Object reference.`),
-        describe: (payload, target) => (holdsObjectList(target)
+        describe: (payload, target) => (holdsReferenceList(target)
             ? `Add ${payload.name || 'this Object'} to ${target.label ?? target.prop}`
             : `Assign ${payload.name || 'this Object'} to ${target.label ?? target.prop}`),
         // A TARGET THAT HAS SINCE BEEN DELETED IS NOT CHECKED, deliberately. A reference to
@@ -893,16 +898,27 @@ export function canDrop(payload, target) {
 /**
  * Perform a drop.
  *
+ * A RULE MAY ANSWER A PROMISE. Two of them read storage before they can act — instantiating
+ * a prefab reads its subtree, replacing a resource's content carries the bytes it replaces —
+ * and storage may wait (ADR-0020 §4). No caller reads what a rule returns, so what the
+ * shape costs is nothing; what a caller must not do is drop a failure on the floor, and one
+ * is said here rather than left as a rejection nobody is holding.
+ *
  * @param {object} payload - What is being dragged
  * @param {object} target - Where it lands
  * @param {object} context - `{ project, scene, workspace, folder }`
- * @returns {object|null} What the rule did, or null when the drop was refused
+ * @returns {object|Promise<object|null>|null} What the rule did, or null when it was refused
  */
 export function performDrop(payload, target, context = {}) {
     const verdict = canDrop(payload, target);
     if (!verdict.allowed) return null;
 
-    return verdict.rule.perform(payload, target, context) ?? null;
+    const done = verdict.rule.perform(payload, target, context) ?? null;
+    if (typeof done?.then === 'function') {
+        done.catch(error => console.warn('[dnd] this drop could not be completed:', error));
+    }
+
+    return done;
 }
 
 /**
@@ -970,11 +986,18 @@ export function acceptsObject(target) {
     return elementOf(declared)?.type === PropertyType.OBJECTREF;
 }
 
-/** Whether a property row holds a LIST of Object references rather than one. */
-function holdsObjectList(target) {
+/**
+ * Whether a property row holds a LIST of references rather than one.
+ *
+ * ONE QUESTION FOR BOTH KINDS OF IDENTITY. An Object list and a Resource list are added to
+ * the same way and for the same reason — a drop means "and this one too" — so asking twice
+ * is how the two would come to behave differently.
+ */
+function holdsReferenceList(target) {
     if (!target?.component || !target.prop) return false;
-    return elementOf(componentSchema(target.component)?.[target.prop] ?? null)?.type
-        === PropertyType.OBJECTREF;
+
+    const element = elementOf(componentSchema(target.component)?.[target.prop] ?? null);
+    return element?.type === PropertyType.OBJECTREF || element?.type === PropertyType.RESOURCE;
 }
 
 /**
@@ -1037,9 +1060,14 @@ function componentClause(target) {
 
     const schema = componentSchema(target.component);
     const property = schema?.[target.prop];
-    if (property?.type !== PropertyType.RESOURCE) return null;
+    // A LIST OF REFERENCES TAKES ONE TOO, and the rule is the scalar one asked a level down —
+    // the very sentence `acceptsObject()` already makes for a `list<objectref>`. Without it
+    // the two reference types were asymmetric for no reason anyone had decided: an Object
+    // could be dropped into a list and a Resource could not.
+    const declared = property?.type === PropertyType.ARRAY ? elementOf(property) : property;
+    if (declared?.type !== PropertyType.RESOURCE) return null;
 
-    return { kind: property.kind ?? null, mime: property.mime ?? null };
+    return { kind: declared.kind ?? null, mime: declared.mime ?? null };
 }
 
 /**
@@ -1063,10 +1091,11 @@ function assignReference(target, id) {
         return;
     }
 
-    // A LIST IS ADDED TO, NEVER REPLACED. Dropping a second Object on a `list<objectref>`
-    // means "and this one too" — replacing would throw away the entries a creator put there,
-    // and it is the one reading `<px-list>`'s own Add button already gives the gesture.
-    if (holdsObjectList(target)) {
+    // A LIST IS ADDED TO, NEVER REPLACED. Dropping a second Object on a `list<objectref>` —
+    // or a second picture on a `list<resource>` — means "and this one too": replacing would
+    // throw away the entries a creator put there, and it is the one reading `<px-list>`'s own
+    // Add button already gives the gesture.
+    if (holdsReferenceList(target)) {
         const held = target.component[target.prop];
         const list = globalThis.Array.isArray(held) ? held : [];
         target.component.setProperty(target.prop, [...list, id]);
@@ -1133,12 +1162,19 @@ function importFiles(payload, parent, context) {
     return created;
 }
 
-/** Write a new payload into a resource, the same way the Replace button does. */
-function replaceContent(resource, entry, context) {
+/**
+ * Write a new payload into a resource, the same way the Replace button does.
+ *
+ * THROUGH THE PIPELINE, so it is undoable and replicated: what a creator drops onto an
+ * existing resource is an edit of its CONTENT, which is the case ADR-0070 §5 gave
+ * `SET_PAYLOAD` for — not the bookkeeping of a model being written out.
+ */
+async function replaceContent(resource, entry, context) {
+    const batch = createId();
     if (entry.mime && entry.mime !== context.project.get(resource.id)?.mime) {
-        context.project.setProperty(resource.id, 'mime', entry.mime);
+        context.project.setProperty(resource.id, 'mime', entry.mime, { batch });
     }
-    context.project.save(resource.id, entry.payload);
+    await context.project.setPayload(resource.id, entry.payload, { batch });
     return resource.id;
 }
 

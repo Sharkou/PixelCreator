@@ -82,6 +82,15 @@ export function propertyTypes() {
  * @returns {any} The starting value
  */
 export function defaultForProperty(property) {
+    // AN OBJECT REFERENCE HAS NO DECLARED DEFAULT, whatever a payload writes down. An ObjectId
+    // belongs to ONE scene and a declaration belongs to a project (ADR-0034 invariant 1), so a
+    // `.px` carrying one names an Object it cannot know — and handing that string back puts a
+    // raw identity on a port typed `object`, which is precisely the boundary `portValueOf()`
+    // exists to hold (ADR-0036). The Editor cannot author such a default — `definition.js`
+    // says so on the grounds that this function "answers null whatever is stored", which was
+    // not true — but a hand-written, migrated or tool-generated file can.
+    if (property?.type === PropertyType.OBJECTREF) return null;
+
     const declared = property?.default;
     if (declared !== undefined) return copyValue(declared);
 

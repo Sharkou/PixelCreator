@@ -258,8 +258,14 @@ ressource ouverte, **la ressource sélectionnée** et les piles d'annulation. C'
 - « Il y a du travail non enregistré » est **dérivé** de l'événement `'operation'` du
   pipeline, jamais un drapeau posé à la main. Une écriture simple ne le déclenche pas — ce
   n'est pas une intention (ADR-0003) — et une opération répliquée non plus.
-- `Ctrl S` écrit la scène dans le `ResourceStore` (en mémoire pour l'instant : passer à
-  IndexedDB est un échange d'implémentation, pas une réécriture d'appelants).
+- `Ctrl S` écrit la scène dans le `ResourceStore`. L'échange vers IndexedDB a eu lieu
+  (ADR-0065) : `PersistentResourceStore` tient la logique, `IndexedDbArea` les quarante lignes
+  de base de données, et aucun appelant n'a changé — parce qu'ils attendent tous un store qui
+  peut attendre (ADR-0020 §4).
+- **Un enregistrement n'écrit que ce qui a changé.** `Workspace.save()` refuse un éditeur qui
+  n'a rien authored depuis sa dernière écriture : réécrire une charge utile intacte ferait
+  monter une `revision` que tous les caches de l'Editor invalident, et estamperait `modified`
+  d'une heure où rien n'a été modifié.
 - Deux piles distinctes : celle de la scène et celle du manifeste. `Ctrl Z` vise **celle où
   la dernière intention a été émise** — pas celle que la sélection désigne, parce qu'une
   suppression efface la sélection et l'undo qui la restaure viserait alors la scène
@@ -378,6 +384,11 @@ L'œil de la Hierarchy et la case `Active` de l'Inspector écrivent **le même c
 a été supprimé du contrat d'`Object` : le Runtime ignorait un objet inactif, le renderer en
 ignorait un invisible, aucun contrôle n'exposait la différence, et les deux vues étaient en
 désaccord (ADR-0026 §2).
+
+**Et l'infobulle le dit.** Elle lisait `Hide` / `Show`, ce qui décrit la moitié de ce que le
+champ fait : un objet éteint cesse aussi de **tourner**, donc masquer un décor pour voir
+derrière lui coupait son graphe, ses déplacements et ses collisions. Elle lit
+« Turn off — it stops drawing and running » (ADR-0054).
 
 ### `+` et `…` dans chaque fenêtre — IMPLÉMENTÉ (2026-08-18)
 
@@ -604,9 +615,9 @@ deux, et le nœud choisi liste les propriétés par leur nom.
 
 ### Ce qui n'est pas encore là
 
-Play / Pause · barre de commandes `Ctrl K` · Timeline fonctionnelle · Console · Players ·
-sélection multiple (scène et graphe) · rotation à la poignée · détachement de fenêtre ·
-valeur en ligne sur une entrée de nœud non connectée · copier/coller dans le graphe.
+Barre de commandes `Ctrl K` · Timeline fonctionnelle · Console · Players · sélection multiple
+(scène et graphe) · rotation à la poignée · détachement de fenêtre · copier/coller dans le
+graphe.
 
 Faits depuis : undo/redo (ADR-0024), Operations structurelles (ADR-0019), reparentage et
 réordonnancement par glisser-déposer, enregistrement, le Project comme véritable
@@ -615,10 +626,21 @@ gestionnaire de ressources (ADR-0025), le drag & drop transverse et l'ordre dans
 fenêtre, ouverture et fermeture** (ADR-0027), et **la barre d'onglets de documents : la
 Scene et chaque `.px` ouvert y sont des onglets, la Timeline garde sa bande à part**.
 
-Le titlebar ne porte **ni transport ni barre de commandes**, bien que la maquette dessine
-les deux : Play demande l'instantané de scène restauré à l'arrêt, `Ctrl K` demande un
-registre de commandes à interroger. Un bouton visible dont rien n'est derrière est la seule
-chose que cet Editor a toujours refusée.
+Le titlebar porte le transport depuis ADR-0029 — Play prend un instantané, Stop le repose —
+et **toujours pas de barre de commandes** : `Ctrl K` demande un registre de commandes à
+interroger, et un bouton visible dont rien n'est derrière est la seule chose que cet Editor a
+toujours refusée.
+
+Les raccourcis sont une table pure (`editor/shortcuts.js`) : `Ctrl Z` / `Ctrl Shift Z` /
+`Ctrl Y`, `Ctrl S`, `Ctrl D` (dupliquer), et hors table `Delete`, `F` (cadrer), `Escape`.
+`Escape` **abandonne le geste en cours** avant de désélectionner : il remet l'objet là où la
+prise l'a trouvé, ce qui est ce qu'un créateur veut dire en l'appuyant au milieu d'un
+glissement. Un tracé de tuiles est rendu de la même façon — il écrit au fur et à mesure, donc
+l'abandonner demande de reposer les cases, pas de ne rien faire — et les deux reposes
+appartiennent au `batch` du geste. Ce `batch` remonte ensuite jusqu'à la pile
+(`History.forget()`) : un geste abandonné ne coûte pas un `Ctrl Z` pour rien. `Ctrl D` et `Ctrl S` prennent toujours la touche, même quand il n'y a rien à
+dupliquer ou à écrire : ce qu'un navigateur en ferait sinon est un signet ou un
+téléchargement de la page.
 
 ## OBSERVÉ — la synchronisation temps réel, en détail
 

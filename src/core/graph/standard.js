@@ -503,13 +503,26 @@ function ownType(io) {
 }
 
 /**
- * Resolve a referenced property or refuse, with the reason in the code.
+ * The property a node names, or null when it has not named one yet.
  *
- * NEVER A SILENT DANGLING REFERENCE. A node pointing at a property that was deleted is a
+ * NEVER A SILENT DANGLING REFERENCE. A node pointing at a property that was DELETED is a
  * structured failure the runtime reports and the validator lists — not an `undefined` that
  * spreads through the graph and shows up as a component that quietly stopped moving.
+ *
+ * A NODE THAT HAS CHOSEN NOTHING YET IS A DIFFERENT SENTENCE, AND IT IS THE ORDINARY ONE.
+ * `validate.js` files it as a WARNING precisely so a graph being built still runs
+ * (project/graphs.js: "refusing to run one would make the Editor unusable while a creator is
+ * building"), and this used to throw on it — every instance, every step. The throw unwinds
+ * the whole walk, so a `Set Property` a creator had dropped and not yet aimed also stopped
+ * every node WIRED AFTER IT from running, and the failure was reported against the Component
+ * rather than against the node. Two layers, one finding, and they disagreed about whether it
+ * was fatal. It is not: the node does nothing, the flow carries on, and the validator goes on
+ * saying that something is missing.
+ *
+ * @param {object} io - The node's execution context
+ * @returns {object|null} The property descriptor, or null when none is chosen
  */
-function requireProperty(io) {
+function chosenProperty(io) {
     const property = resolvedProperty(io.node, {
         properties: io.properties,
         components: io.ctx?.scene?.registry ? catalogueOf(io) : null
@@ -517,11 +530,11 @@ function requireProperty(io) {
     if (property) return property;
 
     const id = io.node?.params?.property ?? null;
+    if (!id) return null;
+
     throw new GraphError(
-        id ? GraphIssueCode.MISSING_PROPERTY : GraphIssueCode.MISSING_REFERENCE,
-        id
-            ? `This node reads a property the Component no longer declares.`
-            : 'This node has no property selected.',
+        GraphIssueCode.MISSING_PROPERTY,
+        'This node reads a property the Component no longer declares.',
         { node: io.node?.id, property: id }
     );
 }
@@ -849,7 +862,11 @@ export const STANDARD_NODES = [
         // `portTypeOf()`, so an `objectref` property leaves this node as a HANDLE and not as
         // the identity it is stored as (ADR-0034 §3.5).
         evaluate: io => {
-            const property = requireProperty(io);
+            const property = chosenProperty(io);
+            // NOTHING CHOSEN YET ANSWERS NOTHING, which is what an unwired port already
+            // answers — the graph is being built, and reading it is not a failure.
+            if (!property) return { value: null };
+
             const component = targetComponent(io);
 
             // A TARGET THAT IS GONE IS A STATE OF THE SCENE, NOT A FAULT (ADR-0034 §3.4): the
@@ -889,7 +906,11 @@ export const STANDARD_NODES = [
         },
         outputs: [flow('out')],
         execute: io => {
-            const property = requireProperty(io);
+            const property = chosenProperty(io);
+            // NOTHING CHOSEN YET WRITES NOTHING, AND THE FLOW GOES ON. What follows this node
+            // is the rest of a graph a creator is in the middle of building.
+            if (!property) return 'out';
+
             const component = targetComponent(io);
 
             // A PLAIN WRITE: a behaviour running inside `update()` is a simulation output and

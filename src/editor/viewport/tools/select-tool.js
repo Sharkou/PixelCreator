@@ -199,6 +199,41 @@ export class SelectTool {
     }
 
     /**
+     * Abandon the gesture, putting back what it had moved.
+     *
+     * THE VALUES WERE ALREADY CAPTURED AND NOTHING READ THEM. `press()` has recorded where
+     * the object started since the day it was written — `startX`, `startY`, and everything
+     * `beginResize()` keeps — and the only way out of a drag was `release()`, which commits.
+     * So Escape mid-drag cleared the selection and left the object following the pointer with
+     * no outline around it, and the move landed in the history on release: the one key a
+     * creator presses to abort a gesture removed the feedback and kept the mutation.
+     *
+     * WRITTEN BACK UNDER THE GESTURE'S OWN BATCH, so the whole drag is one history entry
+     * whose net effect is nothing — rather than a second entry saying "and then it went
+     * back", which is what a creator would have to undo twice (ADR-0024 §4).
+     */
+    cancel() {
+        const drag = this.#drag;
+        this.#drag = null;
+        if (!drag || !drag.started) return null;
+
+        if (drag.mode === 'resize') {
+            this.#write(drag, drag.state.component, 'width', drag.state.width);
+            this.#write(drag, drag.state.component, 'height', drag.state.height);
+            this.#write(drag, drag.state.transform, 'x', drag.state.x);
+            this.#write(drag, drag.state.transform, 'y', drag.state.y);
+            return drag.batch ?? null;
+        }
+
+        this.#write(drag, drag.transform, 'x', drag.startX);
+        this.#write(drag, drag.transform, 'y', drag.startY);
+        // THE BATCH IS ANSWERED, NOT THE FACT OF CANCELLING. The whole gesture — what it
+        // moved and what put it back — is one entry in the history, and the shell drops that
+        // entry rather than leaving `Ctrl Z` to spend itself on a no-op (editor/history.js).
+        return drag.batch ?? null;
+    }
+
+    /**
      * Draw the selection, the hover hint and the handles.
      * @param {object} renderer - The renderer backend
      * @param {object} view - The view matrix in use

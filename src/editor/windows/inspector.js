@@ -31,7 +31,7 @@
 // value and twice the panel to read. The object's id is not shown at all — a creator does
 // not need it, and a panel that opens with a random string looks like a debugger.
 
-import { OBJECT_COMPONENT, declaredProperties, isMissingComponent, makeReactive, observe } from '../../core/mod.js';
+import { OBJECT_COMPONENT, createId, declaredProperties, isMissingComponent, makeReactive, observe } from '../../core/mod.js';
 import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { icon, iconForComponent, iconForObject, iconForPropertyType, iconForResource } from '../ui/icons.js';
@@ -40,10 +40,11 @@ import { ClickGuard, onDrag, releasePointer as release } from '../ui/gesture.js'
 import { searchField } from '../ui/search-field.js';
 import { addComponent, availableComponents, moveComponent, removeComponent } from '../commands.js';
 import { createComponent } from '../project/commands.js';
+import { PayloadCache } from '../project/payloads.js';
 import { previewOffsets, rankAt } from '../dnd/reflow.js';
 import { describeResource, editedPayload } from '../inspector/resource.js';
 import { PROPERTY_TYPE_LABELS, defaultField, describeDefinition } from '../inspector/definition.js';
-import { ResourceKind, baseNameOf, extensionOf, hasPayload, withExtension } from '../../project/mod.js';
+import { ResourceKind, baseNameOf, extensionOf, withExtension } from '../../project/mod.js';
 import { pickFile, readAsDataUrl } from '../ui/file.js';
 import { DropZone, componentPayload, propertyPayload } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
@@ -56,62 +57,6 @@ import '../ui/field.js';
 import '../ui/resource-field.js';
 import '../ui/list-field.js';
 import '../ui/object-field.js';
-
-/**
- * A resource's payload, when reading one makes sense and costs nothing.
- *
- * Synchronous on purpose: the in-memory store answers at once, and a store that returns a
- * promise answers with one — which this treats as "not read yet" rather than blocking a
- * panel on storage. What the panel shows then is the facts it has, and no content preview:
- * an asynchronous read belongs to the pass that adds an asynchronous store (ADR-0020).
- *
- * @param {object} project - The project
- * @param {object} resource - The manifest entry
- * @returns {any} The payload, or null
- */
-function readable(project, resource) {
-    if (!hasPayload(resource)) return null;
-
-    const payload = project.read(resource.id);
-    return payload && typeof payload.then === 'function' ? null : payload;
-}
-
-/**
- * The payload of a resource, however long its store takes to answer.
- *
- * A STORE IS ASYNCHRONOUS AND A PANEL IS NOT (ADR-0020 §4). A project in memory answers at
- * once; one restored from IndexedDB answers a promise, and the panel used to draw "no content
- * stored yet" for every resource of every real project — the facts, the preview and, since
- * ADR-0070 §5, the rows a creator types into. So a promise is awaited ONCE, remembered
- * against the revision it was read at, and the panel redraws when it lands.
- *
- * @param {object} cache - `${id}:${revision}` -> payload
- * @param {object} project - The project
- * @param {object} resource - The manifest entry
- * @param {Function} onArrival - Called when a late payload arrives
- * @returns {any} The payload, or null until it is here
- */
-function awaited(cache, project, resource, onArrival) {
-    if (!hasPayload(resource)) return null;
-
-    const key = `${resource.id}:${resource.revision ?? 0}`;
-    if (cache.has(key)) return cache.get(key);
-
-    const payload = project.read(resource.id);
-    if (!payload || typeof payload.then !== 'function') {
-        cache.set(key, payload ?? null);
-        return payload ?? null;
-    }
-
-    // Marked as asked for, so a redraw while it is in flight does not ask again.
-    cache.set(key, null);
-    payload.then(value => {
-        cache.set(key, value ?? null);
-        if (value !== undefined && value !== null) onArrival();
-    }, () => {});
-
-    return null;
-}
 
 /** How far a pointer travels before a press on a section header becomes a reorder. */
 /**
@@ -661,8 +606,11 @@ export class Inspector extends Element {
     // it is selected on a canvas rather than in a tree — so it is held here and cleared by
     // the shell when either of the other two selections speaks, exactly as those two clear
     // each other.
-    /** Payloads read back from the store, against the revision they were read at. */
-    #payloads = new globalThis.Map();
+    /** Payloads and sizes read back from the store, against the revision they were read at. */
+    #payloads = new PayloadCache();
+
+    /** Every control a drop could land on, in the order they were drawn. */
+    #rowZones = new globalThis.Set();
 
     /** `.px` resources whose live model is being fetched, so one render does not ask twice. */
     #attaching = new globalThis.Set();
@@ -706,6 +654,9 @@ export class Inspector extends Element {
      * @returns {Inspector} This element
      */
     bind({ scene, selection, subject = null, registry, workspace = null, definitions = null }) {
+        // Another project is another set of payloads, and nothing read for the last one can
+        // be right for this one.
+        if (workspace?.project !== this.#workspace?.project) this.#payloads.clear();
         this.#definitions = definitions;
         this.#scene = scene;
         this.#selection = selection;
@@ -739,7 +690,7 @@ export class Inspector extends Element {
             // one: `#componentsZone` is rebuilt on each render, and a listener per render
             // would stack up one drop per repaint. A row that wants the file stops the event
             // first, so `source` still assigns rather than attaching a second Sprite.
-            this.#makeDroppable(this.#body, () => this.#componentsZone);
+            this.#makeDroppable(this.#body, () => this.#componentsZone, { panel: true });
 
             // The same two actions the Hierarchy carries, in the same order and built from
             // the same primitives: find what is already there, then add. A creator who has
@@ -854,6 +805,11 @@ export class Inspector extends Element {
         if (!this.#body) return;
 
         this.release('panel');
+        // AND THE DROP TARGETS GO WITH THE ROWS THAT CARRIED THEM. Every droppable row below
+        // is about to be built again; keeping the old ones would hold a detached element per
+        // render for the life of the panel (`#rowZoneAt`). The panel's own surface is not in
+        // here — it is declared once, with `panel: true`, and outlives every redraw.
+        this.#rowZones.clear();
 
         // A resource, or an object. The two are mutually exclusive — the shell clears one
         // when the other speaks — so this is a route rather than a priority.
@@ -936,11 +892,14 @@ export class Inspector extends Element {
         const definition = this.#definitionFor(resource);
         const payload = definition
             ? definition.serialize()
-            : awaited(this.#payloads, project, resource, () => this.#render());
+            : this.#payloads.payload(project, resource, () => this.#render());
         const description = describeResource(resource, {
             project,
             payload,
-            size: project.store.size?.(resource.id) ?? null
+            // ASKED THE SAME WAY THE PAYLOAD IS, and for the same reason: a persistent store
+            // answers a promise, and `formatBytes(Promise)` is null — so the Size row was
+            // empty for every resource of every real project (ADR-0020 §4, ADR-0065 §3).
+            size: this.#payloads.size(project, resource, () => this.#render())
         });
 
         fill(this.#body,
@@ -1335,7 +1294,12 @@ export class Inspector extends Element {
         const field = el('px-field').bind(view, descriptor, {
             write: (value, { batch }) => {
                 const next = editedPayload(resource, payload, descriptor.name, value);
-                if (next) this.#workspace.project.setPayload(resource.id, next, { batch });
+                if (!next) return;
+                // `setPayload()` READS WHAT IT REPLACES, so it answers a promise (ADR-0020
+                // §4). A storage failure is said rather than left as a rejection nobody holds.
+                this.#workspace.project.setPayload(resource.id, next, { batch }).catch(error => {
+                    console.warn('[project] this change could not be written:', error);
+                });
             }
         });
 
@@ -1394,9 +1358,15 @@ export class Inspector extends Element {
     /**
      * Swap a resource's payload for a file the creator chooses.
      *
-     * `project.save()` writes the payload, bumps the revision and stamps `modified` — the
-     * same path a scene save takes, so nothing about replacing content is a special case.
-     * The identity does not move, so every reference to this resource still resolves.
+     * `setPayload()`, NOT `save()`, AND ADR-0070 §5 DRAWS THE LINE ITSELF: `save()` writes
+     * what a live model already decided and is bookkeeping; this is a creator editing the
+     * CONTENT of a resource that has no live model, which is an intent. It used to take the
+     * bookkeeping path, and the two things a creator loses by that are exactly the two the
+     * pipeline gives: replacing the wrong file could not be undone — the old bytes were gone
+     * from the store — and no Preview already open ever learned about it.
+     *
+     * ONE BATCH, so the format and the bytes are one `Ctrl Z`. The identity does not move,
+     * so every reference to this resource still resolves.
      */
     async #replaceContent(resource, content) {
         const file = await pickFile({ accept: content.accept ?? '' });
@@ -1404,12 +1374,13 @@ export class Inspector extends Element {
 
         const payload = await readAsDataUrl(file);
         const project = this.#workspace.project;
+        const batch = createId();
         // The declared format follows the file: replacing a PNG with a JPEG is a legal
         // thing to do, and leaving the old mime would make the panel lie about it.
         if (file.type && file.type !== project.get(resource.id)?.mime) {
-            project.setProperty(resource.id, 'mime', file.type);
+            project.setProperty(resource.id, 'mime', file.type, { batch });
         }
-        project.save(resource.id, payload);
+        await project.setPayload(resource.id, payload, { batch });
         this.#render();
     }
 
@@ -1445,8 +1416,10 @@ export class Inspector extends Element {
      * @param {object} zone - The target descriptor
      * @param {object} [options] - Options
      * @param {string} [options.accept] - Mime prefix for files, when the zone narrows it
+     * @param {boolean} [options.panel] - True for the panel's own surface, which answers only
+     *   where no row does; every other droppable is a row and is searched first
      */
-    #makeDroppable(element, zone, { accept = '' } = {}) {
+    #makeDroppable(element, zone, { accept = '', panel = false } = {}) {
         // A ZONE MAY BE A FACT OR A QUESTION. A row's zone is fixed the moment it is drawn;
         // the panel's own is whichever Object it is showing right now, and the panel outlives
         // its contents — so the persistent surface asks, and a row still just tells.
@@ -1488,6 +1461,12 @@ export class Inspector extends Element {
         // so the shell asks this element what it would accept. Stamping the zone on the
         // node is what lets `zoneAt()` answer without a second registry of rectangles.
         element.pxDropZone = zone;
+        // AND THE SEARCH READS WHAT WAS STAMPED. It used to re-find these by a hand-written
+        // list of tag names, so a control that was made droppable and was not in that list
+        // was invisible to a drag — which happened to `px-object`, and then again to
+        // `px-list`. Remembering the element here is what makes "droppable" and "findable"
+        // one fact instead of two that have to be kept in step.
+        if (!panel) this.#rowZones.add(element);
     }
 
     /**
@@ -1540,13 +1519,23 @@ export class Inspector extends Element {
     /**
      * The field under a point, when one of them declared a drop zone.
      *
-     * EVERY CONTROL THAT CAN BE A TARGET IS LISTED, and the list is what decides: a control
-     * absent from it is invisible to a drag however droppable `#makeDroppable()` made it.
-     * `px-object` was missing, so an `objectref` row — the one row an Object can be dropped
-     * on — could not be found (ADR-0034 §3.5).
+     * EVERY CONTROL `#makeDroppable()` TOUCHED IS SEARCHED, and that is the whole rule. It
+     * used to be a hand-written list of tag names — `px-field, px-resource, .preview, …` —
+     * so a control made droppable and not written down was invisible to a drag however
+     * droppable it was. `px-object` was missing, which made an `objectref` row unreachable
+     * (ADR-0034 §3.5); it was added, and then `px-list` was drawn, made droppable, and left
+     * out in exactly the same way — an Object dropped on a `list<objectref>` fell through to
+     * the panel behind it and attached a Component instead.
+     *
+     * The set is emptied at the top of every render, and a row that has left the document
+     * some other way is dropped from it as it is walked past.
      */
     #rowZoneAt(clientX, clientY) {
-        for (const node of this.shadowRoot.querySelectorAll('px-field, px-resource, px-object, .preview, .none, .add')) {
+        for (const node of [...this.#rowZones]) {
+            if (!node.isConnected) {
+                this.#rowZones.delete(node);
+                continue;
+            }
             if (!node.pxDropZone) continue;
 
             const box = node.getBoundingClientRect();
@@ -1686,9 +1675,16 @@ export class Inspector extends Element {
                 if (isMissingComponent(component)) return this.#renderMissing(component, type);
 
                 const fields = describeComponent(component);
-                return fields.length === 0
-                    ? [el('div', { class: 'none', textContent: 'No properties' })]
-                    : this.#renderRows(component, fields, type);
+                // A SECTION WITH NOTHING IN IT HAS TO SAY WHY. `No properties` is true and
+                // useless: a beginner who put `Tilemap Collider` on a plain sprite read it
+                // as a component that works and shows nothing, when it is one that needs a
+                // Tilemap beside it and will never do anything without one.
+                if (fields.length === 0) {
+                    const note = describeType(type, this.#registry, { project: this.#workspace?.project ?? null }).note;
+                    return [el('div', { class: 'none', textContent: note ?? 'No properties' })];
+                }
+
+                return this.#renderRows(component, fields, type);
             })()
         });
 
@@ -2309,13 +2305,22 @@ export class Inspector extends Element {
         // alike — and nothing else: every other row is drawn from its own value, which is
         // what `field()` checks before it lets a list be one at all (inspector/schema.js).
         if (descriptor.kind === FieldKind.LIST) {
-            return el('px-list').bind(target, descriptor, { ...options, scene: this.#scene ?? null });
+            return el('px-list').bind(target, descriptor, {
+                ...options,
+                scene: this.#scene ?? null,
+                project: this.#workspace?.project ?? null,
+                payloads: this.#payloads
+            });
         }
 
         if (descriptor.kind !== FieldKind.RESOURCE) return el('px-field').bind(target, descriptor, options);
 
         return el('px-resource').bind(target, descriptor, {
             project: this.#workspace?.project ?? null,
+            // THE PANEL'S CACHE, NOT THE CONTROL'S. This element is rebuilt on every render,
+            // so a cache of its own would be empty every time and the thumbnail would blink
+            // back to a glyph on each redraw (ui/resource-field.js).
+            payloads: this.#payloads,
             write: options.write ?? null,
             // Importing from the picker takes the same rule a dropped file does, and a
             // rule acts on the model rather than on the DOM — so it is handed the context
@@ -2455,7 +2460,9 @@ export class Inspector extends Element {
                 items.push({
                     id: entry.type,
                     label: entry.label,
-                    icon: iconForComponent(this.#registry.get(entry.type), entry.type)
+                    icon: iconForComponent(this.#registry.get(entry.type), entry.type),
+                    // Only where the name does not answer for itself (registry.js).
+                    tooltip: entry.note ?? undefined
                 });
             }
         }

@@ -58,9 +58,9 @@ import { Element, el, fill } from '../ui/element.js';
 import { sheet } from '../ui/styles.js';
 import { icon, iconForObject } from '../ui/icons.js';
 import { openMenu, pointAnchor } from '../ui/menu.js';
-import { capturePointer as capture, releasePointer as release } from '../ui/gesture.js';
+import { ClickGuard, capturePointer as capture, releasePointer as release } from '../ui/gesture.js';
 import { searchField } from '../ui/search-field.js';
-import { createMenuItems, createObject, deleteObject, reparentObject } from '../commands.js';
+import { createMenuItems, createObject, deleteObject, duplicateObject, reparentObject } from '../commands.js';
 import { DropZone, objectPayload } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
 import { carriesFiles, readDroppedFiles } from '../dnd/files.js';
@@ -72,6 +72,9 @@ import '../ui/window.js';
 
 /** The `…` entry that saves a row as a prefab; never a Component kind (ADR-0061 §11). */
 const SAVE_AS_PREFAB = 'save-as-prefab';
+
+/** The `…` entry that copies a row; never a Component kind either. */
+const DUPLICATE = 'duplicate-object';
 
 /**
  * How long a click on a selected name waits to see whether it was half of a double-click.
@@ -260,8 +263,18 @@ export class Hierarchy extends Element {
     // The press that may become a drag, then the drag itself. One field, because a row is
     // either being pressed or being carried, never both.
     #drag = null;
-    /** Set for exactly one click: the one that ends a drag and must not also select. */
-    #dragged = false;
+    /**
+     * The one click that must not select: the tail of the drag that just ended.
+     *
+     * NAMED BY ELEMENT, NOT BY A BOOLEAN (ui/gesture.js). A flag armed at the drop and cleared
+     * only by a row's own `onclick` stays armed when that click never comes — which is exactly
+     * what dropping a row INTO A COLLAPSED PARENT does: the reparent rebuilds the tree inside
+     * the `pointerup` handler, the row leaves the document, and the compatibility click is
+     * dispatched at nothing. The next click on any row in the tree then selected nothing, and
+     * a second click worked. `ClickGuard` clears on the next click wherever it lands, and on
+     * the next press besides.
+     */
+    #clicks = new ClickGuard();
 
     /**
      * Point the window at the scene it lists.
@@ -516,7 +529,19 @@ export class Hierarchy extends Element {
         };
     }
 
+    /**
+     * Build a row, releasing whatever the last row for this id was still listening to.
+     *
+     * A ROW IS REBUILT WHEN THE OBJECT AT AN ID IS A DIFFERENT INSTANCE — which is what Stop
+     * produces (`restoreScene` rebuilds the whole scene) and what undoing a deletion produces.
+     * The id is stable, so `#discardRows()` — which only releases ids that LEFT the tree —
+     * never released the old one: five observers per row, per cycle, for ever, each firing
+     * against a detached Object and pinning the row element it was built with. One Play and
+     * Stop per minute is three hundred dead subscriptions an hour on a six-object scene.
+     */
     #buildRow(object) {
+        this.release(`row:${object.id}`);
+
         const twisty = el('span', {
             class: 'ghost twisty',
             ...Hierarchy.#own(() => this.#toggle(object))
@@ -527,7 +552,7 @@ export class Hierarchy extends Element {
 
         const lock = this.#stateButton(object, 'lock', {
             on: () => object.lock,
-            title: () => (object.lock ? 'Unlock' : 'Lock — ignored by the viewport'),
+            title: () => (object.lock ? 'Unlock' : 'Lock — clicks in the scene pass through it'),
             glyph: () => (object.lock ? 'lock' : 'unlock')
         });
 
@@ -537,9 +562,17 @@ export class Hierarchy extends Element {
         // renderer consulted and only this button wrote: two states nobody could tell
         // apart, and an Inspector checkbox that did not move when you hid a row
         // (ADR-0026 §13).
+        //
+        // AND THE LABEL SAYS SO (ADR-0054). It read `Hide` / `Show`, which describes half of
+        // what the one flag does: an object turned off here stops DRAWING and stops RUNNING,
+        // so a creator who hid a decoration to see past it also silenced its graph, its
+        // movement and its collisions — and the word for it in the Inspector, two panels
+        // away, was `Active`. One value, one sentence, in both windows.
         const visibility = this.#stateButton(object, 'active', {
             on: () => !object.active,
-            title: () => (object.active ? 'Hide' : 'Show'),
+            title: () => (object.active
+                ? 'Turn off — it stops drawing and running'
+                : 'Turn on'),
             glyph: () => (object.active ? 'eye' : 'eye-off')
         });
 
@@ -563,6 +596,9 @@ export class Hierarchy extends Element {
             dataset: { id: object.id },
             onpointerdown: event => {
                 this.#cancelRename();
+                // NOTHING SURVIVES A PRESS. A guard left armed by a drag whose click never
+                // arrived would swallow this one instead (ui/gesture.js).
+                this.#clicks.disarm();
                 wasSelected = this.#selection.has(object);
                 this.#armDrag(event, object, row);
             },
@@ -582,10 +618,7 @@ export class Hierarchy extends Element {
             // is one, and the Inspector goes on showing what the creator last chose.
             onclick: () => {
                 // A click that ended a drag is not a click on a row.
-                if (this.#dragged) {
-                    this.#dragged = false;
-                    return;
-                }
+                if (this.#clicks.swallows(row)) return;
                 this.#announce(object);
             },
             ondblclick: () => {
@@ -751,12 +784,28 @@ export class Hierarchy extends Element {
         // question (ADR-0061 §11). The gesture it duplicates is dragging the row into the
         // Project panel; both go through the one rule, so the two cannot drift.
         const items = parent
-            ? [...createMenuItems(), { heading: 'Object' }, { id: SAVE_AS_PREFAB, label: 'Save as Prefab', icon: 'prefab' }]
+            ? [
+                ...createMenuItems(),
+                { heading: 'Object' },
+                { id: DUPLICATE, label: 'Duplicate', icon: 'layers' },
+                { id: SAVE_AS_PREFAB, label: 'Save as Prefab', icon: 'prefab' }
+            ]
             : createMenuItems();
 
         openMenu(anchor, items, kind => {
             if (kind === SAVE_AS_PREFAB) {
                 this.#saveAsPrefab(parent);
+                return;
+            }
+
+            // THE VERB THAT HAD NO CONTROL. `Ctrl D` does the same thing and is what most
+            // creators will reach for; a menu entry is what the rest will find (ADR-0026 §14).
+            if (kind === DUPLICATE) {
+                // A REFUSED COPY IS NOT A DESELECTION. The authority may say no (ADR-0011),
+                // and announcing nothing would take the outline off the row the creator had
+                // just right-clicked, as if they had clicked the background.
+                const copy = duplicateObject(this.#scene, parent);
+                if (copy) this.#announce(copy);
                 return;
             }
 
@@ -956,7 +1005,7 @@ export class Hierarchy extends Element {
         const drop = drag.started && here ? this.#resolveDrop(event.clientY) : null;
         const object = drag.object;
         // The click that follows this release belongs to the drag, not to the row.
-        this.#dragged = drag.started;
+        if (drag.started) this.#clicks.arm(drag.row ?? null);
         // Outside, the shell is holding this gesture and has to be told where it landed;
         // inside, it was never told about it at all. `#cancelDrag()` reports neither.
         const announced = drag.announced;
@@ -973,6 +1022,28 @@ export class Hierarchy extends Element {
             // quietly (ADR-0012, ADR-0022).
             onReport: report => console.warn(`[editor] ${report.message}`)
         });
+    }
+
+    /**
+     * Give up a drag in flight — what Escape means while a row is being carried.
+     *
+     * ONE KEY, ONE MEANING, IN EVERY WINDOW. The viewport learned to abandon a gesture; here
+     * Escape still only cleared the selection, so the row lost its highlight and the
+     * Inspector emptied — which reads unmistakably as "cancelled" — and then the release
+     * reparented the object anyway, possibly into a collapsed parent the creator could no
+     * longer find.
+     *
+     * @returns {boolean} True when there was a drag to give up
+     */
+    cancelGesture() {
+        const drag = this.#drag;
+        if (!drag) return false;
+
+        // The click that follows the release belongs to the gesture that was given up, not
+        // to the row under it: a cancelled drag must not also change what is selected.
+        if (drag.started) this.#clicks.arm(drag.row ?? null);
+        this.#cancelDrag();
+        return true;
     }
 
     #cancelDrag() {

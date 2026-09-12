@@ -54,6 +54,7 @@ import {
     viewMatrix
 } from '../../runtime/mod.js';
 import { Element, el } from '../ui/element.js';
+import { capturePointer as capture } from '../ui/gesture.js';
 import { sheet } from '../ui/styles.js';
 import { icon } from '../ui/icons.js';
 import { drawGrid, matrixScale } from './grid.js';
@@ -178,6 +179,7 @@ export class Viewport extends Element {
     #selection = null;
     #subject = null;
     #onError = null;
+    #onAbandon = null;
     #behaviors = null;
     #resources = null;
     #images = null;
@@ -244,6 +246,7 @@ export class Viewport extends Element {
         selection,
         subject = null,
         onError,
+        onAbandon = null,
         behaviors = null,
         resources = null,
         images = null,
@@ -254,6 +257,9 @@ export class Viewport extends Element {
         this.#selection = selection;
         this.#subject = subject;
         this.#onError = onError ?? null;
+        // Told the batch of a gesture that was given up, so the stack it wrote to can drop
+        // the entry. The surface does not know which History that is, and should not.
+        this.#onAbandon = onAbandon;
         // THE RUNTIME THAT DRAWS IS THE RUNTIME THAT PLAYS (ADR-0029 §1), so the graphs
         // have to reach it here: there is no second engine to hand them to. It is bound
         // rather than constructed because the host owns the Project that resolves a graph
@@ -466,7 +472,10 @@ export class Viewport extends Element {
             onpointerdown: event => this.#onPointerDown(event),
             onpointermove: event => this.#onPointerMove(event),
             onpointerup: event => this.#onPointerUp(event),
-            onpointercancel: event => this.#onPointerUp(event),
+            // A CANCELLED POINTER IS NOT A RELEASE. The browser took the pointer away —
+            // the gesture never finished, so committing what it had reached would write a
+            // move nobody completed (ui/gesture.js says the same of its own four endings).
+            onpointercancel: event => this.#onPointerCancel(event),
             onpointerleave: () => this.#onPointerLeave(),
             onwheel: event => this.#onWheel(event),
             oncontextmenu: event => event.preventDefault()
@@ -669,7 +678,11 @@ export class Viewport extends Element {
     /* ── pointers ────────────────────────────────────────────────────────── */
 
     #onPointerDown(event) {
-        this.#surface.setPointerCapture(event.pointerId);
+        // GUARDED, BECAUSE A POINTER THAT IS ALREADY GONE MUST NOT THROW ITS WAY OUT OF THIS
+        // HANDLER (ui/gesture.js). Bare, it was the first statement here, so a stale id
+        // aborted the whole press: the rectangle was not re-read, the pointer never joined
+        // the set, and no tool was pressed.
+        capture(this.#surface, event.pointerId);
         // A gesture is the one moment the cached rectangle is worth re-reading: a splitter
         // drag or a hidden panel moves the viewport without resizing it.
         this.#rect = this.#surface.getBoundingClientRect();
@@ -761,6 +774,20 @@ export class Viewport extends Element {
         this.#refreshCursor();
     }
 
+    /** The browser took the pointer away: undo what the gesture had reached, and forget it. */
+    #onPointerCancel(event) {
+        this.#pending = null;
+        if (this.#surface.hasPointerCapture(event.pointerId)) {
+            this.#surface.releasePointerCapture(event.pointerId);
+        }
+        this.#pointers.delete(event.pointerId);
+        this.#pinch = null;
+
+        this.#abandonGesture();
+        this.#refreshCursor();
+        this.#invalidate();
+    }
+
     #onPointerUp(event) {
         // Whatever was still pending belongs to this gesture, not to the next frame.
         this.#flushPointer();
@@ -811,12 +838,50 @@ export class Viewport extends Element {
         this.#invalidate();
     }
 
+    /**
+     * Give up whatever gesture is in flight, putting back what it had moved.
+     *
+     * ABANDONING IS NOT RELEASING, and this used to call `release()` — which is the word for
+     * "the creator let go", and therefore commits. A pointer the browser takes away, a second
+     * finger arriving, or an Escape are all "this never happened": a tool that can undo its
+     * own gesture is asked to (`cancel()`), and one that has nothing to put back is released
+     * as before.
+     */
     #abandonGesture() {
         if (this.#gesture === 'pan') this.#pan.release();
-        if (this.#gesture === 'tool') (this.#grabbed ?? this.#tool).release();
+        // A pinch holds nothing of the model, but it holds the anchor the next move reads
+        // from — and "whatever gesture is in flight" has to mean all three of them.
+        if (this.#gesture === 'pinch') this.#pinch = null;
+
+        let abandoned = null;
+        if (this.#gesture === 'tool') {
+            const tool = this.#grabbed ?? this.#tool;
+            if (typeof tool.cancel === 'function') abandoned = tool.cancel() ?? null;
+            else tool.release();
+        }
+
         this.#grabbed = null;
         this.#tap = null;
         this.#gesture = null;
+
+        // AND THE HISTORY IS TOLD, because a gesture that never happened must not cost an
+        // undo. The moves and the putting back share one batch, so the entry left behind
+        // nets to nothing; the host drops it (editor/history.js).
+        if (abandoned) this.#onAbandon?.(abandoned);
+    }
+
+    /**
+     * Abandon a gesture from outside — what Escape means while something is being dragged.
+     *
+     * @returns {boolean} True when there was a gesture to give up
+     */
+    cancelGesture() {
+        if (!this.#gesture) return false;
+
+        this.#abandonGesture();
+        this.#refreshCursor();
+        this.#invalidate();
+        return true;
     }
 
     /* ── zoom ────────────────────────────────────────────────────────────── */

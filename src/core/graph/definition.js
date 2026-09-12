@@ -257,6 +257,14 @@ export class ComponentDefinition {
         if (!property) return { applied: false, operation: null, decision: null };
         if (field === 'id') throw new Error('ComponentDefinition: a property identity is immutable');
         if (property[field] === value) return { applied: false, operation: null, decision: null };
+        // TWO PROPERTIES OF ONE NAME SURVIVE IN THE MODEL AND NOT IN THE FILE: `serialize()`
+        // writes `properties[name]`, so the second silently overwrites the first — and what
+        // is lost is a DECLARATION plus every node pointing at its id. `renameProperty()`
+        // checked this; the primitive underneath it did not, so the invariant held by
+        // convention rather than by construction (ADR-0027 §4).
+        if (field === 'name' && this.propertyNamed(value) && this.propertyNamed(value) !== property) {
+            return { applied: false, operation: null, decision: null };
+        }
 
         return this.#operations.submit(setPropertyOperation({
             target: { object: id, component: null },

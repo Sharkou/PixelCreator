@@ -271,6 +271,68 @@ test('a drag across five cells is ONE undo, and redo puts the whole stroke back'
     assert.equal(grid(it.tilemap), painted, 'and exactly the stroke, back again');
 });
 
+test('giving up a stroke puts back every cell it painted', () => {
+    // ESCAPE MID-PAINT, and the pointer the browser takes away. A stroke writes AS IT GOES,
+    // so `release()` has nothing left to commit — and the viewport, falling back to it for
+    // a tool with no `cancel()`, committed the whole drag instead of undoing it.
+    const it = staged();
+
+    it.tool.press(it.over(0, 2));
+    it.tool.move(it.over(2, 2));
+    it.tool.move(it.over(4, 2));
+    assert.equal(grid(it.tilemap), '000000/000000/111110/000000', 'the drag painted as it went');
+
+    it.tool.cancel();
+
+    assert.equal(grid(it.tilemap), '000000/000000/000000/000000', 'exactly the grid from before');
+    assert.equal(it.tool.painting, false);
+});
+
+test('a cancelled stroke is one history entry that does nothing, not two', () => {
+    const it = staged();
+    const batches = new globalThis.Set();
+    it.scene.operations.on('operation', operation => batches.add(operation.batch));
+
+    it.tool.press(it.over(0, 2));
+    it.tool.move(it.over(3, 2));
+    const abandoned = it.tool.cancel();
+
+    assert.equal(batches.size, 1, 'the putting back belongs to the gesture that asked');
+    assert.equal(batches.has(abandoned), true, 'and that is the batch it reports');
+    assert.equal(it.history.depth, 1);
+
+    it.history.undo();
+    assert.equal(grid(it.tilemap), '000000/000000/000000/000000', 'and it undoes to the same grid');
+});
+
+test('a stroke that crossed its own path is put back to what it found, not to what it wrote', () => {
+    const it = staged();
+    it.tilemap.setProperty('tiles', [
+        0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0,
+        3, 3, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0
+    ]);
+
+    it.tool.press(it.over(0, 2));
+    it.tool.move(it.over(2, 2));
+    it.tool.move(it.over(0, 2));
+    it.tool.cancel();
+
+    assert.equal(grid(it.tilemap), '000000/000000/330000/000000', 'the tiles that were there');
+});
+
+test('cancelling a press that painted nothing writes nothing at all', () => {
+    const it = staged();
+    const seen = [];
+    it.scene.operations.on('operation', operation => seen.push(operation));
+
+    it.tool.press(it.at(-40, -40));
+    assert.equal(it.tool.cancel(), null, 'nothing was painted, so no entry to drop');
+
+    assert.deepEqual(seen, [], 'a press outside the grid started no stroke to give up');
+});
+
 test('two strokes are two undos', () => {
     const it = staged();
 

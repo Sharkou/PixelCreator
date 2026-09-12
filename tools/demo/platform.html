@@ -30,7 +30,8 @@
         const project = new Project('Pixel Creator Platformer', { store: new MemoryResourceStore() });
         buildPlatformer(project, { registry: registerBuiltIns(new ComponentRegistry()) });
 
-        const bundle = bundleProject(project, project.store, { scene: IDS.scene });
+        // A BUNDLE READS EVERY PAYLOAD IT CARRIES, AND A STORE MAY WAIT (ADR-0020 §4).
+        const bundle = await bundleProject(project, project.store, { scene: IDS.scene });
         if (!putPreview(project.id, bundle)) {
             document.querySelector('strong').textContent = 'This browser would not store the bundle.';
         } else {

@@ -1,13 +1,18 @@
 # Tests
 
-## IMPLÉMENTÉ — état au 2026-08-17
+## IMPLÉMENTÉ — état au 2026-09-12
 
 ```bash
-tools/test.sh              # 642 tests (node --test, zéro dépendance)
-node tools/layers/run.js   # règles de couches + imports morts
-node tools/parity/run.js   # 39 scénarios capturés depuis Legacy
+tools/test.sh                  # 2265 tests (node --test, zéro dépendance)
+node tools/layers/run.js       # règles de couches + imports morts
+node tools/parity/run.js       # 39 scénarios capturés depuis Legacy
 node tools/check-css-literals.js
+node tools/check-boot.js       # chaque module que les points d'entrée atteignent se charge
+node tools/check-exports.js    # chaque import nommé désigne un export qui existe
 ```
+
+Le nombre de tests est donné pour situer l'ordre de grandeur, pas comme un objectif : ce qui
+compte est ce qu'ils protègent, et la liste des contrats est plus bas.
 
 Un test unitaire vit à côté du module qu'il couvre (`x.js` / `x.test.js`), et n'a besoin
 ni de DOM ni de navigateur : ce qui demande un DOM est vérifié dans le navigateur et noté

@@ -198,6 +198,58 @@ export function placePrefab(scene, definition, {
 }
 
 /**
+ * Copy an object and everything under it, as one ADD_OBJECT operation.
+ *
+ * THE MACHINERY EXISTED AND NOTHING IN THE EDITOR COULD REACH IT. `core/duplicate.js` draws
+ * fresh identities for a whole subtree and rewrites the references that pointed inside it
+ * (ADR-0056 §6) — and it writes straight into the Scene, which is right for a `Spawn` node,
+ * where a copy is a simulation OUTPUT and produces no Operation (ADR-0034 invariant 5), and
+ * wrong for a creator, whose copy is an authored INTENT that has to undo. So this is the same
+ * ending `placePrefab()` already takes: the records are remapped once, by the Core, and
+ * submitted as the very operation undoing a deletion applies.
+ *
+ * WHERE THE COPY LANDS: under the same parent, immediately after its model. Beside, because
+ * a Transform is a position in the PARENT's space (ADR-0002) — a copy that joined the roots
+ * would silently change coordinate space. Immediately after, because that is where a creator
+ * looks for it in the Hierarchy, and `scene.indexOf(model) + 1` is a function of the state
+ * rather than a guess.
+ *
+ * IT DOES NOT MOVE THE COPY. Two objects at one position is what a duplicate IS until the
+ * creator drags one; nudging it by some number of units would be the Editor deciding how far
+ * apart two things belong.
+ *
+ * @param {object} scene - The scene holding the model
+ * @param {object} object - The object to copy; must belong to `scene`
+ * @param {object} [options] - Options
+ * @param {string} [options.actor] - Who authored the intent
+ * @param {string} [options.batch] - Groups this into a larger history entry
+ * @returns {object|null} The copy's root, or null when there was nothing to copy
+ */
+export function duplicateObject(scene, object, { actor, batch } = {}) {
+    if (!object || !scene?.has?.(object)) return null;
+
+    const records = [object, ...descendants(object)].map(serializeObject);
+    const written = freshRecords(records, { declarationsFor: declarationsFrom(scene) });
+    if (!written) return null;
+
+    const [root, ...subtree] = written;
+    // NAMED SO THE TWO CAN BE TOLD APART, with the counter the create menu already uses.
+    root.name = uniqueName(scene, object.name || 'Object');
+
+    const result = scene.operations.submit(addObjectOperation({
+        object: root,
+        subtree,
+        parent: object.parent?.id ?? null,
+        index: scene.indexOf(object) + 1,
+        origin: Origin.EDITOR,
+        actor,
+        batch
+    }));
+
+    return result.applied ? scene.get(root.id) ?? null : null;
+}
+
+/**
  * Remove an object and everything under it, as one REMOVE_OBJECT operation.
  *
  * The subtree, the parent and the rank all travel with the operation. Without them,
@@ -390,16 +442,96 @@ export function reparentObject(scene, object, parent = null, index, {
 
     // WHAT `decompose()` CALLS `rotation` IS WHAT THE TRANSFORM CALLS `rotationX`, and the
     // two names are both right: the matrix has one rotation to report, and the component
-    // holds it as the first half of a pair (ADR-0051 §1). `rotationY` is not decomposed
-    // because it is not IN the matrix as an angle — it left as a horizontal scale, and
-    // `scaleX` already carries it back.
-    const PLACEMENT = [['x', 'x'], ['y', 'y'], ['rotationX', 'rotation'], ['scaleX', 'scaleX'], ['scaleY', 'scaleY']];
+    // holds it as the first half of a pair (ADR-0051 §1).
+    //
+    // `rotationY` IS NOT IN THE MATRIX AS AN ANGLE, AND THAT IS WHY IT HAS TO BE DIVIDED OUT.
+    // `localMatrix()` composes the horizontal scale as `scaleX · cos(rotationY)` (ADR-0051
+    // §2), so what `decompose()` hands back is that PRODUCT. Writing it into `scaleX` while
+    // leaving `rotationY` where it was applies the cosine a second time: an object turned 60°
+    // about Y halved its width on every reparent — including a plain reorder among siblings —
+    // compounding, with `sheared` false and nothing reported. Five values are written, the
+    // sixth is kept, and the product of the two is what the world asked for.
+    const turn = Math.cos(numberOf(transform.rotationY));
 
-    for (const [prop, decomposed] of PLACEMENT) {
-        transform.setProperty(prop, local[decomposed], { origin: Origin.EDITOR, actor, batch });
+    // ONE MATRIX, TWO WAYS TO SAY IT, AND ONLY ONE OF THEM IS WHAT THE CREATOR WROTE.
+    // `decompose()` reports an UNSIGNED horizontal scale — a mirrored X is folded into the
+    // rotation it hands back (core/math/matrix.js) — so `(rotation, scaleX, scaleY)` and
+    // `(rotation + π, -scaleX, -scaleY)` are the same placement written two ways. Taking
+    // the first blindly rewrote the values of every object whose horizontal factor is
+    // negative: one turned past 90° about Y, or one simply flipped with a negative
+    // `scaleX`, came back from a PLAIN REORDER AMONG SIBLINGS mirrored and half a turn
+    // round. The world held — the two wrongs cancel — but the numbers in the Inspector
+    // were no longer anybody's.
+    //
+    // WHICH BRANCH IS ASKED OF THE OBJECT, NOT GUESSED. Its own horizontal factor is
+    // `scaleX · cos(rotationY)`, and when that is negative the shape `decompose()` chose
+    // is the other one; flipping to the branch the object already uses is what makes a
+    // reorder that changed nothing write back exactly what it found.
+    const flipped = numberOf(transform.scaleX) * turn < 0;
+    const horizontal = flipped ? -local.scaleX : local.scaleX;
+    const scaleX = horizontal / turn;
+
+    // A PLACEMENT THAT IS NOT A NUMBER IS NEVER WRITTEN. `cos()` never answers exactly zero
+    // for a representable double, so even an object turned 90° about Y divides cleanly and
+    // only an infinite or NaN scale upstream reaches this — which is precisely the project
+    // that must not have one multiplied into a second component. It ends the way a shearing
+    // parent does: the local values are kept and the caller is told (ADR-0012 applied to
+    // geometry).
+    if (!globalThis.Number.isFinite(scaleX)) {
+        onReport?.({
+            kind: 'reparent:unplaceable',
+            object,
+            parent,
+            message: `Keeping ${object.name || object.id} at its local placement: `
+                + 'its scale is not a number any parent can hold it at.'
+        });
+        return { applied: true, batch, sheared: true };
+    }
+
+    const PLACEMENT = [
+        ['x', local.x],
+        ['y', local.y],
+        ['rotationX', flipped ? wrapAngle(local.rotation + Math.PI) : local.rotation],
+        ['scaleX', scaleX],
+        ['scaleY', flipped ? -local.scaleY : local.scaleY]
+    ];
+
+    for (const [prop, value] of PLACEMENT) {
+        transform.setProperty(prop, value, { origin: Origin.EDITOR, actor, batch });
     }
 
     return { applied: true, batch, sheared: false };
+}
+
+/**
+ * A number a Transform is holding, or zero when it is holding nothing usable.
+ *
+ * The same guard `localMatrix()` applies, for the same reason: a value written by hand or
+ * left by a migration must not put a NaN into a placement (core/components/transform.js).
+ *
+ * @param {any} value - What the component holds
+ * @returns {number} The value, or zero
+ */
+function numberOf(value) {
+    return typeof value === 'number' && globalThis.Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * An angle brought back into (-π, π].
+ *
+ * Adding half a turn to reach the other reading of a matrix would otherwise leave
+ * `rotationX` at 5.1 radians where -1.1 says the same thing, and a creator reading the
+ * Inspector after a reorder would see a number nobody would write.
+ *
+ * @param {number} value - An angle in radians
+ * @returns {number} The same angle, wrapped
+ */
+function wrapAngle(value) {
+    const full = Math.PI * 2;
+    const wrapped = value % full;
+    if (wrapped > Math.PI) return wrapped - full;
+    if (wrapped <= -Math.PI) return wrapped + full;
+    return wrapped;
 }
 
 /**
@@ -429,8 +561,16 @@ export function availableComponents(object, registry = defaultRegistry) {
 export function uniqueName(scene, base) {
     if (scene.findByName(base).length === 0) return base;
 
-    for (let suffix = 2; ; suffix++) {
-        const candidate = `${base} ${suffix}`;
+    // A COUNTER THAT IS ALREADY THERE IS COUNTED ON, not counted again. Duplicating `Crate 2`
+    // produced `Crate 2 2` and then `Crate 2 3`, which reads as a mistake and gets worse the
+    // more a creator builds with — the gesture a level is made of. `Crate` is the name and
+    // `2` is the count, so the next one is `Crate 3`.
+    const numbered = /^(.*?) (\d+)$/.exec(base);
+    const stem = numbered ? numbered[1] : base;
+    const from = numbered ? globalThis.Number(numbered[2]) + 1 : 2;
+
+    for (let suffix = from; ; suffix++) {
+        const candidate = `${stem} ${suffix}`;
         if (scene.findByName(candidate).length === 0) return candidate;
     }
 }

@@ -1,11 +1,16 @@
 # Architecture v2
 
-> **Statut : DÉCISIONS VALIDÉES le 2026-08-12.** Les questions bloquantes de la Phase 0
-> ont été tranchées. Rien n'est encore implémenté.
+> **Statut : DÉCISIONS VALIDÉES le 2026-08-12, ET IMPLÉMENTÉES DEPUIS.** Les questions
+> bloquantes de la Phase 0 ont été tranchées, et `src/` tient aujourd'hui `core/`, `project/`,
+> `runtime/`, `editor/` et `preview/`. Ce document décrit l'architecture **en vigueur** ;
+> l'état d'avancement détaillé vit dans `migration/MIGRATION_STATUS.md` et les décisions
+> prises depuis dans `decisions/` — la table complète est dans `README.md`.
 >
 > Chaque décision structurante est justifiée par une observation de
-> `migration/LEGACY_ANALYSIS.md`. Le relevé des décisions et la seule question encore
-> ouverte sont en §10.
+> `migration/LEGACY_ANALYSIS.md`. Le relevé des décisions de la Phase 0 est en §10.
+>
+> **Ce fichier ne s'allonge pas à chaque tranche.** Une décision prise après la Phase 0 est un
+> ADR ; ce qui est écrit ici est ce qui n'a pas changé depuis.
 
 ## Décisions validées — résumé
 

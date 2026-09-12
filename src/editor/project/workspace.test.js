@@ -212,7 +212,7 @@ test('selecting something the project does not declare selects nothing', () => {
     assert.equal(workspace.selected, null);
 });
 
-test('a removed resource stops being selected, however it was removed', () => {
+test('a removed resource stops being selected, however it was removed', async () => {
     const workspace = new Workspace();
     const folder = workspace.project.addFolder({ name: 'Assets' });
     const asset = workspace.project.add(
@@ -221,7 +221,7 @@ test('a removed resource stops being selected, however it was removed', () => {
     );
 
     workspace.select(asset.id);
-    workspace.project.removeTree(folder.id);
+    await workspace.project.removeTree(folder.id);
 
     assert.equal(workspace.selected, null, 'the Inspector cannot go on editing what is gone');
     assert.equal(workspace.selectedId, null);
@@ -272,7 +272,7 @@ test('anything the Editor does not have open may be deleted', () => {
     assert.equal(workspace.canRemove(folder.id).allowed, true);
 });
 
-test('the active stack follows the last authored intent, not the selection', () => {
+test('the active stack follows the last authored intent, not the selection', async () => {
     const workspace = new Workspace();
     const scene = sceneWithOne();
     workspace.create(scene);
@@ -284,7 +284,7 @@ test('the active stack follows the last authored intent, not the selection', () 
     // Deleting clears the selection — and the undo that puts it back must still be aimed
     // at the manifest, which is what a selection-driven rule got wrong.
     workspace.select(folder.id);
-    workspace.project.removeTree(folder.id);
+    await workspace.project.removeTree(folder.id);
     assert.equal(workspace.selected, null);
     assert.equal(workspace.activeHistory, workspace.projectHistory);
 
@@ -394,17 +394,17 @@ test('closing a `.px` releases it, and the resource becomes deletable', async ()
     assert.equal(workspace.attached(resource.id), null);
     assert.equal(workspace.histories.get(resource.id), null);
     assert.equal(workspace.canRemove(resource.id).allowed, true);
-    assert.equal(workspace.project.removeTree(resource.id), 1);
+    assert.equal(await workspace.project.removeTree(resource.id), 1);
 });
 
-test('closing the scene lets it be deleted, which is what closing is for', () => {
+test('closing the scene lets it be deleted, which is what closing is for', async () => {
     const workspace = new Workspace();
     const resource = workspace.create(sceneWithOne());
 
     assert.equal(workspace.canRemove(resource.id).allowed, false);
     workspace.close();
     assert.equal(workspace.canRemove(resource.id).allowed, true);
-    assert.equal(workspace.project.removeTree(resource.id), 1);
+    assert.equal(await workspace.project.removeTree(resource.id), 1);
 });
 
 test('deleting a resource closes whatever was editing it', async () => {
@@ -412,7 +412,7 @@ test('deleting a resource closes whatever was editing it', async () => {
     const resource = componentResource(workspace);
     await workspace.attach(resource.id);
 
-    workspace.project.removeTree(resource.id);
+    await workspace.project.removeTree(resource.id);
 
     assert.equal(workspace.attached(resource.id), null);
     assert.equal(workspace.histories.get(resource.id), null);

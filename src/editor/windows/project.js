@@ -29,11 +29,12 @@ import { sheet } from '../ui/styles.js';
 import { emptyState } from '../ui/empty-state.js';
 import { icon, iconForResource, IconSize } from '../ui/icons.js';
 import { openMenu, pointAnchor } from '../ui/menu.js';
-import { capturePointer as capture, releasePointer as release } from '../ui/gesture.js';
+import { ClickGuard, capturePointer as capture, releasePointer as release } from '../ui/gesture.js';
 import { searchField } from '../ui/search-field.js';
 import { createId, observe } from '../../core/mod.js';
 import { baseNameOf, canMove, isFolder, withExtension } from '../../project/mod.js';
 import { createResourceOfKind, cutIntoTileset, resourceKind, resourceMenuItems } from '../project/commands.js';
+import { PayloadCache } from '../project/payloads.js';
 import { pickFile, readAsDataUrl } from '../ui/file.js';
 import { DropZone, resourcePayload } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
@@ -335,9 +336,19 @@ export class Project extends Element {
 
     /** Tiles survive a re-render, keyed by resource id, so an edit in progress survives. */
     #tiles = new globalThis.Map();
+
+    /** Payloads read back from the store, against the revision they were read at. */
+    #payloads = new PayloadCache();
     #drag = null;
-    /** Set for exactly one click: the one that ends a drag and must not also select. */
-    #dragged = false;
+    /**
+     * The one click that must not select: the tail of the drag that just ended.
+     *
+     * NAMED BY ELEMENT, NOT BY A BOOLEAN (ui/gesture.js), for the reason the Hierarchy states
+     * next door: a flag cleared only by the tile's own `onclick` stays armed when that click
+     * never comes — a drop that re-renders the grid takes the tile out of the document first —
+     * and then swallows the next click on some other tile.
+     */
+    #clicks = new ClickGuard();
     #rename = null;
 
     /**
@@ -350,6 +361,10 @@ export class Project extends Element {
      * @returns {Project} This element
      */
     bind({ workspace, scene = null, selection = null, subject = null }) {
+        // ANOTHER PROJECT IS ANOTHER SET OF PAYLOADS. Nothing read for the last one can be
+        // right for this one, and holding them would hold its thumbnails — data URLs, the
+        // largest thing this panel ever touches — for the life of the window.
+        if (workspace?.project !== this.#workspace?.project) this.#payloads.clear();
         this.#workspace = workspace;
         this.scene = scene;
         this.selection = selection;
@@ -682,9 +697,20 @@ export class Project extends Element {
         this.#render();
     }
 
-    /** What a resource's thumbnail shows: its picture when it has one, its glyph otherwise. */
+    /**
+     * What a resource's thumbnail shows: its picture when it has one, its glyph otherwise.
+     *
+     * THE PAYLOAD IS AWAITED, BECAUSE A REAL PROJECT'S STORE IS (ADR-0020 §4, ADR-0065 §3).
+     * This used to read it synchronously and test the answer for `data:image/`; a persistent
+     * store answers a promise, so every picture in every saved project drew the generic glyph
+     * instead of itself. The shared cache asks once per revision and says when it lands
+     * (`project/payloads.js`), and the tile swaps its own first child — the very thing the
+     * `revision` observer below already does.
+     */
     #thumbnail(resource) {
-        const payload = resource.kind === 'asset' ? this.#workspace.project.read(resource.id) : null;
+        const payload = resource.kind === 'asset'
+            ? this.#payloads.payload(this.#workspace.project, resource, () => this.#redrawThumbnail(resource))
+            : null;
         const drawable = typeof payload === 'string'
             && payload.startsWith('data:image/');
 
@@ -724,6 +750,9 @@ export class Project extends Element {
                 // a resource onto a component property selects the resource, which swaps
                 // the Inspector away from the object being dropped on before the drop
                 // lands. A press that turns into a drag must leave the selection alone.
+                // Nothing survives a press: a guard left armed by a drag whose click never
+                // arrived would swallow this one instead.
+                this.#clicks.disarm();
                 this.#armDrag(event, resource, tile);
             },
             onpointermove: event => this.#dragMove(event),
@@ -731,10 +760,7 @@ export class Project extends Element {
             onpointercancel: () => this.#cancelDrag(),
             onclick: () => {
                 // A click that ended a drag is not a click on a tile.
-                if (this.#dragged) {
-                    this.#dragged = false;
-                    return;
-                }
+                if (this.#clicks.swallows(tile)) return;
 
                 this.#announce(resource.id);
                 // SECOND CLICK ON A SELECTED TILE RENAMES, after the pause that tells a
@@ -779,10 +805,23 @@ export class Project extends Element {
         // A payload that changed — a Replace, an import — redraws the thumbnail and nothing
         // else. `revision` is exactly the signal ADR-0020 keeps it for.
         this.track(observe(this.#workspace.project.get(resource.id), 'revision', () => {
-            tile.replaceChild(this.#thumbnail(resource), tile.firstElementChild);
+            this.#redrawThumbnail(resource);
         }), `tile:${resource.id}`);
 
         return tile;
+    }
+
+    /**
+     * Put the thumbnail back on a tile that is already on screen.
+     *
+     * Called when a payload finally arrives from an asynchronous store, and when a revision
+     * says the picture changed — the same swap for the same reason, so a late answer and a
+     * replaced file take the same path.
+     */
+    #redrawThumbnail(resource) {
+        const entry = this.#tiles.get(resource.id);
+        if (!entry?.tile.firstElementChild) return;
+        entry.tile.replaceChild(this.#thumbnail(resource), entry.tile.firstElementChild);
     }
 
     /**
@@ -1033,7 +1072,7 @@ export class Project extends Element {
         const started = drag.started;
         const target = started ? this.#dropAt(event.clientX, event.clientY) : null;
         const resource = drag.resource;
-        this.#dragged = started;
+        if (started) this.#clicks.arm(drag.tile ?? null);
         this.#cancelDrag();
 
         if (started) {
@@ -1114,6 +1153,38 @@ export class Project extends Element {
             entry.tile.style.transform = '';
         }
         if (drag) drag.shown = null;
+    }
+
+    /**
+     * Give up a drag in flight — what Escape means while a tile is being carried.
+     *
+     * ONE KEY, ONE MEANING, IN EVERY WINDOW (windows/hierarchy.js). Escape here used to clear
+     * the Inspector under the pointer and let the drop happen anyway — so the property row a
+     * creator was aiming a sprite at vanished before the sprite landed on it.
+     *
+     * @returns {boolean} True when there was a drag to give up
+     */
+    cancelGesture() {
+        const drag = this.#drag;
+        if (!drag) return false;
+
+        const started = drag.started;
+        const resource = drag.resource;
+        // The click that follows the release belongs to the gesture that was given up.
+        if (started) this.#clicks.arm(drag.tile ?? null);
+        this.#cancelDrag();
+
+        // A GESTURE THE SHELL WAS TOLD ABOUT STILL HAS TO END, at a point no window contains,
+        // so the marks come off and nothing performs it (windows/hierarchy.js).
+        if (started) {
+            this.dispatchEvent(new CustomEvent('px-drag-end', {
+                detail: { payload: resourcePayload(resource), clientX: -1, clientY: -1 },
+                bubbles: true,
+                composed: true
+            }));
+        }
+
+        return true;
     }
 
     #cancelDrag() {

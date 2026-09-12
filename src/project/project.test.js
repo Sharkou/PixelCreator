@@ -5,7 +5,9 @@ import assert from 'node:assert/strict';
 import { ComponentRegistry, componentGraph, componentLabel, invert } from '../core/mod.js';
 import {
     MANIFEST_VERSION,
+    MemoryArea,
     MemoryResourceStore,
+    PersistentResourceStore,
     Project,
     ResourceKind,
     ResourceStore,
@@ -143,13 +145,13 @@ test('adding a resource is one Operation, and it is invertible', () => {
     assert.equal(project.store.read(resource.id), null);
 });
 
-test('removing a resource carries its payload, so it can be put back', () => {
+test('removing a resource carries its payload, so it can be put back', async () => {
     const project = new Project('Game');
     const resource = project.add({ kind: ResourceKind.GRAPH, name: 'Controller' }, { nodes: ['a'] });
 
     const removals = [];
     project.operations.on('operation', operation => removals.push(operation));
-    assert.equal(project.remove(resource.id), true);
+    assert.equal(await project.remove(resource.id), true);
 
     assert.equal(project.has(resource.id), false);
 
@@ -158,10 +160,48 @@ test('removing a resource carries its payload, so it can be put back', () => {
     assert.deepEqual(project.read(resource.id), { nodes: ['a'] }, 'with what it was holding');
 });
 
-test('removing something the project does not declare is refused', () => {
+test('removing from a store that answers later still carries the payload', async () => {
+    // THE REGRESSION EVERY TEST ABOVE MISSED. They all run against the in-memory store, which
+    // answers at once; the store a browser keeps a project in answers a promise (ADR-0020 §4,
+    // ADR-0065 §3). The removal used to put whatever `read()` returned straight into the
+    // operation, so undoing a delete restored a resource whose content was a promise — which
+    // is to say, lost.
+    const area = new MemoryArea();
+    const declared = new Project('Game');
+    const store = new PersistentResourceStore(area, declared.id);
+    const project = Project.deserialize(declared.serialize(), { store });
+
+    const resource = project.add({ kind: ResourceKind.GRAPH, name: 'Controller' }, { nodes: ['a'] });
+
+    const removals = [];
+    project.operations.on('operation', operation => removals.push(operation));
+    assert.equal(await project.remove(resource.id), true);
+    assert.deepEqual(removals.at(-1).payload, { nodes: ['a'] }, 'the payload, not a promise');
+
+    project.operations.submit(invert(removals.at(-1)));
+    assert.deepEqual(await project.read(resource.id), { nodes: ['a'] }, 'so undo puts it back');
+});
+
+test('replacing a payload on a store that answers later can be undone', async () => {
+    const area = new MemoryArea();
+    const declared = new Project('Game');
+    const store = new PersistentResourceStore(area, declared.id);
+    const project = Project.deserialize(declared.serialize(), { store });
+
+    const resource = project.add({ kind: ResourceKind.TILESET, name: 'World.tileset' }, { tileWidth: 16 });
+
+    const announced = [];
+    project.operations.on('operation', operation => announced.push(operation));
+    await project.setPayload(resource.id, { tileWidth: 32 });
+
+    project.operations.submit(invert(announced.at(-1)));
+    assert.deepEqual(await project.read(resource.id), { tileWidth: 16 });
+});
+
+test('removing something the project does not declare is refused', async () => {
     const project = new Project('Game');
 
-    assert.equal(project.remove('nothing'), false);
+    assert.equal(await project.remove('nothing'), false);
     assert.deepEqual(project.setProperty('nothing', 'name', 'x'), {
         applied: false, operation: null, decision: null
     });

@@ -31,6 +31,7 @@ import { FieldKind } from '../inspector/schema.js';
 import { ITEM_KEY, addItem, itemFieldFor, listOf, moveItem, removeItem, setItem } from '../inspector/list.js';
 import './field.js';
 import './object-field.js';
+import './resource-field.js';
 
 export class ListField extends Element {
 
@@ -128,6 +129,12 @@ export class ListField extends Element {
     /** The scene a reference element resolves in; null when this list holds no references. */
     #scene = null;
 
+    /** The project a Resource element is picked from; null when this list holds none. */
+    #project = null;
+
+    /** The panel's payload cache, handed to the rows so a redraw keeps their thumbnails. */
+    #payloads = null;
+
     /**
      * Point the control at a property holding a list.
      *
@@ -138,23 +145,26 @@ export class ListField extends Element {
      * which is what it already was.
      *
      * A LIST OF REFERENCES IS THE ONE THAT NEEDS MORE THAN THE PROPERTY. An Object is
-     * resolved against the scene, so a row that draws one is handed the scene the panel
-     * already hands `<px-object>` — nothing else about this control knows what a reference
-     * is (ADR-0034 §3.5). A list given no scene simply has no Object to show, exactly as a
-     * lone reference field does.
+     * resolved against the scene and a Resource against the project, so a row that draws
+     * either is handed what the panel already hands `<px-object>` and `<px-resource>` —
+     * nothing else about this control knows what a reference is (ADR-0034 §3.5). A list
+     * given neither simply has nothing to show, exactly as a lone reference field does.
      *
      * @param {object} target - The reactive record holding the list
      * @param {object} descriptor - A descriptor from inspector/schema.js, carrying `element`
      * @param {object} [options] - Options
      * @param {Function} [options.write] - (value, { batch }) => void; `setProperty` by default
-     * @param {object} [options.scene] - The scene a reference element is resolved in
+     * @param {object} [options.scene] - The scene an Object element is resolved in
+     * @param {object} [options.project] - The project a Resource element is picked from
      * @returns {ListField} This element
      */
-    bind(target, descriptor, { write = null, scene = null } = {}) {
+    bind(target, descriptor, { write = null, scene = null, project = null, payloads = null } = {}) {
         this.#target = target;
         this.#descriptor = descriptor;
         this.#write = write;
         this.#scene = scene;
+        this.#project = project;
+        this.#payloads = payloads;
 
         this.toggleAttribute('disabled', Boolean(descriptor?.readonly) || !descriptor?.element);
         if (this.isConnected) this.#render();
@@ -252,7 +262,13 @@ export class ListField extends Element {
         // row at all is decided once, where the list's own control is (inspector/schema.js).
         const field = descriptor.kind === FieldKind.OBJECT
             ? el('px-object').bind(view, descriptor, { scene: this.#scene, write })
-            : el('px-field').bind(view, descriptor, { write });
+            : descriptor.kind === FieldKind.RESOURCE
+                ? el('px-resource').bind(view, descriptor, {
+                    project: this.#project,
+                    payloads: this.#payloads,
+                    write
+                })
+                : el('px-field').bind(view, descriptor, { write });
 
         const step = (to, glyph, title) => el('button', {
             class: `ghost ${title.toLowerCase()}`,

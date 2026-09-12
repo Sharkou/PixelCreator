@@ -22,13 +22,21 @@ export const BUNDLE_FORMAT = 1;
 /**
  * Everything a runtime needs to play this project.
  *
+ * ASYNCHRONOUS, BECAUSE A STORE IS (ADR-0020 §4). This used to read every payload
+ * synchronously, which is exactly right for the in-memory store the tests use and exactly
+ * wrong for the one a browser keeps a project in (ADR-0065 §3): `read()` answered a promise,
+ * a promise is neither null nor undefined, and so every payload of every real project was
+ * bundled as a `Promise` — which `JSON.stringify` writes as `{}`. Preview opened a window on
+ * a game whose scene, graphs and pictures were all empty objects, and Export wrote that same
+ * file out. Awaiting is the whole fix; the shape of a bundle is unchanged.
+ *
  * @param {object} project - The Project to bundle
  * @param {object} store - The ResourceStore holding its payloads
  * @param {object} [options] - Options
  * @param {string} [options.scene] - Which scene to open; the first one otherwise
- * @returns {object} A plain, JSON-safe bundle
+ * @returns {Promise<object>} A plain, JSON-safe bundle
  */
-export function bundleProject(project, store, { scene = null } = {}) {
+export async function bundleProject(project, store, { scene = null } = {}) {
     const manifest = project.serialize();
     const payloads = {};
 
@@ -37,7 +45,7 @@ export function bundleProject(project, store, { scene = null } = {}) {
         // payload is what the store holds, and a resource may legitimately have none yet
         // (an empty folder, a scene never saved). Absent is not the same as empty, so it
         // is left out rather than written as null.
-        const payload = store?.read?.(entry.id) ?? null;
+        const payload = await (store?.read?.(entry.id) ?? null);
         if (payload !== null && payload !== undefined) payloads[entry.id] = payload;
     }
 

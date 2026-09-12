@@ -60,7 +60,7 @@ test('the link is built the way it is read', () => {
 
 test('a published bundle is fetched and handed over', async () => {
     const it = world();
-    const bundle = bundleProject(it.project, it.store);
+    const bundle = await bundleProject(it.project, it.store);
 
     const fetched = await resolveRequest({ kind: 'url', value: 'https://example.test/game.json' }, {
         fetch: async () => ({ ok: true, json: async () => bundle })
@@ -87,11 +87,11 @@ test('a link that points at nothing answers nothing, and never throws', async ()
 
 // --- the file -------------------------------------------------------------------------------
 
-test('what is exported is the bundle a Preview plays', () => {
+test('what is exported is the bundle a Preview plays', async () => {
     const it = world();
     const written = [];
 
-    const result = exportGame(it.workspace, { save: (name, text) => written.push({ name, text }) });
+    const result = await exportGame(it.workspace, { save: (name, text) => written.push({ name, text }) });
 
     assert.equal(result.name, 'My-Game.pxgame.json');
     assert.equal(written.length, 1);
@@ -108,28 +108,28 @@ test('what is exported is the bundle a Preview plays', () => {
     assert.equal(opened.store.read(it.project.resources(ResourceKind.ASSET)[0].id), 'data:image/png;base64,AA');
 });
 
-test('the file is named after the project, and carries nothing a file system would refuse', () => {
+test('the file is named after the project, and carries nothing a file system would refuse', async () => {
     const it = world();
     it.project.name = 'My  /Weird\\ Game?';
     const written = [];
 
-    exportGame(it.workspace, { save: (name, text) => written.push(name) });
+    await exportGame(it.workspace, { save: (name, text) => written.push(name) });
 
     assert.match(written[0], /^[\w.-]+\.pxgame\.json$/);
 });
 
-test('no project is a refusal with a reason, not a crash', () => {
+test('no project is a refusal with a reason, not a crash', async () => {
     const said = [];
-    assert.equal(exportGame(null, { report: message => said.push(message) }), null);
+    assert.equal(await exportGame(null, { report: message => said.push(message) }), null);
     assert.equal(said.length, 1);
 });
 
-test('an empty project exports what it is, rather than refusing', () => {
+test('an empty project exports what it is, rather than refusing', async () => {
     const project = new Project('Empty', { store: new MemoryResourceStore() });
     const workspace = new Workspace({ components: new ComponentRegistry(), project });
     const written = [];
 
-    const result = exportGame(workspace, { save: (name, text) => written.push(text) });
+    const result = await exportGame(workspace, { save: (name, text) => written.push(text) });
 
     assert.ok(result.bytes > 0);
     assert.equal(openBundle(globalThis.JSON.parse(written[0])).scene, null);

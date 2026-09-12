@@ -120,7 +120,7 @@ test('what serializes is the one flag, and nothing shadows it', () => {
 
 // --- a removed resource cannot stay selected ---------------------------------------------
 
-test('deleting the selected resource deselects it, in both directions', () => {
+test('deleting the selected resource deselects it, in both directions', async () => {
     const { workspace, selection } = editor();
     const asset = workspace.project.add(
         { kind: ResourceKind.ASSET, name: 'hero.png', mime: 'image/png' },
@@ -128,7 +128,7 @@ test('deleting the selected resource deselects it, in both directions', () => {
     );
 
     workspace.select(asset.id);
-    workspace.project.removeTree(asset.id);
+    await workspace.project.removeTree(asset.id);
 
     assert.equal(workspace.selected, null);
     assert.equal(selection.object, null);

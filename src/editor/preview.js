@@ -17,25 +17,30 @@ import { previewUrl, publishedUrl, putPreview } from '../preview/store.js';
 /**
  * Bundle what is being edited and open it in a game window.
  *
+ * ASYNCHRONOUS, BECAUSE READING A PAYLOAD IS (ADR-0020 §4). The window is still opened in the
+ * same gesture — the reads are a handful of milliseconds and transient activation outlives
+ * them — and the creator keeps the URL either way.
+ *
  * @param {object} workspace - The Workspace holding the project and its store
  * @param {object} [options] - Options
  * @param {Function} [options.open] - How to open a window; `window.open` by default
  * @param {Function} [options.report] - Where to say what went wrong
- * @returns {{id: string, url: string}|null} What was opened, or null
+ * @returns {Promise<{id: string, url: string}|null>} What was opened, or null
  */
-export function openPreview(workspace, { open = defaultOpen, report = null } = {}) {
+export async function openPreview(workspace, { open = defaultOpen, report = null } = {}) {
     const project = workspace?.project ?? null;
     if (!project) return fail(report, 'There is no project to preview.');
 
-    // SAVED FIRST, ALL OF IT. A creator presses Preview to see what is ON SCREEN, and what
-    // is on screen is the live model — not the payload it was last written from. Without
-    // this the window plays the project as it was at the last save, which is exactly the
-    // surprise a preview exists to remove. Every OPEN editor is written, not just the
-    // active one: a `.px` edited in another tab is part of this game too.
+    // SAVED FIRST. A creator presses Preview to see what is ON SCREEN, and what is on screen
+    // is the live model — not the payload it was last written from. Without this the window
+    // plays the project as it was at the last save, which is exactly the surprise a preview
+    // exists to remove. Every OPEN editor is asked, not just the active one: a `.px` edited in
+    // another tab is part of this game too — and one that has changed nothing is left alone,
+    // because that is what `Workspace.save()` means.
     for (const resource of workspace.opened?.() ?? []) workspace.save({ id: resource.id });
 
     const scene = (workspace.opened?.() ?? []).find(resource => resource.kind === 'scene') ?? null;
-    const bundle = bundleProject(project, project.store, { scene: scene?.id ?? null });
+    const bundle = await bundleProject(project, project.store, { scene: scene?.id ?? null });
     // THE PROJECT IS THE IDENTITY (ADR-0044 §2). A fresh id per press made two windows on
     // one game two strangers: they could not share a channel, they could not share a URL,
     // and the store gathered one dead bundle per press. What a Preview shows is this
@@ -101,16 +106,16 @@ function fail(report, message, result = null) {
  * @param {object} [options] - Options
  * @param {Function} [options.save] - How a file is handed over; a download by default
  * @param {Function} [options.report] - Where to say what went wrong
- * @returns {{name: string, bytes: number}|null} What was written, or null
+ * @returns {Promise<{name: string, bytes: number}|null>} What was written, or null
  */
-export function exportGame(workspace, { save = download, report = null } = {}) {
+export async function exportGame(workspace, { save = download, report = null } = {}) {
     const project = workspace?.project ?? null;
     if (!project) return fail(report, 'There is no project to export.');
 
     for (const resource of workspace.opened?.() ?? []) workspace.save({ id: resource.id });
 
     const scene = (workspace.opened?.() ?? []).find(resource => resource.kind === 'scene') ?? null;
-    const bundle = bundleProject(project, project.store, { scene: scene?.id ?? null });
+    const bundle = await bundleProject(project, project.store, { scene: scene?.id ?? null });
     const text = globalThis.JSON.stringify(bundle);
 
     // NAMED AFTER THE PROJECT, WITH AN EXTENSION THAT SAYS WHAT IT IS. `.pxgame.json` is a

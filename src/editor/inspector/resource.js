@@ -260,7 +260,15 @@ function previewFor(resource, payload) {
     }
 
     if (payload === null || payload === undefined) {
-        return { type: 'none', note: 'No content stored yet.' };
+        // "NOT HERE YET" IS NOT "NOT THERE". A store may wait (ADR-0020 §4), so the first
+        // render of a resource restored from IndexedDB has no payload — and telling a creator
+        // their file is empty is the one sentence that makes them believe the import failed,
+        // a second before the picture appears and contradicts it. The manifest entry already
+        // says which of the two it is.
+        return {
+            type: 'none',
+            note: hasPayload(resource) ? 'Reading the file…' : 'No content stored yet.'
+        };
     }
 
     return { type: 'none', note: 'This content cannot be previewed.' };

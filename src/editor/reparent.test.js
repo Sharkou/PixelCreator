@@ -10,6 +10,7 @@ import {
     Object,
     Scene,
     Transform,
+    worldMatrix,
     worldPosition
 } from '../core/mod.js';
 import { History } from './history.js';
@@ -250,3 +251,97 @@ test('a listener rebuilding on a structural event sees the object after an undo'
     assert.ok(trees.length > 0);
     for (const count of trees) assert.equal(count, 2, 'no rebuild ever lost the object');
 });
+
+// --- the second half of the rotation pair (ADR-0051) --------------------------------------
+
+test('a reparent holds an object turned about Y, instead of halving it every time', () => {
+    // `localMatrix()` composes the horizontal scale as `scaleX · cos(rotationY)`, so what
+    // `decompose()` reports is that PRODUCT. Writing it back into `scaleX` while leaving
+    // `rotationY` alone applied the cosine a second time: an object turned 60° about Y lost
+    // half its width on every reparent — a plain reorder among siblings included — and said
+    // nothing, because `sheared` was false and no report was made.
+    const world = scene();
+    const parent = createObject(world, { kind: 'empty', x: 0, y: 0 });
+    const object = createObject(world, { kind: 'rectangle', x: 10, y: 20 });
+
+    const transform = object.getComponent('Transform');
+    transform.rotationY = Math.PI / 3;
+
+    const before = worldMatrix(object);
+    const first = reparentObject(world, object, parent, 0);
+
+    assert.equal(first.sheared, false);
+    assert.equal(transform.rotationY, Math.PI / 3, 'the authored turn is kept, not folded away');
+    assert.equal(round(worldMatrix(object).a), round(before.a), 'and the world is what it was');
+
+    reparentObject(world, object, null, 0);
+    assert.equal(round(worldMatrix(object).a), round(before.a), 'twice over, so nothing compounds');
+});
+
+test('an object turned a quarter turn about Y keeps a placement a model can hold', () => {
+    // The nearest thing to edge on a double can express: `Math.cos(Math.PI / 2)` is 6.1e-17,
+    // not zero, so the division is well conditioned — the local scale carries the same tiny
+    // factor and the two cancel. What must never happen is a non-finite value reaching the
+    // model, which is what the guard above answers for.
+    const world = scene();
+    const parent = createObject(world, { kind: 'empty', x: 5, y: 5 });
+    const object = createObject(world, { kind: 'rectangle', x: 10, y: 20 });
+    const transform = object.getComponent('Transform');
+    transform.rotationY = Math.PI / 2;
+
+    const result = reparentObject(world, object, parent, 0);
+
+    assert.equal(result.applied, true);
+    assert.equal(globalThis.Number.isFinite(transform.scaleX), true, 'never an Infinity');
+    assert.equal(round(transform.scaleX), 1, 'and the authored scale is what comes back');
+    assert.equal(transform.rotationY, Math.PI / 2, 'with the turn left alone');
+});
+
+test('a reorder among siblings leaves the numbers a turned object was given', () => {
+    // `decompose()` reports an UNSIGNED horizontal scale, so an object whose horizontal
+    // factor is negative — turned past 90° about Y — decomposes into the OTHER of the two
+    // readings of its matrix. Writing that one back mirrored `scaleX` and moved `rotationX`
+    // by half a turn on a drop that changed nothing but a rank.
+    const target = scene();
+    const first = place(target, createObject(target, { kind: 'empty' }), 0, 0);
+    const turned = place(target, createObject(target, { kind: 'empty' }), 10, 20,
+        { rotation: 0.3, scaleX: 2, scaleY: 1.5 });
+    turned.getComponent('Transform').rotationY = Math.PI;
+
+    const before = worldMatrix(turned);
+    const result = reparentObject(target, turned, null, 0);
+
+    assert.equal(result.applied, true);
+    assert.equal(result.sheared, false);
+    assert.deepEqual(target.roots(), [turned, first], 'it did move');
+
+    const transform = turned.getComponent('Transform');
+    assert.equal(round(transform.scaleX), 2, 'the authored scale, sign and all');
+    assert.equal(round(transform.scaleY), 1.5);
+    assert.equal(round(transform.rotationX), 0.3, 'and no half turn added to the rotation');
+    assert.ok(worldMatrix(turned).equals(before, 1e-9), 'with the world held, as ever');
+});
+
+test('a mirrored object keeps its mirror', () => {
+    // The same defect without any `rotationY`: a negative `scaleX` is a flip, it is folded
+    // into the rotation `decompose()` reports, and writing that back turned every flipped
+    // sprite the right way round and spun it half a turn instead.
+    const target = scene();
+    const first = place(target, createObject(target, { kind: 'empty' }), 0, 0);
+    const flipped = place(target, createObject(target, { kind: 'empty' }), 10, 20,
+        { rotation: 0.3, scaleX: -1.5, scaleY: 1 });
+
+    const before = worldMatrix(flipped);
+    reparentObject(target, flipped, null, 0);
+
+    const transform = flipped.getComponent('Transform');
+    assert.equal(round(transform.scaleX), -1.5, 'still facing the way it was drawn');
+    assert.equal(round(transform.scaleY), 1);
+    assert.equal(round(transform.rotationX), 0.3);
+    assert.ok(worldMatrix(flipped).equals(before, 1e-9));
+    assert.deepEqual(target.roots(), [flipped, first]);
+});
+
+function round(value) {
+    return globalThis.Math.round(value * 1e6) / 1e6;
+}

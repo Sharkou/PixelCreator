@@ -26,6 +26,8 @@
 // channel, so two windows are two clients of one game — the property ADR-0042 §6 names as
 // the whole of the multiplayer preparation.
 
+import { Origin } from '../core/mod.js';
+
 /** The channel every page of one project meets on. */
 const CHANNEL = 'px.live.';
 
@@ -72,6 +74,13 @@ export function forwardOperations(channel, resource, model) {
     if (!channel || !model?.operations?.on) return () => {};
 
     return model.operations.on('operation', operation => {
+        // AN INTENTION, NEVER THE BOOKKEEPING OF A WRITE (ADR-0069 §2). `Project.save()`
+        // stamps `revision` and `modified` as `Origin.LOCAL` because nobody asked for them,
+        // and they carry no payload — so a follower applying them learns nothing and
+        // re-resolves a definition it already holds, twice per autosave. The Workspace and
+        // the History apply this very filter to decide what counts as an edit.
+        if (operation?.origin !== Origin.EDITOR) return;
+
         // A CHANNEL THAT HAS BEEN CLOSED IS NOT A FAILURE OF THE EDIT. The window at the
         // other end may have gone at any moment, and an edit must not throw because of it.
         try {

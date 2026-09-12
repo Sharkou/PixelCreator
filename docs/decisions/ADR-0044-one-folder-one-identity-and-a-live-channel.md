@@ -109,6 +109,14 @@ registre à tenir à jour. Les modèles déjà attachés au démarrage — la sc
 ramassés au passage : sans cela, la ressource qui compte le plus serait la seule à n'être
 jamais suivie.
 
+> **Amendé par ADR-0071 (2026-09-12).** « Tous les modèles qu'il y a » en oubliait un : le
+> **manifeste**, qui n'est attaché à rien et porte pourtant son propre pipeline. Une image
+> importée, un tileset recoupé, un prefab remplacé n'atteignaient donc aucune fenêtre déjà
+> ouverte. Il traverse maintenant le même canal, comme une Operation, sous l'identité du
+> projet — aucun genre de message n'a été ajouté — et seules les opérations `Origin.EDITOR`
+> traversent, la comptabilité d'une sauvegarde n'étant une intention pour personne
+> (ADR-0069 §2).
+
 ---
 
 ## 4. Ce qui n'est pas décidé, et pourquoi

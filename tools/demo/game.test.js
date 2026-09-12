@@ -70,7 +70,7 @@ async function play({ seed = 'demo' } = {}) {
     });
 
     // THE CROSSING, exactly as `preview/client.js` makes it (ADR-0042 §2).
-    const opened = openBundle(bundleProject(project, store, { scene: IDS.menu }));
+    const opened = openBundle(await bundleProject(project, store, { scene: IDS.menu }));
 
     const registry = registerBuiltIns(new ComponentRegistry());
     const behaviors = new Behaviors(createGraphInterpreter({ registry: nodes }));

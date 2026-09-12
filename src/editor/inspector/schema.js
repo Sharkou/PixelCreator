@@ -94,7 +94,12 @@ const EDITABLE_ELEMENT = new globalThis.Set([
     FieldKind.STRING,
     FieldKind.COLOR,
     FieldKind.ENUM,
-    FieldKind.OBJECT
+    FieldKind.OBJECT,
+    // A REFERENCE IS A REFERENCE AT EITHER SCOPE. `objectref` was here and `resource` was
+    // not, so a creator who declared `List of Image` — a choice the type menu offers
+    // (inspector/definition.js) — got a row they could not touch and no word about why.
+    // `px-list` draws a picker for it exactly as it draws one for an Object.
+    FieldKind.RESOURCE
 ]);
 
 /**

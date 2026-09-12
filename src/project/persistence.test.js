@@ -183,7 +183,7 @@ test('every project in an area is listed, newest first, without reading a payloa
     for (const [id, name, modified] of [['p1', 'Older', 100], ['p2', 'Newer', 900], ['p3', 'Middle', 500]]) {
         const store = new PersistentResourceStore(area, id);
         await store.write({ id: `${id}_scene`, kind: ResourceKind.SCENE, name: 'Level.scene' }, { version: 2 });
-        await area.put(`${id} manifest`, {
+        await area.put(`${id}\u0000manifest`, {
             format: MANIFEST_VERSION,
             id,
             name,
@@ -209,4 +209,33 @@ test('this host says honestly whether it has IndexedDB', () => {
     // than refusing to start (ADR-0065 §4). In a browser this is the other branch.
     assert.equal(typeof available(), 'boolean');
     assert.equal(available(), typeof globalThis.indexedDB?.open === 'function');
+});
+
+test('a read answers after every write that was asked for before it', async () => {
+    // ONE QUEUE, EVERY PATH THROUGH IT. `write()` is queued and its callers do not await —
+    // `Project.save()` is a synchronous model mutation and is right to be — so a read issued
+    // straight after a save reached the area first and answered the payload from before it.
+    // That is what pressing Preview does, and it is why a preview showed the project as it
+    // was one gesture ago.
+    const area = new MemoryArea();
+    const store = new PersistentResourceStore(area, 'p1');
+    const entry = { id: 'r1', kind: ResourceKind.SCENE, name: 'Level', parent: null, revision: 1 };
+
+    store.write(entry, { name: 'first' });
+    store.write({ ...entry, revision: 2 }, { name: 'second' });
+
+    assert.deepEqual(await store.read('r1'), { name: 'second' });
+});
+
+test('a read issued before a write still answers what was there', async () => {
+    const area = new MemoryArea();
+    const store = new PersistentResourceStore(area, 'p1');
+    const entry = { id: 'r1', kind: ResourceKind.SCENE, name: 'Level', parent: null, revision: 1 };
+
+    await store.write(entry, { name: 'first' });
+
+    const reading = store.read('r1');
+    store.write({ ...entry, revision: 2 }, { name: 'second' });
+
+    assert.deepEqual(await reading, { name: 'first' }, 'in call order, one at a time');
 });

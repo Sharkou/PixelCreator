@@ -30,9 +30,9 @@ import { componentCatalogue, registerBuiltIns } from './registry.js';
 import { addComponent, deleteObject } from './commands.js';
 import { Workspace } from './project/workspace.js';
 import { applyShortcut, shortcutFor } from './shortcuts.js';
-import { DEFINITION_KINDS, ResourceKind, loadComponentDefinitions } from '../project/mod.js';
+import { ResourceKind, loadComponentDefinitions } from '../project/mod.js';
 import { createDefinitions } from './project/definitions.js';
-import { createSession } from './project/session.js';
+import { createSession, resolves } from './project/session.js';
 import { createAutosave } from './project/autosave.js';
 import { LAST_OPENED, NEW_PROJECT, openLibrary } from './project/library.js';
 import { Transport, TransportState } from './transport.js';
@@ -493,6 +493,10 @@ export async function start(mount = document.body, { library = null } = {}) {
         selection,
         subject,
         onError: reportFailure,
+        // A GESTURE GIVEN UP COSTS NO UNDO. The surface knows which batch it abandoned and
+        // nothing else; which stack that batch was written to is the Workspace's answer, and
+        // it is asked at the moment it is needed (ADR-0069 §3).
+        onAbandon: batch => workspace.activeHistory?.forget(batch),
         behaviors,
         resources: session.resources,
         images: session.images,
@@ -520,7 +524,7 @@ export async function start(mount = document.body, { library = null } = {}) {
 
     let pending = null;
     workspace.project.operations.on('operation', operation => {
-        if (pending || !touchesDefinition(workspace.project, operation)) return;
+        if (pending || !touchesResolved(workspace.project, operation)) return;
         pending = globalThis.Promise.resolve().then(async () => {
             pending = null;
             await session.refresh();
@@ -770,7 +774,7 @@ export async function start(mount = document.body, { library = null } = {}) {
 
 
     bindDragAndDrop({ shell, scene, subject, viewport, graph: () => docs.graph, workspace, hierarchy, inspector, project, definitions });
-    bindShortcuts({ scene, selection, subject, viewport, workspace });
+    bindShortcuts({ scene, selection, subject, viewport, workspace, gestures: [hierarchy, project] });
 
     return {
         scene,
@@ -874,7 +878,15 @@ function titlebar(scene, layout, workspace, projects = null) {
         type: 'button',
         title: 'Preview — opens the game in its own window',
         'aria-label': 'Preview',
-        onclick: () => machine?.preview?.()
+        // BUNDLING READS THE STORE, SO IT IS AWAITED (ADR-0020 §4). A failure is said out
+        // loud rather than left as a rejected promise nobody is holding.
+        onclick: async () => {
+            try {
+                await machine?.preview?.();
+            } catch (error) {
+                console.warn('[preview] the game could not be bundled:', error);
+            }
+        }
     }, icon('preview'));
 
     // SHARE AND THE PROFILE, as the prototype draws them (design/prototype.js, titlebar).
@@ -897,10 +909,14 @@ function titlebar(scene, layout, workspace, projects = null) {
             { id: 'export', label: 'Export game…', icon: 'share' },
             { heading: 'Hosting' },
             { id: 'soon', label: 'Publishing to a URL needs an account', icon: 'info' }
-        ], choice => {
+        ], async choice => {
             if (choice !== 'export') return;
-            const written = exportGame(workspace, { report: message => console.info('[export]', message) });
-            if (written) console.info('[export]', written.name, `${Math.round(written.bytes / 1024)} KB`);
+            try {
+                const written = await exportGame(workspace, { report: message => console.info('[export]', message) });
+                if (written) console.info('[export]', written.name, `${Math.round(written.bytes / 1024)} KB`);
+            } catch (error) {
+                console.warn('[export] the game could not be bundled:', error);
+            }
         }, { label: 'sharing' })
     }, icon('share'));
 
@@ -1300,22 +1316,29 @@ function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hi
 }
 
 /**
- * Whether an operation changed something a surface draws definitions from.
+ * Whether an operation changed something a surface draws from.
  *
  * A TILESET RECUT, A CLIP RETIMED, A PREFAB REPLACED — those reach the registry the viewport
- * reads (ADR-0062 §1). A rename, a move, or the revision a save leaves behind do not, and
- * refreshing on those would re-read every payload of the project for nothing.
+ * reads (ADR-0062 §1). SO DOES A PICTURE, and that half was missing: this asked only about
+ * the three definition kinds, so deleting an image left it drawn on the scene while the
+ * Inspector said `Missing resource` beside it, and replacing one went on drawing the old
+ * pixels — in both cases until something unrelated forced a reload. `session.resolves()` is
+ * the one answer to "would a refresh touch this", and the refresh itself is guarded by
+ * `revision`, so asking it more often re-reads nothing that has not moved.
+ *
+ * A rename, a move, and the revision a scene save leaves behind still answer no.
  *
  * @param {object} project - The project
  * @param {object} operation - What was announced on its pipeline
- * @returns {boolean} True when the resolved definitions may be stale
+ * @returns {boolean} True when what the surface resolved may be stale
  */
-function touchesDefinition(project, operation) {
+function touchesResolved(project, operation) {
     const id = operation?.target?.object ?? operation?.resource?.id ?? null;
     if (!id) return false;
 
-    const kind = project.get(id)?.kind ?? operation?.resource?.kind ?? null;
-    return DEFINITION_KINDS.includes(kind);
+    // A REMOVED RESOURCE IS GONE FROM THE MANIFEST BY THE TIME THIS RUNS, so the operation's
+    // own copy of the entry is what answers for it.
+    return resolves(project.get(id) ?? operation?.resource ?? null);
 }
 
 /** Whether a point is inside an element's box. */
@@ -1324,7 +1347,7 @@ function within(element, clientX, clientY) {
     return clientX >= box.left && clientX < box.right && clientY >= box.top && clientY < box.bottom;
 }
 
-function bindShortcuts({ scene, selection, subject, viewport, workspace }) {
+function bindShortcuts({ scene, selection, subject, viewport, workspace, gestures = [] }) {
     globalThis.addEventListener('keydown', event => {
         // Undo is the one shortcut that must work while a field has focus — a creator
         // mid-edit expects Ctrl Z to take back the last thing they did. What it acts on is
@@ -1333,9 +1356,12 @@ function bindShortcuts({ scene, selection, subject, viewport, workspace }) {
         // question in one place — asking it in two is how they came to disagree (ADR-0024).
         const shortcut = shortcutFor(event);
         if (shortcut) {
-            // Only a keystroke that DID something is taken from the page. With nothing of
-            // ours to undo, the browser's own text undo still happens in a focused field.
-            if (applyShortcut(shortcut, { workspace })) event.preventDefault();
+            // A keystroke is taken from the page only when this Editor claimed it: with
+            // nothing of ours to undo, the browser's own text undo still happens in a
+            // focused field. `Ctrl S` and `Ctrl D` always claim it, for the reason
+            // `shortcuts.js` gives.
+            const aimed = { workspace, scene, selection, subject, editing: isEditing() };
+            if (applyShortcut(shortcut, aimed)) event.preventDefault();
             return;
         }
         if (event.metaKey || event.ctrlKey) return;
@@ -1349,7 +1375,12 @@ function bindShortcuts({ scene, selection, subject, viewport, workspace }) {
             if (resource) {
                 if (!workspace.canRemove(resource.id).allowed) return;
                 event.preventDefault();
-                workspace.project.removeTree(resource.id);
+                // A DELETION READS THE PAYLOADS IT IS ABOUT TO CARRY (ADR-0020 §4), so it
+                // answers a promise — and a storage failure has to be said rather than left
+                // as a rejection nobody is holding.
+                workspace.project.removeTree(resource.id).catch(error => {
+                    console.warn('[project] this could not be deleted:', error);
+                });
                 return;
             }
 
@@ -1366,7 +1397,22 @@ function bindShortcuts({ scene, selection, subject, viewport, workspace }) {
             return;
         }
 
-        if (event.key === 'Escape') subject.clear();
+        // ESCAPE ABORTS BEFORE IT DESELECTS, because a gesture in flight is what a creator
+        // means by it. It used to go straight to `subject.clear()`, which took the outline
+        // and the handles off the object being dragged and left the drag running — so the
+        // object went on following the pointer with nothing drawn around it, and the move was
+        // committed on release. Nothing to abort, and Escape means what it always meant.
+        //
+        // EVERY WINDOW THAT CARRIES SOMETHING IS ASKED, not just the viewport. Teaching the
+        // key to cancel in one window and leaving it a deselect in the two next door is worse
+        // than either rule on its own: the Inspector emptying READS as a cancellation, and
+        // the drop then happened regardless.
+        if (event.key === 'Escape') {
+            for (const surface of [viewport, ...gestures]) {
+                if (surface?.cancelGesture?.()) return;
+            }
+            subject.clear();
+        }
     });
 }
 

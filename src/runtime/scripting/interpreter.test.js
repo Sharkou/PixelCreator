@@ -20,7 +20,7 @@ import {
     serializeScene
 } from '../../core/mod.js';
 import { Behaviors } from './behaviors.js';
-import { createGraphInterpreter, interpretGraph } from './interpreter.js';
+import { MAX_PENDING, createGraphInterpreter, interpretGraph } from './interpreter.js';
 import { validateGraph } from '../../core/graph/validate.js';
 import { Runtime } from '../runtime.js';
 
@@ -2330,4 +2330,240 @@ test('Translate is one node where Get, Add and Set were three', () => {
     });
 
     assert.deepEqual(results, [6, 6], 'two ways to say it, one result');
+});
+
+// --- a graph being built, and one that waits too much -----------------------------------
+
+test('a node with no property chosen yet does nothing, and the flow carries on', () => {
+    // THE LAYER THAT DECIDES WHETHER A GRAPH RUNS AND THE LAYER THAT RUNS IT AGREED ON
+    // NOTHING. `validate.js` files an unset reference as a WARNING so a half-built graph still
+    // runs (project/graphs.js says why); this threw on it, every instance, every step — and a
+    // throw unwinds the whole walk, so everything WIRED AFTER the unset node stopped running
+    // too. A creator who dropped a `Set Property` and had not yet aimed it lost the rest of
+    // their graph, and the failure was reported against the Component.
+    const file = px();
+    const out = file.property({ name: 'out', type: PropertyType.NUMBER, default: 0 });
+
+    const update = file.node('event.update');
+    const unset = file.node('property.set');
+    const after = file.node('property.set', { property: out.id });
+    const nine = file.node('value.number', { value: 9 });
+
+    file.wire([update, 'out'], [unset, 'in']);
+    file.wire([unset, 'out'], [after, 'in']);
+    file.wire([nine, 'value'], [after, 'value']);
+
+    const { component, behavior } = behaviourFor(file.model);
+    behavior.update(null, { deltaTime: 1 / 60, time: 0 });
+
+    assert.equal(component.out, 9, 'what comes after an unaimed node still runs');
+});
+
+test('an unset Get Property answers nothing rather than failing', () => {
+    const file = px();
+    const out = file.property({ name: 'out', type: PropertyType.NUMBER, default: 3 });
+
+    const update = file.node('event.update');
+    const get = file.node('property.get');
+    const set = file.node('property.set', { property: out.id });
+    file.wire([update, 'out'], [set, 'in']);
+    file.wire([get, 'value'], [set, 'value']);
+
+    const { component, behavior } = behaviourFor(file.model);
+    behavior.update(null, { deltaTime: 1 / 60, time: 0 });
+
+    assert.equal(component.out, null);
+});
+
+test('a timing node reached from On Update is bounded, and says when it is', () => {
+    // ONE SUSPENDED EXECUTION PER STEP, FOR EVER. `On Update ▸ Every` is the wiring a creator
+    // reaches for first, and every step started another wait: after ten seconds the instance
+    // held six hundred, each counted down and resumed with a full budget of its own. The
+    // budget bounds one walk; nothing bounded how many walks a step performed.
+    const file = px();
+    const update = file.node('event.update');
+    const every = file.node('flow.every');
+    file.model.graph.setInput(every.id, 'interval', 5);
+    file.wire([update, 'out'], [every, 'in']);
+
+    const { behavior } = behaviourFor(file.model);
+
+    const failures = [];
+    for (let step = 0; step < MAX_PENDING + 40; step++) {
+        try {
+            behavior.update(null, { deltaTime: 1 / 60, time: step / 60 });
+        } catch (error) {
+            failures.push(error);
+        }
+    }
+
+    assert.equal(behavior.waiting, MAX_PENDING, 'the pile stops growing');
+    assert.equal(failures.length > 0, true, 'and the refusal is stated, not silent');
+    assert.equal(failures[0].code, GraphIssueCode.BUDGET_EXCEEDED);
+});
+
+test('a resumed execution that fails does not cancel the others due with it', () => {
+    // The due entries leave `pending` before any of them runs — they have to, or a
+    // re-suspension would be counted down twice — so a throw part-way through used to delete
+    // every execution after it, permanently (ADR-0012: a failure is isolated, not contagious).
+    const file = px();
+    const marker = file.property({ name: 'marker', type: PropertyType.NUMBER, default: 0 });
+    const doomed = file.property({ name: 'doomed', type: PropertyType.NUMBER, default: 0 });
+
+    const start = file.node('event.start');
+    const fork = file.node('flow.sequence');
+    const firstWait = file.node('flow.delay');
+    const secondWait = file.node('flow.delay');
+    const breaks = file.node('property.set', { property: doomed.id });
+    const marks = file.node('property.set', { property: marker.id });
+    const one = file.node('value.number', { value: 1 });
+
+    file.wire([start, 'out'], [fork, 'in']);
+    file.wire([fork, 'first'], [firstWait, 'in']);
+    file.wire([firstWait, 'then'], [breaks, 'in']);
+    file.wire([fork, 'second'], [secondWait, 'in']);
+    file.wire([secondWait, 'then'], [marks, 'in']);
+    file.wire([one, 'value'], [marks, 'value']);
+
+    // The first branch names a property that is gone by the time it resumes.
+    file.model.removeProperty(doomed.id);
+
+    const { component, behavior } = behaviourFor(file.model);
+    for (let step = 0; step < 80; step++) {
+        try {
+            behavior.update(null, { deltaTime: 1 / 60, time: step / 60 });
+        } catch {
+            // Reported by the Runtime in a real game; swallowed here so the loop goes on.
+        }
+    }
+
+    assert.equal(component.marker, 1, 'the branch that had nothing wrong with it still ran');
+});
+
+test('a list of handles a node produced is re-asked of the Scene, entry by entry', () => {
+    // WHAT A FLOW PRODUCED IS MEMOISED FOR THE STEP, so a value read early is not read again
+    // from the property — and a `Destroy` in between left a dead handle in what a later node
+    // saw. A single reference was already re-asked (ADR-0034 §3.4, invariant 3); a LIST of
+    // them was handed on whole, which is the shape a property declared `list<objectref>`
+    // gives the port.
+    const catalogue = new ComponentRegistry();
+    const scene = new Scene('Main', { registry: catalogue });
+    const doomed = scene.add(new SceneObject('Crate', { tag: 'crate' }));
+    const kept = scene.add(new SceneObject('Rock'));
+
+    const file = px();
+    const crew = file.property({ name: 'crew', type: PropertyType.ARRAY });
+    file.model.setPropertyElement(crew.id, PropertyType.OBJECTREF);
+
+    const update = file.node('event.update');
+    const outer = file.node('flow.sequence');
+    const inner = file.node('flow.sequence');
+    const read = file.node('property.get', { property: crew.id });
+    const before = file.node('debug.log');
+    const after = file.node('debug.log');
+    const find = file.node('scene.findByTag');
+    file.model.graph.setInput(find.id, 'tag', 'crate');
+    const destroy = file.node('scene.destroy');
+
+    file.wire([update, 'out'], [outer, 'in']);
+    file.wire([outer, 'first'], [before, 'in']);
+    file.wire([read, 'value'], [before, 'value']);
+    file.wire([outer, 'second'], [inner, 'in']);
+    file.wire([inner, 'first'], [destroy, 'in']);
+    file.wire([find, 'object'], [destroy, 'object']);
+    file.wire([inner, 'second'], [after, 'in']);
+    file.wire([read, 'value'], [after, 'value']);
+
+    const payload = file.model.serialize();
+    const Behaviour = defineComponent(payload);
+    const holder = scene.add(new SceneObject('Hero'));
+    holder.addComponent(new Behaviour());
+    const component = holder.components[payload.type];
+    component.crew = [doomed.id, kept.id];
+
+    const written = [];
+    const behavior = interpretGraph(payload.graph, {
+        registry,
+        log: value => written.push(value)
+    })(component);
+
+    behavior.update(holder, { time: 0, deltaTime: 0.016, scene });
+
+    assert.equal(scene.has(doomed), false, 'the Destroy ran between the two reads');
+    assert.deepEqual(written[0], [doomed, kept], 'read while both were still in the scene');
+    assert.deepEqual(written[1], [null, kept], 'and the destroyed one reads as nothing');
+});
+
+test('a wait that fails does not cancel the On Update of the same step', () => {
+    // `resumeDue()` runs BEFORE `start` and `update`, so a failure raised out of it took the
+    // whole step with it — the same "cancel work it has nothing to do with" one level up from
+    // the loop above. The failure still reaches the Runtime; what it no longer takes is the
+    // component's own frame.
+    const file = px();
+    const counter = file.property({ name: 'counter', type: PropertyType.NUMBER, default: 0 });
+    const doomed = file.property({ name: 'doomed', type: PropertyType.NUMBER, default: 0 });
+
+    const start = file.node('event.start');
+    const wait = file.node('flow.delay');
+    const breaks = file.node('property.set', { property: doomed.id });
+
+    const update = file.node('event.update');
+    const read = file.node('property.get', { property: counter.id });
+    const add = file.node('math.add');
+    const one = file.node('value.number', { value: 1 });
+    const write = file.node('property.set', { property: counter.id });
+
+    file.wire([start, 'out'], [wait, 'in']);
+    file.wire([wait, 'then'], [breaks, 'in']);
+
+    file.wire([update, 'out'], [write, 'in']);
+    file.wire([read, 'value'], [add, 'a']);
+    file.wire([one, 'value'], [add, 'b']);
+    file.wire([add, 'result'], [write, 'value']);
+
+    // The waiting branch names a property that is gone by the time it comes back.
+    file.model.removeProperty(doomed.id);
+
+    const { component, behavior } = behaviourFor(file.model);
+    const STEPS = 80;
+    let failures = 0;
+
+    for (let step = 0; step < STEPS; step++) {
+        try {
+            behavior.update(null, { deltaTime: 1 / 60, time: step / 60 });
+        } catch {
+            // The Runtime reports it; the loop here stands in for the next frame arriving.
+            failures++;
+        }
+    }
+
+    assert.equal(failures, 1, 'the wait failed once, and said so');
+    assert.equal(component.counter, STEPS, 'and every step counted, including that one');
+});
+
+test('a node behind a Delay is arriving, not resuming', () => {
+    // `io.resumed` tells a repeating node "you are coming back" from "you arrived down a
+    // wire". A wait parks at the node AFTER the one that waited, so marking that node resumed
+    // made an `Every` behind a `Delay` fire on arrival instead of after its interval.
+    const file = px();
+    const marker = file.property({ name: 'marker', type: PropertyType.NUMBER, default: 0 });
+
+    const start = file.node('event.start');
+    const delay = file.node('flow.delay');
+    const every = file.node('flow.every');
+    file.model.graph.setInput(every.id, 'interval', 10);
+    const marks = file.node('property.set', { property: marker.id });
+    const one = file.node('value.number', { value: 1 });
+
+    file.wire([start, 'out'], [delay, 'in']);
+    file.wire([delay, 'then'], [every, 'in']);
+    file.wire([every, 'then'], [marks, 'in']);
+    file.wire([one, 'value'], [marks, 'value']);
+
+    const { component, behavior } = behaviourFor(file.model);
+    for (let step = 0; step < 90; step++) {
+        behavior.update(null, { deltaTime: 1 / 60, time: step / 60 });
+    }
+
+    assert.equal(component.marker, 0, 'the interval has not elapsed, so nothing has pulsed');
 });

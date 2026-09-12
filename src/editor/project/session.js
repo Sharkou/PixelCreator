@@ -33,6 +33,27 @@ import { DEFINITION_KINDS, ResourceKind } from '../../project/mod.js';
 import { HtmlAudioOutput, ImageCache } from '../../runtime/mod.js';
 
 /**
+ * Whether a session resolves this resource at all.
+ *
+ * ONE DEFINITION, TWO READERS: the refresh pass below walks the manifest with it, and the
+ * shell asks it of every manifest operation to know whether what a surface draws from has
+ * gone stale (`editor.js`). The shell used to ask a list of its own that named the three
+ * DEFINITION kinds and not the pictures — so deleting an image left it on screen, and
+ * replacing one left the old pixels there, until something unrelated forced a reload.
+ *
+ * @param {object} resource - A manifest entry
+ * @returns {boolean} True when a refresh would read or invalidate it
+ */
+export function resolves(resource) {
+    if (!resource?.kind) return false;
+    if (DEFINITION_KINDS.includes(resource.kind)) return true;
+    if (resource.kind !== ResourceKind.ASSET) return false;
+
+    const mime = resource.mime ?? '';
+    return mime.startsWith('image/') || mime.startsWith('audio/');
+}
+
+/**
  * Build the two resolved tables a Runtime is given, and the pass that fills them.
  *
  * @param {object} context - What it reads
@@ -40,9 +61,11 @@ import { HtmlAudioOutput, ImageCache } from '../../runtime/mod.js';
  * @param {Function} [context.onError] - Called with `{ resource, error }` instead of throwing
  * @param {Function} [context.createAudioElement] - Builds one sound; the browser's by default
  * @param {Function} [context.decodeImage] - Turns a payload into a drawable picture
+ * @param {Function} [context.onImage] - Called when a picture finishes decoding, so a surface
+ *   that draws on demand can ask for another frame
  * @returns {{resources: object, images: object, audio: object, sounds: Map, refresh: Function}} The session
  */
-export function createSession({ project, onError, createAudioElement, decodeImage } = {}) {
+export function createSession({ project, onError, createAudioElement, decodeImage, onImage } = {}) {
     const resources = new ResourceRegistry();
     /** ResourceId -> the payload a sound is played from. */
     const sounds = new globalThis.Map();
@@ -78,11 +101,11 @@ export function createSession({ project, onError, createAudioElement, decodeImag
         let pictures = 0;
 
         for (const resource of project.resources()) {
+            if (!resolves(resource)) continue;
+
             const mime = resource.mime ?? '';
             const isDefinition = DEFINITION_KINDS.includes(resource.kind);
-            const isSound = resource.kind === ResourceKind.ASSET && mime.startsWith('audio/');
             const isPicture = resource.kind === ResourceKind.ASSET && mime.startsWith('image/');
-            if (!isDefinition && !isSound && !isPicture) continue;
 
             seen.add(resource.id);
             if (isPicture) pictures++;

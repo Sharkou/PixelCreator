@@ -48,6 +48,28 @@ est soumise** : elle décrivait un futur qui n'existe plus.
 Un undo refusé par l'autorité ne bascule rien : les deux piles restent intactes, parce
 qu'il n'y a rien à re-annuler.
 
+**Une entrée dont la cible a disparu n'est pas une entrée refusée** (amendé le 2026-09-12).
+Un `Destroy` retire un Object comme une primitive : aucune Operation ne l'enregistre, donc
+l'entrée qui l'avait créé désigne un identifiant qui ne se résoudra plus jamais. La garder
+fige la pile — `canUndo` reste vrai, chaque `Ctrl Z` suivant ne fait rien, et tout ce qui est
+dessous devient inatteignable. Elle est donc **écartée**, et la frappe poursuit jusqu'à la
+plus récente entrée qui, elle, peut être reprise. Les deux causes se distinguent à la
+réponse du pipeline : une décision d'autorité qui refuse peut être accordée plus tard, une
+cible absente ne revient pas.
+
+**Un geste abandonné ne coûte pas une entrée** (amendé le 2026-09-12). Un glissement écrit au
+fur et à mesure — c'est ce qui fait suivre l'objet — et reposer ce qu'il avait bougé s'écrit
+sous le **même `batch`**, donc la règle 4 laisse derrière elle une entrée qui ne fait rien.
+`Ctrl Z` s'y dépensait sans que rien ne bouge à l'écran. Le geste annonce le `batch` qu'il
+abandonne et l'Editor retire cette entrée (`History.forget()`), à trois conditions qui la
+gardent inoffensive :
+
+- elle ne peut être que **celle du dessus** — abandonner est la dernière chose qui s'est
+  produite ; un `batch` plus bas appartient à un geste qui, lui, est allé au bout ;
+- **rien n'est muté** : retirer une entrée n'émet aucune Operation, donc la règle 3 tient ;
+- **la pile de redo n'y perd rien** : elle avait déjà été vidée par la première opération du
+  geste, avant qu'on sache qu'il serait abandonné.
+
 ### 3. Aucun second chemin de mutation
 
 L'historique **ne mute jamais le modèle directement**. Il n'a qu'une action :

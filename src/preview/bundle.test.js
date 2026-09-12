@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MemoryResourceStore, Project, ResourceKind } from '../project/mod.js';
+import { MemoryArea, MemoryResourceStore, PersistentResourceStore, Project, ResourceKind } from '../project/mod.js';
 import { BUNDLE_FORMAT, bundleProject, openBundle } from './bundle.js';
 
 /** A project with a scene, a `.px` and an image — the three things a game is made of. */
@@ -22,10 +22,10 @@ function made() {
     return { project, store, scene, component, image };
 }
 
-test('a bundle carries the manifest, every payload it names, and which scene to open', () => {
+test('a bundle carries the manifest, every payload it names, and which scene to open', async () => {
     const it = made();
 
-    const bundle = bundleProject(it.project, it.store);
+    const bundle = await bundleProject(it.project, it.store);
 
     assert.equal(bundle.format, BUNDLE_FORMAT);
     assert.equal(bundle.name, 'Game');
@@ -37,19 +37,19 @@ test('a bundle carries the manifest, every payload it names, and which scene to 
     );
 });
 
-test('a bundle is JSON, because that is what makes the frontier a frontier', () => {
+test('a bundle is JSON, because that is what makes the frontier a frontier', async () => {
     const it = made();
 
-    const bundle = bundleProject(it.project, it.store);
+    const bundle = await bundleProject(it.project, it.store);
 
     assert.doesNotThrow(() => JSON.parse(JSON.stringify(bundle)));
     assert.deepEqual(JSON.parse(JSON.stringify(bundle)), bundle, 'nothing that only lives in memory');
 });
 
-test('a bundle reopened is the project that was bundled', () => {
+test('a bundle reopened is the project that was bundled', async () => {
     const it = made();
 
-    const opened = openBundle(JSON.parse(JSON.stringify(bundleProject(it.project, it.store))));
+    const opened = openBundle(JSON.parse(JSON.stringify(await bundleProject(it.project, it.store))));
 
     assert.equal(opened.name, 'Game');
     assert.equal(opened.scene, it.scene.id);
@@ -62,29 +62,31 @@ test('a bundle reopened is the project that was bundled', () => {
     assert.deepEqual(opened.store.read(it.image.id), it.store.read(it.image.id));
 });
 
-test('a resource with no payload yet is left out rather than written as nothing', () => {
+test('a resource with no payload yet is left out rather than written as nothing', async () => {
     const store = new MemoryResourceStore();
     const project = new Project('Game', { store });
     project.add({ kind: ResourceKind.FOLDER, name: 'Art' });
 
-    const bundle = bundleProject(project, store);
+    const bundle = await bundleProject(project, store);
 
     assert.deepEqual(bundle.payloads, {}, 'absent is not the same as empty');
     assert.equal(bundle.manifest.resources.length, 1, 'and the folder is still in the manifest');
 });
 
-test('the scene to open can be named, because a project may hold several', () => {
+test('the scene to open can be named, because a project may hold several', async () => {
     const it = made();
     const second = it.project.add({ kind: ResourceKind.SCENE, name: 'Boss.scene' });
 
-    assert.equal(bundleProject(it.project, it.store, { scene: second.id }).scene, second.id);
+    const bundle = await bundleProject(it.project, it.store, { scene: second.id });
+    assert.equal(bundle.scene, second.id);
 });
 
-test('a project with no scene at all bundles, and says it has none', () => {
+test('a project with no scene at all bundles, and says it has none', async () => {
     const store = new MemoryResourceStore();
     const project = new Project('Empty', { store });
 
-    assert.equal(bundleProject(project, store).scene, null, 'a page can say so rather than guess');
+    const bundle = await bundleProject(project, store);
+    assert.equal(bundle.scene, null, 'a page can say so rather than guess');
 });
 
 // --- what will not open --------------------------------------------------------------------
@@ -110,4 +112,45 @@ test('opening a bundle touches no DOM, so a headless server can arbitrate a game
     for (const forbidden of ['document', 'window', 'localStorage', 'canvas']) {
         assert.equal(source.includes(forbidden), false, `it reaches for ${forbidden}`);
     }
+});
+
+// --- a store that answers later (ADR-0020 §4, ADR-0065 §3) ----------------------------------
+
+test('a bundle carries what the store holds, even when the store answers later', async () => {
+    // THE REGRESSION THIS FILE EXISTED WITHOUT. Every test above uses the in-memory store,
+    // which answers synchronously — so the bundler reading `store.read(id)` and looking at
+    // the answer passed all of them, while the store a browser actually keeps a project in
+    // answered a promise. A promise is neither null nor undefined, so every payload was
+    // bundled as one, and `JSON.stringify` writes a promise as `{}`: Preview opened a window
+    // on a game whose scene, graphs and pictures were all empty objects.
+    const area = new MemoryArea();
+    const declared = new Project('Game');
+    const store = new PersistentResourceStore(area, declared.id);
+    const project = Project.deserialize(declared.serialize(), { store });
+
+    const scene = project.add({ kind: ResourceKind.SCENE, name: 'Level.scene' });
+    project.save(scene.id, { version: 2, id: 's1', name: 'Level', roots: [], objects: [] });
+
+    const bundle = await bundleProject(project, project.store, { scene: scene.id });
+
+    assert.deepEqual(bundle.payloads[scene.id],
+        { version: 2, id: 's1', name: 'Level', roots: [], objects: [] });
+    assert.equal(globalThis.JSON.parse(globalThis.JSON.stringify(bundle)).payloads[scene.id].name, 'Level',
+        'and it survives the frontier, which is JSON');
+});
+
+test('what is bundled is what was just saved, not what the store held before', async () => {
+    // A WRITE IS QUEUED AND A READ IS NOT AWAITED BY ITS CALLER, so the two have to share one
+    // queue or Preview shows the project as it was one gesture ago (persistence.js).
+    const area = new MemoryArea();
+    const declared = new Project('Game');
+    const store = new PersistentResourceStore(area, declared.id);
+    const project = Project.deserialize(declared.serialize(), { store });
+
+    const scene = project.add({ kind: ResourceKind.SCENE, name: 'Level.scene' });
+    project.save(scene.id, { version: 2, name: 'Before' });
+    project.save(scene.id, { version: 2, name: 'After' });
+
+    const bundle = await bundleProject(project, project.store, { scene: scene.id });
+    assert.equal(bundle.payloads[scene.id].name, 'After');
 });

@@ -110,6 +110,7 @@ export {
     PortDirection,
     PortKind,
     baseTypeOf,
+    carriesObjects,
     createPort,
     compatibleTargets,
     groupNodes,

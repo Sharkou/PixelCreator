@@ -227,6 +227,7 @@ par graphe ; la fabrique donne ensuite à chaque instance son propre état d'ex�
 | **Profondeur d'abord, dans l'ordre déclaré** | `Sequence` veut dire « la première branche entière, puis la seconde » ; le déterminisme *est* cet ordre |
 | **Cache de valeurs remis à zéro à chaque pas de flux** | mémoriser sur tout l'événement laisserait un `Get Property` servir l'ancienne valeur après un `Set Property` |
 | **Un budget par événement** (4096 nœuds) | un flux qui boucle est une boucle ; ce qui est interdit est une frame qui ne finit pas |
+| **Un plafond d'exécutions suspendues** (256 par instance) | le budget borne UN `walk` ; rien ne bornait combien un pas en effectuait, donc `On Update ▸ Every` en empilait une par pas, sans fin (ADR-0072) |
 | **`GraphError` structurées, levées** | le runtime les isole et les rapporte sans toucher au modèle (ADR-0012) |
 
 **Aucun `eval`, aucune `new Function`, aucune génération de code** — ADR-0009 Q7. Rien n'y

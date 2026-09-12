@@ -111,6 +111,47 @@ test('nothing to save writes nothing', async () => {
     autosave.stop();
 });
 
+test('a save does not ask for another one, or the Editor never stops writing', async () => {
+    // THE LOOP THIS EXISTS TO REFUSE. A flush writes payloads through `Project.save()`, which
+    // stamps `revision` and `modified` on the manifest — two operations on the very pipeline
+    // this listens to. Taken for edits, they re-armed the timer, the next flush wrote again,
+    // and a browser sitting on an untouched Editor put the whole project through IndexedDB
+    // every 600 ms for as long as the tab was open. Measured at 21 writes in three seconds.
+    const it = world();
+    const timer = clock();
+    const autosave = createAutosave({ workspace: it.workspace, store: it.store, ...timer });
+
+    it.player.setProperty('x', 7);
+    timer.tick();
+    await settle();
+
+    assert.equal(autosave.saves(), 1);
+    assert.equal(autosave.pending(), false, 'the write is not itself a reason to write again');
+    assert.equal(timer.waiting, 0, 'and nothing is scheduled');
+
+    autosave.stop();
+});
+
+test('a flush writes only what changed, so a clean document keeps its revision', async () => {
+    // A REVISION IS WHAT SAYS A PAYLOAD MOVED, and every cache in the Editor is keyed on one.
+    // Re-writing an untouched document bumps it, which throws away a decoded picture, a read
+    // payload and a bound graph for nothing — and stamps `modified` with a time at which
+    // nothing was modified.
+    const it = world();
+    const timer = clock();
+    const autosave = createAutosave({ workspace: it.workspace, store: it.store, ...timer });
+
+    it.project.setProperty(it.resource.id, 'name', 'Arena.scene');
+    const before = it.project.get(it.resource.id).revision;
+
+    timer.tick();
+    await settle();
+
+    assert.equal(it.project.get(it.resource.id).revision, before,
+        'the manifest was written, the payload was not');
+    autosave.stop();
+});
+
 test('a save that fails leaves the model dirty, so the next quiet period tries again', async () => {
     const it = world();
     const timer = clock();

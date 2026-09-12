@@ -17,6 +17,9 @@
   pendant cette exécution. C'est exactement l'extension que §10 avait consignée comme
   manquante pour `Tween`, et rien de plus
 - **Ne décide pas :** la reprise d'une simulation à mi-partie — voir §10
+- **Amendé le 2026-09-12 (ADR-0072) :** la liste reste une liste — deux passages dans un même
+  `Delay` attendent toujours indépendamment — mais elle a un **plafond** (`MAX_PENDING`), et
+  une exécution reprise qui échoue n'emporte plus celles qui étaient dues avec elle
 
 ---
 

@@ -160,3 +160,64 @@ test('a project with no id publishes nothing rather than opening a nameless chan
     assert.doesNotThrow(() => broadcastEdits(null, { Channel: Fake }).close());
     assert.doesNotThrow(() => broadcastEdits({ project: {} }, { Channel: Fake }).close());
 });
+
+test('a manifest change crosses too, under the project\'s own name', () => {
+    // A picture imported, a tileset recut, a clip retimed: none of those touches the scene or
+    // a `.px`, so none of them used to reach a Preview — the Editor's viewport re-resolved on
+    // exactly those operations and every open window went on showing what it was opened with.
+    const { Fake } = channels();
+    const registry = new ComponentRegistry();
+    registry.register(Transform);
+
+    const workspace = new Workspace({ components: registry });
+    workspace.create(new Scene('Level', { registry }));
+
+    const listener = openLiveChannel(workspace.project.id, { Channel: Fake });
+    const seen = [];
+    listener.onmessage = event => seen.push(event.data);
+
+    const live = broadcastEdits(workspace, { Channel: Fake });
+    const image = workspace.project.add(
+        { kind: 'asset', name: 'hero.png', mime: 'image/png' },
+        'data:image/png;base64,AA'
+    );
+
+    const manifest = seen.filter(message => message.resource === workspace.project.id);
+    assert.equal(manifest.length, 1);
+    assert.equal(manifest[0].kind, LiveMessage.OPERATION);
+    assert.equal(manifest[0].operation.type, 'ADD_RESOURCE');
+    assert.equal(manifest[0].operation.resource.id, image.id, 'the entry travels, payload and all');
+    assert.equal(manifest[0].operation.payload, 'data:image/png;base64,AA');
+
+    live.close();
+    workspace.project.setProperty(image.id, 'name', 'other.png');
+    assert.equal(seen.filter(message => message.resource === workspace.project.id).length, 1,
+        'and closing stops that too');
+});
+
+test('the bookkeeping of a save does not cross, because nobody asked for it', () => {
+    // `Project.save()` stamps `revision` and `modified` as `Origin.LOCAL` (ADR-0069 §2), and
+    // neither carries a payload — so a follower applying them learns nothing and re-resolves
+    // a definition it already holds, twice per autosave.
+    const { Fake } = channels();
+    const registry = new ComponentRegistry();
+    registry.register(Transform);
+
+    const workspace = new Workspace({ components: registry });
+    workspace.create(new Scene('Level', { registry }));
+    const image = workspace.project.add({ kind: 'asset', name: 'hero.png', mime: 'image/png' }, 'AA');
+
+    const listener = openLiveChannel(workspace.project.id, { Channel: Fake });
+    const seen = [];
+    listener.onmessage = event => seen.push(event.data);
+
+    const live = broadcastEdits(workspace, { Channel: Fake });
+    workspace.project.save(image.id, 'BB');
+
+    assert.deepEqual(seen, [], 'a save is not an intention');
+
+    workspace.project.setProperty(image.id, 'name', 'renamed.png');
+    assert.equal(seen.length, 1, 'and a rename still is');
+
+    live.close();
+});

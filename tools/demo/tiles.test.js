@@ -26,7 +26,7 @@ async function play() {
     const project = new Project('Tiles', { store });
     buildTileLevel(project, { registry: registerBuiltIns(new ComponentRegistry()) });
 
-    const opened = openBundle(bundleProject(project, store, { scene: IDS.scene }));
+    const opened = openBundle(await bundleProject(project, store, { scene: IDS.scene }));
     const registry = registerBuiltIns(new ComponentRegistry());
     const behaviors = new Behaviors(createGraphInterpreter({ registry: nodes }));
     const refused = [];
@@ -216,7 +216,7 @@ test('the bundle a creator exports carries the sheet its tiles come from', async
     const project = new Project('Tiles', { store });
     buildTileLevel(project, { registry: registerBuiltIns(new ComponentRegistry()) });
 
-    const bundle = bundleProject(project, store, { scene: IDS.scene });
+    const bundle = await bundleProject(project, store, { scene: IDS.scene });
     const carried = new Set(Object.keys(bundle.payloads));
 
     // NO SPECIAL PATH FOR A TILEMAP (ADR-0070 §10): the sheet travels because it is a

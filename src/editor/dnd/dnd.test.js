@@ -104,12 +104,12 @@ test('files dropped on the scene are imported AND instantiated where they landed
         'the scene references the resource, never the bytes');
 });
 
-test('a file dropped on a Content section replaces the payload, revision and all', () => {
+test('a file dropped on a Content section replaces the payload, revision and all', async () => {
     const ctx = context();
     const asset = imageIn(ctx.project);
     const before = ctx.project.get(asset.id).revision;
 
-    const result = performDrop(
+    const result = await performDrop(
         filesPayload([{ name: 'other.jpg', mime: 'image/jpeg', payload: 'data:image/jpeg;base64,BBBB' }]),
         { zone: DropZone.CONTENT, resource: asset },
         ctx
@@ -481,6 +481,12 @@ const Link = defineComponent({
     properties: {
         target: { id: 'p_target', type: PropertyType.OBJECTREF, default: null },
         friends: { id: 'p_friends', type: PropertyType.ARRAY, of: PropertyType.OBJECTREF, default: [] },
+        sounds: {
+            id: 'p_sounds',
+            type: PropertyType.ARRAY,
+            element: { type: PropertyType.RESOURCE, kind: 'asset', mime: 'audio/' },
+            default: []
+        },
         count: { id: 'p_count', type: PropertyType.NUMBER, default: 0 },
         label: { id: 'p_label', type: PropertyType.STRING, default: '' },
         armed: { id: 'p_armed', type: PropertyType.BOOLEAN, default: false }
@@ -1730,6 +1736,28 @@ test('adding to a list of references is one Operation, so it undoes', () => {
     assert.equal(seen[0].prop, 'friends');
     assert.deepEqual(seen[0].value, [it.player.id]);
     assert.deepEqual(seen[0].previous, []);
+});
+
+test('a list of resources takes a drop too, and adds rather than replaces', () => {
+    // THE SAME SENTENCE ONE SCOPE ACROSS. An Object list was added to and a Resource list was
+    // replaced — two answers to one gesture, decided by nobody. The clause a row narrows
+    // itself with is read one level down as well, so a `list<resource>` of sounds refuses a
+    // picture exactly as a lone `clip` does.
+    const it = linked();
+    const target = propertyTarget(it.link, 'sounds');
+    const first = it.project.add({ kind: ResourceKind.ASSET, name: 'hit.wav', mime: 'audio/wav' }, 'data:audio/wav;base64,AA');
+    const second = it.project.add({ kind: ResourceKind.ASSET, name: 'jump.wav', mime: 'audio/wav' }, 'data:audio/wav;base64,BB');
+    const picture = it.project.add({ kind: ResourceKind.ASSET, name: 'hero.png', mime: 'image/png' }, 'data:image/png;base64,AA');
+
+    assert.equal(canDrop(resourcePayload(first), target).allowed, true);
+    assert.match(canDrop(resourcePayload(first), target).reason, /^Add hit\.wav to/);
+
+    performDrop(resourcePayload(first), target, it);
+    performDrop(resourcePayload(second), target, it);
+    assert.deepEqual(it.link.sounds, [first.id, second.id], 'and this one too');
+
+    assert.equal(canDrop(resourcePayload(picture), target).allowed, false,
+        'the mime clause is read one level down, like the kind');
 });
 
 test('a list of something else still refuses an Object, and says so', () => {

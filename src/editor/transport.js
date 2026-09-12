@@ -102,7 +102,11 @@ export class Transport {
      * button lives beside the other three, and for no deeper reason — the machine below does
      * not know it happened.
      *
-     * @returns {object|null} Whatever the opener answered
+     * A PROMISE, BECAUSE BUNDLING READS THE STORE (ADR-0020 §4). The opener this is
+     * given is `openPreview()`, and what it answers is awaited by the caller; nothing here
+     * looks at it.
+     *
+     * @returns {Promise<object|null>|object|null} Whatever the opener answered
      */
     preview() {
         return this.#preview?.() ?? null;

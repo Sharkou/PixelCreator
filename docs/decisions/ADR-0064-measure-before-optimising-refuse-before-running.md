@@ -5,6 +5,10 @@
 - **Dépend de :** ADR-0012 (isolation des erreurs), ADR-0015 (un `.px` est un comportement), ADR-0027 (modèle de graphe, `validateGraph`), ADR-0034 §3.1 (ordre canonique), ADR-0059 (se toucher est un fait de simulation)
 - **Amende :** ADR-0059 §7 — le broad phase arrive, avec le chiffre qui le justifiait
 - **Ne décide pas :** la résolution physique ; les couches de collision ; le collider polygonal ; l'OBB exact — ADR-0059 §9 est inchangé
+- **Amendé le 2026-09-12 (ADR-0072) :** « seules les ERREURS retiennent la liaison » vaut
+  aussi **pendant** l'exécution. Un nœud dont le validateur ne fait qu'un avertissement — une
+  propriété pas encore choisie — ne doit pas jeter à chaque pas : une exception déroule tout le
+  `walk`, donc elle arrêtait aussi tout ce qui était câblé après lui
 
 ---
 

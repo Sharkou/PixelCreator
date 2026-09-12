@@ -114,7 +114,8 @@
             sounds: { shoot: tone(880, 0.08), hit: tone(180, 0.16) }
         });
 
-        const bundle = bundleProject(project, project.store, { scene: IDS.menu });
+        // A BUNDLE READS EVERY PAYLOAD IT CARRIES, AND A STORE MAY WAIT (ADR-0020 §4).
+        const bundle = await bundleProject(project, project.store, { scene: IDS.menu });
         if (!putPreview(project.id, bundle)) {
             status.textContent = 'This browser would not store the bundle.';
         } else {

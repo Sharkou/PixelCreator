@@ -117,6 +117,30 @@ export class History {
         return this.#replay(this.#redo, this.#undo);
     }
 
+    /**
+     * Drop the top entry when it belongs to a gesture that was given up.
+     *
+     * A CANCELLED GESTURE MUST NOT COST AN UNDO. A drag writes as it goes, and putting the
+     * object back is written under the SAME batch — one entry, as it should be — so what is
+     * left on the stack nets to nothing: `Ctrl Z` spent itself on it, visibly doing nothing,
+     * before a second press reached the edit the creator meant. Escape is supposed to leave
+     * no trace, and now it leaves none.
+     *
+     * ONLY THE TOP ENTRY CAN BE IT, because abandoning is the last thing that happened; a
+     * batch further down belongs to a gesture that was completed.
+     *
+     * @param {string|null} batch - The batch of the abandoned gesture
+     * @returns {boolean} True when an entry was dropped
+     */
+    forget(batch) {
+        if (!batch) return false;
+        if (this.#undo.at(-1)?.batch !== batch) return false;
+
+        this.#undo.pop();
+        this.#announce();
+        return true;
+    }
+
     /** Forget both stacks. */
     clear() {
         this.#undo = [];
@@ -165,39 +189,68 @@ export class History {
         this.#announce();
     }
 
+    /**
+     * Take one entry off a stack, invert it onto the other, and say whether anything moved.
+     *
+     * NOTHING APPLIED HAS TWO CAUSES AND THEY END DIFFERENTLY. Treating them alike is what
+     * made this wrong in both directions:
+     *
+     * - **the authority refused** — a read-only session, a server holding the scene. The
+     *   same inversion may be allowed a minute from now, so the entry goes back where it
+     *   came from and the keystroke reports that it did nothing.
+     * - **the target is gone** — an Object a `Destroy` node removed leaves the scene as a
+     *   primitive, with no Operation to record, so the entry that created it names an id
+     *   that will never resolve again. Keeping such an entry WEDGES the stack: `canUndo`
+     *   stays true, every later `Ctrl Z` is a no-op, and the edits underneath become
+     *   unreachable. It is discarded, and the keystroke goes on to the newest entry that CAN
+     *   be taken back — which is what the creator meant by pressing it.
+     *
+     * @param {Array<object>} from - The stack to take from
+     * @param {Array<object>} to - The stack the inversion goes on
+     * @returns {boolean} True when something was replayed
+     */
     #replay(from, to) {
-        const entry = from.pop();
-        if (!entry) return false;
+        if (from.length === 0) return false;
 
-        // One batch for the whole inversion, so undoing an entry is itself a single entry
-        // on the other stack. Without it, undoing a six-operation drop would need six
-        // redos.
-        const batch = entry.operations.length > 1 || entry.batch ? createId() : null;
-        const produced = [];
-        this.#replaying = produced;
+        while (from.length > 0) {
+            const entry = from.pop();
 
-        try {
-            // Reverse order: the last thing that happened is the first thing undone.
-            for (const operation of [...entry.operations].reverse()) {
-                const inverse = invert(operation);
-                // submit(), never apply(). An undo is arbitrated and replicated like any
-                // other intent — rule 3, and the one worth being loud about.
-                this.#operations.submit(batch ? { ...inverse, batch } : inverse);
+            // One batch for the whole inversion, so undoing an entry is itself a single entry
+            // on the other stack. Without it, undoing a six-operation drop would need six
+            // redos.
+            const batch = entry.operations.length > 1 || entry.batch ? createId() : null;
+            const produced = [];
+            this.#replaying = produced;
+            let refused = false;
+
+            try {
+                // Reverse order: the last thing that happened is the first thing undone.
+                for (const operation of [...entry.operations].reverse()) {
+                    const inverse = invert(operation);
+                    // submit(), never apply(). An undo is arbitrated and replicated like any
+                    // other intent — rule 3, and the one worth being loud about.
+                    const result = this.#operations.submit(batch ? { ...inverse, batch } : inverse);
+                    if (result?.decision?.allowed === false) refused = true;
+                }
+            } finally {
+                this.#replaying = null;
             }
-        } finally {
-            this.#replaying = null;
+
+            if (produced.length > 0) {
+                to.push({ batch, operations: produced });
+                this.#announce();
+                return true;
+            }
+
+            if (refused) {
+                from.push(entry);
+                this.#announce();
+                return false;
+            }
         }
 
-        if (produced.length === 0) {
-            // Nothing applied — the authority refused, or the target has gone. The entry
-            // is not put back on the other stack, because there is nothing there to undo.
-            this.#announce();
-            return false;
-        }
-
-        to.push({ batch, operations: produced });
         this.#announce();
-        return true;
+        return false;
     }
 
     #announce() {

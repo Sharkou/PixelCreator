@@ -53,11 +53,21 @@ export function broadcastEdits(workspace, { Channel } = {}) {
         if (model) follow({ resource, kind: resource.kind, model });
     }
 
+    // AND THE MANIFEST IS A MODEL TOO. A picture imported, a tileset recut, a clip retimed, a
+    // prefab replaced: none of those touches a scene or a `.px`, so none of them reached a
+    // Preview — the Editor's own viewport re-resolves on exactly these operations
+    // (`editor.js`, `session.resolves()`) and every open window went on showing what it was
+    // opened with. It is the same `forwardOperations()`, on the pipeline `Project` already
+    // owns, addressed by the project's own identity — so no message kind was invented and the
+    // follower tells the three apart by the name they arrive under (ADR-0044 §3).
+    const unfollowProject = forwardOperations(channel, workspace.project?.id, workspace.project);
+
     const stop = workspace.on?.('attached', follow) ?? (() => {});
 
     return {
         close: () => {
             stop();
+            unfollowProject();
             for (const unfollow of following.values()) unfollow();
             following.clear();
             channel.close?.();

@@ -438,6 +438,29 @@ export function baseTypeOf(type) {
     return at === -1 ? type : type.slice(0, at);
 }
 
+/**
+ * Whether a port type carries an Object handle, alone or in a list.
+ *
+ * ONE QUESTION, ONE ANSWER, ASKED AT THE TWO BOUNDARIES A HANDLE CROSSES. Both read
+ * `type === OBJECT_TYPE`, which is exactly right for a reference and blind to a LIST of them:
+ *
+ * - **on the way in**, a handle may never come out of a `.px` payload (ADR-0034 §3.6), and a
+ *   hand-written `inputs: { value: [{ id: 'obj_forged' }] }` on an `array<object>` port
+ *   walked straight through to be stored as a scene identity nobody authored;
+ * - **on the way out**, what a node produced is re-asked of the Scene every read, and a list
+ *   of handles was handed on whole — a `Destroy` in between and the entries were still live.
+ *
+ * The validator is deliberately NOT one of them: an unconnected reference there is a question
+ * about what a creator has filled in, not about what may be trusted.
+ *
+ * @param {string} type - A port type
+ * @returns {boolean} True when values on this port are handles
+ */
+export function carriesObjects(type) {
+    return type === OBJECT_TYPE
+        || (baseTypeOf(type) === PropertyType.ARRAY && typeParameterOf(type) === OBJECT_TYPE);
+}
+
 /** `array<number>` -> `number`; ANY_TYPE for a type that carries no parameter. */
 function typeParameterOf(type) {
     const at = typeof type === 'string' ? type.indexOf(PARAMETER_OPEN) : -1;

@@ -97,7 +97,7 @@ test('saving again bumps the revision, and does not rewrite the displayed name',
     assert.ok(entry.revision > before);
 });
 
-test('renaming, moving and deleting one need no code of their own', () => {
+test('renaming, moving and deleting one need no code of their own', async () => {
     const scene = world();
     const store = project();
     const folder = store.addFolder({ name: 'Prefabs' });
@@ -111,7 +111,7 @@ test('renaming, moving and deleting one need no code of their own', () => {
     assert.equal(store.get(resource.id).name, 'Rocket.prefab');
     assert.equal(store.get(resource.id).id, resource.id, 'the identity never moves');
 
-    store.remove(resource.id);
+    await store.remove(resource.id);
     assert.equal(store.get(resource.id), null);
     assert.deepEqual(prefabResources(store), []);
 });

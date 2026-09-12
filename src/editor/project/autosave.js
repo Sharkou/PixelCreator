@@ -23,6 +23,8 @@
 // NOTHING HERE KNOWS WHAT INDEXEDDB IS. It is handed a store, and a store may be memory in a
 // test — which is how every behaviour below is verified without a browser.
 
+import { Origin } from '../../core/mod.js';
+
 /** How long the model must be quiet before anything is written, in milliseconds. */
 export const QUIET = 600;
 
@@ -107,15 +109,33 @@ export function createAutosave({
     if (workspace) {
         // A PAYLOAD CHANGED. `dirty` is announced per resource by the Workspace itself,
         // which already derives it from the pipeline rather than from a flag (ADR-0020 §3).
-        release.push(workspace.on('dirty', () => later()));
+        //
+        // AND IT IS ANNOUNCED IN BOTH DIRECTIONS. `{ dirty: false }` is the Workspace saying
+        // a document has just been WRITTEN — the one event that must not ask for another
+        // write. Listening to it unconditionally was the second half of a loop that had the
+        // Editor saving the whole project every quiet period with nobody at the keyboard.
+        release.push(workspace.on('dirty', ({ dirty: unsaved }) => {
+            if (unsaved) later();
+        }));
         release.push(workspace.on('opened', () => later()));
         release.push(workspace.on('closed', () => later()));
 
         // THE MANIFEST CHANGED. Renaming, moving, reordering and deleting a resource are
         // operations on the PROJECT's own pipeline and touch no payload at all — so without
         // this, a project could be renamed and reopened under its old name.
+        //
+        // AN INTENTION, NEVER THE BOOKKEEPING OF A WRITE (ADR-0069 §2). `Project.save()`
+        // stamps `revision` and `modified` as `Origin.LOCAL` precisely because nobody asked
+        // for them — and this listener took them for edits, so every flush re-armed itself and
+        // the Editor wrote the whole project to storage every 600 ms, for ever, with nobody
+        // touching the keyboard. It is the same filter `Workspace` already applies to decide
+        // what counts as unsaved work.
         const pipeline = workspace.project?.operations;
-        if (pipeline?.on) release.push(pipeline.on('operation', () => later()));
+        if (pipeline?.on) {
+            release.push(pipeline.on('operation', operation => {
+                if (operation?.origin === Origin.EDITOR) later();
+            }));
+        }
     }
 
     // THE TWO EVENTS A BROWSER REALLY DELIVERS WHEN A TAB GOES AWAY. `unload` is not one of

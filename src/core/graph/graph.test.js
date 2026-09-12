@@ -96,6 +96,33 @@ test('a removed node comes back at the rank it held', () => {
     assert.equal(model.indexOf(middle.id), 1);
 });
 
+test('the wires come back at their own ranks, so a payload survives an undo unchanged', () => {
+    // `REMOVE_NODE` carries the node's `index` precisely so the shape comes back, and carried
+    // no rank at all for the wiring — so the connections were appended and a `.px` reopened
+    // after an undo was a different file from the one that was saved. The interpreter does not
+    // care, because it indexes by port; a diff, a review and a merge all do.
+    const model = graph();
+    const start = model.addNode({ type: 'event.start' });
+    const middle = model.addNode({ type: 'flow.branch' });
+    const tail = model.addNode({ type: 'flow.sequence' });
+
+    model.connect({ node: start.id, port: 'out' }, { node: middle.id, port: 'in' });
+    model.connect({ node: middle.id, port: 'then' }, { node: tail.id, port: 'in' });
+    model.connect({ node: middle.id, port: 'else' }, { node: tail.id, port: 'in' });
+
+    const before = model.serialize();
+
+    const removals = [];
+    model.operations.on('operation', operation => {
+        if (operation.type === 'REMOVE_NODE') removals.push(operation);
+    });
+
+    model.removeNode(middle.id);
+    model.operations.submit(invert(removals[0]));
+
+    assert.deepEqual(model.serialize(), before, 'byte for byte, nodes and wires alike');
+});
+
 test('removing a node the graph does not hold changes nothing', () => {
     const model = graph();
     assert.equal(model.removeNode('nothing'), false);

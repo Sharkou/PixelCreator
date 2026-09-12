@@ -223,7 +223,7 @@ test('an edit goes through the kind that built the payload, so nonsense is clamp
     assert.equal(editedPayload(scene, {}, 'anything', 1), null);
 });
 
-test('typing into a tileset is one undoable intent, and the revision moves with it', () => {
+test('typing into a tileset is one undoable intent, and the revision moves with it', async () => {
     const project = new Project('Game');
     const tileset = project.add({ kind: ResourceKind.TILESET, name: 'Dungeon.tileset' },
         createTileset({ source: 'res_sheet', tileWidth: 16, tileHeight: 16, columns: 8, count: 40 }));
@@ -231,7 +231,7 @@ test('typing into a tileset is one undoable intent, and the revision moves with 
     const before = project.get(tileset.id).revision;
 
     const next = editedPayload(tileset, project.read(tileset.id), 'tileWidth', 32);
-    project.setPayload(tileset.id, next);
+    await project.setPayload(tileset.id, next);
 
     assert.equal(project.read(tileset.id).tileWidth, 32);
     assert.ok(project.get(tileset.id).revision > before, 'so anything watching it rebuilds');

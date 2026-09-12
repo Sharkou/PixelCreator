@@ -47,6 +47,12 @@ export { registerBuiltIns };
 /** Groups, in the order the menu shows them. Anything unclaimed lands in the last one. */
 export const CATEGORIES = ['Rendering', 'Audio', 'Scene', 'Other'];
 
+// EVERY TYPE `runtime/builtins.js` SHIPS HAS A ROW HERE, and `registry.test.js` fails when
+// one does not. Three of them did not: `Body`, `Follow` and `TilemapCollider` were added to
+// the engine and never to this table, so the menu offered `TilemapCollider` — the class name,
+// unspaced — under `Other`, beside the `Tilemap` it belongs to under `Rendering`. A creator
+// following the one path a platformer needs (Tilemap, then the collider that makes it a wall,
+// then the Body that falls onto it) met two of the three in a drawer called Other.
 const SHIPPED = {
     Transform: { category: 'Scene', label: 'Transform' },
     RectangleRenderer: { category: 'Rendering', label: 'Rectangle' },
@@ -56,7 +62,21 @@ const SHIPPED = {
     ParticleSystem: { category: 'Rendering', label: 'Particles' },
     Tilemap: { category: 'Rendering', label: 'Tilemap' },
     Velocity: { category: 'Scene', label: 'Velocity' },
+    // A `note` IS FOR THE TWO WHOSE LABEL DOES NOT SAY WHAT THEY DO. Every other name here
+    // answers for itself — a creator reading `Sprite` or `Camera` needs no sentence — and
+    // writing one for all fifteen would bury the two that are worth reading (ADR-0041 §7).
+    Body: {
+        category: 'Scene',
+        label: 'Body',
+        note: 'This object moves, and solid things stop it. Add Velocity to give it a speed.'
+    },
+    Follow: { category: 'Scene', label: 'Follow' },
     BoxCollider: { category: 'Scene', label: 'Box Collider' },
+    TilemapCollider: {
+        category: 'Scene',
+        label: 'Tilemap Collider',
+        note: "Makes the painted cells of this object's Tilemap solid. It has nothing to fill in."
+    },
     ScreenSpace: { category: 'Rendering', label: 'Screen Space' },
     AudioSource: { category: 'Audio', label: 'Audio Source' },
     Camera: { category: 'Scene', label: 'Camera' }
@@ -97,7 +117,7 @@ const SHIPPED = {
  * @param {object} [registry] - Registry to resolve the class in
  * @param {object} [options] - Options
  * @param {object} [options.project] - Consulted for a `.px`'s current name
- * @returns {{type: string, label: string, category: string}} Its presentation
+ * @returns {{type: string, label: string, category: string, note: string|null}} Its presentation
  */
 export function describeType(type, registry = defaultRegistry, { project = null } = {}) {
     const ComponentClass = registry.get(type);
@@ -122,7 +142,10 @@ export function describeType(type, registry = defaultRegistry, { project = null 
             // name is a name: somebody wrote `Transform` and it says Transform. What is
             // refused is printing an IDENTITY at a creator who has no use for one.
             || (ComponentClass && !isFile(ComponentClass) ? type : MISSING_LABEL),
-        category: ComponentClass?.category ?? shipped?.category ?? 'Other'
+        category: ComponentClass?.category ?? shipped?.category ?? 'Other',
+        // One sentence, for a name that does not answer for itself. A `.px` has none: what
+        // a creator's own Component does is theirs to say, and the label is where they say it.
+        note: shipped?.note ?? null
     };
 }
 

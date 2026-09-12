@@ -3,8 +3,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Body, BoxCollider, registerBuiltIns } from '../runtime/mod.js';
+import { BUILT_IN } from '../runtime/builtins.js';
 import { FieldKind, describeComponent } from './inspector/schema.js';
-import { componentCatalogue, describeType, groupTypes } from './registry.js';
+import { CATEGORIES, componentCatalogue, describeType, groupTypes } from './registry.js';
+import { iconForComponent } from './ui/icons.js';
 
 test('the three readers fall back to the shipped registry rather than throwing', () => {
     // A LATENT `ReferenceError`, FOUND BY CALLING THEM THE WAY THEIR SIGNATURES INVITE. All
@@ -66,4 +68,45 @@ test('a Box Collider describes four numbers and the one word that makes it a wal
     const solid = fields.find(field => field.name === 'solid');
     assert.equal(solid.kind, FieldKind.BOOLEAN);
     assert.equal(solid.default, true);
+});
+
+test('every type the engine ships is named and shelved, none lands in Other', () => {
+    // THE GUARD THAT WAS MISSING. `Body`, `Follow` and `TilemapCollider` were shipped in
+    // `runtime/builtins.js` and never added to the Editor's table, so `describeType()` fell
+    // through to the class name and to the catch-all category: the Add Component menu offered
+    // `TilemapCollider` under `Other`, two shelves away from the `Tilemap` it completes.
+    registerBuiltIns();
+
+    for (const ComponentClass of BUILT_IN) {
+        const type = ComponentClass.type ?? ComponentClass.name;
+        const described = describeType(type);
+
+        assert.notEqual(described.category, 'Other', `${type} has no shelf`);
+        assert.ok(CATEGORIES.includes(described.category), `${type} is on a shelf the menu shows`);
+        // A CLASS NAME IS NOT A LABEL. `TilemapCollider` is how the file spells it;
+        // `Tilemap Collider` is how a creator reads it.
+        assert.doesNotMatch(described.label, /[a-z][A-Z]/, `${type} is offered under its class name`);
+    }
+});
+
+test('a type whose name does not say what it does carries a sentence that does', () => {
+    // `Tilemap Collider` has an EMPTY schema, so its section in the Inspector is the label
+    // and nothing else; `No properties` told a beginner it works and shows nothing, when it
+    // is a component that does nothing at all without a Tilemap beside it.
+    registerBuiltIns();
+
+    assert.match(describeType('TilemapCollider').note ?? '', /Tilemap/);
+    assert.match(describeType('Body').note ?? '', /Velocity/);
+    assert.equal(describeType('Sprite').note, null, 'and a name that answers for itself carries none');
+    assert.equal(describeType('res_unknown').note, null);
+});
+
+test('every type the engine ships has a glyph of its own', () => {
+    registerBuiltIns();
+
+    for (const ComponentClass of BUILT_IN) {
+        const type = ComponentClass.type ?? ComponentClass.name;
+        assert.notEqual(iconForComponent(ComponentClass, type), 'component',
+            `${type} wears the mark of a type nobody can name`);
+    }
 });

@@ -499,15 +499,18 @@ test('a list of Objects is editable, because the panel hands the list its scene'
     }).kind, FieldKind.LIST);
 });
 
-test('a list of resources keeps the read-only row, because a row cannot resolve one', () => {
-    // A resource is resolved against the PROJECT, which a list is not given — the same move
-    // as the scene, the day a list of resources is asked for. Until then, showing what it
-    // holds is more honest than a control that would resolve nothing (ADR-0030 §1).
+test('a list of resources is editable, because the panel hands the list its project', () => {
+    // THE MOVE THE SCENE ALREADY MADE, MADE AGAIN. A resource is resolved against the
+    // PROJECT, which a list used to be given nothing of — so `List of Image` was offered by
+    // the type menu (inspector/definition.js, which claims it never offers a choice that
+    // would be ignored) and then drawn as a row a creator could not touch. `<px-list>` is
+    // handed the project the panel already hands `<px-resource>`, so a row shows what it
+    // points at and offers the same picker (ADR-0030 §1).
     assert.equal(described({
         type: PropertyType.ARRAY,
         element: { type: PropertyType.RESOURCE },
         default: []
-    }).kind, FieldKind.READONLY);
+    }).kind, FieldKind.LIST);
 });
 
 test('a list of choices earns a control only once there is something to choose', () => {

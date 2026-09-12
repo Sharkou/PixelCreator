@@ -317,10 +317,21 @@ export class Graph {
         const node = this.#nodes.get(id);
         if (!node) return false;
 
+        // THE WIRES TRAVEL WITH THEIR RANKS, for the reason the node's own `index` travels:
+        // undoing a deletion must give back the shape the graph had, and a payload whose
+        // connections come back in a different order is not the file that was saved. Read
+        // once, against the list as it is now — every rank below a removed wire shifts as the
+        // removal happens, so asking afterwards would answer about a different list.
+        const wiring = this.connections();
+        const connections = wiring
+            .map((connection, at) => ({ connection, at }))
+            .filter(({ connection }) => connection.from.node === id || connection.to.node === id)
+            .map(({ connection, at }) => ({ ...connection, index: at }));
+
         const result = this.#operations.submit(removeNodeOperation({
             node: snapshot(node),
             index: this.indexOf(id),
-            connections: this.connectionsOf(id),
+            connections,
             origin: Origin.EDITOR,
             actor,
             batch
@@ -683,9 +694,18 @@ export class Graph {
             if (this.#nodes.has(operation.node.id)) return false;
 
             this.declare(operation.node, operation.index ?? undefined);
-            // A node restored by an undo brings its wiring back with it.
-            for (const connection of operation.connections ?? []) {
-                if (!this.#connections.has(connection.id)) this.declareConnection(connection);
+            // A NODE RESTORED BY AN UNDO BRINGS ITS WIRING BACK WITH IT, AT ITS RANK. Appended
+            // instead, the payload came back with its connections in a different order — the
+            // interpreter does not care, because it indexes by port, but a `.px` that is not
+            // byte-identical after an undo is a file that says it changed when it did not.
+            // Restored in ascending rank, so each `index` still means what it meant.
+            const wiring = [...(operation.connections ?? [])]
+                .sort((first, second) => (first.index ?? 0) - (second.index ?? 0));
+
+            for (const connection of wiring) {
+                if (this.#connections.has(connection.id)) continue;
+                const { index, ...record } = connection;
+                this.declareConnection(record, index ?? undefined);
             }
             return true;
         }, { resolveTarget: false });

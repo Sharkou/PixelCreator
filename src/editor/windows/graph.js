@@ -52,6 +52,7 @@ import { ICON_GRID, icon, iconForNode, iconPaths } from '../ui/icons.js';
 import { openMenu, pointAnchor } from '../ui/menu.js';
 import { capturePointer as capture } from '../ui/gesture.js';
 import { isEditing } from '../ui/focus.js';
+import { PayloadCache } from '../project/payloads.js';
 import { describeNode, inputFields, paramWrites } from '../inspector/node.js';
 import { DropZone } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
@@ -435,6 +436,8 @@ export class GraphWindow extends Element {
     #definition = null;
     #components = null;
     #project = null;
+    /** Payloads read back for the reference rows, kept by the window that rebuilds them. */
+    #payloads = new PayloadCache();
     #scene = null;
     #framed = null;
     #svg = null;
@@ -488,6 +491,8 @@ export class GraphWindow extends Element {
      */
     bind(definition, { components = null, project = null, scene = null } = {}) {
         this.#components = components;
+        // Another project is another set of payloads (ui/resource-field.js).
+        if (project !== this.#project) this.#payloads.clear();
         this.#project = project;
         this.#scene = scene;
         if (this.#definition === definition) return this;
@@ -1431,7 +1436,14 @@ export class GraphWindow extends Element {
         // for it here rather than letting `px-field` fall through is the same rule the
         // Inspector follows (ADR-0030 §1), applied on the canvas.
         const field = descriptor.kind === FieldKind.RESOURCE
-            ? el('px-resource').bind(view, descriptor, { project: this.#project, write })
+            ? el('px-resource').bind(view, descriptor, {
+                project: this.#project,
+                // THE WINDOW'S CACHE, NOT THE ROW'S. A node is redrawn whenever anything on
+                // it moves, so a cache living on the control would be empty every time and
+                // the thumbnail would fall back to a glyph on each redraw.
+                payloads: this.#payloads,
+                write
+            })
             : el('px-field').bind(view, { ...descriptor, label: descriptor.label }, { write });
 
         // A CONNECTED PORT SHOWS ITS FALLBACK, GREYED. The wire is what runs; this is what

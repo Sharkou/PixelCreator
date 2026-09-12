@@ -275,12 +275,12 @@ test('moving into the folder it is already in, with no rank, changes nothing', (
 
 // --- deleting ---------------------------------------------------------------------------
 
-test('deleting a folder deletes what it holds, as one batch', () => {
+test('deleting a folder deletes what it holds, as one batch', async () => {
     const { project, assets, images, hero, level } = tree();
     const seen = [];
     project.operations.on('operation', operation => seen.push(operation));
 
-    assert.equal(project.removeTree(assets.id), 3);
+    assert.equal(await project.removeTree(assets.id), 3);
 
     assert.equal(project.has(assets.id), false);
     assert.equal(project.has(images.id), false);
@@ -291,12 +291,12 @@ test('deleting a folder deletes what it holds, as one batch', () => {
     assert.equal(new globalThis.Set(seen.map(operation => operation.batch)).size, 1);
 });
 
-test('undoing a folder deletion restores the whole branch, payloads included', () => {
+test('undoing a folder deletion restores the whole branch, payloads included', async () => {
     const { project, assets, images, hero } = tree();
     const seen = [];
     project.operations.on('operation', operation => seen.push(operation));
 
-    project.removeTree(assets.id);
+    await project.removeTree(assets.id);
 
     // What History does: invert in reverse order, so parents come back before children.
     for (const operation of [...seen].reverse()) project.operations.submit(invert(operation));
@@ -307,12 +307,12 @@ test('undoing a folder deletion restores the whole branch, payloads included', (
     assert.equal(project.read(hero.id), 'binary');
 });
 
-test('removing a leaf does not need the tree walk', () => {
+test('removing a leaf does not need the tree walk', async () => {
     const { project, hero, images } = tree();
 
-    assert.equal(project.removeTree(hero.id), 1);
+    assert.equal(await project.removeTree(hero.id), 1);
     assert.equal(project.has(images.id), true);
-    assert.equal(project.removeTree('nothing'), 0);
+    assert.equal(await project.removeTree('nothing'), 0);
 });
 
 // --- persistence ------------------------------------------------------------------------
@@ -361,7 +361,7 @@ test('the store can say how big a payload is, and admits when it cannot', () => 
 
 // --- one `.px`, nothing owned (ADR-0026) ------------------------------------------------
 
-test('a Component is one resource, so deleting it takes nothing else with it', () => {
+test('a Component is one resource, so deleting it takes nothing else with it', async () => {
     const project = new Project('Game');
     const component = project.add({ kind: ResourceKind.COMPONENT, name: 'Controller' });
     project.save(component.id, {
@@ -371,7 +371,7 @@ test('a Component is one resource, so deleting it takes nothing else with it', (
     });
     const other = project.add({ kind: ResourceKind.SCENE, name: 'Level 1' });
 
-    assert.equal(project.removeTree(component.id), 1);
+    assert.equal(await project.removeTree(component.id), 1);
     assert.equal(project.has(other.id), true);
 
     // The graph went with it because it was never a separate thing.

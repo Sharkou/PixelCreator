@@ -12,6 +12,7 @@ import {
     ComponentRegistry,
     NodeRegistry,
     Object,
+    Origin,
     PropertyType,
     Scene,
     Transform,
@@ -68,6 +69,61 @@ test('a rejected undo leaves both stacks alone', () => {
     assert.equal(history.undo(), false);
     assert.equal(object.name, 'Hero', 'the server refused, so nothing moved');
     assert.equal(history.canRedo, false);
+});
+
+test('an entry nothing can take back is stepped over, not sat on', () => {
+    // A `Destroy` node removes an Object as a PRIMITIVE — no Operation, nothing recorded —
+    // so the entry that created it names an id that will never resolve again. Putting such an
+    // entry back on the stack left `canUndo` true for ever and made every later `Ctrl Z` a
+    // silent no-op, which buried every edit underneath it. Dropping it and stopping was no
+    // better: the keystroke still did nothing a creator could see.
+    const { scene, history } = setup();
+    const kept = createObject(scene, { kind: 'empty' });
+    kept.setProperty('name', 'Hero');
+    const doomed = createObject(scene, { kind: 'empty' });
+
+    scene.remove(doomed);
+
+    assert.equal(history.undo(), true, 'the dead entry is stepped over');
+    assert.equal(kept.name, 'Empty', 'and what it reached is the rename underneath');
+    assert.equal(history.canUndo, true, 'with the creation still there to take back');
+    assert.equal(history.undo(), true);
+    assert.equal(scene.has(kept), false, 'which is reachable too, rather than buried');
+});
+
+test('a gesture that was given up costs no undo', () => {
+    // A drag writes as it goes and putting the object back is written under the SAME batch,
+    // so the entry left behind nets to nothing — and `Ctrl Z` spent itself on it, visibly
+    // doing nothing, before a second press reached the edit the creator meant.
+    const { scene, history } = setup();
+    const object = createObject(scene, { kind: 'empty' });
+    object.setProperty('name', 'Hero');
+
+    const batch = createId();
+    const transform = object.getComponent('Transform');
+    transform.setProperty('x', 40, { origin: Origin.EDITOR, batch });
+    transform.setProperty('x', 0, { origin: Origin.EDITOR, batch });
+
+    assert.equal(history.depth, 3, 'the creation, the rename, then the gesture');
+
+    assert.equal(history.forget(batch), true);
+    assert.equal(history.depth, 2);
+
+    assert.equal(history.undo(), true);
+    assert.equal(object.name, 'Empty', 'and the first Ctrl Z reaches what a creator meant');
+});
+
+test('forgetting names a batch, and only the one on top', () => {
+    const { scene, history } = setup();
+    const object = createObject(scene, { kind: 'empty' });
+    const batch = createId();
+    object.getComponent('Transform').setProperty('x', 40, { origin: Origin.EDITOR, batch });
+    object.setProperty('name', 'Hero');
+
+    assert.equal(history.forget(batch), false, 'a completed gesture is not the top one');
+    assert.equal(history.forget(null), false);
+    assert.equal(history.forget(createId()), false, 'and a batch nothing wrote is nothing');
+    assert.equal(history.depth, 3);
 });
 
 test('an operation that arrived through apply() is never recorded', () => {

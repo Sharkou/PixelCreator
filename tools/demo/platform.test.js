@@ -43,7 +43,7 @@ async function play() {
     const project = new Project('Platformer', { store });
     buildPlatformer(project, { registry: registerBuiltIns(new ComponentRegistry()) });
 
-    const opened = openBundle(bundleProject(project, store, { scene: IDS.scene }));
+    const opened = openBundle(await bundleProject(project, store, { scene: IDS.scene }));
 
     const registry = registerBuiltIns(new ComponentRegistry());
     const behaviors = new Behaviors(createGraphInterpreter({ registry: nodes }));
