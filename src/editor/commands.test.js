@@ -4,7 +4,7 @@ import { ComponentRegistry, Object as SceneObject, PropertyType, Scene, Transfor
 import { RectangleRenderer } from '../runtime/mod.js';
 import { Project, ResourceKind } from '../project/mod.js';
 import { createResourceOfKind } from './project/commands.js';
-import { describeType, groupTypes, registerBuiltIns } from './registry.js';
+import { MISSING_LABEL, describeType, groupTypes, registerBuiltIns } from './registry.js';
 import { Selection } from './selection.js';
 import { addComponent, availableComponents, createObject, deleteObject, pointSocketAt, removeComponent, uniqueName } from './commands.js';
 
@@ -192,6 +192,37 @@ test('a `.px` with no label of its own is called what the project calls it', () 
 
     assert.equal(describeType(resource.id, known, { project }).label, 'New Component',
         'the resource name, without the extension: this names a TYPE, beside Sprite and Transform');
+});
+
+test('a `.px` removed from the Project leaves a NAME behind, never an identity', () => {
+    // THE STATE A DELETION REALLY LEAVES, and it has two halves that used to disagree.
+    // ADR-0021 §4 keeps the instance as a placeholder holding its values; what a creator
+    // reads above those values must say the definition is gone. It said so only while the
+    // class happened to still be registered — so the same object, reopened after a reload
+    // or shown in a Preview, put the raw ResourceId where the Component's name goes.
+    const project = new Project('Game');
+    const resource = createResourceOfKind(project, ResourceKind.COMPONENT);
+
+    const known = registry();
+    known.register(defineComponent({ type: resource.id, properties: {} }));
+    project.remove(resource.id);
+
+    assert.equal(describeType(resource.id, known, { project }).label, MISSING_LABEL,
+        'while the class is still registered');
+
+    // A RELOAD, OR A PREVIEW: nothing installed the class, because nothing declares it.
+    assert.equal(describeType(resource.id, registry(), { project }).label, MISSING_LABEL,
+        'and once there is no class left to ask — the case that used to leak the ResourceId');
+
+    assert.notEqual(describeType(resource.id, registry(), { project }).label, resource.id,
+        'the identity is never what a creator is shown (ADR-0021)');
+});
+
+test('a registered Component that is not a file still shows its own type name', () => {
+    // The other side of the same fallback: `Transform` is a NAME, and saying "Missing
+    // Component" for one that is right there would be the opposite mistake.
+    const known = registry();
+    assert.equal(describeType('Transform', known).label, 'Transform');
 });
 
 test('renaming the `.px` renames the Component, with nothing to invalidate', () => {

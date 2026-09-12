@@ -1633,6 +1633,53 @@ test('only the first file is taken, because one Component shows one resource', (
         'the rest are not imported and then silently lost');
 });
 
+// --- the four properties a beginner meets first ------------------------------------------
+//
+// NAME, TAG, LAYER AND ACTIVE ARE NOT A SPECIAL CASE, and the point of covering all four is
+// to hold them to that. ADR-0043 gave the Object its own namespace, so they are addressable
+// exactly as `Transform ▸ X` is; the rule table has no clause for them and must never grow
+// one. What is asserted here is the ABSENCE of an exception: one payload shape, one path,
+// one write — for a string, an enum-ish tag, a number and a boolean alike.
+
+const OBJECT_SYSTEM_PROPERTIES = [
+    ['name', 'Name'],
+    ['tag', 'Tag'],
+    ['layer', 'Layer'],
+    ['active', 'Active']
+];
+
+test('every Object system property reaches a node the same way', () => {
+    const own = registerStandardNodes(new NodeRegistry()).get('property.get').params;
+
+    for (const [property, label] of OBJECT_SYSTEM_PROPERTIES) {
+        const written = [];
+        performDrop(propertyPayload('Object', property, label), nodeTarget(own), {
+            setNodeParam: (node, name, value) => written.push([name, value])
+        });
+
+        assert.deepEqual(written, [['property', `Object/${property}`]],
+            `${label} travels with its namespace, in one write, like every other property`);
+    }
+});
+
+test('every Object system property creates the same node on bare canvas', () => {
+    for (const [property, label] of OBJECT_SYSTEM_PROPERTIES) {
+        const made = [];
+        const context = { createNode: (type, params, where) => made.push([type, params]) };
+        const payload = propertyPayload('Object', property, label);
+
+        assert.equal(canDrop(payload, AT).allowed, true, `${label} is accepted on a canvas`);
+
+        performDrop(payload, { ...AT, create: 'property.get' }, context);
+        performDrop(payload, { ...AT, create: 'property.set' }, context);
+
+        assert.deepEqual(made, [
+            ['property.get', { component: 'Object', property }],
+            ['property.set', { component: 'Object', property }]
+        ], `${label} reads and writes through the same two nodes as any property`);
+    }
+});
+
 test('an Object system property dropped on a node keeps its namespace', () => {
     // THE DEFECT THIS FILE IS FOR (ADR-0053). Dropping `Active` on a node left it reading
     // `/active` — the Object half of the path gone — so the node resolved against the `.px`'s

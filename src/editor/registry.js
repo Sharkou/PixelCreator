@@ -109,7 +109,19 @@ export function describeType(type, registry = defaultRegistry, { project = null 
             || resourceName(type, project)
             || shipped?.label
             || classLabel(ComponentClass, type)
-            || (isFile(ComponentClass) ? MISSING_LABEL : type),
+            // NOTHING LEFT TO ASK MEANS THE DEFINITION IS MISSING, AND SAYING SO BEATS
+            // SHOWING THE IDENTITY. `isFile()` decided this, and it needed the CLASS to do
+            // it — so the one state that most needs the missing label was the only one that
+            // could not reach it: a `.px` deleted from the Project leaves instances behind,
+            // and after a reload (or in a Preview that never installed it) there is no class
+            // to ask. The panel then wrote the bare ResourceId where the Component's name
+            // goes, which reads as data corruption rather than as a missing file
+            // (ADR-0021 §4, whose placeholder exists precisely so this stays legible).
+            //
+            // A REGISTERED CLASS THAT IS NOT A FILE STILL SHOWS ITS TYPE, because there the
+            // name is a name: somebody wrote `Transform` and it says Transform. What is
+            // refused is printing an IDENTITY at a creator who has no use for one.
+            || (ComponentClass && !isFile(ComponentClass) ? type : MISSING_LABEL),
         category: ComponentClass?.category ?? shipped?.category ?? 'Other'
     };
 }
