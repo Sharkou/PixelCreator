@@ -2,8 +2,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createTileset } from '../../core/mod.js';
 import { Project, ResourceKind } from '../../project/mod.js';
-import { describeResource, formatBytes, formatDate, hasContentPanel } from './resource.js';
+import { History } from '../history.js';
+import { describeResource, editedPayload, formatBytes, formatDate, hasContentPanel } from './resource.js';
 import { FieldKind } from './schema.js';
 
 function labelled(description, label) {
@@ -148,13 +150,18 @@ test('a clip reports its sheet by name, its grid and its speed', () => {
     // THE SHEET IS NAMED, NOT IDENTIFIED. A ResourceId in a panel tells nobody anything —
     // and the name is the one this panel's own header shows, extension derived away.
     assert.equal(facts.get('Sheet'), 'walk');
-    assert.equal(facts.get('Frames'), 4);
-    assert.equal(facts.get('Frame size'), '32 x 32');
-    assert.equal(facts.get('Speed'), '12 fps');
-    assert.equal(facts.get('Loop'), 'Yes');
 
-    // Everything but the name is a fact about the clip, and facts are not typed into.
-    assert.deepEqual(description.fields.filter(field => !field.readonly).map(field => field.name), ['name']);
+    // AND THE CUTTING IS TYPED INTO (ADR-0070 §5). It was reported and read-only until a
+    // second structured resource wanted the same rows; what a creator can correct is now
+    // what a creator can correct.
+    const edits = new Map(description.edits.map(field => [field.name, field.value]));
+    assert.deepEqual([...edits.keys()],
+        ['frameWidth', 'frameHeight', 'columns', 'count', 'first', 'fps', 'loop']);
+    assert.equal(edits.get('count'), 4);
+    assert.equal(edits.get('frameWidth'), 32);
+    assert.equal(edits.get('fps'), 12);
+    assert.equal(edits.get('loop'), true);
+    assert.ok(description.edits.every(field => field.readonly === false));
 });
 
 test('a clip whose sheet was deleted says so instead of showing an identifier', () => {
@@ -179,4 +186,70 @@ test('a prefab reports how many Objects it would make', () => {
 
     assert.equal(description.kindName, 'Prefab');
     assert.equal(facts.get('Objects'), 3, 'the root counts: it is an Object too');
+});
+
+// --- typing into what a resource holds (ADR-0070 §5) --------------------------------------
+
+test('a tileset shows its sheet, and its cutting is typed into', () => {
+    const project = new Project('Game');
+    const sheet = project.add({ kind: ResourceKind.ASSET, name: 'dungeon.png', mime: 'image/png' }, 'data:,');
+    const tileset = project.add({ kind: ResourceKind.TILESET, name: 'Dungeon.tileset' },
+        createTileset({ source: sheet.id, tileWidth: 16, tileHeight: 16, columns: 8, count: 40 }));
+
+    const description = describeResource(tileset, { project, payload: project.read(tileset.id) });
+    const facts = new Map(description.metadata.map(field => [field.label, field.value]));
+    const edits = new Map(description.edits.map(field => [field.name, field.value]));
+
+    assert.equal(description.kindName, 'Tileset');
+    assert.equal(facts.get('Sheet'), 'dungeon');
+    assert.deepEqual([...edits.keys()], ['tileWidth', 'tileHeight', 'columns', 'count']);
+    assert.deepEqual([edits.get('tileWidth'), edits.get('columns'), edits.get('count')], [16, 8, 40]);
+});
+
+test('an edit goes through the kind that built the payload, so nonsense is clamped', () => {
+    const project = new Project('Game');
+    const tileset = project.add({ kind: ResourceKind.TILESET, name: 'Dungeon.tileset' },
+        createTileset({ source: 'res_sheet', tileWidth: 16, tileHeight: 16, columns: 8, count: 40 }));
+    const payload = project.read(tileset.id);
+
+    assert.equal(editedPayload(tileset, payload, 'tileWidth', 32).tileWidth, 32);
+    assert.equal(editedPayload(tileset, payload, 'columns', -4).columns, 1, 'clamped, never carried');
+    assert.equal(editedPayload(tileset, payload, 'count', 'many').count, 0);
+    assert.equal(editedPayload(tileset, payload, 'tileWidth', 32).source, 'res_sheet', 'the sheet stays');
+
+    // A kind with a window of its own has no content rows and no writer.
+    const scene = project.add({ kind: ResourceKind.SCENE, name: 'Level.scene' }, { objects: [] });
+    assert.deepEqual(describeResource(scene, { project }).edits, []);
+    assert.equal(editedPayload(scene, {}, 'anything', 1), null);
+});
+
+test('typing into a tileset is one undoable intent, and the revision moves with it', () => {
+    const project = new Project('Game');
+    const tileset = project.add({ kind: ResourceKind.TILESET, name: 'Dungeon.tileset' },
+        createTileset({ source: 'res_sheet', tileWidth: 16, tileHeight: 16, columns: 8, count: 40 }));
+    const history = new History(project.operations);
+    const before = project.get(tileset.id).revision;
+
+    const next = editedPayload(tileset, project.read(tileset.id), 'tileWidth', 32);
+    project.setPayload(tileset.id, next);
+
+    assert.equal(project.read(tileset.id).tileWidth, 32);
+    assert.ok(project.get(tileset.id).revision > before, 'so anything watching it rebuilds');
+
+    history.undo();
+    assert.equal(project.read(tileset.id).tileWidth, 16, 'exactly what it held');
+
+    history.redo();
+    assert.equal(project.read(tileset.id).tileWidth, 32);
+});
+
+test('a payload that has not arrived yet shows no rows, rather than rows of zero', () => {
+    // A store is asynchronous (ADR-0020 §4): the panel renders before the read lands, and
+    // `0` in every row is a number a creator would type over.
+    const project = new Project('Game');
+    const tileset = project.add({ kind: ResourceKind.TILESET, name: 'Dungeon.tileset' },
+        createTileset({ source: 'res_sheet', tileWidth: 16, tileHeight: 16, columns: 8, count: 40 }));
+
+    assert.deepEqual(describeResource(tileset, { project, payload: null }).edits, []);
+    assert.equal(describeResource(tileset, { project, payload: project.read(tileset.id) }).edits.length, 4);
 });

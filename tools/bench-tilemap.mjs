@@ -141,3 +141,84 @@ for (const side of [100, 1000]) {
         pad(cost.values, 19)
     ].join(''));
 }
+
+// --- what a frame of a big map costs -------------------------------------------------------
+//
+// THE THIRD CLAIM (ADR-0070 §6): drawing follows the WINDOW, not the map. The backend says
+// what part of the map's own space its surface covers, and the loop walks that rectangle —
+// so a million-cell level costs the six hundred cells somebody is looking at.
+
+const { createTileset } = await import('../src/core/mod.js');
+
+/** A surface that shows a fixed rectangle and counts what it was asked to draw. */
+function window(bounds) {
+    let drawn = 0;
+    const noop = () => {};
+
+    return {
+        drawn: () => drawn,
+        clear: noop,
+        save: noop,
+        restore: noop,
+        setTransform: noop,
+        setBlendMode: noop,
+        fillRect: noop,
+        strokeRect: noop,
+        fillCircle: noop,
+        drawImage: () => { drawn++; },
+        imageSize: () => null,
+        visibleBounds: () => bounds,
+        fillText: noop
+    };
+}
+
+function painted(side) {
+    const map = new Tilemap(32, side, side, [], 'res_tiles');
+    for (let row = 0; row < side; row++) {
+        for (let column = 0; column < side; column++) map.set(column, row, 1 + ((column + row) % 4));
+    }
+    return map;
+}
+
+const resources = {
+    get: () => createTileset({ source: 'res_sheet', tileWidth: 16, tileHeight: 16, columns: 4, count: 4 })
+};
+
+/** A 960 x 640 surface, which is thirty by twenty cells of thirty-two. */
+const view = at => ({ minX: at * 32, minY: at * 32, maxX: at * 32 + 960, maxY: at * 32 + 640 });
+
+console.log('');
+console.log('map        cells  camera at       inspected    drawn   ms/frame');
+console.log('-------  -------  ---------  --------------  -------  ---------');
+
+for (const side of [100, 1000]) {
+    const map = painted(side);
+    for (const at of [0, Math.floor(side / 2), side - 25]) {
+        const surface = window(view(at));
+        const started = performance.now();
+        for (let frame = 0; frame < 60; frame++) map.draw(null, surface, { resources });
+        const ms = (performance.now() - started) / 60;
+
+        const bounds = view(at);
+        const inspected = (Math.min(side - 1, Math.ceil(bounds.maxX / 32)) - Math.max(0, Math.floor(bounds.minX / 32)) + 1)
+            * (Math.min(side - 1, Math.ceil(bounds.maxY / 32)) - Math.max(0, Math.floor(bounds.minY / 32)) + 1);
+
+        console.log([
+            pad(`${side}x${side}`, 7),
+            pad(side * side, 9),
+            pad(`${at},${at}`, 11),
+            pad(inspected, 16),
+            pad(surface.drawn() / 60, 9),
+            pad(ms.toFixed(4), 11)
+        ].join(''));
+    }
+}
+
+// And the same map with a backend that cannot say what it shows: the whole grid, every frame.
+const blind = window(null);
+const huge = painted(1000);
+const startedBlind = performance.now();
+huge.draw(null, blind, { resources });
+console.log('');
+console.log(`no visibleBounds: ${blind.drawn()} cells drawn in `
+    + `${(performance.now() - startedBlind).toFixed(1)} ms — one frame`);

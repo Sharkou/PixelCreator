@@ -283,7 +283,7 @@ export class Viewport extends Element {
         // A SECOND TOOL, AND A ONE-LINE RULE FOR WHICH ONE ACTS (ADR-0068 §5). It is not a
         // mode: `#toolFor()` asks the painter whether the press is inside the selected map,
         // and the Select tool has everything else. Nothing switches, so nothing is stuck.
-        this.#tiles = new TileTool({ scene, selection });
+        this.#tiles = new TileTool({ scene, selection, resources: () => this.#resources });
         this.#pan = new PanTool(camera);
         return this;
     }

@@ -64,6 +64,21 @@ export const OperationType = {
      * and the inverse of a move is a move.
      */
     MOVE_RESOURCE: 'MOVE_RESOURCE',
+    /**
+     * The CONTENT of a resource, replaced whole (ADR-0070 §5).
+     *
+     * A manifest entry's fields are `SET_PROPERTY`; what a resource HOLDS is not a field, and
+     * until now the only way to change it was `Project.save()` — which writes and cannot be
+     * taken back, because a save is not an intention (ADR-0069 §2). That was right while the
+     * only payloads a creator edited were a scene and a `.px`, both of which have a live model
+     * and a pipeline of their own. A tileset and a clip have neither: they are four numbers in
+     * a file, and this is how those four numbers are changed by somebody who may change
+     * their mind.
+     *
+     * WHOLE, NOT PATCHED, because these payloads are small and flat. The day one is not,
+     * `SET_CELLS` is the shape to copy (ADR-0069 §4).
+     */
+    SET_PAYLOAD: 'SET_PAYLOAD',
 
     // `.px` scope: a third pipeline, same machine (ADR-0027). A Component definition and
     // the graph it carries are ONE resource, so they share one pipeline and therefore one
@@ -137,6 +152,30 @@ export function setPropertyOperation({ target, prop, value, previous, origin, ac
         target,
         prop,
         value,
+        previous,
+        origin,
+        actor,
+        batch
+    });
+}
+
+/**
+ * Build a SET_PAYLOAD operation.
+ *
+ * @param {object} spec - Operation fields
+ * @param {object} spec.target - { object: the ResourceId, component: null }
+ * @param {any} spec.payload - The content it takes
+ * @param {any} spec.previous - The content it had, which is what makes undo possible
+ * @param {string} spec.origin - One of Origin
+ * @param {string} [spec.actor] - Who authored it
+ * @param {string} [spec.batch] - History grouping
+ * @returns {object} A frozen Operation
+ */
+export function setPayloadOperation({ target, payload, previous, origin, actor, batch }) {
+    return createOperation({
+        type: OperationType.SET_PAYLOAD,
+        target,
+        payload,
         previous,
         origin,
         actor,

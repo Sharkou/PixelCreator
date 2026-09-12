@@ -14,13 +14,15 @@
 // a menu entry that opens nothing is the one thing this Editor keeps refusing to ship.
 // The point of extension is here, and it is one row wide.
 
-import { Scene, createId } from '../../core/mod.js';
+import { DEFAULT_TILE, Scene, createId } from '../../core/mod.js';
 import { iconForResource } from '../ui/icons.js';
 import {
     KIND_LABELS,
     ResourceKind,
     addAnimation,
     addScene,
+    addTileset,
+    baseNameOf,
     uniqueResourceName,
     withExtension
 } from '../../project/mod.js';
@@ -101,8 +103,99 @@ export const RESOURCE_KINDS = [
                 actor
             });
         }
+    },
+    // A TILESET IS BORN FROM A SHEET TOO, and for the same reason (ADR-0070 §3): the cutting
+    // is the whole of what it holds, so a tileset with no picture is a resource that could
+    // never answer a single rectangle. One gesture — choose the sheet — and the grid is read
+    // off the file, exactly as a clip's is.
+    {
+        id: 'tileset',
+        kind: ResourceKind.TILESET,
+        label: 'Tileset…',
+        category: 'Graphics',
+        pick: { accept: 'image/*' },
+        create: (project, { parent, actor, file, payload }) => {
+            if (!payload) return null;
+
+            const base = (file?.name ?? 'Tileset').replace(/\.[^.]+$/, '');
+            const sheet = project.add(
+                {
+                    kind: ResourceKind.ASSET,
+                    name: uniqueResourceName(project, file?.name ?? base, parent),
+                    parent,
+                    mime: file?.type || 'image/png'
+                },
+                payload,
+                { actor }
+            );
+
+            return addTileset(project, sheetTiles(sheet.id, imageSize(payload)), {
+                name: uniqueResourceName(
+                    project,
+                    withExtension(base, { kind: ResourceKind.TILESET }),
+                    parent
+                ),
+                parent,
+                actor
+            });
+        }
     }
 ];
+
+/**
+ * Cut a picture the project ALREADY holds, without importing a second copy of it.
+ *
+ * THE GESTURE A CREATOR ACTUALLY HAS (ADR-0070 §4). The menu row imports a sheet and cuts it
+ * in one step, which is right the first time; the second time the picture is already in the
+ * panel, and asking them to find it on disk again — or to copy a ResourceId — is asking them
+ * to do the Editor's bookkeeping. Right-clicking the picture is the whole of it.
+ *
+ * ASYNC, BECAUSE A STORE IS (ADR-0020 §4). A project kept in memory answers a payload at
+ * once and one kept in IndexedDB answers a promise; a caller that read the first and ignored
+ * the second would work in every test and refuse every real project.
+ *
+ * @param {object} project - The project the picture is in
+ * @param {string} id - The image asset's ResourceId
+ * @param {object} [options] - Options
+ * @param {string} [options.actor] - Who authored the intent
+ * @returns {Promise<object|null>} The manifest entry, or null when that is not a picture
+ */
+export async function cutIntoTileset(project, id, { actor } = {}) {
+    const asset = project.get(id);
+    if (!asset || asset.kind !== ResourceKind.ASSET) return null;
+
+    const payload = await project.read(id);
+    if (typeof payload !== 'string' || !payload.startsWith('data:image/')) return null;
+
+    const base = baseNameOf(asset) || 'Tileset';
+    return addTileset(project, sheetTiles(id, imageSize(payload)), {
+        name: uniqueResourceName(project, withExtension(base, { kind: ResourceKind.TILESET }), asset.parent ?? null),
+        parent: asset.parent ?? null,
+        actor
+    });
+}
+
+/**
+ * The cutting a tile sheet most probably describes.
+ *
+ * SQUARE CELLS OF THE SHEET'S OWN HEIGHT WOULD BE WRONG HERE, and that is the difference
+ * from a clip: an animation sheet is a strip one row tall, a tile sheet is a page several
+ * rows deep. So the guess is the one every tutorial tileset makes — SIXTEEN-PIXEL cells —
+ * and the columns and the count follow from the picture's size. A creator whose tiles are
+ * 32 has two numbers to correct in the Inspector, which is a visible, editable default
+ * rather than a detection that is right four times out of five and inexplicable the fifth.
+ *
+ * @param {string} source - The sheet's ResourceId
+ * @param {{width: number, height: number}|null} size - What the header said
+ * @returns {object} A spec for `addTileset()`
+ */
+function sheetTiles(source, size) {
+    const tile = DEFAULT_TILE;
+    const columns = size?.width > 0 ? globalThis.Math.max(1, globalThis.Math.floor(size.width / tile)) : 1;
+    const rows = size?.height > 0 ? globalThis.Math.max(1, globalThis.Math.floor(size.height / tile)) : 1;
+
+    return { source, tileWidth: tile, tileHeight: tile, columns, count: columns * rows };
+}
 
 /**
  * The clip a sprite sheet most probably describes.

@@ -29,6 +29,7 @@ import {
     createId,
     makeReactive,
     removeResourceOperation,
+    setPayloadOperation,
     setPropertyOperation
 } from '../core/mod.js';
 import { ResourceKind, createResource } from './resource.js';
@@ -280,6 +281,35 @@ export class Project {
     }
 
     /**
+     * Change what a resource holds, as one undoable intent.
+     *
+     * NOT `save()`, AND THE DIFFERENCE IS THE WHOLE POINT (ADR-0070 §5). `save()` writes what
+     * a live model already decided — a scene, a `.px` — and is bookkeeping. This is a creator
+     * editing the content itself: a tileset's cell size, a clip's frame count. It travels the
+     * pipeline, so it is arbitrated, replicated and undoable like every other intent.
+     *
+     * @param {string} id - The ResourceId
+     * @param {any} payload - The content it takes
+     * @param {object} [options] - Options
+     * @param {string} [options.actor] - Who authored the intent
+     * @param {string} [options.batch] - Groups related operations into one history entry
+     * @returns {object} { applied, operation, decision }
+     */
+    setPayload(id, payload, { actor, batch } = {}) {
+        const resource = this.#resources.get(id);
+        if (!resource) return { applied: false, operation: null, decision: null };
+
+        return this.#operations.submit(setPayloadOperation({
+            target: { object: id, component: null },
+            payload,
+            previous: this.#store.read(id),
+            origin: Origin.EDITOR,
+            actor,
+            batch
+        }));
+    }
+
+    /**
      * Declare a folder, named so it does not collide with its siblings.
      *
      * A folder is a Resource with no payload, so this is `add()` with one kind fixed and a
@@ -466,6 +496,21 @@ export class Project {
             // applying a replicated move sends nothing back (ADR-0019 §4).
             applyProperty(entry, 'parent', destination, operation.origin);
             this.#place(entry, operation.index);
+            return true;
+        }, { resolveTarget: false });
+
+        // WHAT A RESOURCE HOLDS, CHANGED BY SOMEBODY WHO MAY CHANGE THEIR MIND (ADR-0070 §5).
+        // `save()` writes the payload a live model produced and is deliberately not undoable;
+        // this is the other half — a resource with no live model, whose content IS what a
+        // creator edits. The revision moves with it, so anything watching the resource
+        // rebuilds exactly as it does after a save.
+        this.#operations.register(OperationType.SET_PAYLOAD, operation => {
+            const entry = this.#resources.get(operation.target.object);
+            if (!entry) return false;
+
+            this.#store.write(snapshot(entry), operation.payload);
+            applyProperty(entry, 'revision', entry.revision + 1, operation.origin);
+            applyProperty(entry, 'modified', Date.now(), operation.origin);
             return true;
         }, { resolveTarget: false });
 

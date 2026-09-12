@@ -10,7 +10,8 @@ import {
     ComponentRegistry,
     Object as SceneObject,
     Scene,
-    Transform
+    Transform,
+    createTileset
 } from '../../core/mod.js';
 import { Clock } from '../clock/clock.js';
 import { Runtime } from '../runtime.js';
@@ -445,4 +446,144 @@ test('a scene with no tilemap at all still moves', () => {
 
     assert.equal(moveBodies(it.scene, { deltaTime: STEP }), 1);
     near(it.state(player).x, 1);
+});
+
+// --- what a cell draws ------------------------------------------------------------------
+
+/** A renderer that records, and can be told what part of the space it shows. */
+function surface(bounds = null) {
+    const calls = [];
+    const record = name => (...args) => calls.push({ name, args });
+
+    return {
+        calls,
+        drawn: () => calls.filter(call => call.name === 'drawImage'),
+        clear: record('clear'),
+        save: record('save'),
+        restore: record('restore'),
+        setTransform: record('setTransform'),
+        setBlendMode: record('setBlendMode'),
+        fillRect: record('fillRect'),
+        strokeRect: record('strokeRect'),
+        fillCircle: record('fillCircle'),
+        drawImage: record('drawImage'),
+        imageSize: () => null,
+        visibleBounds: () => bounds,
+        fillText: record('fillText')
+    };
+}
+
+/** The registry a Runtime resolves before a frame (ADR-0070 §5). */
+function sheets(spec = {}) {
+    const tileset = createTileset({
+        source: 'res_sheet', tileWidth: 16, tileHeight: 16, columns: 4, count: 8, ...spec
+    });
+    return { get: id => (id === 'res_tiles' ? tileset : null) };
+}
+
+test('an empty cell draws nothing, and a tile draws its own rectangle of the sheet', () => {
+    const map = new Tilemap(32, 2, 2, [0, 1, 5, 0], 'res_tiles');
+    const renderer = surface();
+
+    map.draw(null, renderer, { resources: sheets() });
+
+    const drawn = renderer.drawn();
+    assert.equal(drawn.length, 2, 'two cells hold something');
+    assert.deepEqual(drawn[0].args.slice(0, 5), ['res_sheet', 32, 0, 32, 32], 'placed by its cell');
+    assert.deepEqual(drawn[0].args[5].clip, { x: 0, y: 0, width: 16, height: 16 }, 'tile 1 is the first');
+    assert.deepEqual(drawn[1].args[5].clip, { x: 0, y: 16, width: 16, height: 16 }, 'tile 5 is the second row');
+});
+
+test('a tile the sheet does not have draws nothing at all', () => {
+    // ADR-0070 §7. The cell keeps its number — it is still occupied, so it still blocks —
+    // and nothing is substituted for it.
+    const map = new Tilemap(32, 2, 1, [1, 99], 'res_tiles');
+    const renderer = surface();
+
+    map.draw(null, renderer, { resources: sheets() });
+
+    assert.equal(renderer.drawn().length, 1, 'only the tile that exists');
+});
+
+test('the same map with a smaller sheet keeps its cells and draws fewer of them', () => {
+    const map = new Tilemap(32, 4, 1, [1, 2, 3, 4], 'res_tiles');
+    const renderer = surface();
+
+    map.draw(null, renderer, { resources: sheets({ count: 2 }) });
+
+    assert.equal(renderer.drawn().length, 2, 'the two the new sheet holds');
+    assert.deepEqual(map.tiles, [1, 2, 3, 4], 'and the level is not corrupted, only unpainted');
+});
+
+test('no tileset, an unknown one, and a registry that answers nothing', () => {
+    const renderer = surface();
+
+    new Tilemap(32, 2, 1, [1, 2], null).draw(null, renderer, { resources: sheets() });
+    new Tilemap(32, 2, 1, [1, 2], 'res_missing').draw(null, renderer, { resources: sheets() });
+    new Tilemap(32, 2, 1, [1, 2], 'res_tiles').draw(null, renderer, {});
+    new Tilemap(32, 2, 1, [1, 2], 'res_tiles').draw(null, renderer);
+
+    assert.equal(renderer.drawn().length, 0, 'nothing is drawn, and nothing throws');
+});
+
+test('a sheet still decoding is asked for once and drawn when it arrives', () => {
+    // THE CACHE'S CONTRACT, UNCHANGED (ADR-0062 §2). A map hands the backend a ResourceId;
+    // whether the pixels are here yet is the backend's business, and a cell never fetches.
+    const map = new Tilemap(32, 3, 1, [1, 2, 3], 'res_tiles');
+    const renderer = surface();
+
+    map.draw(null, renderer, { resources: sheets() });
+
+    const asked = new globalThis.Set(renderer.drawn().map(call => call.args[0]));
+    assert.deepEqual([...asked], ['res_sheet'], 'one identity, three cells');
+});
+
+test('only the cells the surface can show are drawn', () => {
+    // ADR-0070 §6. A thousand-square map costs what a window shows.
+    const map = new Tilemap(32, 1000, 1000, [], 'res_tiles');
+    for (let row = 0; row < 1000; row++) {
+        for (let column = 0; column < 1000; column++) map.set(column, row, 1);
+    }
+
+    const whole = surface(null);
+    const window = surface({ minX: 0, minY: 0, maxX: 320, maxY: 160 });
+
+    map.draw(null, window, { resources: sheets() });
+    assert.ok(window.drawn().length <= 12 * 7, `a window of ten by five cells (${window.drawn().length})`);
+
+    // COUNTER-PROOF: a backend that cannot say what it shows still draws the whole map,
+    // which is what this did before and is never wrong, only slow.
+    map.draw(null, whole, { resources: sheets() });
+    assert.equal(whole.drawn().length, 1000 * 1000);
+});
+
+test('the visible range follows the camera, not the map', () => {
+    const map = new Tilemap(32, 100, 100, [], 'res_tiles');
+    for (let row = 0; row < 100; row++) {
+        for (let column = 0; column < 100; column++) map.set(column, row, 1);
+    }
+
+    const near = surface({ minX: 0, minY: 0, maxX: 64, maxY: 64 });
+    const far = surface({ minX: 3040, minY: 3040, maxX: 3104, maxY: 3104 });
+
+    map.draw(null, near, { resources: sheets() });
+    map.draw(null, far, { resources: sheets() });
+
+    assert.equal(near.drawn().length, far.drawn().length, 'the same work wherever it looks');
+    assert.deepEqual(near.drawn()[0].args.slice(1, 3), [0, 0]);
+    assert.deepEqual(far.drawn()[0].args.slice(1, 3), [3040, 3040], 'and it is the far corner');
+});
+
+test('the collider never learns that a tileset exists', () => {
+    // ADR-0068 §3 and ADR-0070 §1: a cell is empty or not, and that is the whole of what
+    // stops a Body. A map with no tileset at all still has a floor.
+    const it = level({ fill: floor });
+    const built = it.map();
+    built.tilemap.tileset = null;
+    const player = it.body(0, 0, { gravity: 1000 });
+
+    run(it.runtime(), 60);
+
+    near(it.state(player).y, 54, 'it landed on cells that draw nothing');
+    assert.equal(it.state(player).grounded, true);
 });

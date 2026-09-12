@@ -12,10 +12,16 @@
 // and an Aseprite importer are each a decision about a pipeline, and a pipeline is a product
 // nobody has designed. What this ships is the shape every 2D sprite sheet in a tutorial has.
 //
+// THE RECTANGLE ITSELF IS `core/frames.js`, shared with `Tileset` (ADR-0070 §2): an animation
+// reads cells across a strip and a tileset reads cells across a sheet, and one arithmetic
+// answers both. What stays here is what makes those cells a CLIP — a rate, a loop, a playhead.
+//
 // IT COMPUTES A RECTANGLE AND NOTHING ELSE. No time, no state, no playhead: `frameAt()` is
 // a pure function of the definition and an index, so the Core can answer it, a test can
 // assert it, and the component that DOES hold a playhead (`runtime/components/...`) holds
 // only a number.
+
+import { frameRect } from './frames.js';
 
 /** Bumped when the shape below changes in a way an older reader cannot survive. */
 export const ANIMATION_FORMAT = 1;
@@ -104,20 +110,14 @@ export function frameCount(definition) {
 export function frameAt(definition, index) {
     const clip = animationOf(definition);
     if (!clip) return null;
-    if (clip.frameWidth <= 0 || clip.frameHeight <= 0) return null;
 
-    const cell = clip.first + Math.max(0, Math.floor(index));
-    const columns = clip.columns > 0 ? clip.columns : 0;
-
-    const column = columns > 0 ? cell % columns : cell;
-    const row = columns > 0 ? Math.floor(cell / columns) : 0;
-
-    return {
-        x: column * clip.frameWidth,
-        y: row * clip.frameHeight,
-        width: clip.frameWidth,
-        height: clip.frameHeight
-    };
+    return frameRect({
+        index,
+        frameWidth: clip.frameWidth,
+        frameHeight: clip.frameHeight,
+        columns: clip.columns,
+        first: clip.first
+    });
 }
 
 /**

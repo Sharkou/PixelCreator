@@ -35,6 +35,7 @@ function recordingRenderer() {
         fillCircle: record('fillCircle'),
         drawImage: record('drawImage'),
         imageSize: () => null,
+        visibleBounds: () => null,
         fillText: record('fillText')
     };
 }

@@ -57,6 +57,12 @@ const RULES = {
         previous: operation.value
     }),
 
+    // The two contents swap, exactly as the two values of a SET_PROPERTY do.
+    [OperationType.SET_PAYLOAD]: operation => ({
+        payload: operation.previous,
+        previous: operation.payload
+    }),
+
     // Every cell swaps the two values it already carries, and the ORDER is kept: a patch
     // is a set of independent indices, so reversing it would say the same thing (ADR-0069 §4).
     [OperationType.SET_CELLS]: operation => ({

@@ -490,6 +490,8 @@ export class Runtime {
      */
     render(options) {
         if (!this.#sceneRenderer) return 0;
-        return this.#sceneRenderer.render(this.#scene, options);
+        // The definitions a drawing component may name — a Tilemap's Tileset today — resolved
+        // before the frame, exactly as a step's are (ADR-0062 §1, ADR-0070 §5).
+        return this.#sceneRenderer.render(this.#scene, { resources: this.#resources, ...options });
     }
 }

@@ -31,6 +31,7 @@ function fakeContext() {
         stroke: record('stroke'),
         drawImage: record('drawImage'),
         imageSize: () => null,
+        visibleBounds: () => null,
         fillText: record('fillText'),
         save: record('save'),
         restore: record('restore')

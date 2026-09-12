@@ -59,7 +59,11 @@ export function createSession({ project, onError, createAudioElement, decodeImag
     // this hands over `project.read` itself and nothing is copied (ADR-0062).
     const images = new ImageCache({
         resolve: id => project?.read?.(id) ?? null,
-        decode: decodeImage
+        decode: decodeImage,
+        // AND WHO TO WAKE WHEN ONE LANDS. The Editor's surface draws on demand, so a picture
+        // that finished decoding after the last frame would sit in the cache, unseen, until
+        // something else happened to ask for a frame (ADR-0070 §5).
+        onArrival: () => onImage?.()
     });
 
     /**

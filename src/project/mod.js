@@ -27,8 +27,11 @@ export { checkGraph, loadComponentDefinitions, bindGraph, readGraph } from './gr
 export { addScene, saveScene, loadScene, sceneResources } from './scenes.js';
 export {
     addAnimation,
+    addTileset,
     addPrefab,
     animationResources,
+    saveTileset,
+    tilesetResources,
     loadPrefab,
     prefabResources,
     saveAnimation,

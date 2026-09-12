@@ -41,7 +41,7 @@ import { searchField } from '../ui/search-field.js';
 import { addComponent, availableComponents, moveComponent, removeComponent } from '../commands.js';
 import { createComponent } from '../project/commands.js';
 import { previewOffsets, rankAt } from '../dnd/reflow.js';
-import { describeResource } from '../inspector/resource.js';
+import { describeResource, editedPayload } from '../inspector/resource.js';
 import { PROPERTY_TYPE_LABELS, defaultField, describeDefinition } from '../inspector/definition.js';
 import { ResourceKind, baseNameOf, extensionOf, hasPayload, withExtension } from '../../project/mod.js';
 import { pickFile, readAsDataUrl } from '../ui/file.js';
@@ -74,6 +74,43 @@ function readable(project, resource) {
 
     const payload = project.read(resource.id);
     return payload && typeof payload.then === 'function' ? null : payload;
+}
+
+/**
+ * The payload of a resource, however long its store takes to answer.
+ *
+ * A STORE IS ASYNCHRONOUS AND A PANEL IS NOT (ADR-0020 §4). A project in memory answers at
+ * once; one restored from IndexedDB answers a promise, and the panel used to draw "no content
+ * stored yet" for every resource of every real project — the facts, the preview and, since
+ * ADR-0070 §5, the rows a creator types into. So a promise is awaited ONCE, remembered
+ * against the revision it was read at, and the panel redraws when it lands.
+ *
+ * @param {object} cache - `${id}:${revision}` -> payload
+ * @param {object} project - The project
+ * @param {object} resource - The manifest entry
+ * @param {Function} onArrival - Called when a late payload arrives
+ * @returns {any} The payload, or null until it is here
+ */
+function awaited(cache, project, resource, onArrival) {
+    if (!hasPayload(resource)) return null;
+
+    const key = `${resource.id}:${resource.revision ?? 0}`;
+    if (cache.has(key)) return cache.get(key);
+
+    const payload = project.read(resource.id);
+    if (!payload || typeof payload.then !== 'function') {
+        cache.set(key, payload ?? null);
+        return payload ?? null;
+    }
+
+    // Marked as asked for, so a redraw while it is in flight does not ask again.
+    cache.set(key, null);
+    payload.then(value => {
+        cache.set(key, value ?? null);
+        if (value !== undefined && value !== null) onArrival();
+    }, () => {});
+
+    return null;
 }
 
 /** How far a pointer travels before a press on a section header becomes a reorder. */
@@ -624,6 +661,9 @@ export class Inspector extends Element {
     // it is selected on a canvas rather than in a tree — so it is held here and cleared by
     // the shell when either of the other two selections speaks, exactly as those two clear
     // each other.
+    /** Payloads read back from the store, against the revision they were read at. */
+    #payloads = new globalThis.Map();
+
     /** `.px` resources whose live model is being fetched, so one render does not ask twice. */
     #attaching = new globalThis.Set();
     // View state, and only view state: which sections the creator folded away. Keyed by
@@ -894,7 +934,9 @@ export class Inspector extends Element {
         // holds. A creator who has just declared a property expects to read three, not the
         // two that were last saved — the facts would otherwise contradict the rows above.
         const definition = this.#definitionFor(resource);
-        const payload = definition ? definition.serialize() : readable(project, resource);
+        const payload = definition
+            ? definition.serialize()
+            : awaited(this.#payloads, project, resource, () => this.#render());
         const description = describeResource(resource, {
             project,
             payload,
@@ -909,6 +951,18 @@ export class Inspector extends Element {
                 glyph: iconForResource(resource),
                 body: description.fields.map(descriptor => this.#renderResourceRow(resource, descriptor))
             }),
+            // WHAT THE RESOURCE HOLDS, WHEN HOLDING IT IS ALL IT DOES (ADR-0070 §5). A scene
+            // is edited in the viewport and a `.px` in the graph; a tileset and a clip are
+            // numbers in a file, and this is where those numbers are typed.
+            description.edits.length > 0
+                ? this.#renderSection({
+                    name: 'Content',
+                    key: 'resource:edits',
+                    glyph: iconForResource(resource),
+                    body: description.edits.map(descriptor =>
+                        this.#renderPayloadRow(resource, payload, descriptor))
+                })
+                : null,
             definition ? this.#renderProperties(definition) : null,
             this.#renderSection({
                 name: 'Details',
@@ -1262,6 +1316,33 @@ export class Inspector extends Element {
                 extension ? el('span', { class: 'suffix', textContent: extension }) : null
             )
         );
+    }
+
+    /**
+     * One row of a resource's own content.
+     *
+     * BOUND TO THE PAYLOAD, WRITTEN THROUGH THE PROJECT (ADR-0070 §5). The payload is plain
+     * JSON with no reactivity of its own, so the descriptor carries the value it is holding
+     * now and the write goes out as one `SET_PAYLOAD` — arbitrated, replicated and undoable
+     * like every other intent. The panel redraws on the revision the write moves.
+     */
+    #renderPayloadRow(resource, payload, descriptor) {
+        // REACTIVE, BECAUSE EVERY CONTROL IN THIS PANEL OBSERVES WHAT IT IS BOUND TO. A
+        // payload is plain JSON with no reactivity of its own, so the row is given a small
+        // reactive record holding the one value it draws; what it WRITES goes to the project
+        // as a `SET_PAYLOAD` (ADR-0070 §5), and the panel redraws on the revision that moves.
+        const view = makeReactive({ [descriptor.name]: descriptor.value });
+        const field = el('px-field').bind(view, descriptor, {
+            write: (value, { batch }) => {
+                const next = editedPayload(resource, payload, descriptor.name, value);
+                if (next) this.#workspace.project.setPayload(resource.id, next, { batch });
+            }
+        });
+
+        const label = el('span', { class: 'label', textContent: descriptor.label });
+        field.bindLabel(label);
+
+        return el('div', { class: 'row' }, label, el('div', { class: 'fields' }, field));
     }
 
     /**

@@ -62,6 +62,14 @@ export const ResourceKind = {
      * it retimes all ten, and an instance carries an identity instead of a copy.
      */
     ANIMATION: 'animation',
+    /**
+     * A sheet cut into tiles (ADR-0070).
+     *
+     * THE CUTTING IS THE RESOURCE, not a copy in every map that draws it: two maps of one
+     * dungeon name one `Tileset`, re-cutting the sheet re-cuts both, and a cell of a map
+     * holds a small index rather than a rectangle.
+     */
+    TILESET: 'tileset',
     ASSET: 'asset'
 };
 

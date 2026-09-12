@@ -29,7 +29,7 @@
 // and a payload that round-trips through this module is byte-identical to the one the Core
 // produced — which is what makes a prefab in a bundle the same thing as a prefab in a store.
 
-import { createAnimation, createPrefab } from '../core/mod.js';
+import { createAnimation, createPrefab, createTileset } from '../core/mod.js';
 import { createResource, ResourceKind } from './resource.js';
 
 /**
@@ -130,6 +130,52 @@ export function prefabResources(project) {
 export function addAnimation(project, spec, { name = 'New Animation.animation', parent = null, id, index, actor, batch } = {}) {
     const resource = createResource({ kind: ResourceKind.ANIMATION, id, name, parent });
     return project.add(resource, createAnimation(spec), { index, actor, batch });
+}
+
+/**
+ * Declare a tileset in the project.
+ *
+ * THE SAME THREE VERBS AGAIN (ADR-0070 §1). A tileset is declared, saved and listed like a
+ * clip and like a prefab, because all three are Resources — no second identity scheme, no
+ * second store, no second undo stack.
+ *
+ * @param {object} project - The project to declare it in
+ * @param {object} spec - The cutting, as `createTileset()` takes it
+ * @param {object} [options] - Options
+ * @param {string} [options.name] - Displayed name
+ * @param {string|null} [options.parent] - The folder it goes in
+ * @param {string} [options.id] - Existing ResourceId, used when loading a manifest
+ * @param {number} [options.index] - Rank in the manifest
+ * @param {string} [options.actor] - Who authored the intent
+ * @param {string} [options.batch] - Groups this into a larger history entry
+ * @returns {object|null} The manifest entry, or null when the operation was refused
+ */
+export function addTileset(project, spec, { name = 'New Tileset.tileset', parent = null, id, index, actor, batch } = {}) {
+    const resource = createResource({ kind: ResourceKind.TILESET, id, name, parent });
+    return project.add(resource, createTileset(spec), { index, actor, batch });
+}
+
+/**
+ * Write a tileset's payload again.
+ *
+ * @param {object} project - The project
+ * @param {string} id - The tileset's ResourceId
+ * @param {object} spec - The cutting, as `createTileset()` takes it
+ * @param {object} [options] - Options
+ * @param {string} [options.actor] - Who authored the intent
+ * @returns {object|null} The manifest entry, or null when the resource is unknown
+ */
+export function saveTileset(project, id, spec, { actor } = {}) {
+    return project.save(id, createTileset(spec), { actor });
+}
+
+/**
+ * The project's tileset resources, in manifest order.
+ * @param {object} project - The project
+ * @returns {object[]} The manifest entries
+ */
+export function tilesetResources(project) {
+    return project.resources(ResourceKind.TILESET);
 }
 
 /**

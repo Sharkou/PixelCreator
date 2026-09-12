@@ -33,7 +33,11 @@ import { ResourceKind } from './resource.js';
  * the application rather than a lookup (ADR-0063). An `asset` is not here either: a picture
  * and a sound are host objects that live behind their own backend, never in the Core.
  */
-export const DEFINITION_KINDS = globalThis.Object.freeze([ResourceKind.PREFAB, ResourceKind.ANIMATION]);
+export const DEFINITION_KINDS = globalThis.Object.freeze([
+    ResourceKind.PREFAB,
+    ResourceKind.ANIMATION,
+    ResourceKind.TILESET
+]);
 
 /**
  * Resolve every definition of a project into a registry a simulation can read synchronously.

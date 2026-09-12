@@ -197,32 +197,51 @@ test('an element declaration is never written through by the descriptor built fr
     assert.deepEqual(declared.values, ['up'], 'the declaration was written through');
 });
 
-// --- the whole chain, on the first property that declares an element ---------------------
+// --- the whole chain, on a property that declares an element ------------------------------
 //
-//   Tilemap.palette → describeComponent → FieldKind.LIST → the list operations →
+//   a declared list → describeComponent → FieldKind.LIST → the list operations →
 //   setProperty → the value the component now holds
 //
 // `<px-list>` is the one link asserted by inspection rather than by test: it needs a DOM,
 // and this repository has no harness for one. Everything on either side of it is here.
+//
+// THE SUBJECT IS A COMPONENT DECLARED HERE, and that is deliberate. It used to be
+// `Tilemap.palette`, which stopped existing the day a map's cells started indexing a
+// `Tileset` (ADR-0070 §4). The list control is GENERIC — it is what a `.px` declaring a List
+// property is edited with — so pinning its tests to whichever shipped component happens to
+// declare an element today is what made this file fail for a reason that had nothing to do
+// with lists.
 
-/** A Tilemap attached to an object, so writes travel the pipeline they really travel. */
-function painted(palette = []) {
+/** A component whose only property is a list of colours: the shape `<px-list>` draws. */
+class Swatches {
+
+    static type = 'Swatches';
+
+    static schema = {
+        colours: { type: 'array', element: { type: 'color', default: '#000000' }, default: [] }
+    };
+
+    constructor(colours = []) {
+        this.colours = colours;
+    }
+}
+
+/** It attached to an object, so writes travel the pipeline they really travel. */
+function painted(colours = []) {
     const scene = new Scene('Main');
     const object = scene.add(new SceneObject('Ground'));
-    const tilemap = object.addComponent(new Tilemap(16, 2, 1, [1, 2], palette));
+    const swatches = object.addComponent(new Swatches(colours));
 
     return {
         scene,
-        tilemap,
-        descriptor: describeComponent(tilemap).find(entry => entry.name === 'palette'),
+        swatches,
+        descriptor: describeComponent(swatches).find(entry => entry.name === 'colours'),
         /** What `<px-list>` does on every gesture: one new array, through the one writer. */
-        commit: next => tilemap.setProperty('palette', next)
+        commit: next => swatches.setProperty('colours', next)
     };
 }
 
-test('the palette of a Tilemap is a list, and its elements are colours', () => {
-    // THE FIRST REAL CONSUMER. `tiles` is a grid flattened into an array and stays read-only;
-    // a palette has always been a short ordered list of colours, and now says so.
+test('a declared list of colours is a list, and its elements are colours', () => {
     const it = painted(['#000000', '#ff0000']);
 
     assert.equal(it.descriptor.kind, FieldKind.LIST);
@@ -234,88 +253,94 @@ test('the palette of a Tilemap is a list, and its elements are colours', () => {
 test('a list that holds something shows what it holds', () => {
     const it = painted(['#000000', '#ff0000', '#00ff00']);
 
-    assert.deepEqual(listOf(it.tilemap.palette), ['#000000', '#ff0000', '#00ff00']);
+    assert.deepEqual(listOf(it.swatches.colours), ['#000000', '#ff0000', '#00ff00']);
 });
 
 test('adding a colour lands at the end, and starts where its swatch already reads', () => {
     const it = painted(['#000000']);
 
-    it.commit(addItem(it.tilemap.palette, itemFieldFor(it.descriptor.element).default));
+    it.commit(addItem(it.swatches.colours, itemFieldFor(it.descriptor.element).default));
 
-    assert.deepEqual(it.tilemap.palette, ['#000000', '#000000']);
+    assert.deepEqual(it.swatches.colours, ['#000000', '#000000']);
 });
 
 test('removing a colour drops that one, and the rest keep their indices in order', () => {
-    // A palette is indexed BY TILE VALUE, so the order is the meaning: removing entry 1
-    // shifts what every later tile draws, and that is the creator's business, not a bug.
+    // A list's ORDER is its meaning: removing entry 1 shifts every later index, and that
+    // is the creator's business rather than a bug.
     const it = painted(['#000000', '#ff0000', '#00ff00']);
 
-    it.commit(removeItem(it.tilemap.palette, 1));
+    it.commit(removeItem(it.swatches.colours, 1));
 
-    assert.deepEqual(it.tilemap.palette, ['#000000', '#00ff00']);
+    assert.deepEqual(it.swatches.colours, ['#000000', '#00ff00']);
 });
 
-test('moving a colour reorders the palette, and moving it back restores it', () => {
+test('moving a colour reorders the list, and moving it back restores it', () => {
     const it = painted(['#000000', '#ff0000', '#00ff00']);
 
-    it.commit(moveItem(it.tilemap.palette, 2, 1));
-    assert.deepEqual(it.tilemap.palette, ['#000000', '#00ff00', '#ff0000']);
+    it.commit(moveItem(it.swatches.colours, 2, 1));
+    assert.deepEqual(it.swatches.colours, ['#000000', '#00ff00', '#ff0000']);
 
-    it.commit(moveItem(it.tilemap.palette, 1, 2));
-    assert.deepEqual(it.tilemap.palette, ['#000000', '#ff0000', '#00ff00']);
+    it.commit(moveItem(it.swatches.colours, 1, 2));
+    assert.deepEqual(it.swatches.colours, ['#000000', '#ff0000', '#00ff00']);
 });
 
 test('editing one colour changes that one and leaves the others untouched', () => {
     const it = painted(['#000000', '#ff0000', '#00ff00']);
 
-    it.commit(setItem(it.tilemap.palette, 1, '#0000ff'));
+    it.commit(setItem(it.swatches.colours, 1, '#0000ff'));
 
-    assert.deepEqual(it.tilemap.palette, ['#000000', '#0000ff', '#00ff00']);
+    assert.deepEqual(it.swatches.colours, ['#000000', '#0000ff', '#00ff00']);
 });
 
 test('two entries holding one colour stay two entries', () => {
-    // The case a value-keyed list gets wrong. A palette may legitimately repeat a colour.
+    // The case a value-keyed list gets wrong. A list may legitimately repeat a value.
     const it = painted(['#ff0000', '#ff0000', '#00ff00']);
 
-    it.commit(setItem(it.tilemap.palette, 0, '#0000ff'));
-    assert.deepEqual(it.tilemap.palette, ['#0000ff', '#ff0000', '#00ff00']);
+    it.commit(setItem(it.swatches.colours, 0, '#0000ff'));
+    assert.deepEqual(it.swatches.colours, ['#0000ff', '#ff0000', '#00ff00']);
 
-    it.commit(removeItem(it.tilemap.palette, 1));
-    assert.deepEqual(it.tilemap.palette, ['#0000ff', '#00ff00']);
+    it.commit(removeItem(it.swatches.colours, 1));
+    assert.deepEqual(it.swatches.colours, ['#0000ff', '#00ff00']);
 });
 
-test('every edit is an Operation, so the palette undoes like any other property', () => {
+test('every edit is an Operation, so the list undoes like any other property', () => {
     // The list writes a NEW array through `setProperty()` — the controlled path — so it
     // produces a Change and an Operation without a second mechanism (ADR-0008, ADR-0024).
     const it = painted(['#000000']);
     const seen = [];
     it.scene.operations.on('operation', operation => seen.push(operation));
 
-    it.commit(addItem(it.tilemap.palette, '#ff0000'));
+    it.commit(addItem(it.swatches.colours, '#ff0000'));
 
     assert.equal(seen.length, 1);
     assert.equal(seen[0].type, 'SET_PROPERTY');
-    assert.equal(seen[0].prop, 'palette');
+    assert.equal(seen[0].prop, 'colours');
     assert.deepEqual(seen[0].value, ['#000000', '#ff0000']);
     assert.deepEqual(seen[0].previous, ['#000000'], 'and it carries what to go back to');
 });
 
 test('the stored palette is never the array a control is holding', () => {
     const it = painted(['#000000']);
-    const held = listOf(it.tilemap.palette);
+    const held = listOf(it.swatches.colours);
 
     held.push('#ff0000');
 
-    assert.deepEqual(it.tilemap.palette, ['#000000'], 'the component was written through');
+    assert.deepEqual(it.swatches.colours, ['#000000'], 'the component was written through');
 });
 
-test('the grid beside it is untouched, and still read-only', () => {
-    const it = painted();
-    const tiles = describeComponent(it.tilemap).find(entry => entry.name === 'tiles');
+test('a grid is not a list: it declares no element and stays read-only', () => {
+    // A TILEMAP'S `tiles` IS THE COUNTER-EXAMPLE, and it is why `element` is what decides.
+    // It is an array of hundreds of cells, edited by painting in the Scene (ADR-0068 §5) —
+    // not by a column of rows in a panel — so it declares no element and gets no list.
+    const scene = new Scene('Main');
+    const object = scene.add(new SceneObject('Ground'));
+    const tilemap = object.addComponent(new Tilemap(16, 2, 1, [1, 2], 'res_tiles'));
+
+    const tiles = describeComponent(tilemap).find(entry => entry.name === 'tiles');
 
     assert.equal(tiles.kind, FieldKind.READONLY);
     assert.equal(tiles.element, null);
-    assert.deepEqual(it.tilemap.tiles, [1, 2], 'and it still holds what it held');
+    assert.deepEqual(tilemap.tiles, [1, 2], 'and it still holds what it held');
 });
 
 test('a read-only list hands the flag to every one of its rows', () => {

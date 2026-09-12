@@ -83,7 +83,16 @@ export const RENDERER_OPERATIONS = globalThis.Object.freeze([
     'fillCircle',
     'drawImage',
     'imageSize',
-    'fillText'
+    'fillText',
+    /**
+     * What part of the space being drawn in is on screen (ADR-0070 §6).
+     *
+     * A QUERY, LIKE `imageSize`, AND FOR THE SAME REASON: only the backend knows how big its
+     * surface is and what transform is in effect, and a component that wants to skip what
+     * cannot be seen has to be able to ask. A thousand-square tilemap draws thirty by twenty
+     * cells because of this line; without it, it draws a million.
+     */
+    'visibleBounds'
 ]);
 
 /**

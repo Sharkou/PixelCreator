@@ -33,7 +33,7 @@ import { capturePointer as capture, releasePointer as release } from '../ui/gest
 import { searchField } from '../ui/search-field.js';
 import { createId, observe } from '../../core/mod.js';
 import { baseNameOf, canMove, isFolder, withExtension } from '../../project/mod.js';
-import { createResourceOfKind, resourceKind, resourceMenuItems } from '../project/commands.js';
+import { createResourceOfKind, cutIntoTileset, resourceKind, resourceMenuItems } from '../project/commands.js';
 import { pickFile, readAsDataUrl } from '../ui/file.js';
 import { DropZone, resourcePayload } from '../dnd/payload.js';
 import { canDrop, performDrop } from '../dnd/rules.js';
@@ -664,6 +664,17 @@ export class Project extends Element {
         return button;
     }
 
+    /** Make something out of a resource the project already holds. */
+    async #make(choice, resource) {
+        const made = choice === 'tileset'
+            ? await cutIntoTileset(this.#workspace.project, resource.id)
+            : null;
+
+        if (!made) return;
+        this.#announce(made.id);
+        this.#render();
+    }
+
     #openFolder(id) {
         if (this.#folder === id) return;
         this.#cancelRename();
@@ -735,6 +746,20 @@ export class Project extends Element {
                 this.#cancelRename();
                 this.#open(resource);
             },
+            // WHAT CAN BE MADE OUT OF THIS ONE. Right-clicking the background offers what can
+            // be created HERE; right-clicking a picture offers what can be created FROM it,
+            // which is the same question asked of a different subject (ADR-0070 §4).
+            oncontextmenu: event => {
+                const actions = actionsFor(resource);
+                if (actions.length === 0) return;
+
+                event.preventDefault();
+                event.stopPropagation();
+                this.#cancelRename();
+                this.#announce(resource.id);
+                openMenu(pointAnchor(event.clientX, event.clientY), actions,
+                    choice => this.#make(choice, resource), { label: 'actions' });
+            }
         },
             this.#thumbnail(resource),
             name
@@ -1311,3 +1336,17 @@ function ancestors(project, id) {
 }
 
 customElements.define('px-project', Project);
+
+/**
+ * What can be made out of a resource, or nothing.
+ *
+ * A LIST THAT IS EMPTY FOR EVERYTHING ELSE, so the panel opens no menu on a scene, a folder
+ * or a `.px` — an empty dropdown is worse than none.
+ *
+ * @param {object} resource - The manifest entry
+ * @returns {object[]} Menu items for `openMenu()`
+ */
+function actionsFor(resource) {
+    if (resource.kind !== 'asset' || !String(resource.mime ?? '').startsWith('image/')) return [];
+    return [{ id: 'tileset', label: 'New Tileset from this', icon: iconForResource('tileset') }];
+}

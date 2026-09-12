@@ -348,6 +348,10 @@ const RESOURCE_ICONS = {
     graph: 'graph',
     prefab: 'prefab',
     animation: 'frames',
+    // A SHEET CUT INTO CELLS, which is what the glyph draws and what the resource is. It is
+    // not `tilemap` (a Component's cube) and not `frames` (a clip's strip): three different
+    // things, three different glyphs (ADR-0070 §4).
+    tileset: 'grid',
     asset: 'image'
 };
 

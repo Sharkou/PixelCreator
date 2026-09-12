@@ -21,6 +21,7 @@
 // THE PATH IS DERIVED, and shown as text: moving a resource is a drag in the Project
 // panel, not a field to type a path into — the model has no path to type (ADR-0025).
 
+import { createAnimation, createTileset } from '../../core/mod.js';
 import { ResourceKind, baseNameOf, folderPath, hasPayload } from '../../project/mod.js';
 import { formatSize, imageSize } from '../../project/image.js';
 import { FieldKind } from './schema.js';
@@ -67,18 +68,37 @@ const BY_KIND = {
             readonly('objects', 'Objects', countObjects(payload?.root))
         ]
     },
-    // A CLIP IS FOUR NUMBERS AND A PICTURE (ADR-0062 §4). They are shown, and they are
-    // read-only — see the note at the top of the file about what may be written here.
+    // A CLIP IS FOUR NUMBERS AND A PICTURE (ADR-0062 §4), and they are now TYPED INTO rather
+    // than merely reported (ADR-0070 §5). The sheet itself is not: pointing a clip at another
+    // picture is a different gesture, and a drop is what makes it.
     [ResourceKind.ANIMATION]: {
         fields: (resource, { project, payload }) => [
-            readonly('source', 'Sheet', nameOf(project, payload?.source)),
-            readonly('frames', 'Frames', payload?.count ?? null),
-            readonly('frame', 'Frame size', payload?.frameWidth && payload?.frameHeight
-                ? `${payload.frameWidth} x ${payload.frameHeight}`
-                : null),
-            readonly('fps', 'Speed', payload?.fps ? `${payload.fps} fps` : null),
-            readonly('loop', 'Loop', payload?.loop === undefined ? null : (payload.loop ? 'Yes' : 'No'))
-        ]
+            readonly('source', 'Sheet', nameOf(project, payload?.source))
+        ],
+        edits: payload => [
+            number('frameWidth', 'Frame width', payload?.frameWidth, { min: 0 }),
+            number('frameHeight', 'Frame height', payload?.frameHeight, { min: 0 }),
+            number('columns', 'Columns', payload?.columns, { min: 0, step: 1 }),
+            number('count', 'Frames', payload?.count, { min: 1, step: 1 }),
+            number('first', 'First cell', payload?.first, { min: 0, step: 1 }),
+            number('fps', 'Speed', payload?.fps, { min: 0, unit: '/s' }),
+            toggle('loop', 'Loop', payload?.loop)
+        ],
+        write: (payload, name, value) => createAnimation({ ...payload, [name]: value })
+    },
+    // A TILESET IS THE CUTTING OF A SHEET, and the cutting is exactly what a creator has to
+    // be able to correct: the default is a guess, stated as one (ADR-0070 §4).
+    [ResourceKind.TILESET]: {
+        fields: (resource, { project, payload }) => [
+            readonly('source', 'Sheet', nameOf(project, payload?.source))
+        ],
+        edits: payload => [
+            number('tileWidth', 'Tile width', payload?.tileWidth, { min: 1, step: 1 }),
+            number('tileHeight', 'Tile height', payload?.tileHeight, { min: 1, step: 1 }),
+            number('columns', 'Columns', payload?.columns, { min: 1, step: 1 }),
+            number('count', 'Tiles', payload?.count, { min: 0, step: 1 })
+        ],
+        write: (payload, name, value) => createTileset({ ...payload, [name]: value })
     },
     [ResourceKind.ASSET]: {
         // THE SIZE IS READ FROM THE PICTURE, NEVER GUESSED. "How big is this?" is the
@@ -109,6 +129,7 @@ export const KIND_NAMES = {
     [ResourceKind.GRAPH]: 'Graph',
     [ResourceKind.PREFAB]: 'Prefab',
     [ResourceKind.ANIMATION]: 'Animation',
+    [ResourceKind.TILESET]: 'Tileset',
     [ResourceKind.ASSET]: 'Asset'
 };
 
@@ -174,8 +195,35 @@ export function describeResource(resource, { project = null, payload = null, siz
             readonly('id', 'Identifier', resource.id)
         ].filter(Boolean),
 
+        // WHAT A CREATOR MAY TYPE INTO THE CONTENT ITSELF (ADR-0070 §5). Empty for every kind
+        // that has a window of its own — a scene is edited in the viewport, a `.px` in the
+        // graph — and four rows for the two that are only numbers in a file.
+        //
+        // AND EMPTY UNTIL THE PAYLOAD IS HERE. A store answers asynchronously (ADR-0020 §4),
+        // so a panel drawn while the read is in flight would show `0` in every row — a number
+        // a creator would type over, replacing what the file actually held.
+        edits: entry.edits && payload ? entry.edits(payload) : [],
         content: entry.content ? entry.content(resource, { payload }) : null
     };
+}
+
+/**
+ * The next payload, after one row was typed into.
+ *
+ * IT GOES THROUGH THE KIND'S OWN CONSTRUCTOR, never `{...payload, x}`. A tile width of -8 or
+ * a frame count of `NaN` is clamped by the same function that built the payload in the first
+ * place, so a resource edited in the Inspector and one created by the menu cannot hold
+ * different shapes (ADR-0070 §5).
+ *
+ * @param {object} resource - The manifest entry
+ * @param {any} payload - What it holds now
+ * @param {string} name - Which field was typed into
+ * @param {any} value - What was typed
+ * @returns {any|null} The payload to write, or null when the kind has no editable content
+ */
+export function editedPayload(resource, payload, name, value) {
+    const entry = BY_KIND[resource?.kind] ?? {};
+    return entry.write ? entry.write(payload ?? {}, name, value) : null;
 }
 
 /**
@@ -216,6 +264,42 @@ function previewFor(resource, payload) {
     }
 
     return { type: 'none', note: 'This content cannot be previewed.' };
+}
+
+/** A number a creator types into. */
+function number(name, label, value, { min = null, max = null, step = null, unit = null } = {}) {
+    return {
+        name,
+        label,
+        kind: FieldKind.NUMBER,
+        value: value ?? 0,
+        min,
+        max,
+        step,
+        unit,
+        scale: 1,
+        values: null,
+        readonly: false,
+        tooltip: null
+    };
+}
+
+/** A tickbox a creator ticks. */
+function toggle(name, label, value) {
+    return {
+        name,
+        label,
+        kind: FieldKind.BOOLEAN,
+        value: Boolean(value),
+        min: null,
+        max: null,
+        step: null,
+        unit: null,
+        scale: 1,
+        values: null,
+        readonly: false,
+        tooltip: null
+    };
 }
 
 function readonly(name, label, value) {

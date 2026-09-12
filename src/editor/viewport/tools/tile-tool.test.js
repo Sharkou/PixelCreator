@@ -13,6 +13,7 @@ import {
     Scene,
     Transform
 } from '../../../core/mod.js';
+import { createTileset } from '../../../core/mod.js';
 import { Tilemap } from '../../../runtime/mod.js';
 import { History } from '../../history.js';
 import { resizeGrid } from '../../tilemap.js';
@@ -21,7 +22,7 @@ import { TileTool } from './tile-tool.js';
 const SIZE = 32;
 
 /** A scene with one Tilemap in it, a selection, and the tool that paints it. */
-function staged({ columns = 6, rows = 4, at = [0, 0], palette = ['#000000', '#ff0000', '#00ff00'] } = {}) {
+function staged({ columns = 6, rows = 4, at = [0, 0], tiles = 8 } = {}) {
     const registry = new ComponentRegistry();
     registry.register(Transform);
     registry.register(Tilemap);
@@ -29,11 +30,17 @@ function staged({ columns = 6, rows = 4, at = [0, 0], palette = ['#000000', '#ff
     const scene = new Scene('Level', { registry });
     const object = scene.add(new SceneObject('Map', { id: 'obj_map' }));
     object.addComponent(new Transform(at[0], at[1]));
-    const tilemap = new Tilemap(SIZE, columns, rows, [], palette);
+    const tilemap = new Tilemap(SIZE, columns, rows, [], 'res_tiles');
     object.addComponent(tilemap);
 
+    // The registry a viewport hands the tool: one tileset, resolved before the frame.
+    const tileset = createTileset({
+        source: 'res_sheet', tileWidth: 16, tileHeight: 16, columns: 4, count: tiles
+    });
+    const resources = { get: id => (id === 'res_tiles' ? tileset : null) };
+
     const selection = { object };
-    const tool = new TileTool({ scene, selection });
+    const tool = new TileTool({ scene, selection, resources: () => resources });
     const history = new History(scene.operations);
 
     // The identity view: one world unit is one device pixel, which keeps the arithmetic in
@@ -51,7 +58,7 @@ function staged({ columns = 6, rows = 4, at = [0, 0], palette = ['#000000', '#ff
     /** The pointer over the middle of a cell. */
     const over = (column, row) => at2(at[0] + column * SIZE + SIZE / 2, at[1] + row * SIZE + SIZE / 2);
 
-    return { scene, object, tilemap, selection, tool, history, over, at: at2, view };
+    return { scene, object, tilemap, tileset, selection, tool, history, over, at: at2, view };
 }
 
 /** The grid as a string, so a whole map fits in an assertion. */
@@ -148,7 +155,7 @@ test('entry 0 is Erase, and it is not a colour', () => {
 
     // The first swatch of the strip. Its position comes from the same numbers `draw()` uses.
     it.tool.draw(recorder(), it.view, { scale: 1 });
-    it.tool.press(it.at(12 + 11, 12 + 11));
+    it.tool.press(it.at(12 + 13, 12 + 13));
     assert.equal(it.tool.active, 0, 'picked Empty');
 
     it.tool.press(it.over(2, 1));
@@ -156,35 +163,67 @@ test('entry 0 is Erase, and it is not a colour', () => {
     assert.equal(grid(it.tilemap), '000000/010100/000000/000000', 'and painting it clears a cell');
 });
 
-test('a swatch picks what is painted', () => {
-    // Placed clear of the strip: the swatches are drawn ON the surface, so where they are
+test('a thumbnail picks what is painted, and picking is not an edit', () => {
+    // Placed clear of the picker: the thumbnails are drawn ON the surface, so where they are
     // drawn they take the press — the same rule any on-screen control follows.
-    const it = staged({ at: [300, 300] });
+    const it = staged({ at: [400, 400] });
+    let writes = 0;
+    it.scene.operations.on('operation', () => writes++);
 
     it.tool.draw(recorder(), it.view, { scale: 1 });
-    // Third swatch: Empty, palette 1, palette 2 — at 12 + 2 * (22 + 5) + 11.
-    it.tool.press(it.at(12 + 2 * 27 + 11, 23));
+    // Third thumbnail: Empty, tile 1, tile 2 - at 12 + 2 * (26 + 4) + 13.
+    it.tool.press(it.at(12 + 2 * 30 + 13, 25));
     assert.equal(it.tool.active, 2);
+    assert.equal(writes, 0, 'looking at another wall is not a change to the level');
 
     it.tool.press(it.over(0, 0));
     it.tool.release();
     assert.equal(it.tilemap.get(0, 0), 2);
 });
 
-test('the last swatch adds a colour to a palette that has none', () => {
-    const it = staged({ palette: [], at: [300, 300] });
+test('a thumbnail is the tile itself, cut from the sheet the map draws from', () => {
+    const it = staged({ at: [400, 400] });
+    const renderer = recorder();
 
-    it.tool.draw(recorder(), it.view, { scale: 1 });
-    // Two swatches only: Empty, then `+`.
-    it.tool.press(it.at(12 + 27 + 11, 23));
+    it.tool.draw(renderer, it.view, { scale: 1 });
 
-    assert.deepEqual(it.tilemap.palette, ['#000000', '#6aa84f'],
-        'entry 0 stays unused, and the colour lands at 1 where `draw()` can find it');
-    assert.equal(it.tool.active, 1);
+    const drawn = renderer.calls.filter(call => call.name === 'drawImage');
+    assert.equal(drawn.length, 8, 'one per tile of the sheet, and none for Empty');
+    assert.equal(drawn[0].args[0], 'res_sheet', 'the ResourceId, resolved by the cache as ever');
+    assert.deepEqual(drawn[0].args[5].clip, { x: 0, y: 0, width: 16, height: 16 });
+    assert.deepEqual(drawn[4].args[5].clip, { x: 0, y: 16, width: 16, height: 16 }, 'the second row');
+});
 
-    it.tool.press(it.over(0, 0));
+test('a sheet too big for one page is paged, not spilled across the scene', () => {
+    const it = staged({ at: [400, 400], tiles: 120 });
+    const renderer = recorder();
+
+    it.tool.draw(renderer, it.view, { scale: 1 });
+    const first = renderer.calls.filter(call => call.name === 'drawImage').length;
+    assert.ok(first <= 27, `a page holds what it can show, not 120 (${first})`);
+
+    // The last hit of the page is Next. Stepping forward shows the tiles after these.
+    it.tool.press(it.at(12 + 9 * 30 + 13, 12 + 2 * 30 + 13));
+    const second = recorder();
+    it.tool.draw(second, it.view, { scale: 1 });
+
+    const clips = second.calls.filter(call => call.name === 'drawImage').map(call => call.args[5].clip);
+    assert.ok(clips.length > 0, 'the second page draws tiles');
+    assert.notDeepEqual(clips[0], { x: 0, y: 0, width: 16, height: 16 }, 'and they are not the first ones');
+});
+
+test('with no tileset there is Empty and nothing else', () => {
+    const it = staged({ at: [400, 400] });
+    it.tilemap.tileset = null;
+    const renderer = recorder();
+
+    it.tool.draw(renderer, it.view, { scale: 1 });
+
+    assert.equal(renderer.calls.filter(call => call.name === 'drawImage').length, 0);
+    // And painting still works: a cell is a number, and a number needs no picture to be 1.
+    it.tool.press(it.over(1, 1));
     it.tool.release();
-    assert.equal(it.tilemap.get(0, 0), 1, 'and it paints straight away');
+    assert.equal(it.tilemap.get(1, 1), 1);
 });
 
 test('nothing outside the grid is ever written', () => {
@@ -299,21 +338,25 @@ test('a resize is one history entry, not two', () => {
     assert.equal(it.tilemap.tiles.length, 18, 'and the array is the size it says it is');
 });
 
-/** A renderer that records nothing: `draw()` is called here only to lay the strip out. */
+/** A renderer that records what it was asked to draw. */
 function recorder() {
-    const noop = () => {};
+    const calls = [];
+    const record = name => (...args) => calls.push({ name, args });
+
     return {
-        clear: noop,
-        save: noop,
-        restore: noop,
-        setTransform: noop,
-        setBlendMode: noop,
-        fillRect: noop,
-        strokeRect: noop,
-        fillCircle: noop,
-        drawImage: noop,
+        calls,
+        clear: record('clear'),
+        save: record('save'),
+        restore: record('restore'),
+        setTransform: record('setTransform'),
+        setBlendMode: record('setBlendMode'),
+        fillRect: record('fillRect'),
+        strokeRect: record('strokeRect'),
+        fillCircle: record('fillCircle'),
+        drawImage: record('drawImage'),
         imageSize: () => null,
-        fillText: noop
+        visibleBounds: () => null,
+        fillText: record('fillText')
     };
 }
 

@@ -24,6 +24,7 @@ export {
     OperationType,
     createOperation,
     setCellsOperation,
+    setPayloadOperation,
     setPropertyOperation,
     addObjectOperation,
     removeObjectOperation,
@@ -68,6 +69,15 @@ export {
     frameAtTime,
     frameCount
 } from './animation.js';
+export { frameRect } from './frames.js';
+export {
+    DEFAULT_TILE,
+    TILESET_FORMAT,
+    createTileset,
+    tileCount,
+    tileRect,
+    tilesetOf
+} from './tileset.js';
 export {
     PREFAB_FORMAT,
     createPrefab,

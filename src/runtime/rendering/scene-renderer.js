@@ -63,8 +63,12 @@ export class SceneRenderer {
      * @param {string} [options.clear] - Background colour; the surface is cleared transparent when omitted
      * @returns {number} How many objects were drawn
      */
-    render(scene, { view = Matrix.identity(), screen = Matrix.identity(), clear } = {}) {
+    render(scene, { view = Matrix.identity(), screen = Matrix.identity(), clear, resources = null } = {}) {
         const renderer = this.#renderer;
+        // WHAT A COMPONENT MAY REACH WHILE IT DRAWS (ADR-0070 §5). `update()` is handed a
+        // context; drawing needed one the day a Tilemap had to look its Tileset up, and it is
+        // the same registry, resolved before the frame — never a read from a store.
+        const context = { resources };
 
         renderer.clear(clear);
         renderer.setBlendMode(BlendMode.NORMAL);
@@ -97,7 +101,7 @@ export class SceneRenderer {
                 }
 
                 try {
-                    component.draw(object, renderer);
+                    component.draw(object, renderer, context);
                 } catch (error) {
                     // Isolated and reported; the remaining components of this object,
                     // and every other object, still draw. Nothing is disabled (ADR-0012).

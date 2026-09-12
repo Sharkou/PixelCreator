@@ -19,27 +19,50 @@
 // THE CELLS BETWEEN TWO POINTER EVENTS ARE PAINTED TOO. A pointer is sampled once per frame
 // (viewport.js); a fast drag jumps whole cells, and a line of holes is not what anybody drew.
 //
-// THE PALETTE IS DRAWN ON THE SURFACE, because "which tile am I painting" is a question about
-// what is under the cursor, and answering it three panels away is answering it too late. It
-// is a strip of swatches, not an editor: adding a colour is one button, and CHANGING one is
-// still the Inspector's list, where it always was.
+// THE TILES ARE DRAWN ON THE SURFACE, because "which tile am I painting" is a question about
+// what is under the cursor, and answering it three panels away is answering it too late. They
+// are the REAL tiles of the map's Tileset, cut out of the same sheet the map draws from
+// (ADR-0070 §8) - a creator picks a wall by looking at a wall. It is a picker, not an editor:
+// changing what a tileset CONTAINS is the Inspector's rows, where it belongs.
+//
+// IT IS A PAGE, NOT AN ENDLESS STRIP. A sheet of five hundred tiles would otherwise cover the
+// scene it is being painted into, so the picker shows a fixed grid and steps through pages.
 
-import { Matrix, Origin, createId, setCellsOperation, worldMatrix } from '../../../core/mod.js';
+import {
+    Matrix,
+    Origin,
+    createId,
+    setCellsOperation,
+    tileRect,
+    tilesetOf,
+    worldMatrix
+} from '../../../core/mod.js';
 import { Tilemap } from '../../../runtime/mod.js';
 
 /** The colour the Editor marks things with, the same one the overlay uses. */
 const ACCENT = '#ff7a45';
 
-/** Swatch size and gap, in CSS pixels. */
-const SWATCH = 22;
-const GAP = 5;
+/** Thumbnail size, gap and the corner the picker sits in, in CSS pixels. */
+const SWATCH = 26;
+const GAP = 4;
 const MARGIN = 12;
+
+/**
+ * How many thumbnails a page holds. Enough to choose from, small enough to see past.
+ *
+ * THREE SLOTS ARE SPOKEN FOR — Empty and the two page arrows — so the tiles fill what is
+ * left and the picker is always the same three rows tall, whatever the sheet holds.
+ */
+const PER_ROW = 10;
+const ROWS = 3;
+const PER_PAGE = PER_ROW * ROWS - 3;
+
+/** The two paging hits, as indices no tile can have. */
+const PREVIOUS = -1;
+const NEXT = -2;
 
 /** Below this many device pixels per cell, the grid lines are noise rather than a guide. */
 const GRID_MIN = 5;
-
-/** What `+` appends, in order. Four steps around the wheel, so two of them never look alike. */
-const NEXT_COLOURS = ['#6aa84f', '#3d85c6', '#c27ba0', '#e69138', '#8e7cc3', '#a64d79'];
 
 export class TileTool {
 
@@ -47,12 +70,14 @@ export class TileTool {
     #hovered = null;
     #stroke = null;
     #active = 1;
+    #page = 0;
     #scale = 1;
     #strip = [];
 
     /**
      * Create the tool.
-     * @param {object} context - `{ scene, selection }`
+     * @param {object} context - `{ scene, selection, resources }`; `resources` answers the
+     *   registry of resolved definitions, and is asked for rather than held
      */
     constructor(context) {
         this.#context = context;
@@ -237,23 +262,50 @@ export class TileTool {
         }));
     }
 
-    /** Choose what is painted; the last swatch appends a colour instead. */
+    /**
+     * Choose what is painted, or turn the page.
+     *
+     * NOTHING HERE TOUCHES THE MAP (ADR-0070 §8). Picking a tile is a fact about this tool,
+     * not about the level: it produces no Operation, nothing goes dirty, and the undo stack
+     * does not learn that somebody looked at a different wall.
+     *
+     * @param {object} target - `{ object, tilemap }`
+     * @param {number} index - A tile, 0 for Empty, or one of the two paging hits
+     */
     #pick(target, index) {
-        const { tilemap } = target;
-        if (index >= 0) {
-            this.#active = index;
+        if (index === PREVIOUS) {
+            this.#page = globalThis.Math.max(0, this.#page - 1);
+            return;
+        }
+        if (index === NEXT) {
+            this.#page = globalThis.Math.min(this.#pages(target) - 1, this.#page + 1);
             return;
         }
 
-        const palette = globalThis.Array.isArray(tilemap.palette) ? tilemap.palette : [];
-        // ENTRY 0 IS EMPTY AND IS NEVER A COLOUR (`Tilemap.draw` skips tile 0), so the first
-        // colour a creator adds has to land at index 1 — with a placeholder under it rather
-        // than a hole, because a hole is a row the Inspector cannot draw.
-        const base = palette.length === 0 ? ['#000000'] : [...palette];
-        const colour = NEXT_COLOURS[globalThis.Math.max(0, base.length - 1) % NEXT_COLOURS.length];
+        this.#active = index;
+    }
 
-        tilemap.setProperty('palette', [...base, colour]);
-        this.#active = base.length;
+    /**
+     * The tileset this map draws from, already resolved, or null.
+     *
+     * ASKED FOR EACH TIME, NEVER HELD. The registry is rebuilt when a project reloads, and a
+     * tool that had captured one would go on drawing yesterday's sheet (ADR-0062 §1).
+     *
+     * @param {object} target - `{ object, tilemap }`
+     * @returns {object|null} The tileset definition
+     */
+    #tilesetOf(target) {
+        return tilesetOf(this.#context.resources?.()?.get?.(target.tilemap.tileset)) ?? null;
+    }
+
+    /**
+     * How many pages of thumbnails the sheet fills.
+     * @param {object} target - `{ object, tilemap }`
+     * @returns {number} At least one
+     */
+    #pages(target) {
+        const count = this.#tilesetOf(target)?.count ?? 0;
+        return globalThis.Math.max(1, globalThis.Math.ceil(count / PER_PAGE));
     }
 
     // --- geometry -------------------------------------------------------------------------
@@ -331,49 +383,89 @@ export class TileTool {
         const x = this.#hovered.column * size;
         const y = this.#hovered.row * size;
 
-        const colour = this.#active === 0 ? '#ffffff' : (tilemap.palette?.[this.#active] ?? ACCENT);
-        fill(renderer, matrix, x, y, size, size, { color: colour, alpha: 0.35 });
+        // THE TILE ITSELF, WHERE IT WOULD LAND. A translucent accent square would say "here";
+        // the tile says "this", which is the question a creator is actually asking.
+        const sheet = this.#tilesetOf(target);
+        const clip = sheet ? tileRect(sheet, this.#active) : null;
+        if (clip) {
+            const corner = matrix.apply(x, y);
+            const far = matrix.apply(x + size, y + size);
+            renderer.drawImage(sheet.source,
+                globalThis.Math.min(corner.x, far.x),
+                globalThis.Math.min(corner.y, far.y),
+                globalThis.Math.abs(far.x - corner.x),
+                globalThis.Math.abs(far.y - corner.y),
+                { clip, alpha: 0.7 });
+        } else {
+            fill(renderer, matrix, x, y, size, size, { color: '#ffffff', alpha: 0.28 });
+        }
+
         rect(renderer, matrix, x, y, size, size,
             { color: ACCENT, alpha: 1, thickness: globalThis.Math.max(1, 2 * scale) });
     }
 
+    /**
+     * The picker: Empty, then the tiles of the sheet, then the two pages.
+     *
+     * @param {object} renderer - The renderer backend
+     * @param {object} target - `{ object, tilemap }`
+     * @param {number} scale - Device pixels per CSS pixel
+     */
     #drawPalette(renderer, target, scale) {
-        const palette = globalThis.Array.isArray(target.tilemap.palette) ? target.tilemap.palette : [];
+        const sheet = this.#tilesetOf(target);
         const size = SWATCH * scale;
         const gap = GAP * scale;
-        const top = MARGIN * scale;
-        // Entry 0 is Empty and is drawn as such; entries 1..n are the colours; `+` appends.
-        const entries = [0, ...palette.map((colour, index) => index).slice(1), -1];
+        const margin = MARGIN * scale;
+        const pages = this.#pages(target);
 
-        let left = MARGIN * scale;
-        for (const index of entries) {
-            const swatch = { index, x: left, y: top, size };
-            this.#strip.push(swatch);
+        // Page zero opens with Empty; every page after it is tiles alone.
+        const perPage = PER_PAGE;
+        const first = this.#page * perPage + 1;
+        const entries = this.#page === 0 ? [0] : [];
+        for (let tile = first; tile < first + perPage && tile <= (sheet?.count ?? 0); tile++) {
+            entries.push(tile);
+        }
+        if (pages > 1) entries.push(PREVIOUS, NEXT);
 
-            const colour = index === 0 ? '#1b1b20' : (index === -1 ? '#25252c' : palette[index]);
-            renderer.fillRect(left, top, size, size, { color: colour || '#25252c' });
+        entries.forEach((index, at) => {
+            const left = margin + (at % PER_ROW) * (size + gap);
+            const top = margin + globalThis.Math.floor(at / PER_ROW) * (size + gap);
+            this.#strip.push({ index, x: left, y: top, size });
+
+            renderer.fillRect(left, top, size, size, { color: '#1b1b20' });
 
             if (index === 0) {
                 // A slash: "paint nothing here", which is what erasing is.
                 renderer.fillRect(left + size * 0.18, top + size * 0.46,
                     size * 0.64, globalThis.Math.max(1, scale), { color: '#8a8a99' });
-            }
-            if (index === -1) {
-                const arm = size * 0.3;
-                const thick = globalThis.Math.max(1, scale);
-                renderer.fillRect(left + size / 2 - arm, top + size / 2 - thick / 2, arm * 2, thick,
-                    { color: '#8a8a99' });
-                renderer.fillRect(left + size / 2 - thick / 2, top + size / 2 - arm, thick, arm * 2,
-                    { color: '#8a8a99' });
+            } else if (index === PREVIOUS || index === NEXT) {
+                arrow(renderer, left, top, size, scale, index === NEXT);
+            } else {
+                const clip = sheet ? tileRect(sheet, index) : null;
+                // A TILE THE SHEET DOES NOT HAVE DRAWS NOTHING, here as on the map
+                // (ADR-0070 §7) - an empty square is the truth about it.
+                if (clip) renderer.drawImage(sheet.source, left, top, size, size, { clip });
             }
 
             const border = index === this.#active
                 ? { color: ACCENT, thickness: globalThis.Math.max(2, 2 * scale) }
                 : { color: '#000000', thickness: globalThis.Math.max(1, scale) };
             box(renderer, left, top, size, size, border);
+        });
+    }
+}
 
-            left += size + gap;
-        }
+/** A small triangle, for the two paging hits. */
+function arrow(renderer, left, top, size, scale, forward) {
+    const middle = top + size / 2;
+    const thick = globalThis.Math.max(1, scale);
+
+    for (let step = 0; step < 5; step++) {
+        const height = (5 - step) * 2 * thick;
+        const x = forward
+            ? left + size * 0.35 + step * thick * 2
+            : left + size * 0.65 - step * thick * 2;
+        renderer.fillRect(x, middle - height / 2, thick * 2, height, { color: '#8a8a99' });
     }
 }
 

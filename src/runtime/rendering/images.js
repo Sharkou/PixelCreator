@@ -46,6 +46,7 @@ const State = {
 export class ImageCache {
 
     #resolve;
+    #onArrival = null;
     #decode;
     #entries = new globalThis.Map();
 
@@ -59,12 +60,19 @@ export class ImageCache {
      *   picture is decoded off the frame path anyway. So the Editor hands over
      *   `project.read` itself and no payload is mirrored into a second map (ADR-0062 §2).
      * @param {ImageDecoder} [options.decode] - Turns a payload into a drawable image
+     * @param {Function} [options.onArrival] - Called with the ResourceId when a decode lands,
+     *   for a caller that draws on demand rather than every frame
      */
-    constructor({ resolve, decode } = {}) {
+    constructor({ resolve, decode, onArrival = null } = {}) {
         if (typeof resolve !== 'function') {
             throw new TypeError('ImageCache: a resolve(resourceId) function is required');
         }
         this.#resolve = resolve;
+        // WHO TO TELL WHEN A PICTURE LANDS (ADR-0070 §5). A game client draws every frame and
+        // never needs to be told; an Editor surface draws only when something changed, and a
+        // decode finishing IS something changing. Optional, because the caller that does not
+        // care must not pay for it.
+        this.#onArrival = onArrival;
         // INJECTED SO THE CACHE ITSELF IS TESTABLE. `createImageBitmap` is the one line that
         // needs a browser; handing it in means the caching, the invalidation, the failure
         // path and the "no image API at all" path are all verified under Node against a
@@ -151,6 +159,17 @@ export class ImageCache {
                 }
                 entry.state = image ? State.READY : State.FAILED;
                 entry.image = image ?? null;
+                // A surface that only draws when something changed has to be told that
+                // something changed (ADR-0070 §5). ISOLATED, because a listener that throws
+                // must not reach the `catch` below and mark a perfectly good picture as
+                // failed — which would lose it for the rest of the session (ADR-0012).
+                if (entry.image) {
+                    try {
+                        this.#onArrival?.(id);
+                    } catch {
+                        // Whoever wanted to know had a problem of their own.
+                    }
+                }
                 return entry.image;
             })
             .catch(() => {

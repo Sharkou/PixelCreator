@@ -29,6 +29,7 @@ const KIND_EXTENSIONS = {
     // in a folder knows what they are looking at without opening it.
     [ResourceKind.PREFAB]: '.prefab',
     [ResourceKind.ANIMATION]: '.animation',
+    [ResourceKind.TILESET]: '.tileset',
     [ResourceKind.ASSET]: ''
 };
 

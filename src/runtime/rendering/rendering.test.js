@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Object, Scene, Transform, Matrix } from '../../core/mod.js';
+import { Object, Scene, Transform, Matrix, createTileset } from '../../core/mod.js';
 import { SceneRenderer } from './scene-renderer.js';
 import { Canvas2DRenderer } from './canvas2d.js';
 import { missingOperations, assertRenderer, BlendMode } from './renderer.js';
@@ -10,6 +10,12 @@ import { ParticleSystem } from './components/particle-system.js';
 import { Tilemap } from '../tilemap/tilemap.js';
 
 /** A backend that records calls instead of producing pixels. */
+/** A registry answering one tileset, the way `loadDefinitions()` does (ADR-0070 §5). */
+function sheets(spec = {}) {
+    const tileset = createTileset({ source: 'res_sheet', tileWidth: 16, tileHeight: 16, columns: 4, count: 8, ...spec });
+    return { get: id => (id === 'res_tiles' ? tileset : null) };
+}
+
 function recordingRenderer() {
     const calls = [];
     const record = name => (...args) => { calls.push({ name, args }); };
@@ -26,6 +32,7 @@ function recordingRenderer() {
         fillCircle: record('fillCircle'),
         drawImage: record('drawImage'),
         imageSize: () => null,
+        visibleBounds: () => null,
         fillText: record('fillText')
     };
 }
@@ -54,6 +61,7 @@ function fakeContext() {
         stroke: record('stroke'),
         drawImage: record('drawImage'),
         imageSize: () => null,
+        visibleBounds: () => null,
         fillText: record('fillText'),
         save: record('save'),
         restore: record('restore')
@@ -78,7 +86,7 @@ test('an incomplete backend is rejected with the missing names', () => {
 
     assert.deepEqual(missingOperations(partial).sort(), [
         'drawImage', 'fillCircle', 'fillRect', 'fillText', 'imageSize',
-        'setBlendMode', 'setTransform', 'strokeRect'
+        'setBlendMode', 'setTransform', 'strokeRect', 'visibleBounds'
     ]);
     assert.throws(() => assertRenderer(partial), /missing required operations/);
     assert.throws(() => new SceneRenderer(partial), /missing required operations/);
@@ -190,7 +198,7 @@ test('the renderer knows nothing about component types', () => {
     const renderer = recordingRenderer();
     const objects = [
         [new RectangleRenderer(2, 2)],
-        [new Tilemap(8, 1, 1, [1], [null, '#fff'])],
+        [new Tilemap(8, 1, 1, [1], 'res_tiles')],
         [new ParticleSystem({ rate: 0 })]
     ].map(([component], index) => {
         const object = new Object(`Object${index}`);
@@ -199,10 +207,11 @@ test('the renderer knows nothing about component types', () => {
         return object;
     });
 
-    const drawn = new SceneRenderer(renderer).render(sceneWith(...objects));
+    const drawn = new SceneRenderer(renderer).render(sceneWith(...objects), { resources: sheets() });
 
     assert.equal(drawn, 3);
-    assert.equal(renderer.of('fillRect').length, 2, 'rectangle and tilemap both filled');
+    assert.equal(renderer.of('fillRect').length, 1, 'the rectangle filled');
+    assert.equal(renderer.of('drawImage').length, 1, 'and the tilemap drew a tile of its sheet');
 });
 
 test('a failing draw is isolated and reported', () => {
@@ -309,19 +318,21 @@ test('a Sprite pointed at nothing draws nothing', () => {
 test('Tilemap uses the uniform draw signature', () => {
     // Legacy declared draw(ctx, camera) while the caller passed (self, renderer).
     const renderer = recordingRenderer();
-    const tilemap = new Tilemap(8, 2, 2, [1, 0, 0, 2], [null, '#f00', '#0f0']);
+    const tilemap = new Tilemap(8, 2, 2, [1, 0, 0, 2], 'res_tiles');
 
-    tilemap.draw(null, renderer);
+    tilemap.draw(null, renderer, { resources: sheets() });
 
-    const fills = renderer.of('fillRect');
-    assert.equal(fills.length, 2, 'only the two non-empty cells');
-    assert.deepEqual(fills[0].args.slice(0, 4), [0, 0, 8, 8]);
-    assert.deepEqual(fills[1].args.slice(0, 4), [8, 8, 8, 8]);
+    const drawn = renderer.of('drawImage');
+    assert.equal(drawn.length, 2, 'only the two non-empty cells');
+    assert.deepEqual(drawn[0].args.slice(0, 5), ['res_sheet', 0, 0, 8, 8]);
+    assert.deepEqual(drawn[0].args[5].clip, { x: 0, y: 0, width: 16, height: 16 }, 'the first tile');
+    assert.deepEqual(drawn[1].args.slice(0, 5), ['res_sheet', 8, 8, 8, 8]);
+    assert.deepEqual(drawn[1].args[5].clip, { x: 16, y: 0, width: 16, height: 16 }, 'the second');
     assert.deepEqual(tilemap.bounds(null), { x: 0, y: 0, width: 16, height: 16 });
 });
 
 test('Tilemap reads and writes cells within bounds', () => {
-    const tilemap = new Tilemap(8, 2, 2, [0, 0, 0, 0], [null, '#f00']);
+    const tilemap = new Tilemap(8, 2, 2, [0, 0, 0, 0], 'res_tiles');
 
     tilemap.set(1, 0, 1);
     assert.equal(tilemap.get(1, 0), 1);

@@ -12,7 +12,7 @@ import { registerBuiltIns } from '../../src/runtime/builtins.js';
 import { Clock } from '../../src/runtime/clock/clock.js';
 import { Runtime } from '../../src/runtime/runtime.js';
 import { Input } from '../../src/runtime/input/input.js';
-import { BOTTOM, FLOOR, IDS, LEFT_WALL, PLATFORM_TOP, TILE, buildTileLevel } from './tiles.js';
+import { BOTTOM, FLOOR, IDS, LEFT_WALL, PLATFORM_TOP, TILE, TILES, buildTileLevel } from './tiles.js';
 
 const nodes = registerStandardNodes(new NodeRegistry());
 
@@ -41,6 +41,7 @@ async function play() {
     const player = find('Player');
 
     return {
+        opened,
         scene,
         runtime,
         input,
@@ -190,4 +191,43 @@ test('the camera goes with the player, through a bundle and back', async () => {
     const seat = camera.getComponent('Transform');
     near(seat.x, player.x, 'the camera is where the player is');
     near(seat.y, player.y - 40, 'held a little above it, as the offset says');
+});
+
+test('the level is a sheet, a cutting and two maps that name it', async () => {
+    const it = await play();
+    const project = it.opened?.project ?? null;
+    assert.ok(project, 'the bundle opened');
+
+    const tileset = project.read(IDS.tileset);
+    assert.equal(tileset.source, IDS.sheet, 'the cutting names the picture');
+    assert.equal(tileset.count, 4);
+
+    // BOTH MAPS NAME ONE CUTTING (ADR-0070 §1). Neither carries a source, a rectangle or a
+    // copy of anything: a cell is a number.
+    for (const name of ['Level', 'Sky']) {
+        assert.equal(it.find(name).getComponent('Tilemap').tileset, IDS.tileset, name);
+    }
+    assert.ok(it.find('Level').getComponent('Tilemap').tiles.every(Number.isInteger),
+        'and every cell is a small integer');
+});
+
+test('the bundle a creator exports carries the sheet its tiles come from', async () => {
+    const store = new MemoryResourceStore();
+    const project = new Project('Tiles', { store });
+    buildTileLevel(project, { registry: registerBuiltIns(new ComponentRegistry()) });
+
+    const bundle = bundleProject(project, store, { scene: IDS.scene });
+    const carried = new Set(Object.keys(bundle.payloads));
+
+    // NO SPECIAL PATH FOR A TILEMAP (ADR-0070 §10): the sheet travels because it is a
+    // resource the project declares, exactly like a Sprite's picture.
+    assert.ok(carried.has(IDS.sheet), 'the picture');
+    assert.ok(carried.has(IDS.tileset), 'the cutting');
+    assert.ok(carried.has(IDS.scene), 'and the level');
+    assert.equal(bundle.payloads[IDS.sheet].startsWith('data:image/png;base64,'), true);
+
+    // And it opens: the same three, read back through the door a game client uses.
+    const opened = openBundle(bundle);
+    assert.equal(opened.project.read(IDS.tileset).source, IDS.sheet);
+    assert.equal(opened.store.read(IDS.sheet), bundle.payloads[IDS.sheet]);
 });

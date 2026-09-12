@@ -7,6 +7,7 @@
 // A WebGL or WebGPU backend implements the same contract next to this one; nothing in
 // the model, the components or the scene renderer changes when it does.
 
+import { Matrix } from '../../core/mod.js';
 import { BlendMode } from './renderer.js';
 import { noImages } from './images.js';
 
@@ -20,6 +21,9 @@ export class Canvas2DRenderer {
     #context;
     #width;
     #height;
+
+    /** The transform in effect, kept so `visibleBounds()` can invert it. */
+    #transform = Matrix.identity();
     #images;
 
     /**
@@ -95,7 +99,41 @@ export class Canvas2DRenderer {
      * @param {object} matrix - A matrix with a, b, c, d, e, f components
      */
     setTransform(matrix) {
+        this.#transform = matrix;
         this.#context.setTransform(matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f);
+    }
+
+    /**
+     * The rectangle of the CURRENT space that the surface can show.
+     *
+     * THE FOUR CORNERS, NOT TWO. Under a rotated transform the screen's rectangle is a
+     * rotated quadrilateral in the space being drawn in, and its axis-aligned bounds are the
+     * only honest answer a caller iterating rows and columns can use — conservative, never
+     * short (the same approximation ADR-0059 §3 accepts for a rotated collider).
+     *
+     * @returns {{minX: number, minY: number, maxX: number, maxY: number}|null} The bounds, or
+     *   null when the transform cannot be inverted and nothing can be said
+     */
+    visibleBounds() {
+        try {
+            const inverse = this.#transform.invert();
+            const corners = [
+                inverse.apply(0, 0),
+                inverse.apply(this.#width, 0),
+                inverse.apply(this.#width, this.#height),
+                inverse.apply(0, this.#height)
+            ];
+
+            return {
+                minX: Math.min(...corners.map(corner => corner.x)),
+                minY: Math.min(...corners.map(corner => corner.y)),
+                maxX: Math.max(...corners.map(corner => corner.x)),
+                maxY: Math.max(...corners.map(corner => corner.y))
+            };
+        } catch {
+            // A transform scaled to nothing shows nothing, and says so rather than guessing.
+            return null;
+        }
     }
 
     /**

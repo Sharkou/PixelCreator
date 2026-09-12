@@ -8,6 +8,7 @@ import { History } from '../history.js';
 import {
     RESOURCE_KINDS,
     createResourceOfKind,
+    cutIntoTileset,
     resourceKind,
     resourceMenuItems
 } from './commands.js';
@@ -226,4 +227,70 @@ test('creating a clip is TWO resources and still one undo', () => {
     history.undo();
     assert.equal(project.has(clip.id), false);
     assert.equal(project.resources().length, 1, 'the sheet is a resource of its own');
+});
+
+// --- a tileset, from the sheet it cuts ----------------------------------------------------
+
+test('a tileset is created from a sheet, and the grid is read off the file', async () => {
+    const project = new Project('Game');
+    const tileset = createResourceOfKind(project, 'tileset', {
+        file: { name: 'dungeon.png', type: 'image/png' },
+        payload: SHEET
+    });
+
+    assert.equal(tileset.kind, ResourceKind.TILESET);
+    assert.equal(tileset.name, 'dungeon.tileset', 'named after the picture');
+
+    const payload = await project.read(tileset.id);
+    // The sheet is 128 x 32 and the guess is sixteen-pixel cells: eight across, two down.
+    assert.equal(payload.tileWidth, 16);
+    assert.equal(payload.tileHeight, 16);
+    assert.equal(payload.columns, 8);
+    assert.equal(payload.count, 16);
+
+    const sheet = project.get(payload.source);
+    assert.equal(sheet.kind, ResourceKind.ASSET);
+    assert.equal(await project.read(sheet.id), SHEET, 'byte for byte, as it was chosen');
+});
+
+test('a sheet whose header says nothing still makes a tileset with one tile', async () => {
+    const project = new Project('Game');
+    const tileset = createResourceOfKind(project, 'tileset', {
+        file: { name: 'mystery.webp', type: 'image/webp' },
+        payload: 'data:image/webp;base64,UklGRhIAAABXRUJQVlA4TAYAAAAvAAAAAA=='
+    });
+
+    const payload = await project.read(tileset.id);
+    assert.deepEqual([payload.columns, payload.count], [1, 1], 'visibly wrong, and one row to fix');
+});
+
+test('the row asks for a picture, and refuses to invent one', () => {
+    assert.equal(resourceKind('tileset').pick.accept, 'image/*');
+    assert.equal(createResourceOfKind(new Project('Game'), 'tileset'), null);
+});
+
+test('a picture already in the project can be cut without importing it twice', async () => {
+    const project = new Project('Game');
+    const sheet = project.add(
+        { kind: ResourceKind.ASSET, name: 'dungeon.png', mime: 'image/png' },
+        SHEET
+    );
+    const before = project.resources().length;
+
+    const tileset = await cutIntoTileset(project, sheet.id);
+
+    assert.equal(tileset.kind, ResourceKind.TILESET);
+    assert.equal(tileset.name, 'dungeon.tileset');
+    assert.equal((await project.read(tileset.id)).source, sheet.id, 'the picture that is already here');
+    assert.equal(project.resources().length, before + 1, 'one new resource, not two');
+});
+
+test('only a picture can be cut', async () => {
+    const project = new Project('Game');
+    const scene = project.add({ kind: ResourceKind.SCENE, name: 'Level.scene' }, { objects: [] });
+    const sound = project.add({ kind: ResourceKind.ASSET, name: 'hit.wav', mime: 'audio/wav' }, 'data:audio/wav,');
+
+    assert.equal(await cutIntoTileset(project, scene.id), null);
+    assert.equal(await cutIntoTileset(project, sound.id), null);
+    assert.equal(await cutIntoTileset(project, 'res_nothing'), null);
 });

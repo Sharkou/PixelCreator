@@ -173,6 +173,7 @@ export const KIND_LABELS = {
     [ResourceKind.GRAPH]: 'New Graph',
     [ResourceKind.PREFAB]: 'New Prefab',
     [ResourceKind.ANIMATION]: 'New Animation',
+    [ResourceKind.TILESET]: 'New Tileset',
     [ResourceKind.ASSET]: 'New Asset'
 };
 

@@ -7,15 +7,18 @@
 // made the physics import the renderer's tree to find out where the floor is, which is the
 // dependency this move exists to avoid.
 //
-// Kept deliberately simple: tiles are palette indices, not images, because a tileset is
-// a resource concern and resources are not part of this step. What matters here is the
-// signature.
+// A CELL HOLDS A SMALL NUMBER AND NOTHING ELSE (ADR-0070 §1). `0` is empty and `n` is the
+// nth tile of the `Tileset` this map names — so the cutting of the sheet lives in one
+// Resource, a forty-thousand-cell level is forty thousand small integers, and the collider
+// beside this file reads them without knowing a tileset exists (ADR-0068 §3).
 //
 // Legacy's Tilemap declared `draw(ctx, camera)`, while `Object.draw()` called
 // `draw(this)`. Attached to an object it therefore received the object where it
 // expected a context and undefined where it expected a camera, threw a TypeError, and
 // the per-component try/catch swallowed it — every frame, silently. The corrected
 // signature is the same as every other component's: `draw(self, renderer)`.
+
+import { tileRect, tilesetOf } from '../../core/tileset.js';
 
 export class Tilemap {
 
@@ -29,14 +32,12 @@ export class Tilemap {
         // is hundreds of cells; it declares no element shape because a list of hundreds of
         // rows is not how a grid is edited, and saying nothing keeps it read-only.
         tiles: { type: 'array', default: [] },
-        // A LIST OF COLOURS, WHICH IS WHAT IT HAS ALWAYS BEEN. Declaring the shape of an
-        // element is what lets the Inspector edit it (inspector/schema.js); nothing about
-        // the value changes, and `draw()` still reads `palette[tile]` exactly as before.
-        //
-        // An entry starts BLACK rather than empty: `draw()` skips a falsy colour, so an
-        // entry added and not yet chosen would be a row that draws nothing while its swatch
-        // shows black anyway. Starting where the swatch already reads is the honest state.
-        palette: { type: 'array', element: { type: 'color', default: '#000000' }, default: [] }
+        // WHAT A CELL'S NUMBER MEANS (ADR-0070 §1). The cutting of the sheet is a Resource,
+        // so a map names it once instead of repeating a source and a rectangle per entry —
+        // and two maps of one dungeon are two names for one cutting rather than two copies
+        // of it. An `asset` reference would have been the picture; it is the CUTTING that a
+        // cell indexes into.
+        tileset: { type: 'resource', kind: 'tileset', default: null }
     };
 
     /**
@@ -44,10 +45,10 @@ export class Tilemap {
      * @param {number} [tileSize] - Size of one tile in local units
      * @param {number} [columns] - Grid width in tiles
      * @param {number} [rows] - Grid height in tiles
-     * @param {number[]} [tiles] - Palette index per cell, 0 meaning empty
-     * @param {string[]} [palette] - Colour per index, entry 0 unused
+     * @param {number[]} [tiles] - Tile index per cell, 0 meaning empty
+     * @param {string|null} [tileset] - ResourceId of the tileset its cells index into
      */
-    constructor(tileSize = 16, columns = 0, rows = 0, tiles = [], palette = []) {
+    constructor(tileSize = 16, columns = 0, rows = 0, tiles = [], tileset = null) {
         this.tileSize = tileSize;
         this.columns = columns;
         this.rows = rows;
@@ -58,7 +59,7 @@ export class Tilemap {
         // (ADR-0069 §5). Filling it once, here, costs one allocation and removes the
         // question from everywhere else.
         this.tiles = dense(tiles, columns * rows);
-        this.palette = palette;
+        this.tileset = tileset;
     }
 
     /**
@@ -143,22 +144,41 @@ export class Tilemap {
     }
 
     /**
-     * Draw the grid.
+     * Draw the cells that can be seen.
+     *
+     * ONLY WHAT IS ON SCREEN (ADR-0070 §6). The renderer says what part of this Object's own
+     * space its surface covers, and that becomes a range of rows and columns: a map of a
+     * million cells costs the six hundred a window shows. Without an answer — a backend that
+     * cannot say, a transform that cannot be inverted — the whole grid is walked, which is
+     * what it did before and is never wrong, only slow.
+     *
+     * A TILE THAT DOES NOT EXIST DRAWS NOTHING, and that is the contract for a map repainted
+     * with a smaller sheet: no substitution, no fallback frame, nothing (ADR-0070 §7). So is
+     * a sheet still decoding — `drawImage` answers nothing for a picture that has not
+     * arrived, and asks the cache for it exactly once (ADR-0062 §2).
+     *
      * @param {object} self - The owning object
      * @param {object} renderer - The renderer backend
+     * @param {object} [context] - What a component may reach while drawing: `{ resources }`
      */
-    draw(self, renderer) {
-        const size = this.tileSize;
+    draw(self, renderer, context) {
+        const tileset = tilesetOf(context?.resources?.get?.(this.tileset));
+        if (!tileset) return;
 
-        for (let row = 0; row < this.rows; row++) {
-            for (let column = 0; column < this.columns; column++) {
+        const size = this.tileSize;
+        if (!(size > 0)) return;
+
+        const window = visibleRange(this, renderer);
+
+        for (let row = window.fromRow; row <= window.toRow; row++) {
+            for (let column = window.fromColumn; column <= window.toColumn; column++) {
                 const tile = this.get(column, row);
                 if (tile === 0) continue;
 
-                const color = this.palette[tile];
-                if (!color) continue;
+                const clip = tileRect(tileset, tile);
+                if (!clip) continue;
 
-                renderer.fillRect(column * size, row * size, size, size, { color });
+                renderer.drawImage(tileset.source, column * size, row * size, size, size, { clip });
             }
         }
     }
@@ -194,4 +214,39 @@ function dense(tiles, length) {
         next[at] = source[at] ?? 0;
     }
     return next;
+}
+
+/**
+ * The range of cells worth walking, clamped to the grid.
+ *
+ * A FUNCTION, NOT A PRIVATE METHOD, AND THAT IS NOT A STYLE CHOICE. A Component reaches its
+ * owner through the Property System's reactive proxy (`core/properties/reactive.js`), and a
+ * private method called on a proxy throws `Receiver must be an instance of class Tilemap` —
+ * inside `draw()`, where the scene renderer catches it and the map simply never appears. No
+ * component may have private members for exactly this reason.
+ *
+ * @param {object} tilemap - The grid
+ * @param {object} renderer - The renderer backend
+ * @returns {{fromColumn: number, toColumn: number, fromRow: number, toRow: number}} The range
+ */
+function visibleRange(tilemap, renderer) {
+    const whole = {
+        fromColumn: 0,
+        toColumn: tilemap.columns - 1,
+        fromRow: 0,
+        toRow: tilemap.rows - 1
+    };
+
+    const bounds = renderer.visibleBounds?.() ?? null;
+    if (!bounds) return whole;
+
+    const size = tilemap.tileSize;
+    const clamp = (value, high) => globalThis.Math.max(0, globalThis.Math.min(high, value));
+
+    return {
+        fromColumn: clamp(globalThis.Math.floor(bounds.minX / size), whole.toColumn),
+        toColumn: clamp(globalThis.Math.ceil(bounds.maxX / size), whole.toColumn),
+        fromRow: clamp(globalThis.Math.floor(bounds.minY / size), whole.toRow),
+        toRow: clamp(globalThis.Math.ceil(bounds.maxY / size), whole.toRow)
+    };
 }

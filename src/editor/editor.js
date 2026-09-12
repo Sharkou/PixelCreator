@@ -30,7 +30,7 @@ import { componentCatalogue, registerBuiltIns } from './registry.js';
 import { addComponent, deleteObject } from './commands.js';
 import { Workspace } from './project/workspace.js';
 import { applyShortcut, shortcutFor } from './shortcuts.js';
-import { ResourceKind, loadComponentDefinitions } from '../project/mod.js';
+import { DEFINITION_KINDS, ResourceKind, loadComponentDefinitions } from '../project/mod.js';
 import { createDefinitions } from './project/definitions.js';
 import { createSession } from './project/session.js';
 import { createAutosave } from './project/autosave.js';
@@ -480,9 +480,11 @@ export async function start(mount = document.body, { library = null } = {}) {
     // sounds this project holds are read then, and the Runtime is handed two tables that
     // answer synchronously — never the store, which is asynchronous and which a step may
     // not wait for.
+    let surface = null;
     const session = createSession({
         project: workspace.project,
-        onError: ({ resource, error }) => console.warn('[session]', resource?.name ?? resource?.id, error)
+        onError: ({ resource, error }) => console.warn('[session]', resource?.name ?? resource?.id, error),
+        onImage: () => surface?.wake()
     });
 
     const viewport = el('px-viewport').bind({
@@ -496,6 +498,36 @@ export async function start(mount = document.body, { library = null } = {}) {
         images: session.images,
         audio: session.audio
     });
+    // A DEFINITION EDITED IS A DEFINITION THE SURFACE HAS TO SEE (ADR-0070 §5). The registry
+    // is resolved before a frame rather than read during one, so something has to say when it
+    // is stale — and a manifest operation is exactly that moment: a tileset created, a clip
+    // recut, a prefab replaced. `refresh()` fills the same registry the viewport already
+    // holds, so nothing is rebound; the surface is simply asked for another frame.
+    //
+    // ONLY WHEN A DEFINITION IS WHAT MOVED, and once per turn: a batch is many operations
+    // and one answer. A rename, a reorder or the revision of a save changes nothing a
+    // surface draws from.
+    surface = viewport;
+
+    // RESOLVED WHEN THE SHELL OPENS, NOT WHEN PLAY IS PRESSED (ADR-0070 §5). A Tilemap draws
+    // its tiles in EDIT mode and the picker shows them before anything runs, so the registry
+    // has to hold what the project declares from the first frame — the same argument
+    // ADR-0062 §2 made for pictures reaching the surface outside Play.
+    globalThis.Promise.resolve().then(async () => {
+        await session.refresh();
+        viewport.wake();
+    });
+
+    let pending = null;
+    workspace.project.operations.on('operation', operation => {
+        if (pending || !touchesDefinition(workspace.project, operation)) return;
+        pending = globalThis.Promise.resolve().then(async () => {
+            pending = null;
+            await session.refresh();
+            viewport.wake();
+        });
+    });
+
     const hierarchy = el('px-hierarchy').bind({ scene, selection, subject, viewport, workspace });
     const inspector = el('px-inspector').bind({ scene, selection, subject, registry: components, workspace, definitions });
     const project = el('px-project').bind({ workspace, scene, selection, subject });
@@ -1265,6 +1297,25 @@ function bindDragAndDrop({ shell, scene, subject, viewport, graph, workspace, hi
         }
         if (canDrop(payload, found.target).allowed) performDrop(payload, found.target, context());
     });
+}
+
+/**
+ * Whether an operation changed something a surface draws definitions from.
+ *
+ * A TILESET RECUT, A CLIP RETIMED, A PREFAB REPLACED — those reach the registry the viewport
+ * reads (ADR-0062 §1). A rename, a move, or the revision a save leaves behind do not, and
+ * refreshing on those would re-read every payload of the project for nothing.
+ *
+ * @param {object} project - The project
+ * @param {object} operation - What was announced on its pipeline
+ * @returns {boolean} True when the resolved definitions may be stale
+ */
+function touchesDefinition(project, operation) {
+    const id = operation?.target?.object ?? operation?.resource?.id ?? null;
+    if (!id) return false;
+
+    const kind = project.get(id)?.kind ?? operation?.resource?.kind ?? null;
+    return DEFINITION_KINDS.includes(kind);
 }
 
 /** Whether a point is inside an element's box. */

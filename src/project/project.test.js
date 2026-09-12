@@ -67,7 +67,7 @@ test('an unknown kind is refused', () => {
     assert.throws(() => createResource({ kind: 'document' }), /unknown resource kind/);
     assert.deepEqual(
         globalThis.Object.values(ResourceKind),
-        ['folder', 'scene', 'component', 'graph', 'prefab', 'animation', 'asset']
+        ['folder', 'scene', 'component', 'graph', 'prefab', 'animation', 'tileset', 'asset']
     );
 });
 
