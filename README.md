@@ -4,13 +4,12 @@
 
 **One limit, your imagination.**
 
-Pixel Creator is a 2D game editor that runs in your browser. Arrange objects in a scene,
-give them behaviour by drawing a graph, press Play. Nothing to install, no code to write.
+Create 2D games in your browser — no code, no installation.
 
-### [▶ Launch Pixel Creator](https://editor.pixelcreator.io)
-
-[![CI](https://github.com/Sharkou/PixelCreator/actions/workflows/ci.yml/badge.svg)](https://github.com/Sharkou/PixelCreator/actions/workflows/ci.yml)
-[![Licence](https://img.shields.io/badge/licence-source--available-lightgrey?style=flat-square)](LICENSE.md)
+[![Editor](https://img.shields.io/badge/Editor-Open-ff7a45?style=flat-square)](https://editor.pixelcreator.io)
+[![Website](https://img.shields.io/badge/Website-pixelcreator.io-blue?style=flat-square)](https://pixelcreator.io)
+[![Discord](https://img.shields.io/badge/Discord-Join%20us-7289da?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/X8scDNX)
+[![Licence](https://img.shields.io/badge/Licence-Source--available-lightgrey?style=flat-square)](LICENSE.md)
 
 </div>
 
@@ -18,18 +17,17 @@ give them behaviour by drawing a graph, press Play. Nothing to install, no code 
 
 ---
 
-## Why Pixel Creator
+## ✨ What is Pixel Creator?
 
-- **Everything happens in the browser.** Open a tab and start building.
-- **Made for beginners.** Drag objects into the scene, set their properties, press Play.
-- **Objects and components.** One idea for the whole engine: an object is a thing in your
-  game, and a component gives it something to do.
-- **Visual scripting.** Draw behaviour as a graph instead of writing code — and a graph you
-  draw becomes a component you can reuse on anything.
-- **Sprites, tilemaps and prefabs.** Paint a level, build something once and place it a
-  hundred times, drop your own images and sounds straight in.
-- **See it as you build it.** Play runs your game inside the editor. Preview opens it in its
-  own window and follows your edits live.
+Pixel Creator is a browser-based 2D game engine that makes game creation accessible to
+everyone.
+
+- 🌐 **Web-first** — Open the editor and start creating
+- 🎯 **Beginner-friendly** — Build visually instead of writing code
+- 🧩 **Objects and components** — Compose your game from simple reusable pieces
+- 🔗 **Visual scripting** — Create behaviours by connecting nodes
+- 🗺️ **Scenes, sprites, tilemaps and prefabs** — Build complete 2D worlds
+- ▶️ **Play and Preview** — See your game as you build it
 
 ## Getting started
 
