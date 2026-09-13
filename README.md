@@ -4,8 +4,6 @@
 
 **Make 2D games in your browser. No installation, no code, no account.**
 
-### [▶ Launch Pixel Creator](https://editor.pixelcreator.io)
-
 [![Documentation](https://img.shields.io/badge/Docs-User%20%26%20Developer-2ea44f?style=flat-square)](docs/README.md)
 [![Status](https://img.shields.io/badge/Status-Alpha-orange?style=flat-square)](#project-status)
 [![Website](https://img.shields.io/badge/Website-pixelcreator.io-blue?style=flat-square)](https://pixelcreator.io)
