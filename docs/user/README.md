@@ -5,11 +5,6 @@ Everything you need to make a game with Pixel Creator. No programming experience
 **[▶ Launch Pixel Creator](https://editor.pixelcreator.io)** — it runs in your browser.
 Nothing to install, no account needed.
 
-> **Pixel Creator is an alpha.** The editor works and games run, but features are still
-> arriving and things move between releases. Where a panel is an empty shell, this guide
-> says so instead of pretending otherwise. Export your work if it matters to you
-> ([Preview and sharing](preview-and-sharing.md)).
-
 ## Start here
 
 1. **[Getting started](getting-started.md)** — open the editor, move an object, press Play.

@@ -76,16 +76,9 @@ authoritative on design intent.
 
 ## How to read this documentation
 
-- **The code is the source of truth.** Where a document and the implementation disagree,
-  the implementation wins and the document is the bug.
-- **Current is separated from historical.** `reference/`, `archive/`, `migration/` and
-  `audit/` describe the past; they are labelled as such and are never presented as the
-  current API.
-- **Nothing here is duplicated on purpose.** If a subject is specified in an architecture
-  document or an ADR, the pages above link to it instead of restating it.
-
-## Project status
-
-Pixel Creator v2 is **in active development** — an alpha. The editor works and games run,
-but interfaces still move between commits, and some panels are deliberately empty shells
-that say so rather than faking a feature.
+- **The code is the source of truth.** Where a document and the code disagree, the code is
+  right.
+- **Nothing is duplicated on purpose.** Where a subject is specified in an architecture
+  document or an ADR, the pages above link to it rather than restate it.
+- `reference/`, `archive/`, `migration/` and `audit/` describe earlier versions of Pixel
+  Creator and are labelled as such.

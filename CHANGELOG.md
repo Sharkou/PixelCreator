@@ -25,8 +25,7 @@ Pixel Creator v2 is a full rewrite of the engine and editor, replacing the Legac
 is kept read-only in `legacy/`. It is an **alpha**: the editor works and games run, interfaces
 still move between commits, and some panels are deliberate shells that say what is missing.
 
-What exists today is listed in the [README](README.md#what-it-can-do-today) and documented in
-the [user guide](docs/user/README.md). In brief: the editor shell and its panels, the
+What exists today is documented in the [user guide](docs/user/README.md). In brief: the editor shell and its panels, the
 Object/Component model with hierarchical transforms, 15 shipped component types, `.px` visual
 scripting with 77 nodes, custom components, resources (scenes, images, sounds, prefabs,
 animations, tilesets, folders), tilemap painting and collision, Canvas 2D rendering, physics,
