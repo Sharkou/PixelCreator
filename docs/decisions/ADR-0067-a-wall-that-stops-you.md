@@ -1,124 +1,122 @@
-# ADR-0067 — Un mur qui arrête vraiment
+# ADR-0067 — A wall that really stops you
 
-- **Statut :** **accepté** (2026-09-12)
-- **Décide :** ce qui bouge et ce qui bloque ; où le mouvement arrive dans un pas ; comment un corps est arrêté sans traverser ; ce que `grounded` veut dire ; ce qui reste hors du moteur
-- **Dépend de :** ADR-0002 (l'espace du parent), ADR-0004 (un Component, un `update`), ADR-0011 (pas fixe), ADR-0014 (l'input est un argument), ADR-0034 §3.1 (ordre canonique), ADR-0057 (déterminisme), ADR-0059 (se toucher est un fait de simulation), ADR-0064 (broad phase, et la preuve différentielle)
-- **Amende :** ADR-0059 §9 — la réponse physique arrive, dans sa forme la plus petite ; le `trigger` qu'ADR-0059 refusait devient `solid`, parce qu'il a enfin un sens observable
-- **Ne décide pas :** masse, restitution, frottement, rotation physique, joints, pentes, plateformes mobiles, dépénétration — voir §6
-
----
-
-## 1. Le trou
-
-Le moteur savait dire **que** deux choses se touchent. Il ne savait pas **les empêcher** de se
-traverser. Un créateur qui voulait un sol devait écrire lui-même, dans un `.px`, la comparaison
-de deux rectangles et la correction de sa propre position — c'est-à-dire écrire un solveur dans
-un langage de nœuds conçu pour ne pas en avoir besoin.
-
-Rien de ce qui existait n'était faux. Ce qui manquait était la troisième phrase :
-
-```
-1. A recouvre B                      collider.js        un fait géométrique
-2. Enter / Stay / Exit               collisions.js      un cycle de contact
-3. B empêche A d'avancer             move.js            une réponse physique   ← manquait
-```
+- **Status:** **accepted** (2026-09-12)
+- **Decides:** what moves and what blocks; where movement happens in a step; how a body is stopped without tunnelling; what `grounded` means; what stays out of the engine
+- **Depends on:** ADR-0002 (the parent's space), ADR-0004 (one Component, one `update`), ADR-0011 (fixed step), ADR-0014 (input is an argument), ADR-0034 §3.1 (canonical order), ADR-0057 (determinism), ADR-0059 (touching is a fact of simulation), ADR-0064 (broad phase, and the differential proof)
+- **Amends:** ADR-0059 §9 — the physical response arrives, in its smallest form; the `trigger` ADR-0059 refused becomes `solid`, because it finally has an observable meaning
+- **Does not decide:** mass, restitution, friction, physical rotation, joints, slopes, moving platforms, depenetration — see §6
 
 ---
 
-## 2. Trois mots, et un débutant peut montrer chacun du doigt
+## 1. The hole
+
+The engine knew how to say **that** two things are touching. It did not know how to **stop** them
+going through each other. A creator who wanted a floor had to write, themselves, in a `.px`, the
+comparison of two rectangles and the correction of their own position — that is, to write a solver
+in a node language designed so that you would not need one.
+
+Nothing that existed was wrong. What was missing was the third sentence:
 
 ```
-Player  ▸ Body                    cet objet bouge, et le monde peut l'arrêter
-Player  ▸ Box Collider ▸ Solid ✓  ce qui l'arrête, et ce qu'il arrête
-Coin    ▸ Box Collider ▸ Solid ✗  ne bloque rien, et signale quand même le contact
+1. A overlaps B                      collider.js        a geometric fact
+2. Enter / Stay / Exit               collisions.js      a contact cycle
+3. B stops A moving forward          move.js            a physical response   ← missing
 ```
 
-C'est **tout** le modèle. Pas de `RigidBody`, pas de `CharacterController`, pas de `PhysicsMaterial`,
-pas de `layer mask`. Un créateur n'apprend pas un vocabulaire de moteur physique ; il coche une
-case et ajoute un Component.
+---
 
-| Décision | Raison |
+## 2. Three words, and a beginner can point at each one
+
+```
+Player  ▸ Body                    this object moves, and the world can stop it
+Player  ▸ Box Collider ▸ Solid ✓  what stops it, and what it stops
+Coin    ▸ Box Collider ▸ Solid ✗  blocks nothing, and still reports the contact
+```
+
+That is the **whole** model. No `RigidBody`, no `CharacterController`, no `PhysicsMaterial`, no
+`layer mask`. A creator does not learn a physics-engine vocabulary; they tick a box and add a
+Component.
+
+| Decision | Reason |
 |---|---|
-| **`Body` ne porte aucune vitesse** | `Velocity` la porte déjà — dans l'Inspector, dans le schéma, dans `Get Property` et dans toutes les scènes déjà sauvegardées. Deux paires de nombres seraient deux réponses à une question, et celle que le créateur voit serait la mauvaise une fois sur deux |
-| **`Body` sans `Velocity` ne bouge pas** | Il n'y a nulle part où accumuler une vitesse. C'est la famille qu'`SpriteAnimator` sans `Sprite` a déjà (ADR-0062 §4) : un Component qui écrit dans un autre ne s'invente pas de second foyer |
-| **`gravity` est sur le corps, et vaut 0 par défaut** | Un jeu vu de dessus est aussi courant qu'un platformer, et ce moteur ne fait jamais ce qu'on ne lui a pas demandé — la doctrine que `Velocity` énonce depuis le premier jour. Une gravité de monde serait un réglage global que personne n'a conçu, et interdirait l'ennemi volant |
-| **`solid` est vrai par défaut** | Une boîte qu'un créateur dessine autour d'une caisse **est** une caisse. Le débutant qui veut un mur ne tape rien ; celui qui veut une pièce à ramasser décoche une case et garde tous ses `On Collision` |
-| **`grounded` est calculé, donc en lecture seule** | C'est la réponse à « est-ce que je suis posé sur quelque chose », et seule la passe qui l'a arrêté peut la connaître |
+| **`Body` carries no velocity** | `Velocity` already carries it — in the Inspector, in the schema, in `Get Property` and in every scene already saved. Two pairs of numbers would be two answers to one question, and the one the creator sees would be the wrong one half the time |
+| **A `Body` with no `Velocity` does not move** | There is nowhere to accumulate a velocity. It is the family `SpriteAnimator` without `Sprite` already belongs to (ADR-0062 §4): a Component that writes into another does not invent a second home for itself |
+| **`gravity` is on the body, and defaults to 0** | A top-down game is as common as a platformer, and this engine never does what it was not asked to — the doctrine `Velocity` has stated since day one. A world gravity would be a global setting nobody designed, and would rule out the flying enemy |
+| **`solid` is true by default** | A box a creator draws around a crate **is** a crate. The beginner who wants a wall types nothing; the one who wants a pickup unticks a box and keeps all their `On Collision`s |
+| **`grounded` is computed, therefore read-only** | It is the answer to "am I standing on something", and only the pass that stopped you can know it |
 
 ---
 
-## 3. Trois idées, trois fichiers, une seule géométrie
+## 3. Three ideas, three files, one geometry
 
 ```
-broad-phase.js   quelles paires valent la peine d'être testées
-collisions.js    lesquelles se recouvrent, et laquelle vient de commencer ou de finir
-move.js          quel mouvement a le droit d'avoir lieu
+broad-phase.js   which pairs are worth testing
+collisions.js    which ones overlap, and which has just started or finished
+move.js          which movement is allowed to happen
        ╲              │              ╱
-        collidersOf(scene)   — une marche, trois lecteurs
+        collidersOf(scene)   — one walk, three readers
 ```
 
-`collidersOf()` est la seule chose partagée : la même liste, dans le même ordre canonique, avec
-les mêmes règles sur ce qui est éteint. Une seconde marche qui aurait dérivé de celle-là serait
-**deux réponses différentes à « qu'y a-t-il dans cette scène »**.
+`collidersOf()` is the only shared thing: the same list, in the same canonical order, with the same
+rules about what is switched off. A second walk derived from that one would be **two different
+answers to "what is in this scene"**.
 
-**`Is Overlapping` répond toujours à une question de géométrie**, jamais à « une résolution
-a-t-elle eu lieu ». Et `Enter` / `Stay` / `Exit` sont exactement ce qu'ils étaient : un test
-différentiel l'aurait dit s'ils avaient bougé.
+**`Is Overlapping` still answers a question of geometry**, never "did a resolution happen". And
+`Enter` / `Stay` / `Exit` are exactly what they were: a differential test would have said so if
+they had moved.
 
-**Conséquence assumée : se poser sur le sol ne lève aucun `On Collision`.** Un corps arrêté par
-le sol finit **collé** à lui — ils partagent une arête et aucune aire — et « se toucher n'est pas
-se recouvrir » (ADR-0059 §3). C'est ce qui rend le modèle lisible : ce qui **bloque** se demande
-avec `grounded`, ce qui **détecte** se demande avec `On Collision`, et un collider ne fait jamais
-les deux à moitié.
+**An accepted consequence: landing on the floor raises no `On Collision`.** A body stopped by the
+floor ends up **flush** against it — they share an edge and no area — and "touching is not
+overlapping" (ADR-0059 §3). That is what makes the model readable: what **blocks** is asked with
+`grounded`, what **detects** is asked with `On Collision`, and a collider never half does both.
 
 ---
 
-## 4. L'ordre d'un pas, et pourquoi le mouvement est en dernier
+## 4. A step's order, and why movement comes last
 
 ```
-1. Collisions.update(scene)     contre les Transforms que le pas précédent a laissés
-2. chaque Component, puis le graphe lié à son type, en ordre canonique
-3. moveBodies(scene, dt)        gravité → intégration → balayage → résolution → grounded
+1. Collisions.update(scene)     against the Transforms the previous step left
+2. every Component, then the graph bound to its type, in canonical order
+3. moveBodies(scene, dt)        gravity → integration → sweep → resolution → grounded
 4. input.commit()
 ```
 
-**Le mouvement est APRÈS les graphes, et c'est la décision principale de cet ADR.** Si un corps
-était déplacé pendant la marche des Components — ce que faisait `Velocity` — alors un graphe qui
-lit une touche et écrit une vitesse **plus loin dans la même marche** serait intégré au pas
-suivant : le personnage répondrait une frame en retard, pour une raison invisible à l'écran. Le
-test `'a speed written during the step moves the body in that same step'` et sa contre-épreuve
-mesurent exactement cet écart.
+**Movement is AFTER the graphs, and that is this ADR's main decision.** If a body were moved during
+the Component walk — which is what `Velocity` did — then a graph reading a key and writing a
+velocity **further along in the same walk** would be integrated on the next step: the character
+would respond one frame late, for a reason invisible on screen. The test
+`'a speed written during the step moves the body in that same step'` and its counter-test measure
+exactly that gap.
 
-**La détection reste au début**, contre les positions du pas précédent (ADR-0059 §4) : un
-`Destroy` dans un callback de collision ne peut toujours pas réécrire les événements que le pas
-avait déjà décidés.
+**Detection stays at the beginning**, against the previous step's positions (ADR-0059 §4): a
+`Destroy` in a collision callback still cannot rewrite the events the step had already decided.
 
-**`grounded` est écrit à l'étape 3 et lu à l'étape 2 du pas suivant.** Ce n'est pas un retard :
-« suis-je posé » ne peut pas être connu avant d'avoir bougé. Un saut déclenché à la frame N est
-intégré à la frame N — la touche et le mouvement sont dans le même pas.
+**`grounded` is written at stage 3 and read at stage 2 of the next step.** That is not a delay: "am
+I standing" cannot be known before having moved. A jump triggered on frame N is integrated on
+frame N — the key and the movement are in the same step.
 
-**Un balayage, un axe à la fois, X puis Y.** La distance autorisée est le plus petit **écart**
-jusqu'à un solide devant, jamais une position échantillonnée après le déplacement :
+**A sweep, one axis at a time, X then Y.** The allowed distance is the smallest **gap** to a solid
+ahead, never a position sampled after the move:
 
-- **rien ne traverse.** Mille unités en un pas contre un mur de quatre unités s'arrêtent au mur,
-  parce que l'écart vaut ce qu'il vaut quelle que soit l'épaisseur. Aucun sous-pas — un
-  sous-découpage ferait dépendre le résultat du nombre de sous-pas.
-- **ça glisse, sans que personne n'écrive une projection.** Seul l'axe bloqué est arrêté, et
-  seule sa vitesse est annulée. Pour une boîte alignée contre un mur aligné, « annuler la
-  composante normale, garder la tangentielle » **est** cela, en deux soustractions.
+- **nothing tunnels.** A thousand units in one step against a four-unit wall stop at the wall,
+  because the gap is what it is whatever the thickness. No substeps — subdividing would make the
+  result depend on the number of substeps.
+- **it slides, without anyone writing a projection.** Only the blocked axis is stopped, and only
+  its velocity is cancelled. For an axis-aligned box against an axis-aligned wall, "cancel the
+  normal component, keep the tangential one" **is** that, in two subtractions.
 
-**Les corps sont résolus en ordre canonique, l'un après l'autre**, chacun voyant où les
-précédents se sont arrêtés. C'est un contrôleur de personnage, pas un solveur simultané : aucun
-nombre d'itérations à régler, et l'alternative demanderait la masse et l'impulsion que §6 refuse.
+**Bodies are resolved in canonical order, one after another**, each seeing where the previous ones
+stopped. This is a character controller, not a simultaneous solver: no iteration count to tune, and
+the alternative would require the mass and impulse §6 refuses.
 
 ---
 
-## 5. L'Inspector et les graphes n'ont rien appris de neuf
+## 5. The Inspector and the graphs learned nothing new
 
-`gravity` est un nombre, `solid` une case, `grounded` un booléen en lecture seule : trois lignes
-que l'Inspector dessine avec les contrôles qu'il a déjà (ADR-0023). **Aucun nœud n'a été ajouté.**
+`gravity` is a number, `solid` a checkbox, `grounded` a read-only boolean: three rows the Inspector
+draws with the controls it already has (ADR-0023). **No node was added.**
 
-Le contrôle d'un platformer s'écrit avec ce qui existait :
+A platformer's controls are written with what already existed:
 
 ```
 On Key ArrowLeft  ▸ Down     → Set Property ▸ Velocity ▸ x = -190
@@ -127,109 +125,108 @@ On Key Space      ▸ Pressed  → Branch (Get Property ▸ Body ▸ grounded) �
                              → Set Property ▸ Velocity ▸ y = -560
 ```
 
-Un `Set Velocity` ou un `Jump` auraient doublé ce que le Property System fait déjà, et la
-question « pourquoi ce nœud-là plutôt que Set Property » n'aurait pas eu de réponse
-(ADR-0040 §1). Ce graphe est `tools/demo/platform.js`, joué par un test et par un navigateur.
+A `Set Velocity` or a `Jump` would have duplicated what the Property System already does, and the
+question "why that node rather than Set Property" would have had no answer (ADR-0040 §1). That
+graph is `tools/demo/platform.js`, played by a test and by a browser.
 
 ---
 
-## 6. Ce que cet ADR ne décide pas — et ne fait pas semblant d'avoir
+## 6. What this ADR does not decide — and does not pretend to have
 
-| Refusé | Pourquoi |
+| Refused | Why |
 |---|---|
-| **Masse, impulsion, restitution, frottement** | Chacun demande un solveur simultané et un jeu de réglages sans bonne valeur par défaut. Rien de tout cela n'est nécessaire pour tenir debout sur un sol |
-| **Rotation physique** | Les boîtes sont alignées sur les axes (ADR-0059 §3) ; une boîte qui tourne n'est plus une AABB, et tout le balayage est écrit pour des AABB |
-| **Joints, ressorts, contraintes** | Un moteur dans le moteur |
-| **Pentes et plateformes à sens unique** | Deux vraies fonctionnalités de platformer, et deux décisions produit : ce qu'est « monter une pente », et par où l'on traverse une plateforme. Le balayage par axe les accueillera ; il ne les invente pas |
-| **Plateformes mobiles qui portent un corps** | Demande de transmettre le mouvement d'un solide à ce qui est posé dessus — donc de savoir ce qui est posé, donc un contact conservé entre deux pas. C'est un état, et cette passe n'en a aucun |
-| **Dépénétration** | Un corps qui **commence** dans un mur n'est pas repoussé : l'axe concerné l'ignore, donc il peut en sortir. Le figer là serait pire que le recouvrement qu'on prétendait corriger |
-| **`grounded` sans gravité** | `grounded` est « mon déplacement vers le bas a été arrêté ce pas-ci ». Avec `gravity = 0` et une vitesse nulle, il n'y a pas de déplacement vers le bas, donc pas de « posé » — et un jeu vu de dessus n'en a pas l'usage |
-| **Un corps parenté à un objet tourné ou mis à l'échelle** | Le mouvement repasse par l'inverse de la matrice du parent, donc c'est correct ; mais la BOÎTE d'un collider tourné est son AABB englobante (ADR-0059 §3), et cette approximation-là est inchangée |
+| **Mass, impulse, restitution, friction** | Each one needs a simultaneous solver and a set of settings with no good default. None of it is needed to stand on a floor |
+| **Physical rotation** | Boxes are axis-aligned (ADR-0059 §3); a rotating box is no longer an AABB, and the whole sweep is written for AABBs |
+| **Joints, springs, constraints** | An engine inside the engine |
+| **Slopes and one-way platforms** | Two real platformer features, and two product decisions: what "walking up a slope" is, and which way you pass through a platform. The per-axis sweep will accommodate them; it does not invent them |
+| **Moving platforms that carry a body** | Requires transmitting a solid's movement to whatever is standing on it — so knowing what is standing on it, so a contact kept between two steps. That is state, and this pass has none |
+| **Depenetration** | A body that **starts** inside a wall is not pushed out: the axis concerned ignores it, so it can get out. Freezing it there would be worse than the overlap we claimed to be fixing |
+| **`grounded` without gravity** | `grounded` is "my downward movement was stopped this step". With `gravity = 0` and zero velocity there is no downward movement, so no "standing" — and a top-down game has no use for it |
+| **A body parented to a rotated or scaled object** | Movement goes back through the inverse of the parent's matrix, so it is correct; but the BOX of a rotated collider is its enclosing AABB (ADR-0059 §3), and that approximation is unchanged |
 
 ---
 
-## 7. Le broad phase est réutilisé, pas réécrit
+## 7. The broad phase is reused, not rewritten
 
-Une paire écartée par la grille ne doit **jamais** devenir du travail dans le solveur. La passe
-lui tend donc les mêmes entrées, dans le même ordre canonique, avec une seule différence : les
-bornes d'un corps sont **étirées jusqu'où il va**, pour que la grille n'écarte une paire que si
-le corps ne peut pas l'atteindre pendant ce pas.
+A pair the grid ruled out must **never** become work in the solver. The pass therefore hands it the
+same inputs, in the same canonical order, with one difference: a body's bounds are **stretched to
+where it is going**, so the grid only rules a pair out if the body cannot reach it during this step.
 
-`node tools/bench-physics.mjs` — la même passe, une fois avec les candidats de la grille, une
-fois contre tous les colliders :
+`node tools/bench-physics.mjs` — the same pass, once with the grid's candidates, once against every
+collider:
 
-| corps | solides | grille | tous les colliders | épargné |
+| bodies | solids | grid | every collider | saved |
 |---|---|---|---|---|
-| 1 | 200 | 0,886 ms | 1,305 ms | 1,5× |
-| 20 | 200 | 1,099 ms | 2,657 ms | 2,4× |
-| 100 | 500 | 3,702 ms | 16,634 ms | 4,5× |
-| 400 | 2000 | **10,390 ms** | 249,487 ms | **24×** |
+| 1 | 200 | 0.886 ms | 1.305 ms | 1.5× |
+| 20 | 200 | 1.099 ms | 2.657 ms | 2.4× |
+| 100 | 500 | 3.702 ms | 16.634 ms | 4.5× |
+| 400 | 2000 | **10.390 ms** | 249.487 ms | **24×** |
 
-La boucle est quadratique **sans** la grille ; avec elle, quatre cents corps dans deux mille
-solides tiennent dans dix millisecondes par pas.
+The loop is quadratic **without** the grid; with it, four hundred bodies in two thousand solids fit
+into ten milliseconds per step.
 
 ---
 
-## 8. Contre-épreuves
+## 8. Counter-tests
 
-| Vérifié | Où |
+| Verified | Where |
 |---|---|
-| Un corps tombe et s'arrête **exactement** sur le sol, vitesse verticale annulée | `runtime/physics/move.test.js` |
-| Cinq cents pas de repos, sans un millième d'unité de dérive | idem |
-| Marcher sur le sol n'est pas bloqué par le sol sur lequel on marche | idem |
-| Quitter le bord du sol rend `grounded` faux | idem |
-| Un mur arrête l'axe horizontal et laisse glisser le long de lui | idem |
-| Un plafond annule la montée, et n'est pas un sol | idem |
-| Un coin arrête les deux axes | idem |
-| Mille unités en un pas ne traversent pas un mur de quatre | idem |
-| Plusieurs solides candidats : le plus proche gagne | idem |
-| Un trigger est traversé **et** produit Enter / Stay / Exit | idem |
-| Un corps sans collider n'est arrêté par rien ; un collider sans corps n'est jamais déplacé | idem |
-| Un `Body` éteint rend le mouvement à `Velocity` | idem |
-| Une vitesse écrite pendant le pas déplace le corps **dans ce pas** | idem |
-| **Contre-épreuve** : sans `Body`, cette même écriture arrive un pas plus tard | idem |
-| Le saut est conditionné à `grounded`, et il n'y a pas de double saut | idem |
-| Un sol détruit en plein vol cesse d'arrêter quoi que ce soit | idem |
-| Scène vide, scène sans corps, pas de scène du tout | idem |
-| Headless : deux exécutions, un seul résultat | idem |
-| Deux Runtime sur deux scènes identiques : mêmes position, vitesse et `grounded` | idem |
-| L'ordre dans lequel les sols ont été ajoutés ne change pas où le corps atterrit | idem |
-| Aucun état physique ne survit à un changement de scène — la passe n'en a aucun | idem |
-| **Grille et parcours exhaustif : mêmes positions, vitesses et `grounded` sur cinq graines** | idem |
-| **Contre-épreuve** : un corps qui ignore ses bloqueurs finit ailleurs | idem |
-| Un platformer complet, joué par la porte d'un client de jeu | `tools/demo/platform.test.js` |
-| Marcher, s'arrêter, heurter les deux murs, sauter, atterrir sur une corniche | idem |
-| Aucune frame passée à l'intérieur d'un mur, sur quatre cents pas | idem |
-| La pièce est traversée sans ralentir, et se signale quand même | idem |
+| A body falls and stops **exactly** on the floor, vertical velocity cancelled | `runtime/physics/move.test.js` |
+| Five hundred steps at rest, without a thousandth of a unit of drift | the same |
+| Walking on the floor is not blocked by the floor being walked on | the same |
+| Leaving the edge of the floor makes `grounded` false | the same |
+| A wall stops the horizontal axis and lets you slide along it | the same |
+| A ceiling cancels the rise, and is not a floor | the same |
+| A corner stops both axes | the same |
+| A thousand units in one step do not go through a four-unit wall | the same |
+| Several candidate solids: the nearest one wins | the same |
+| A trigger is passed through **and** produces Enter / Stay / Exit | the same |
+| A body with no collider is stopped by nothing; a collider with no body is never moved | the same |
+| A `Body` switched off gives movement back to `Velocity` | the same |
+| A velocity written during the step moves the body **in that step** | the same |
+| **Counter-test**: without `Body`, that same write arrives one step later | the same |
+| The jump is conditioned on `grounded`, and there is no double jump | the same |
+| A floor destroyed mid-air stops stopping anything | the same |
+| Empty scene, scene with no bodies, no scene at all | the same |
+| Headless: two runs, one result | the same |
+| Two Runtimes on two identical scenes: same position, velocity and `grounded` | the same |
+| The order in which the floors were added does not change where the body lands | the same |
+| No physics state survives a scene change — the pass has none | the same |
+| **Grid and exhaustive walk: same positions, velocities and `grounded` across five seeds** | the same |
+| **Counter-test**: a body that ignores its blockers ends up somewhere else | the same |
+| A complete platformer, played through a game client's door | `tools/demo/platform.test.js` |
+| Walking, stopping, hitting both walls, jumping, landing on a ledge | the same |
+| Not a single frame spent inside a wall, over four hundred steps | the same |
+| The coin is passed through without slowing down, and still reports itself | the same |
 
 ---
 
-## 9. La démonstration
+## 9. The demo
 
-`tools/demo/platform.js` — un sol, deux murs, une corniche, une pièce qui ne bloque pas, un
-personnage. Construit **uniquement** avec l'API publique ; joué par `platform.test.js` sous Node
-et par `tools/demo/platform.html` dans un navigateur, vérifié là : le personnage tombe et se
-pose, marche, traverse la pièce (qui disparaît et écrit dans le HUD), saute, se cogne au-dessous
-de la corniche, et s'arrête net contre le mur de droite.
+`tools/demo/platform.js` — a floor, two walls, a ledge, a coin that does not block, a character.
+Built **only** with the public API; played by `platform.test.js` under Node and by
+`tools/demo/platform.html` in a browser, verified there: the character falls and lands, walks,
+passes through the coin (which disappears and writes to the HUD), jumps, bumps into the underside of
+the ledge, and stops dead against the right-hand wall.
 
-Il n'y a **pas un nœud de collision** dans son `.px`.
+There is **not one collision node** in its `.px`.
 
 ---
 
-## 10. Conséquences
+## 10. Consequences
 
-### Positives
+### Positive
 
-- Un platformer ou un jeu vu de dessus avec de vrais murs se construit sans écrire de solveur.
-- Le contrat de collision d'ADR-0059 est intact : les trois idées restent trois.
-- Rien ne traverse un mur, quelle que soit la vitesse, sans sous-pas ni dépendance au framerate.
-- Aucun nœud ajouté au catalogue : le Property System suffisait.
+- A platformer or a top-down game with real walls can be built without writing a solver.
+- ADR-0059's collision contract is intact: the three ideas stay three.
+- Nothing goes through a wall, at any speed, with no substeps and no dependency on frame rate.
+- No node added to the catalogue: the Property System was enough.
 
-### Négatives
+### Negative
 
-- Se poser sur un sol ne lève pas d'`On Collision` (§3) — c'est cohérent, et c'est à apprendre.
-- Deux corps qui se poussent sont résolus l'un après l'autre : le second voit le premier déjà
-  déplacé. C'est déterministe, ce n'est pas symétrique.
-- Pas de pentes, pas de plateformes mobiles, pas de dépénétration (§6).
-- `Velocity` a maintenant deux temporalités selon qu'un `Body` est là ou non ; c'est documenté
-  des deux côtés, et c'est le prix de ne pas avoir réécrit le mouvement de tout ce qui bouge.
+- Landing on a floor raises no `On Collision` (§3) — it is consistent, and it has to be learned.
+- Two bodies pushing each other are resolved one after the other: the second sees the first already
+  moved. That is deterministic, it is not symmetric.
+- No slopes, no moving platforms, no depenetration (§6).
+- `Velocity` now has two timings depending on whether a `Body` is there; it is documented on both
+  sides, and it is the price of not having rewritten the movement of everything that moves.

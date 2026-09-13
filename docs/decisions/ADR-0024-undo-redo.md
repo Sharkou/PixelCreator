@@ -1,154 +1,148 @@
-# ADR-0024 — Undo/Redo : `invert()` au Core, `History` à l'Editor, une pile par ressource
+# ADR-0024 — Undo/Redo: `invert()` in the Core, `History` in the Editor, one stack per resource
 
-- **Statut :** **accepté** (2026-08-14)
-- **Dépend de :** ADR-0008 (Operations, `previous`, `batch`), ADR-0011 (autorité), ADR-0019 (`invert()`), ADR-0020 (`ResourceId`)
+- **Status:** **accepted** (2026-08-14)
+- **Depends on:** ADR-0008 (Operations, `previous`, `batch`), ADR-0011 (authority), ADR-0019 (`invert()`), ADR-0020 (`ResourceId`)
 
-## Contexte observé
+## Observed context
 
-ADR-0008 posait que « undo/redo devient une conséquence de l'architecture, pas une
-fonctionnalité à part ». Rien n'était construit : `SET_PROPERTY` portait `previous`, et
-aucun code ne s'en servait.
+ADR-0008 established that "undo/redo becomes a consequence of the architecture, not a separate
+feature". Nothing had been built: `SET_PROPERTY` carried `previous`, and no code used it.
 
-## Décision
+## Decision
 
-### 1. Le partage de responsabilité
+### 1. The division of responsibility
 
-| Ce qui | Où | Pourquoi |
+| What | Where | Why |
 |---|---|---|
-| Une Operation porte de quoi s'inverser | **Core** — le format | c'était déjà le cas pour `SET_PROPERTY` |
-| `invert(operation) → operation` | **Core** | une seule place connaît la règle de chaque type ; pur, testable sous Node ; empêche l'Editor de re-dériver ces règles |
-| La pile, le groupement, le raccourci | **Editor** | annuler est un acte d'auteur. Un serveur headless qui rejoue n'annule rien |
+| An Operation carries what it needs to invert | **Core** — the format | already the case for `SET_PROPERTY` |
+| `invert(operation) → operation` | **Core** | one place knows each type's rule; pure, testable under Node; it stops the Editor from re-deriving those rules |
+| The stack, the grouping, the shortcut | **Editor** | undoing is an authoring act. A headless server replaying operations undoes nothing |
 
-C'est la même frontière qu'ADR-0017 trace pour la sélection.
+It is the same boundary ADR-0017 draws for selection.
 
-### 2. Quatre règles, et elles suffisent
+### 2. Four rules, and they are enough
 
-**1. On enregistre ce que `submit()` a émis** — donc jamais une opération reçue par
-`apply()`. L'anti-écho (ADR-0008, ADR-0019) protège l'historique **gratuitement** : une
-opération répliquée n'émet rien, donc elle n'atteint jamais l'écouteur.
+**1. We record what `submit()` emitted** — therefore never an operation received through
+`apply()`. The anti-echo (ADR-0008, ADR-0019) protects the history **for free**: a replicated
+operation emits nothing, so it never reaches the listener.
 
-**2. On n'enregistre que ses propres opérations** (`actor === moi`). Sans cette règle,
-`Ctrl Z` annulerait le travail d'un autre créateur. Aucune machinerie : le champ existe
-déjà. `actor: null` enregistre tout, ce qui est le cas mono-utilisateur, et le cas actuel.
+**2. We record only our own operations** (`actor === me`). Without that rule, `Ctrl Z` would undo
+another creator's work. No machinery: the field already exists. `actor: null` records everything,
+which is the single-user case, and the current case.
 
-**3. Annuler passe par `submit(invert(op))`, jamais par `apply()`.** Un undo est une
-**nouvelle intention** : elle doit être arbitrée — le serveur peut la refuser — et elle
-doit se répliquer. Un undo appliqué localement désynchroniserait le projet en silence.
+**3. Undoing goes through `submit(invert(op))`, never through `apply()`.** An undo is a **new
+intent**: it must be arbitrated — the server may refuse it — and it must replicate. An undo applied
+locally would silently desynchronize the project.
 
-> C'est le point le plus facile à se tromper de tout le système. Il est vérifié par un test
-> dédié : **un undo émet bien `'operation'`**, et ce que le pipeline annonce est une
-> mutation réelle et répliquable.
+> It is the easiest point in the whole system to get wrong. It is covered by a dedicated test: **an
+> undo does emit `'operation'`**, and what the pipeline announces is a real, replicable mutation.
 
-**4. Un `batch` est une entrée**, inversée dans l'ordre inverse. Un drag est un undo ; un
-dépôt de Hierarchy qui a aussi réécrit cinq valeurs de Transform (ADR-0022) aussi.
+**4. A `batch` is one entry**, inverted in reverse order. A drag is one undo; so is a Hierarchy
+drop that also rewrote five Transform values (ADR-0022).
 
-La pile de redo est la pile des opérations annulées, **vidée dès qu'une nouvelle opération
-est soumise** : elle décrivait un futur qui n'existe plus.
+The redo stack is the stack of undone operations, **cleared as soon as a new operation is
+submitted**: it described a future that no longer exists.
 
-Un undo refusé par l'autorité ne bascule rien : les deux piles restent intactes, parce
-qu'il n'y a rien à re-annuler.
+An undo refused by the authority flips nothing: both stacks stay intact, because there is nothing
+to re-undo.
 
-**Une entrée dont la cible a disparu n'est pas une entrée refusée** (amendé le 2026-09-12).
-Un `Destroy` retire un Object comme une primitive : aucune Operation ne l'enregistre, donc
-l'entrée qui l'avait créé désigne un identifiant qui ne se résoudra plus jamais. La garder
-fige la pile — `canUndo` reste vrai, chaque `Ctrl Z` suivant ne fait rien, et tout ce qui est
-dessous devient inatteignable. Elle est donc **écartée**, et la frappe poursuit jusqu'à la
-plus récente entrée qui, elle, peut être reprise. Les deux causes se distinguent à la
-réponse du pipeline : une décision d'autorité qui refuse peut être accordée plus tard, une
-cible absente ne revient pas.
+**An entry whose target has disappeared is not a refused entry** (amended 2026-09-12). A `Destroy`
+removes an Object as a primitive: no Operation records it, so the entry that created it designates
+an identifier that will never resolve again. Keeping it freezes the stack — `canUndo` stays true,
+every following `Ctrl Z` does nothing, and everything beneath becomes unreachable. It is therefore
+**discarded**, and the keystroke continues to the most recent entry that can actually be taken
+back. The two causes are told apart by the pipeline's answer: an authority decision that refuses
+may be granted later, an absent target does not come back.
 
-**Un geste abandonné ne coûte pas une entrée** (amendé le 2026-09-12). Un glissement écrit au
-fur et à mesure — c'est ce qui fait suivre l'objet — et reposer ce qu'il avait bougé s'écrit
-sous le **même `batch`**, donc la règle 4 laisse derrière elle une entrée qui ne fait rien.
-`Ctrl Z` s'y dépensait sans que rien ne bouge à l'écran. Le geste annonce le `batch` qu'il
-abandonne et l'Editor retire cette entrée (`History.forget()`), à trois conditions qui la
-gardent inoffensive :
+**An abandoned gesture does not cost an entry** (amended 2026-09-12). A drag writes as it goes —
+that is what makes the object follow — and putting back what it had moved is written under the
+**same `batch`**, so rule 4 leaves behind an entry that does nothing. `Ctrl Z` was spent on it with
+nothing moving on screen. The gesture announces the `batch` it abandons and the Editor removes that
+entry (`History.forget()`), under three conditions that keep it harmless:
 
-- seule **l'entrée du dessus** est retirée, et seulement si elle porte ce `batch`. Si une
-  opération étrangère s'est intercalée pendant le geste — un `Delete` ou un `Ctrl D` pressé
-  le bouton enfoncé — la partie du geste d'avant l'intrusion reste sur la pile : une
-  entrée qui ne change rien à l'écran, jamais une inversion fausse ;
-- **rien n'est muté** : retirer une entrée n'émet aucune Operation, donc la règle 3 tient ;
-- **la pile de redo n'y perd rien** : elle avait déjà été vidée par la première opération du
-  geste, avant qu'on sache qu'il serait abandonné.
+- only **the top entry** is removed, and only if it carries that `batch`. If a foreign operation
+  slipped in during the gesture — a `Delete` or a `Ctrl D` pressed with the button held — the part
+  of the gesture before the intrusion stays on the stack: an entry that changes nothing on screen,
+  never a wrong inversion;
+- **nothing is mutated**: removing an entry emits no Operation, so rule 3 holds;
+- **the redo stack loses nothing**: it had already been cleared by the gesture's first operation,
+  before anyone knew it would be abandoned.
 
-### 3. Aucun second chemin de mutation
+### 3. No second mutation path
 
-L'historique **ne mute jamais le modèle directement**. Il n'a qu'une action :
-`submit(invert(op))`. Il n'existe donc rien d'annulable qui ne soit pas répliquable, et
-aucune façon pour l'historique et le réseau d'être en désaccord sur ce qui s'est passé.
+The history **never mutates the model directly**. It has one action: `submit(invert(op))`. There is
+therefore nothing undoable that is not replicable, and no way for the history and the network to
+disagree about what happened.
 
-### 4. Une pile par ressource
+### 4. One stack per resource
 
-Une pile globale est l'erreur classique : `Ctrl Z` dans la fenêtre `Graph` annulerait une
-modification faite dans la scène.
+A global stack is the classic mistake: `Ctrl Z` in the `Graph` window would undo a change made in
+the scene.
 
-| Pile | Sur quel pipeline | Ce qu'elle annule |
+| Stack | On which pipeline | What it undoes |
 |---|---|---|
-| Project | pipeline Project | créer / supprimer / renommer une ressource |
-| Scene (une par scène ouverte) | pipeline de cette Scene | tout le modèle de scène |
-| Graph (une par graphe ouvert) | pipeline de ce graphe | l'édition du graphe, quand son modèle existera |
+| Project | the Project pipeline | creating / deleting / renaming a resource |
+| Scene (one per open scene) | that Scene's pipeline | the whole scene model |
+| Graph (one per open graph) | that graph's pipeline | graph editing, once its model exists |
 
-`Histories` les indexe par `ResourceId` (ADR-0020). Fermer un éditeur libère sa pile.
+`Histories` indexes them by `ResourceId` (ADR-0020). Closing an editor frees its stack.
 
-### 5. Ce qui n'est pas restauré, et doit être dit
+### 5. What is not restored, and must be said
 
-L'état d'exécution d'un graphe (la `WeakMap` de `Behaviors`) et les champs de travail d'un
-Component ne sont **pas** restaurés. Ce sont de l'état vivant, pas des données de projet ;
-**annuler ne remonte pas le temps de la simulation.** C'est la même frontière qu'entre une
-écriture directe et un `setProperty()` (ADR-0003), et il faut qu'elle soit énoncée plutôt
-que découverte.
+A graph's execution state (the `Behaviors` `WeakMap`) and a Component's working fields are **not**
+restored. They are live state, not project data; **undoing does not rewind the simulation.** It is
+the same boundary as between a direct write and a `setProperty()` (ADR-0003), and it needs to be
+stated rather than discovered.
 
-### 6. Ce que le format doit porter pour que cela marche
+### 6. What the format must carry for this to work
 
-Ces champs ne servent qu'à inverser, et ADR-0019 les nomme :
+These fields serve only to invert, and ADR-0019 names them:
 
-| Sans quoi | L'undo rendrait |
+| Without which | The undo would give back |
 |---|---|
-| `SET_PROPERTY.previous` | rien |
-| `REMOVE_OBJECT.subtree` | un objet dépouillé de ses enfants |
-| `REMOVE_OBJECT.index` | l'objet en fin de liste |
-| `REMOVE_COMPONENT.values` | un composant remis à ses défauts — le `42 → 1` mesuré en Phase 1 |
-| `REPARENT.previousParent` / `previousIndex` | un objet reparenté « quelque part » |
+| `SET_PROPERTY.previous` | nothing |
+| `REMOVE_OBJECT.subtree` | an object stripped of its children |
+| `REMOVE_OBJECT.index` | the object at the end of the list |
+| `REMOVE_COMPONENT.values` | a component reset to its defaults — the `42 → 1` measured in Phase 1 |
+| `REPARENT.previousParent` / `previousIndex` | an object reparented "somewhere" |
 
-## Ce que cet ADR ne décide pas
+## What this ADR does not decide
 
-**La portée d'undo d'une action qui touche deux ressources.** Créer un Component crée une
-`ComponentResource` **et** une `GraphResource` : c'est un `batch` du pipeline Project, donc
-une entrée de la pile Project — cohérent. Mais si le créateur édite ensuite le graphe,
-annule trois fois dans la fenêtre `Graph`, puis annule une fois dans le panneau Project, la
-création est annulée alors que des modifications de son graphe restent dans une pile qui
-vise une ressource disparue.
+**The undo scope of an action that touches two resources.** Creating a Component creates a
+`ComponentResource` **and** a `GraphResource`: that is a `batch` on the Project pipeline, so one
+entry in the Project stack — coherent. But if the creator then edits the graph, undoes three times
+in the `Graph` window, and then undoes once in the Project panel, the creation is undone while
+changes to its graph are still in a stack pointing at a resource that no longer exists.
 
-Trois traitements possibles — fermer un onglet vide sa pile ; supprimer une ressource
-invalide les entrées qui la visent ; interdire d'annuler une suppression de ressource
-depuis une autre pile. **Aucun n'est retenu.** C'est le seul point où inventer serait une
-faute, et il devient décidable quand la fenêtre `Graph` existe.
+Three possible treatments — closing a tab clears its stack; deleting a resource invalidates the
+entries targeting it; forbidding the undo of a resource deletion from another stack. **None is
+adopted.** It is the one point where inventing would be a mistake, and it becomes decidable once the
+`Graph` window exists.
 
-Ne sont pas décidés non plus : la profondeur de pile réelle (200 par défaut, arbitraire et
-sans conséquence), et l'entrée de menu Undo/Redo — seuls les raccourcis sont câblés.
+Also undecided: the real stack depth (200 by default, arbitrary and inconsequential), and the
+Undo/Redo menu entry — only the shortcuts are wired.
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Undo/redo est une conséquence du format, sans code de mutation dédié.
-- Un undo est observable, répliquable et arbitrable comme tout le reste.
-- `Ctrl Z` ne peut pas franchir une frontière de ressource ni annuler le travail d'un autre.
+- Undo/redo is a consequence of the format, with no dedicated mutation code.
+- An undo is observable, replicable and arbitrable like everything else.
+- `Ctrl Z` cannot cross a resource boundary nor undo someone else's work.
 
-### Négatives
+### Negative
 
-- Un undo peut être **refusé** par l'autorité. C'est correct, et c'est nouveau pour qui
-  attend d'un undo qu'il réussisse toujours.
-- Le module doit ignorer les opérations qu'il émet lui-même pendant qu'il rejoue, sans quoi
-  un undo deviendrait immédiatement son propre undo.
+- An undo can be **refused** by the authority. That is correct, and it is new to anyone who expects
+  an undo always to succeed.
+- The module has to ignore the operations it emits itself while replaying, otherwise an undo would
+  immediately become its own undo.
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **Annuler par `apply()`** | Désynchronise en silence : ni arbitrage, ni réplication. |
-| **Un instantané par entrée d'historique** | Perd l'intention, ne se réplique pas, et coûte une scène entière par frappe. |
-| **`invert()` dans l'Editor** | Une seconde copie des règles du format, invisible à un serveur qui rejoue. |
-| **Une pile globale** | `Ctrl Z` dans une fenêtre annulerait le travail fait dans une autre. |
-| **Restaurer aussi l'état d'exécution** | Annuler n'est pas rembobiner une simulation ; ce serait un second modèle de temps. |
+| **Undoing through `apply()`** | It desynchronizes silently: no arbitration, no replication. |
+| **A snapshot per history entry** | It loses the intent, does not replicate, and costs a whole scene per keystroke. |
+| **`invert()` in the Editor** | A second copy of the format's rules, invisible to a server replaying operations. |
+| **A global stack** | `Ctrl Z` in one window would undo work done in another. |
+| **Restoring the execution state too** | Undoing is not rewinding a simulation; it would be a second model of time. |

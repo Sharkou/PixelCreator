@@ -1,433 +1,405 @@
-# ADR-0061 — Un prefab est une Resource, résolue **avant** la simulation
+# ADR-0061 — A prefab is a Resource, resolved **before** the simulation
 
-- **Statut :** **accepté** (2026-09-11)
-- **Décide :** ce qu'un prefab **est** ; Resource ou Scene spéciale ; son format ; comment le
-  Runtime le résout synchroniquement ; qui le charge et quand ; les identités ; les
-  `objectref` internes ; les `objectref` externes ; l'instanciation ; la différence avec la
-  duplication d'un Object vivant ; l'absence volontaire de lien vivant prefab ↔ instance ; la
-  compatibilité avec `Spawn`
-- **Dépend de :** ADR-0010 (l'identité n'est jamais un nom), ADR-0011 (le serveur fait
-  autorité), ADR-0012 (isolation), ADR-0018 (l'ordre structurel est une donnée), ADR-0019
-  (Operations structurelles), ADR-0020 (Resource, `ResourceStore` **asynchrone**), ADR-0021
-  (identité d'une définition), ADR-0023 (le type dit ce qu'une valeur veut dire), ADR-0024
-  (undo/redo), ADR-0026 §6 (table de drag & drop) **et §7** (le prefab était reporté),
-  ADR-0031 §3 (listes), ADR-0034 §3.2/§3.4/§3.5 et invariant 5 (portée d'une référence, deux
-  familles d'échec, un nœud ne produit pas d'Operation), ADR-0056 (une copie est le modèle),
-  ADR-0057 §3 (les identités viennent de la simulation), ADR-0042 (le bundle est la frontière)
-- **Amende :** ADR-0026 §7 (« un prefab n'est pas un format, c'est une décision — **reporté** »)
-- **Ne décide pas :** les overrides, le revert, l'« apply to prefab », l'imbrication de
-  prefabs, un prefab dessiné dans le Project — voir §12
+- **Status:** **accepted** (2026-09-11)
+- **Decides:** what a prefab **is**; Resource or special Scene; its format; how the Runtime resolves it synchronously; who loads it and when; the identities; the internal `objectref`s; the external `objectref`s; instantiation; the difference from duplicating a live Object; the deliberate absence of a live prefab ↔ instance link; compatibility with `Spawn`
+- **Depends on:** ADR-0010 (an identity is never a name), ADR-0011 (the server is authoritative), ADR-0012 (isolation), ADR-0018 (structural order is data), ADR-0019 (structural Operations), ADR-0020 (Resource, an **asynchronous** `ResourceStore`), ADR-0021 (a definition's identity), ADR-0023 (the type says what a value means), ADR-0024 (undo/redo), ADR-0026 §6 (the drag-and-drop table) **and §7** (the prefab was deferred), ADR-0031 §3 (lists), ADR-0034 §3.2/§3.4/§3.5 and invariant 5 (the scope of a reference, two failure families, a node produces no Operation), ADR-0056 (a copy is the model), ADR-0057 §3 (identities come from the simulation), ADR-0042 (the bundle is the boundary)
+- **Amends:** ADR-0026 §7 ("a prefab is not a format, it is a decision — **deferred**")
+- **Does not decide:** overrides, revert, "apply to prefab", nested prefabs, a prefab rendered in the Project — see §12
 
 ---
 
-## 1. Problème
+## 1. Problem
 
-`Spawn` instancie un Object **déjà vivant dans la Scene** (ADR-0056). C'est la bonne décision
-et elle a un coût que chaque projet finit par payer :
+`Spawn` instantiates an Object **already alive in the Scene** (ADR-0056). It is the right decision and
+it has a cost every project ends up paying:
 
-> Pour tirer une balle, il faut garder **une balle cachée** dans chaque scène.
+> To fire a bullet, you have to keep **a hidden bullet** in every scene.
 
-Ce modèle caché est un Object comme les autres : il apparaît dans la Hierarchy, il est simulé
-à chaque pas, il collisionne, il est dessiné si on oublie de l'éteindre, il est sauvegardé dans
-la scène, et il faut le recréer à l'identique dans chaque scène qui en a besoin. Un créateur
-qui veut « un ennemi » obtient « un ennemi, plus un ennemi mort-vivant garé hors champ ».
+That hidden model is an Object like any other: it appears in the Hierarchy, it is simulated on every
+step, it collides, it is drawn if you forget to turn it off, it is saved into the scene, and it has to
+be recreated identically in every scene that needs it. A creator who wants "an enemy" gets "an enemy,
+plus an undead enemy parked off-screen".
 
-Ce qui manquait est un **modèle réutilisable qui n'appartient à aucune scène**.
+What was missing is a **reusable model that belongs to no scene**.
 
-ADR-0026 §7 avait refusé de l'inventer, et pour une bonne raison : ce qu'un prefab contient,
-comment une instance y reste liée, ce qu'un override veut dire. Cet ADR répond aux trois — la
-troisième par la négative, explicitement (§9).
+ADR-0026 §7 had refused to invent it, and for a good reason: what a prefab contains, how an instance
+stays linked to it, what an override means. This ADR answers all three — the third in the negative,
+explicitly (§9).
 
 ---
 
-## 2. Ce qu'un prefab **est**
+## 2. What a prefab **is**
 
-> **Un prefab est une `Resource` dont le payload est un sous-arbre sérialisé.**
+> **A prefab is a `Resource` whose payload is a serialized subtree.**
 
-`kind: 'prefab'`, extension `.prefab`, un `ResourceId` opaque, un payload lu par identité. Rien
-de plus. C'est une ligne de plus dans l'énumération d'ADR-0020, et le reste du système de
-Resources — renommer, ranger, déplacer, supprimer, répliquer, annuler, empaqueter — fonctionne
-sans une ligne de code de plus.
+`kind: 'prefab'`, extension `.prefab`, an opaque `ResourceId`, a payload read by identity. Nothing
+more. It is one more line in ADR-0020's enumeration, and the rest of the Resource system — renaming,
+filing, moving, deleting, replicating, undoing, bundling — works with not one more line of code.
 
-### Resource, et pas une Scene spéciale
+### A Resource, and not a special Scene
 
-Une Scene et un prefab **partagent une forme de payload** — les deux sont des Objects
-sérialisés — et ne partagent rien d'autre :
+A Scene and a prefab **share a payload shape** — both are serialized Objects — and share nothing else:
 
 | | Scene | Prefab |
 |---|---|---|
-| Ce que c'est | un endroit où l'on joue | une description qui sert à fabriquer un morceau |
-| Racines | plusieurs, ordonnées | **une** |
-| S'ouvre | dans un onglet, se joue | jamais : s'instancie |
-| Caméra, nom affiché au joueur | oui | non |
+| What it is | a place you play in | a description used to make a piece |
+| Roots | several, ordered | **one** |
+| Opens | in a tab, is played | never: it is instantiated |
+| A camera, a name shown to the player | yes | no |
 
-Un drapeau sur `kind: 'scene'` obligerait chaque lecteur à demander *lequel des deux* il tient,
-et le premier qui l'oublie ouvre un prefab comme un niveau. Deux kinds, deux icônes, deux
-phrases dans la table de drop : la distinction est visible partout, gratuitement.
+A flag on `kind: 'scene'` would force every reader to ask *which of the two* it is holding, and the
+first one to forget opens a prefab as a level. Two kinds, two icons, two sentences in the drop table:
+the distinction is visible everywhere, for free.
 
-### Ni une classe, ni un troisième Object
+### Neither a class, nor a third Object
 
-Il n'existe **pas** de troisième représentation d'un Object. Il y a l'Object vivant, et il y a
-les enregistrements que `serializeObject()` écrit déjà. Un prefab est un tableau des seconds —
-ce qui est exactement ce que `restoreSubtree()` sait remettre en place, ce qu'une suppression
-annulée rejoue, et ce qu'une duplication produit en chemin.
+There is **no** third representation of an Object. There is the live Object, and there are the records
+`serializeObject()` already writes. A prefab is an array of the latter — which is exactly what
+`restoreSubtree()` knows how to put back, what an undone deletion replays, and what a duplication
+produces along the way.
 
 ---
 
-## 3. Le format
+## 3. The format
 
 ```js
 {
     version: 1,
-    root: '<ObjectId de la racine, au moment où le modèle a été écrit>',
-    objects: [ /* serializeObject() de la racine, puis des descendants, en ordre canonique */ ]
+    root: '<ObjectId of the root, at the moment the model was written>',
+    objects: [ /* serializeObject() of the root, then of the descendants, in canonical order */ ]
 }
 ```
 
-- **`objects` est la sortie de `serializeObject()`, verbatim** : `id`, `name`, `tag`, `layer`,
-  `active`, `lock`, `owner`, `parent`, `children`, `components`. Rien n'est ajouté, rien n'est
-  renommé. Un champ ajouté à un Object arrive dans les prefabs le même jour, sans migration.
-- **`parent` de la racine est `null`** : un prefab n'a pas de scène où avoir un parent, et
-  garder le parent d'origine nommerait un Object absent du payload — précisément ce que §6
-  refuse. Tous les autres gardent leur lien, qui pointe à l'intérieur du sous-arbre par
-  construction.
-- **`root` est nommé, pas supposé premier.** Il l'est dans tout ce que ce dépôt écrit ; le
-  nommer est ce qui fait survivre un payload à un éditeur, une fusion ou une édition à la main
-  qui aurait réordonné la liste, pour le prix d'un `find`.
-- **`version` est refusée si elle est inconnue.** Comme un graphe (ADR-0027) et comme un bundle
-  (ADR-0042) : rien en dessous ne peut être cru dans une forme jamais lue. La réponse est
-  `null`, pas une exception — un prefab qu'on ne peut pas instancier est un **état du jeu**, et
-  le flux après un `Spawn Prefab` continue de toute façon (ADR-0034 §3.4).
+- **`objects` is `serializeObject()`'s output, verbatim**: `id`, `name`, `tag`, `layer`, `active`,
+  `lock`, `owner`, `parent`, `children`, `components`. Nothing is added, nothing is renamed. A field
+  added to an Object arrives in prefabs the same day, with no migration.
+- **The root's `parent` is `null`**: a prefab has no scene in which to have a parent, and keeping the
+  original parent would name an Object absent from the payload — precisely what §6 refuses. Every
+  other one keeps its link, which points inside the subtree by construction.
+- **`root` is named, not assumed to be first.** It is first in everything this repository writes;
+  naming it is what makes a payload survive an editor, a merge or a hand edit that reordered the list,
+  for the price of one `find`.
+- **`version` is refused if it is unknown.** Like a graph (ADR-0027) and like a bundle (ADR-0042):
+  nothing beneath it can be believed in a shape never read. The answer is `null`, not an exception —
+  a prefab you cannot instantiate is a **game state**, and the flow after a `Spawn Prefab` continues
+  anyway (ADR-0034 §3.4).
 
 ---
 
-## 4. La contrainte centrale : **résoudre avant, jamais pendant**
+## 4. The central constraint: **resolve before, never during**
 
-C'est la raison pour laquelle le prefab n'existait pas, et elle reste entièrement valide :
+It is the reason the prefab did not exist, and it remains entirely valid:
 
-> Une Resource se lit à travers un store **asynchrone** (ADR-0020 §4).
-> Un `Runtime.step()` **ne peut pas attendre**.
+> A Resource is read through an **asynchronous** store (ADR-0020 §4).
+> A `Runtime.step()` **cannot wait**.
 
-L'interprète n'est pas devenu `async` et ne le deviendra pas : un pas de simulation qui peut
-suspendre n'est plus un pas, la boucle de jeu ne peut plus le compter, et le serveur et le
-client cessent d'exécuter la même chose (ADR-0011). Rien dans `core/prefab.js` ne touche au
-stockage et rien n'y est asynchrone.
+The interpreter has not become `async` and will not: a simulation step that can suspend is no longer a
+step, the game loop can no longer count it, and the server and the client stop running the same thing
+(ADR-0011). Nothing in `core/prefab.js` touches storage and nothing in it is asynchronous.
 
-**La résolution a simplement changé de moment.**
+**The resolution simply moved to another moment.**
 
 ```
-Bullet.prefab                      une Resource : un sous-arbre sérialisé
+Bullet.prefab                      a Resource: a serialized subtree
      │
-     ▼   (asynchrone, AVANT la partie — project/prefabs.js)
+     ▼   (asynchronous, BEFORE the match — project/prefabs.js)
 project.read(id)
      │
      ▼
-PrefabRegistry.set(id, payload)    une Map en mémoire
+PrefabRegistry.set(id, payload)    an in-memory Map
      │
      ▼
-new Runtime(scene, { prefabs })    le Runtime reçoit une VALEUR, jamais un identifiant
+new Runtime(scene, { prefabs })    the Runtime receives a VALUE, never an identifier
      │
-     ▼   (synchrone, PENDANT le pas)
+     ▼   (synchronous, DURING the step)
 ctx.prefabs.get(id)  ->  instantiatePrefab(scene, definition)
 ```
 
-C'est exactement la forme que `loadComponentDefinitions()` a déjà pour un `.px` (ADR-0016,
-ADR-0020 §5) : la couche Project lit, le Core transforme, le Runtime reçoit un objet résolu.
-`behaviors.bind(type, graph)` prend un graphe **résolu** pour cette raison précise ; ici
-`prefabs` est un **registre résolu**, pour la même.
+It is exactly the shape `loadComponentDefinitions()` already has for a `.px` (ADR-0016, ADR-0020 §5):
+the Project layer reads, the Core transforms, the Runtime receives a resolved object.
+`behaviors.bind(type, graph)` takes a **resolved** graph for that precise reason; here `prefabs` is a
+**resolved registry**, for the same one.
 
-**Le Runtime ne demande jamais autre chose que `get(id)`.** Il n'a pas de `load`, pas de
-`fetch`, pas de promesse et pas de store. `runtime -> project` reste interdit et vérifié
-(`tools/layers/rules.js`).
+**The Runtime never asks for anything but `get(id)`.** It has no `load`, no `fetch`, no promise and no
+store. `runtime -> project` stays forbidden and checked (`tools/layers/rules.js`).
 
-**`PrefabRegistry` vit dans le Core**, parce que le nœud qui le lit est du Core et parce qu'il
-ne contient que des données. Ce n'est **pas un cache** : un cache décide quand se remplir, et
-celui-ci est rempli par qui possède le projet, jamais par lui-même — il n'y a donc aucune
-politique à s'y tromper.
+**`PrefabRegistry` lives in the Core**, because the node that reads it is Core code and because it
+holds nothing but data. It is **not a cache**: a cache decides when to fill itself, and this one is
+filled by whoever owns the project, never by itself — so there is no policy to get wrong.
 
-### Qui le remplit, et quand
+### Who fills it, and when
 
-| Application | Quand | Où |
+| Application | When | Where |
 |---|---|---|
-| **Preview / jeu publié** | à l'ouverture du bundle, avant la première image | `preview/client.js` → `loadPrefabs()` |
-| **Editor, bouton Play** | à l'appui, avant `transport.play()` | `editor/project/session.js` → `refresh()` |
-| **Serveur headless** | au chargement du projet | `loadPrefabs()`, le même appel |
+| **Preview / a published game** | when the bundle opens, before the first frame | `preview/client.js` → `loadPrefabs()` |
+| **Editor, the Play button** | on the press, before `transport.play()` | `editor/project/session.js` → `refresh()` |
+| **A headless server** | when the project loads | `loadPrefabs()`, the same call |
 
-`Transport.prepare()` est séparé de `Transport.play()` exprès : `play()` est la machine à
-états, elle est synchrone, et chacun de ses tests l'est (ADR-0029). Lire un projet est
-asynchrone. Le bouton attend la première avant d'appeler la seconde ; un appelant qui saute
-`prepare()` obtient une partie sans prefabs résolus, c'est-à-dire exactement ce qu'il avait
-avant.
+`Transport.prepare()` is separate from `Transport.play()` on purpose: `play()` is the state machine, it
+is synchronous, and each of its tests is (ADR-0029). Reading a project is asynchronous. The button
+awaits the first before calling the second; a caller that skips `prepare()` gets a match with no
+resolved prefabs, which is exactly what it had before.
 
-La session de l'Editor relit **par `revision`** (ADR-0020 §7) : ce qui n'a pas bougé n'est pas
-relu, ce qui a été supprimé est oublié — sinon un jeu continuerait de spawner un prefab que le
-Project panel ne montre plus.
+The Editor's session re-reads **by `revision`** (ADR-0020 §7): what has not moved is not re-read, what
+has been deleted is forgotten — otherwise a game would keep spawning a prefab the Project panel no
+longer shows.
 
 ---
 
-## 5. Instanciation : une seule machinerie, deux descriptions
+## 5. Instantiation: one machinery, two descriptions
 
-`duplicateObject()` et `instantiatePrefab()` diffèrent par **l'endroit d'où vient la
-description** et par rien d'autre. Les deux :
+`duplicateObject()` and `instantiatePrefab()` differ in **where the description comes from** and in
+nothing else. Both:
 
-1. tirent une identité neuve pour **tout le sous-arbre d'un coup**, avant de reconstruire quoi
-   que ce soit ;
-2. réécrivent `parent`, `children` et chaque `objectref` **interne** à travers cette table ;
-3. passent le résultat à `restoreSubtree()`.
+1. draw a fresh identity for **the whole subtree at once**, before rebuilding anything;
+2. rewrite `parent`, `children` and every **internal** `objectref` through that table;
+3. pass the result to `restoreSubtree()`.
 
-Cette machinerie est donc écrite **une fois**, dans `core/instantiate.js`, et les deux
-fonctions en sont des appelants. L'écrire deux fois est précisément comment les deux finiraient
-par ne plus être d'accord sur ce qu'est un `objectref`, le jour où un troisième appelant
-arrive.
+That machinery is therefore written **once**, in `core/instantiate.js`, and both functions are callers
+of it. Writing it twice is precisely how the two would end up disagreeing about what an `objectref` is,
+the day a third caller arrives.
 
-La table entière est tirée **avant** qu'un seul champ soit réécrit : un parent qui nomme un
-enfant, un enfant qui nomme son parent, deux frères qui se nomment et un cycle entre deux
-Components sont tous la même recherche dans une table déjà complète. Aucune passe ne peut
-atteindre une référence avant que sa cible ait une identité, parce qu'aucune identité n'est
-tirée pendant la passe.
+The whole table is drawn **before** a single field is rewritten: a parent naming a child, a child
+naming its parent, two siblings naming each other and a cycle between two Components are all the same
+lookup in a table that is already complete. No pass can reach a reference before its target has an
+identity, because no identity is drawn during the pass.
 
-**Qui bat les identités reste l'affaire de l'appelant** (ADR-0057 §3) : l'Editor tire du CSPRNG
-de la plateforme comme pour tout acte d'auteur, le Runtime passe sa propre source semée parce
-qu'un spawn est une **conséquence d'un pas** et qu'un serveur et un client doivent tomber
-d'accord sur ce qui a été créé.
+**Who mints the identities stays the caller's business** (ADR-0057 §3): the Editor draws from the
+platform's CSPRNG as for any authoring act, the Runtime passes its own seeded source because a spawn
+is a **consequence of a step** and a server and a client have to agree about what was created.
 
-### `freshRecords()` : deux fins, un remappage
+### `freshRecords()`: two endings, one remapping
 
-Le remappage est séparé de l'écriture, parce que les deux appelants ne veulent pas la même fin :
+The remapping is separate from the writing, because the two callers do not want the same ending:
 
-| Appelant | Fin | Pourquoi |
+| Caller | Ending | Why |
 |---|---|---|
-| Runtime (`Spawn`, `Spawn Prefab`) | écrit **directement** dans la Scene | un spawn est une **sortie de simulation** et ne produit aucune Operation (ADR-0034 invariant 5) |
-| Editor (poser un prefab) | soumet un **`ADD_OBJECT`** portant les mêmes enregistrements | poser est une **intention d'auteur** : réplicable et annulable (ADR-0019, ADR-0024) |
+| Runtime (`Spawn`, `Spawn Prefab`) | writes **directly** into the Scene | a spawn is a **simulation output** and produces no Operation (ADR-0034 invariant 5) |
+| Editor (placing a prefab) | submits an **`ADD_OBJECT`** carrying the same records | placing is an **authoring intent**: replicable and undoable (ADR-0019, ADR-0024) |
 
-`ADD_OBJECT` porte déjà un sous-arbre entier — c'est ce qui fait qu'annuler une suppression
-remet les enfants — donc poser un prefab n'a besoin d'aucun type d'opération nouveau, et
-`Ctrl Z` reprend toute l'instance en une entrée.
+`ADD_OBJECT` already carries a whole subtree — that is what makes undoing a deletion put the children
+back — so placing a prefab needs no new operation type, and `Ctrl Z` takes the whole instance back in
+one entry.
 
 ---
 
-## 6. Les références : la règle est la même, posée des deux côtés
+## 6. References: the same rule, stated from both ends
 
-`duplicateObject()` (ADR-0056 §6) : *une identité est réécrite exactement quand elle est dans
-la table que cette duplication a tirée.* Dupliquer une tourelle dont le canon nomme sa propre
-base donne un canon qui nomme la base **de la copie** ; dupliquer une balle qui nomme le joueur
-laisse le joueur, parce que le joueur n'a pas été copié.
+`duplicateObject()` (ADR-0056 §6): *an identity is rewritten exactly when it is in the table this
+duplication drew.* Duplicating a turret whose gun names its own base gives a gun naming **the copy's**
+base; duplicating a bullet that names the player leaves the player, because the player was not copied.
 
-Un prefab pose la même question depuis l'autre bout, parce qu'il **quitte la scène** :
+A prefab asks the same question from the other end, because it **leaves the scene**:
 
-> **Une référence est conservée exactement quand le modèle contient sa cible.**
+> **A reference is kept exactly when the model contains its target.**
 
-| Cas | Au moment de créer le prefab | À l'instanciation |
+| Case | When the prefab is created | At instantiation |
 |---|---|---|
-| pointe **à l'intérieur** du sous-arbre | conservée telle quelle | réécrite vers l'instance |
-| pointe **à l'extérieur** | **vidée** (`null`), et signalée | rien à réécrire |
-| liste `array<objectref>` | garde ce qui pointe dedans, jette le reste | réécrite élément par élément |
-| `null`, absente, ou morte | inchangée | inchangée |
+| points **inside** the subtree | kept as it is | rewritten to the instance |
+| points **outside** | **cleared** (`null`), and reported | nothing to rewrite |
+| an `array<objectref>` list | keeps what points inside, drops the rest | rewritten element by element |
+| `null`, absent, or dead | unchanged | unchanged |
 
-### Pourquoi vidée, plutôt que refusée ou conservée
+### Why cleared, rather than refused or kept
 
-Trois réponses honnêtes existaient :
+Three honest answers existed:
 
-| Réponse | Pourquoi non / pourquoi oui |
+| Answer | Why not / why yes |
 |---|---|
-| **Refuser le prefab** | Rend inauthorable un arrangement banal — une tourelle qui vise le joueur. Un créateur ne peut pas « réparer » un modèle qui refuse d'exister |
-| **Conserver l'`ObjectId`** | Écrit une **dépendance vers une scène** dans une Resource de portée projet. Dans toute autre scène, l'identité ne résout rien — ou, bien pire, résout un **autre** Object. C'est exactement ce qu'ADR-0034 §3.5 interdit d'écrire dans un `.px`, une portée plus bas |
-| **Vider, et le dire** | ✔ La valeur devient `null`, qui est déjà ce que « ne pointe sur rien » veut dire dans le format (ADR-0023). Ce qui a été vidé est **retourné à l'appelant**, donc l'Editor le dit — un créateur qui perd un câblage en silence perd un après-midi |
+| **Refuse the prefab** | It makes a commonplace arrangement unauthorable — a turret aiming at the player. A creator cannot "repair" a model that refuses to exist |
+| **Keep the `ObjectId`** | It writes a **dependency on a scene** into a project-scoped Resource. In any other scene the identity resolves to nothing — or, far worse, resolves to **another** Object. That is exactly what ADR-0034 §3.5 forbids writing into a `.px`, one scope down |
+| **Clear it, and say so** | ✔ The value becomes `null`, which is already what "points at nothing" means in the format (ADR-0023). What was cleared is **returned to the caller**, so the Editor says so — a creator who silently loses a wiring loses an afternoon |
 
-Le contrat est donc explicite dans les deux sens : rien de fantôme, et rien de perdu sans
-phrase. `externalReferencesOf()` pose la même question **sans écrire**, pour qu'un panneau
-puisse prévenir avant d'agir.
+The contract is therefore explicit both ways: nothing phantom, and nothing lost without a sentence.
+`externalReferencesOf()` asks the same question **without writing**, so that a panel can warn before
+acting.
 
-**Et la règle est demandée au schéma, jamais à la valeur.** Ce qui est examiné est une
-propriété dont le type **déclaré** est `objectref`, ou une liste dont l'élément déclaré l'est.
-Une chaîne qui *ressemble* à un identifiant est une chaîne ; scanner les valeurs réécrirait le
-nom d'un joueur le jour où quelqu'un appellerait son niveau `abcdefghjkmnpq`.
+**And the rule is asked of the schema, never of the value.** What is examined is a property whose
+**declared** type is `objectref`, or a list whose declared element is. A string that *looks like* an
+identifier is a string; scanning values would rewrite a player's name the day someone called their
+level `abcdefghjkmnpq`.
 
-Un type que le registre ne résout pas ne déclare rien, et ses valeurs voyagent **verbatim** —
-la même réponse que `MissingComponent` donne partout ailleurs (ADR-0021).
+A type the registry does not resolve declares nothing, and its values travel **verbatim** — the same
+answer `MissingComponent` gives everywhere else (ADR-0021).
 
 ---
 
-## 7. Ce qui distingue un prefab d'une duplication
+## 7. What distinguishes a prefab from a duplication
 
 | | `Spawn` (duplication) | `Spawn Prefab` |
 |---|---|---|
-| Le modèle est | un Object **vivant de cette scène** | une **Resource** du projet |
-| Il doit exister | dans la scène, tout le temps | nulle part dans la scène |
-| Utilisable par | cette scène | toutes les scènes, et autant de fois qu'on veut |
-| Références externes | **conservées** (même scène) | **vidées** à la création (§6) |
-| La copie atterrit | à côté de son modèle, dernier de ses frères | à la racine, ou là où l'appelant dit |
-| Résolution | immédiate, c'est une poignée | table résolue avant la simulation |
+| The model is | an Object **alive in this scene** | a **Resource** of the project |
+| It has to exist | in the scene, all the time | nowhere in the scene |
+| Usable by | this scene | every scene, and as many times as you like |
+| External references | **kept** (the same scene) | **cleared** at creation (§6) |
+| The copy lands | beside its model, last among its siblings | at the root, or wherever the caller says |
+| Resolution | immediate, it is a handle | a table resolved before the simulation |
 
-Les deux produisent des Objects ordinaires, avec des identités neuves et les mêmes règles de
-remappage.
+Both produce ordinary Objects, with fresh identities and the same remapping rules.
 
 ---
 
-## 8. Instancier depuis l'Editor
+## 8. Instantiating from the Editor
 
-| Geste | Effet |
+| Gesture | Effect |
 |---|---|
-| Glisser une ligne de la **Hierarchy** vers **Project** | crée `NomDeLObjet.prefab` dans le dossier visé |
-| Clic droit sur une ligne → **Save as Prefab** | le même, au niveau supérieur du projet |
-| Glisser un `.prefab` de **Project** vers la **Scene** | pose une instance au point lâché |
-| Glisser un `.prefab` vers la **Hierarchy** | pose une instance à l'origine — une liste n'est pas un lieu |
+| Drag a **Hierarchy** row into **Project** | creates `ObjectName.prefab` in the target folder |
+| Right click a row → **Save as Prefab** | the same, at the project's top level |
+| Drag a `.prefab` from **Project** into the **Scene** | places an instance at the release point |
+| Drag a `.prefab` into the **Hierarchy** | places an instance at the origin — a list is not a place |
 
-Les quatre passent par **la même règle** de `dnd/rules.js` : la table d'ADR-0026 §6 gagne deux
-lignes, aucune seconde infrastructure de drag & drop n'existe, et l'entrée de menu appelle
-`performDrop()` plutôt que de réimplémenter le geste.
+All four go through **the same rule** in `dnd/rules.js`: ADR-0026 §6's table gains two lines, no second
+drag-and-drop infrastructure exists, and the menu entry calls `performDrop()` rather than
+reimplementing the gesture.
 
-Le nom initial est celui de l'Object, avec l'extension que son kind décide et le compteur
-d'unicité que toute Resource reçoit (ADR-0026 §4). **Pas de popup** : un créateur qui veut un
-autre nom renomme la tuile, ce qui est le geste qu'il connaît déjà.
+The initial name is the Object's, with the extension its kind decides and the uniqueness counter every
+Resource receives (ADR-0026 §4). **No popup**: a creator who wants another name renames the tile, which
+is the gesture they already know.
 
-Le prefab est ensuite une Resource ordinaire : grande icône propre (ni la vignette d'image, ni
-le cube de Component — un `.px` est une **capacité qu'un Object a**, un prefab est une
-**description d'Objects**), renommable, supprimable, déplaçable dans des dossiers, empaquetée
-dans le bundle.
-
----
-
-## 9. **Aucun lien vivant prefab ↔ instance** — et c'est une décision, pas un manque
-
-> **Un prefab est un modèle de création, pas un système d'héritage.**
-
-Instancier produit des **Objects ordinaires**. Après cela :
-
-- l'instance ne garde **aucune mémoire** d'où elle vient ;
-- rien dans une scène sauvegardée ne nomme le prefab ;
-- modifier le prefab ne touche **aucune** instance existante ;
-- il n'y a ni override, ni revert, ni « apply to prefab », ni instance « cassée » quand la
-  Resource est supprimée.
-
-C'est délibéré et ce n'est pas un raccourci. Le système d'overrides d'Unity est un bon produit
-et un **grand** produit ; ce qu'il exige d'abord est une décision sur ce qu'un override **est** :
-quelles propriétés peuvent diverger, ce qu'un enfant ajouté à une instance devient quand le
-modèle en ajoute un aussi, ce que veut dire réordonner des Components des deux côtés, comment
-tout cela se réplique et s'annule. Prendre cette décision **en passant**, pour livrer un
-prefab, serait exactement ce qu'ADR-0026 §11 range parmi « les décisions qu'une implémentation
-hâtive prend à la place de l'architecte ».
-
-La conséquence positive, et elle est grande : **une scène sauvegardée ne dépend d'aucune
-Resource**. Supprimer `Bullet.prefab` ne casse aucune scène ; il n'y a plus rien à spawner, et
-c'est tout.
-
-Le chemin de retour est ouvert. Le jour où un override est conçu, ce qu'il faut ajouter est un
-champ sur l'instance (« je viens de tel prefab ») et un delta ; le **format du prefab** ne
-bouge pas, parce qu'il est déjà le format d'un Object.
+The prefab is then an ordinary Resource: its own large icon (neither the image thumbnail nor the
+Component cube — a `.px` is a **capability an Object has**, a prefab is a **description of Objects**),
+renameable, deletable, movable between folders, bundled.
 
 ---
 
-## 10. `Spawn` reste `Spawn` — deux nœuds, pas une prise polymorphe
+## 9. **No live prefab ↔ instance link** — and that is a decision, not a gap
+
+> **A prefab is a creation model, not an inheritance system.**
+
+Instantiating produces **ordinary Objects**. After that:
+
+- the instance keeps **no memory** of where it came from;
+- nothing in a saved scene names the prefab;
+- modifying the prefab touches **no** existing instance;
+- there is no override, no revert, no "apply to prefab", and no "broken" instance when the Resource is
+  deleted.
+
+That is deliberate and it is not a shortcut. Unity's override system is a good product and a **big**
+one; what it requires first is a decision about what an override **is**: which properties may diverge,
+what a child added to an instance becomes when the model adds one too, what reordering Components on
+both sides means, how all of that replicates and undoes. Taking that decision **in passing**, in order
+to ship a prefab, would be exactly what ADR-0026 §11 files among "the decisions a hasty implementation
+takes in the architect's place".
+
+The positive consequence, and it is a large one: **a saved scene depends on no Resource**. Deleting
+`Bullet.prefab` breaks no scene; there is simply nothing left to spawn, and that is all.
+
+The way back is open. The day an override is designed, what has to be added is a field on the instance
+("I come from that prefab") and a delta; the **prefab's format** does not move, because it is already
+an Object's format.
+
+---
+
+## 10. `Spawn` stays `Spawn` — two nodes, not a polymorphic socket
 
 ```
-Spawn          Model   : un Object vivant (poignée, port `object`)
-Spawn Prefab   Prefab  : une Resource     (identité, port `resource`)
+Spawn          Model   : a live Object (a handle, an `object` port)
+Spawn Prefab   Prefab  : a Resource    (an identity, a `resource` port)
 ```
 
-**Pourquoi deux.** Un Object vivant voyage sur un fil comme une **poignée** (ADR-0034 §3.2) ;
-un prefab est un `ResourceId`, c'est-à-dire une **chaîne**. Un unique port `Model` devrait être
-typé `any`, et le nœud devrait alors **deviner**, à l'exécution, si la chaîne qu'on lui donne
-nomme un Object de cette scène ou une Resource de ce projet. C'est la seule chose que ce dépôt
-refuse absolument de faire faire à un Runtime.
+**Why two.** A live Object travels on a wire as a **handle** (ADR-0034 §3.2); a prefab is a
+`ResourceId`, that is, a **string**. A single `Model` port would have to be typed `any`, and the node
+would then have to **guess**, at run time, whether the string it was given names an Object of this
+scene or a Resource of this project. It is the one thing this repository absolutely refuses to make a
+Runtime do.
 
-**Et cela ne coûte aucune migration.** `Spawn` est intouché : tout graphe écrit avant cette
-tranche veut dire exactement ce qu'il voulait dire, et un créateur qui ne fait jamais de prefab
-ne rencontre jamais le second nœud. Une prise union, ou un `Spawn` qui change de forme, aurait
-acheté une ligne de menu au prix d'une migration de tous les `.px` existants.
+**And it costs no migration.** `Spawn` is untouched: every graph written before this slice means
+exactly what it meant, and a creator who never makes a prefab never meets the second node. A union
+socket, or a `Spawn` that changed shape, would have bought one menu line at the cost of migrating every
+existing `.px`.
 
-**Ni X ni Y sur le nouveau nœud non plus.** `Set Position` dit déjà « mets cet Object ici »
-(ADR-0045 §11.2), et la sortie `Spawned` le donne immédiatement au nœud suivant. Un port
-aurait une **valeur** par défaut, donc un `Spawn Prefab` non touché lirait `X 0  Y 0` et
-téléporterait chaque instance à l'origine.
+**No X or Y on the new node either.** `Set Position` already says "put this Object here" (ADR-0045
+§11.2), and the `Spawned` output hands it to the next node immediately. A port would have a default
+**value**, so an untouched `Spawn Prefab` would read `X 0  Y 0` and teleport every instance to the
+origin.
 
 ---
 
-## 11. Les refus que cet ADR lève, et ceux qu'il garde
+## 11. The refusals this ADR lifts, and those it keeps
 
-| Geste | Avant | Maintenant |
+| Gesture | Before | Now |
 |---|---|---|
-| Object → Project | *« Prefabs are not designed yet »* (ADR-0026 §7) | crée un prefab |
-| Prefab → Scene / Hierarchy | rien — aucune règle | pose une instance |
-| Prefab → liste de Components | rien | **refusé** : un prefab n'est pas une capacité qu'un Object a |
-| Prefab → propriété `resource` | selon la clause | accepté si la propriété déclare `kind: 'prefab'` — la clause générique d'ADR-0007, sans code nouveau |
+| Object → Project | *"Prefabs are not designed yet"* (ADR-0026 §7) | creates a prefab |
+| Prefab → Scene / Hierarchy | nothing — no rule | places an instance |
+| Prefab → the Component list | nothing | **refused**: a prefab is not a capability an Object has |
+| Prefab → a `resource` property | depending on the clause | accepted if the property declares `kind: 'prefab'` — ADR-0007's generic clause, with no new code |
 
 ---
 
-## 12. Ce que cet ADR ne décide pas
+## 12. What this ADR does not decide
 
-| Point ouvert | Pourquoi |
+| Open point | Why |
 |---|---|
-| **Les overrides, le revert, « apply to prefab »** | §9. Chacun demande d'abord une décision sur ce qu'un override *est* |
-| **Un prefab dans un prefab** | Rien ne l'interdit dans le format — un sous-arbre est un sous-arbre — mais « une instance imbriquée » n'a de sens qu'avec un lien vivant, qui n'existe pas |
-| **Éditer un prefab dans un onglet** | Un prefab s'édite aujourd'hui en posant une instance, en la modifiant et en la resauvant (`savePrefab`). Un éditeur dédié demande une scène de travail, une caméra et un cycle d'ouverture : c'est la fenêtre que `Workspace` saura ouvrir, pas un format |
-| **La variante / le preset** | Un prefab qui hérite d'un prefab est le même problème que l'override |
-| **L'import inter-projets** | ADR-0020 §1 le laisse ouvert pour toute Resource ; un prefab ne change rien à la question |
-| **Un gizmo ou un aperçu rendu dans le Project** | Demande de rendre une scène hors écran ; la grande icône de kind suffit et est honnête |
+| **Overrides, revert, "apply to prefab"** | §9. Each requires a decision first about what an override *is* |
+| **A prefab inside a prefab** | Nothing in the format forbids it — a subtree is a subtree — but "a nested instance" only means something with a live link, which does not exist |
+| **Editing a prefab in a tab** | A prefab is edited today by placing an instance, modifying it and saving it again (`savePrefab`). A dedicated editor needs a working scene, a camera and an opening cycle: that is the window `Workspace` will learn to open, not a format |
+| **Variants / presets** | A prefab inheriting from a prefab is the same problem as the override |
+| **Cross-project import** | ADR-0020 §1 leaves it open for every Resource; a prefab changes nothing about the question |
+| **A gizmo or a rendered preview in the Project** | It requires rendering a scene offscreen; the large kind icon is enough and honest |
 
 ---
 
-## 13. Contre-épreuves
+## 13. Counter-tests
 
-| Ce qui est vérifié | Où |
+| What is checked | Where |
 |---|---|
-| Un prefab est la sortie de `serializeObject()`, champ pour champ | `core/prefab.test.js` |
-| Components, valeurs, enfants, ordre, Transform local, tag, layer | idem |
-| `parent` de la racine est `null` ; un lien interne est intact | idem |
-| Une version inconnue, un payload vide, une racine absente : refusés | idem |
-| La racine est **nommée**, pas supposée première | idem |
-| Référence interne conservée ; externe vidée **et signalée** | idem |
-| Une liste garde le dedans, jette le dehors | idem |
-| Un type non résolu garde ses valeurs verbatim | idem |
-| Une instance ne porte **aucune** identité du modèle | idem |
-| Deux instances ne partagent **aucune** identité | idem |
-| L'`objectref` interne est remappé **par instance** | idem |
-| Modifier le modèle après coup ne touche pas l'instance | idem |
-| Prefab et duplication donnent le même résultat, à l'endroit d'atterrissage près | idem |
-| `.prefab`, renommage, dossiers, suppression : rien de spécifique | `project/prefabs.test.js` |
-| `loadPrefabs()` remplit un registre qui répond **sans attendre** | idem |
-| Un payload illisible est signalé et sauté | idem |
-| Une scène qui n'a **jamais** contenu le modèle spawne quand même | `runtime/prefab-spawn.test.js` |
-| `Spawned` alimente `Set Position` immédiatement (aucun `Spawn X/Y` nécessaire) | idem |
-| Trois spawns, trois instances indépendantes | idem |
-| Prefab non résolu, Runtime sans registre : rien, et aucune erreur | idem |
-| Même seed → mêmes identités ; seed différente → différentes | idem |
-| Bundle → `openBundle` → `loadPrefabs` → registre synchrone | idem |
-| Une scène pleine d'instances se sauve et se recharge **sans** le prefab | idem |
-| Le payload d'une scène ne contient ni `ResourceId` ni identité de modèle | idem |
-| `Spawn` copie toujours un Object vivant — aucun graphe existant ne change | idem |
-| Les deux nœuds ont deux types de port : rien n'est `any` | idem |
-| Hierarchy → Project crée le prefab ; Project → Scene pose l'instance | `editor/dnd/dnd.test.js` |
-| Poser = **une** entrée d'historique, et l'undo reprend tout le sous-arbre | idem |
-| Deux poses = deux noms qu'un créateur distingue | idem |
-| La règle prefab passe avant les règles génériques, et dit ce qu'elle fera | idem |
-| Un prefab sans payload ne pose rien et ne lève pas | idem |
-| Relire par `revision`, oublier une Resource supprimée | `editor/project/session.test.js` |
+| A prefab is `serializeObject()`'s output, field for field | `core/prefab.test.js` |
+| Components, values, children, order, local Transform, tag, layer | the same |
+| The root's `parent` is `null`; an internal link is intact | the same |
+| An unknown version, an empty payload, a missing root: refused | the same |
+| The root is **named**, not assumed first | the same |
+| An internal reference kept; an external one cleared **and reported** | the same |
+| A list keeps the inside and drops the outside | the same |
+| An unresolved type keeps its values verbatim | the same |
+| An instance carries **no** identity from the model | the same |
+| Two instances share **no** identity | the same |
+| The internal `objectref` is remapped **per instance** | the same |
+| Modifying the model afterwards does not touch the instance | the same |
+| A prefab and a duplication give the same result, bar the landing place | the same |
+| `.prefab`, renaming, folders, deletion: nothing specific | `project/prefabs.test.js` |
+| `loadPrefabs()` fills a registry that answers **without waiting** | the same |
+| An unreadable payload is reported and skipped | the same |
+| A scene that has **never** held the model still spawns | `runtime/prefab-spawn.test.js` |
+| `Spawned` feeds `Set Position` immediately (no `Spawn X/Y` needed) | the same |
+| Three spawns, three independent instances | the same |
+| An unresolved prefab, a Runtime with no registry: nothing, and no error | the same |
+| The same seed → the same identities; a different seed → different ones | the same |
+| Bundle → `openBundle` → `loadPrefabs` → a synchronous registry | the same |
+| A scene full of instances saves and reloads **without** the prefab | the same |
+| A scene's payload holds neither a `ResourceId` nor a model identity | the same |
+| `Spawn` still copies a live Object — no existing graph changes | the same |
+| The two nodes have two port types: nothing is `any` | the same |
+| Hierarchy → Project creates the prefab; Project → Scene places the instance | `editor/dnd/dnd.test.js` |
+| Placing = **one** history entry, and the undo takes back the whole subtree | the same |
+| Two placements = two names a creator can tell apart | the same |
+| The prefab rule comes before the generic rules, and says what it will do | the same |
+| A prefab with no payload places nothing and does not throw | the same |
+| Re-reading by `revision`, forgetting a deleted Resource | `editor/project/session.test.js` |
 
 ---
 
-## 14. Conséquences
+## 14. Consequences
 
-### Positives
+### Positive
 
-- **Plus aucun modèle caché.** Une scène contient ce qu'un joueur voit, et rien d'autre.
-- Un même prefab sert plusieurs scènes, plusieurs fois par scène, après sauvegarde et
-  rechargement, dans le Preview comme dans l'Editor.
-- La contrainte asynchrone d'ADR-0020 est **respectée sans être contournée** : l'interprète
-  reste synchrone, le Core ne voit toujours pas le stockage, `runtime -> project` reste interdit.
-- Le remappage d'identités existe en un seul exemplaire, partagé avec la duplication.
-- Une scène sauvegardée ne dépend d'aucune Resource : supprimer un prefab ne casse rien (§9).
-- ADR-0026 §7 est fermé, et la table de drop gagne deux lignes plutôt qu'un système.
+- **No more hidden models.** A scene holds what a player sees, and nothing else.
+- One prefab serves several scenes, several times per scene, after saving and reloading, in the Preview
+  as in the Editor.
+- ADR-0020's asynchronous constraint is **honoured rather than worked around**: the interpreter stays
+  synchronous, the Core still does not see storage, `runtime -> project` stays forbidden.
+- Identity remapping exists in a single copy, shared with duplication.
+- A saved scene depends on no Resource: deleting a prefab breaks nothing (§9).
+- ADR-0026 §7 is closed, and the drop table gains two lines rather than a system.
 
-### Négatives
+### Negative
 
-- `ResourceKind` gagne une valeur : tout code qui énumère les kinds a une ligne de plus (un
-  test le vérifiait et a été mis à jour).
-- Un prefab **perd** silencieusement ses références externes s'il en avait — atténué, pas
-  supprimé, par le rapport que `createPrefab()` renvoie et que l'Editor affiche.
-- Le bouton Play devient asynchrone (`prepare()` avant `play()`). La machine à états, elle,
-  reste synchrone.
-- Deux nœuds `Spawn` dans le menu : un créateur doit choisir. C'est le prix de ne jamais faire
-  deviner un Runtime, et §10 dit pourquoi il est le bon.
-- Pas de lien vivant : modifier un prefab après avoir posé dix instances demande de reposer les
-  dix. C'est le choix de §9, pas un oubli.
+- `ResourceKind` gains a value: any code enumerating kinds has one more line (a test checked it and was
+  updated).
+- A prefab silently **loses** its external references if it had any — mitigated, not removed, by the
+  report `createPrefab()` returns and the Editor displays.
+- The Play button becomes asynchronous (`prepare()` before `play()`). The state machine itself stays
+  synchronous.
+- Two `Spawn` nodes in the menu: a creator has to choose. That is the price of never making a Runtime
+  guess, and §10 says why it is the right one.
+- No live link: modifying a prefab after placing ten instances means replacing the ten. That is §9's
+  choice, not an oversight.

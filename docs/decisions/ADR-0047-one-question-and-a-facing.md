@@ -1,29 +1,28 @@
-# ADR-0047 — Une seule question, et une orientation
+# ADR-0047 — One question, and a facing
 
-- **Statut :** **accepté** (2026-08-29)
-- **Amendé par :** ADR-0048 (2026-08-31) — §2 : le refus du geste Component → graphe est confirmé par une mesure du geste concurrent plutôt que par un raisonnement sur la valeur morte.
-- **Amendé par :** ADR-0055 (2026-09-07) — §4 est **remplacée** : les quatre parts pour une part d'air produisaient un troisième bord droit qui ne s'alignait sur rien ; un contrôle seul reprend les deux cellules d'ADR-0046 §7.
-- **Amendé par :** ADR-0050 (2026-08-31) — §3 est **remplacée** : `flipX` / `flipY` disparaissent au profit de `rotationX` / `rotationY`, deux nombres en degrés. Le raisonnement de §3 (une orientation n'est pas une échelle négative) reste vrai ; ce qui était faux est d'y avoir répondu par un booléen.
-- **Amendé par :** ADR-0052 (2026-08-31) — §2 : le refus du geste Component → nœud est levé. La prémisse a changé — le picker a des niveaux, donc le lâcher peut ouvrir une question au lieu d'écrire une réponse.
-- **Décide :** combien de champs nomment une propriété dans un nœud ; ce qu'un Component lâché sur un graphe veut dire ; comment un objet 2D dit dans quel sens il regarde ; ce qu'un contrôle seul sur sa ligne mesure
-- **Dépend de :** ADR-0002 (espaces), ADR-0007 (schéma, `hidden`), ADR-0023 §2 (pas de type vecteur), ADR-0034 §3.3 (portée d'une référence), ADR-0039 (taxonomie), ADR-0040 (un nœud par intention), ADR-0043 (l'Object répond de lui-même), ADR-0045, ADR-0046
-- **Amende :** ADR-0045 §1 (le champ `Component` disparaît, la question reste), §2 (la sortie garde son nom, l'entrée `Value` aussi) ; ADR-0046 §3 (le geste Component → nœud est retiré), §7 (un contrôle seul ne prend plus toute la largeur)
-- **Ne décide pas :** `On Collision` et le modèle d'événement de collision ; `Random`, `Delay`, `Timer`, `Destroy`, `Spawn` ; le devenir d'une instance dont le `.px` est supprimé ; l'unité d'un port ; le format d'un identifiant de projet
+- **Status:** **accepted** (2026-08-29)
+- **Amended by:** ADR-0048 (2026-08-31) — §2: the refusal of the Component → graph gesture is confirmed by measuring the competing gesture rather than by reasoning about a dead value.
+- **Amended by:** ADR-0055 (2026-09-07) — §4 is **replaced**: four parts of control to one part of air produced a third right edge that lined up with nothing; a lone control takes back ADR-0046 §7's two cells.
+- **Amended by:** ADR-0050 (2026-08-31) — §3 is **replaced**: `flipX` / `flipY` disappear in favour of `rotationX` / `rotationY`, two numbers in degrees. §3's reasoning (a facing is not a negative scale) stays true; what was wrong was answering it with a boolean.
+- **Amended by:** ADR-0052 (2026-08-31) — §2: the refusal of the Component → node gesture is lifted. The premise changed — the picker has levels, so a release can open a question instead of writing an answer.
+- **Decides:** how many fields name a property in a node; what a Component released on a graph means; how a 2D object says which way it is facing; what a lone control on its row measures
+- **Depends on:** ADR-0002 (spaces), ADR-0007 (schema, `hidden`), ADR-0023 §2 (no vector type), ADR-0034 §3.3 (the scope of a reference), ADR-0039 (taxonomy), ADR-0040 (one node per intention), ADR-0043 (the Object answers for itself), ADR-0045, ADR-0046
+- **Amends:** ADR-0045 §1 (the `Component` field disappears, the question stays), §2 (the output keeps its name, and so does the `Value` input); ADR-0046 §3 (the Component → node gesture is withdrawn), §7 (a lone control no longer takes the full width)
+- **Does not decide:** `On Collision` and the collision event model; `Random`, `Delay`, `Timer`, `Destroy`, `Spawn`; the fate of an instance whose `.px` is deleted; a port's unit; the format of a project identifier
 
 ---
 
-## 1. Une propriété, c'est une question
+## 1. A property is one question
 
-ADR-0045 §1 avait séparé « quel Component » et « quelle propriété » en deux champs, pour une
-raison mesurée et vraie : la liste fusionnée contenait tous les Components du projet et
-n'était plus lisible. La séparation réglait la lisibilité et introduisait autre chose — **un
-créateur pense « la rotation de cet objet », pas « le Component Transform, et dedans,
-rotation »**. Le second est la décomposition du moteur portant les habits du créateur.
+ADR-0045 §1 had split "which Component" and "which property" into two fields, for a measured and true
+reason: the merged list held every Component in the project and was no longer readable. The split
+fixed readability and introduced something else — **a creator thinks "this object's rotation", not
+"the Transform Component, and inside it, rotation"**. The second is the engine's decomposition wearing
+the creator's clothes.
 
-> **Le nœud demande l'Object, puis la propriété. Le Component est stocké et jamais demandé.**
+> **The node asks for the Object, then for the property. The Component is stored and never asked for.**
 
-Ce qui règle vraiment la lisibilité n'est pas un second contrôle, c'est un picker qui
-**groupe** :
+What actually fixes readability is not a second control, it is a picker that **groups**:
 
 ```
   Property ▾
@@ -36,117 +35,110 @@ Ce qui règle vraiment la lisibilité n'est pas un second contrôle, c'est un pi
   │ › Sprite          4  › │
   │ › Transform       7  › │
   └────────────────────────┘
-            → entre, ← ressort
+            → enters, ← leaves
 ```
 
-C'est **le picker de nœuds, sans une ligne de plus** : `ui/menu.js` sait déjà ouvrir sur ses
-catégories (`browse`), y entrer avec `→`, en ressortir avec `←` en resélectionnant celle que
-l'on quitte (ADR-0046), et classer à travers tous les groupes dès qu'on tape — donc `rot`
-trouve `Rotation` en affichant `Transform` à côté, **sans que personne ait choisi un Component
-d'abord**. Il n'y avait rien à construire ; il y avait une liste à grouper.
+It is **the node picker, without a line more**: `ui/menu.js` already knows how to open on its
+categories (`browse`), enter with `→`, leave with `←` while reselecting the one you are leaving
+(ADR-0046), and rank across every group as soon as you type — so `rot` finds `Rotation` while showing
+`Transform` beside it, **without anyone having chosen a Component first**. There was nothing to build;
+there was a list to group.
 
-### 1.1 La valeur porte les deux moitiés, le modèle en garde deux
+### 1.1 The value carries both halves, the model keeps two
 
-Le picker rend `Transform/rotation` ; `paramWrites()` le redécoupe en les deux params que le
-modèle a toujours eus. **Un composite dans le picker est un encodage ; un composite dans le
-payload serait un format** — et le format reste celui d'ADR-0040 §2, donc tout graphe déjà
-écrit se relit.
+The picker returns `Transform/rotation`; `paramWrites()` splits it back into the two params the model
+has always had. **A composite in the picker is an encoding; a composite in the payload would be a
+format** — and the format stays ADR-0040 §2's, so every already-written graph reads back.
 
-Les deux écritures partagent le même lot : il n'existe aucun état où un nœud nomme la
-propriété d'un Component vers lequel il n'est pas pointé, et un seul `Ctrl Z` remet la paire.
+The two writes share the same batch: there is no state in which a node names the property of a
+Component it is not pointed at, and one `Ctrl Z` puts the pair back.
 
-Le Component est marqué `hidden` — le mot d'ADR-0007 pour un paramètre qui est du modèle et
-pas de l'interface. `resolvedProperty()` est intact.
+The Component is marked `hidden` — ADR-0007's word for a parameter that is model and not interface.
+`resolvedProperty()` is untouched.
 
-### 1.2 Le contrôle fermé dit le nom court
+### 1.2 The closed control says the short name
 
-`Transform ▸ Rotation` a été essayé et **mesuré** : il ne tient pas dans une carte de 176 px
-et se tronque en `Transform ▸ …`, ce qui cache la moitié qui identifie le choix et garde
-celle que le picker venait d'afficher en titre de groupe. Le groupe appartient à l'endroit où
-l'on choisit.
+`Transform ▸ Rotation` was tried and **measured**: it does not fit in a 176 px card and truncates to
+`Transform ▸ …`, which hides the half that identifies the choice and keeps the half the picker had just
+shown as a group heading. The group belongs where you choose.
 
-Même raisonnement pour le port `Value` de `Set Property`, qui affichait `flipY` — le nom du
-MODÈLE, à côté d'un picker lisant `Flip Y`. Le picker au-dessus dit déjà laquelle ; le port
-dit ce qu'il **est** (ADR-0045 §2, appliqué à l'entrée comme à la sortie).
+The same reasoning for `Set Property`'s `Value` port, which displayed `flipY` — the MODEL's name,
+beside a picker reading `Flip Y`. The picker above already says which; the port says what it **is**
+(ADR-0045 §2, applied to the input as to the output).
 
 ---
 
-## 2. Un Component ne se lâche pas sur un graphe
+## 2. A Component is not released on a graph
 
-Le geste a été refusé, rétabli, et il est refusé une troisième et dernière fois. La raison
-sous-jacente n'a jamais changé : **ce qu'un Component nomme est un GROUPE de propriétés, et
-un nœud en veut une**.
+The gesture was refused, restored, and it is refused a third and final time. The underlying reason
+never changed: **what a Component names is a GROUP of properties, and a node wants one**.
 
-Il a brièvement eu un champ à remplir (ADR-0046 §3). Maintenant qu'un seul picker pose toute
-la question, écrire `component` seul pose une valeur que le créateur ne voit pas et que son
-clic suivant écrase — la définition d'une valeur morte, que le refus doit empêcher plutôt que
-produire.
+It briefly had a field to fill (ADR-0046 §3). Now that one picker asks the whole question, writing
+`component` alone places a value the creator does not see and the next click overwrites — the
+definition of a dead value, which the refusal should prevent rather than produce.
 
-Le refus nomme les deux gestes qui marchent : glisser **la propriété**, ou ouvrir le picker,
-où ce Component est un groupe dans lequel entrer.
+The refusal names the two gestures that work: drag **the property**, or open the picker, where that
+Component is a group to enter.
 
 ---
 
-## 3. Une orientation n'est pas une rotation, et pas non plus une échelle négative
+## 3. A facing is not a rotation, and not a negative scale either
 
-Le moteur est strictement 2D et le reste : `rotation` demeure **un scalaire**, aucun troisième
-axe n'est inventé, `Matrix` est intacte. Ce qui manquait est le mot pour l'autre moitié de
-« dans quel sens ça regarde » : un personnage qui se retourne n'est pas tourné, il est
-**miroité**.
+The engine is strictly 2D and stays so: `rotation` remains **a scalar**, no third axis is invented,
+`Matrix` is untouched. What was missing is the word for the other half of "which way it is facing": a
+character turning around is not rotated, it is **mirrored**.
 
-> **`flipX` et `flipY`, deux booléens du Transform.**
+> **`flipX` and `flipY`, two Transform booleans.**
 
-**Pas `scaleX < 0`.** Réutiliser le signe ferait répondre à un seul nombre deux questions —
-quelle taille, et dans quel sens — de sorte qu'un créateur ayant mis l'échelle à 2 puis
-retourné l'objet devrait taper `-2` et se souvenir pourquoi. Les deux se composent : l'échelle
-dit la taille, le flip dit l'orientation, la matrice les multiplie.
+**Not `scaleX < 0`.** Reusing the sign would make one number answer two questions — what size, and
+which way round — so a creator who set the scale to 2 and then flipped the object would have to type
+`-2` and remember why. The two compose: scale says the size, flip says the facing, the matrix
+multiplies them.
 
-**Un seul endroit devient de la géométrie.** `localMatrix()` est la couture que le renderer,
-le picking et la physique traversent tous via `worldMatrix()`, donc le miroir est composé une
-fois et rien en aval n'apprend un mot nouveau. Un miroir EST une échelle négative dans la
-matrice ; ce que le modèle refuse, c'est de faire écrire cela au créateur.
+**One place becomes geometry.** `localMatrix()` is the seam the renderer, picking and physics all
+cross through `worldMatrix()`, so the mirror is composed once and nothing downstream learns a new
+word. A mirror IS a negative scale inside the matrix; what the model refuses is making the creator
+write it.
 
-| Ce que cela touche | Ce qui change |
+| What it touches | What changes |
 |---|---|
-| Transform | deux booléens de plus dans le schéma |
-| Renderer | **rien** — il lit `worldMatrix()` |
-| Sérialisation | deux booléens, comme toute propriété déclarée |
-| Inspector | deux interrupteurs, largeur courte, avec leur poignée |
-| Graph | `Transform ▸ Flip X` / `Flip Y` dans le picker |
-| Undo, réplication | `setProperty`, comme toute propriété |
-| Hiérarchie | un enfant est miroité avec son parent, par composition |
+| Transform | two more booleans in the schema |
+| Renderer | **nothing** — it reads `worldMatrix()` |
+| Serialization | two booleans, like any declared property |
+| Inspector | two switches, short width, with their handle |
+| Graph | `Transform ▸ Flip X` / `Flip Y` in the picker |
+| Undo, replication | `setProperty`, like any property |
+| Hierarchy | a child is mirrored with its parent, by composition |
 
-**Aucun nœud `Flip X` n'est ajouté.** `Set Property ▸ Flip X` le fait avec le nœud qui existe.
-Un nœud qui BASCULERAIT serait une autre intention — voir le rapport.
-
----
-
-## 4. Un contrôle seul sur sa ligne ne prend pas la ligne
-
-ADR-0046 §7 donnait toute la colonne à un contrôle large. C'était trop : un champ Sprite
-allait d'un bord à l'autre pendant que tous les nombres au-dessus s'arrêtaient à 40 %, donc le
-panneau avait deux marges droites et pas de colonne.
-
-> **Court : une cellule sur deux (≈ 40 %). Seul : quatre parts de contrôle pour une part
-> d'air (≈ 70 %).**
-
-Assez long pour un nom de fichier, assez court pour que le panneau garde une forme. **La
-poignée garde sa propre colonne**, la même dernière colonne où finissent les lignes
-appariées, donc toutes les poignées du panneau sont sur une verticale quelle que soit la
-ligne au-dessus.
+**No `Flip X` node is added.** `Set Property ▸ Flip X` does it with the node that exists. A node that
+TOGGLED would be another intention — see the report.
 
 ---
 
-## 5. Contrats observables
+## 4. A lone control on its row does not take the row
 
-| Contrat | Vérifiable par |
+ADR-0046 §7 gave the whole column to a wide control. That was too much: a Sprite field ran from edge
+to edge while every number above it stopped at 40 %, so the panel had two right margins and no
+column.
+
+> **Short: one cell out of two (≈ 40 %). Alone: four parts of control to one part of air (≈ 70 %).**
+
+Long enough for a file name, short enough for the panel to keep a shape. **The handle keeps its own
+column**, the same last column where paired rows end, so every handle in the panel is on one vertical
+line whatever the row above it is.
+
+---
+
+## 5. Observable contracts
+
+| Contract | Verifiable by |
 |---|---|
-| Un nœud de propriété a deux champs : l'Object et la propriété | `inspector/node.test.js`, et à l'œil |
-| Le picker s'ouvre sur les Components et se parcourt au clavier | à l'œil, dans Chrome |
-| Taper classe à travers tous les groupes, le groupe restant lisible | à l'œil |
-| Choisir écrit les deux params, dans un seul lot | `node.test.js` |
-| Ce que le modèle tient se relit comme le chemin que le contrôle montre | idem |
-| Un Component lâché sur un graphe est refusé, avec la route à suivre | `dnd.test.js` |
-| Un flip miroite sans toucher l'échelle | `transform.test.js` |
-| Un flip se compose dans la hiérarchie et se sérialise | idem |
-| Un contrôle court mesure 40 %, un contrôle seul 70 % | mesuré dans Chrome |
+| A property node has two fields: the Object and the property | `inspector/node.test.js`, and by eye |
+| The picker opens on the Components and is navigable by keyboard | by eye, in Chrome |
+| Typing ranks across every group, the group staying readable | by eye |
+| Choosing writes both params, in a single batch | `node.test.js` |
+| What the model holds reads back as the path the control shows | the same |
+| A Component released on a graph is refused, with the route to take | `dnd.test.js` |
+| A flip mirrors without touching the scale | `transform.test.js` |
+| A flip composes through the hierarchy and serializes | the same |
+| A short control measures 40 %, a lone control 70 % | measured in Chrome |

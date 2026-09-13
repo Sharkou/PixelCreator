@@ -1,132 +1,129 @@
-# ADR-0021 — L'identité d'une définition de Component est distincte de son nom affiché
+# ADR-0021 — A Component definition's identity is distinct from its displayed name
 
-- **Statut :** **accepté** (2026-08-14)
-- **Dépend de :** ADR-0004 (clé de `object.components`), ADR-0010 (identité par ID), ADR-0016 (définition), ADR-0020 (`ResourceId`)
-- **Amende :** ADR-0004, § « la clé de `object.components` reste le nom du type »
+- **Status:** **accepted** (2026-08-14)
+- **Depends on:** ADR-0004 (the key of `object.components`), ADR-0010 (identity by ID), ADR-0016 (definition), ADR-0020 (`ResourceId`)
+- **Amends:** ADR-0004, §"the key in `object.components` stays the type name"
 
-## Contexte observé
+## Observed context
 
-ADR-0016 montrait une définition clefée par un nom lisible :
+ADR-0016 showed a definition keyed by a readable name:
 
 ```json
 { "type": "Controller", "properties": { … } }
 ```
 
-Conséquence : **renommer un Component créé par un créateur cassait toutes ses instances.**
-Chaque `Object` porte son type comme clé, chaque scène l'écrit dans son JSON. Un renommage
-aurait exigé de réécrire toutes les scènes du projet — ou d'interdire le renommage.
+The consequence: **renaming a Component created by a creator broke every one of its instances.**
+Every `Object` carries its type as a key, and every scene writes it into its JSON. A rename would
+have required rewriting every scene in the project — or forbidding renaming.
 
-Deux autres défauts étaient mesurés :
+Two other defects were measured:
 
-- `registry.create()` **jetait** sur un type inconnu, donc l'absence d'un seul fichier de
-  définition faisait perdre **la scène entière** au chargement ;
-- une définition modifiée laissait les instances déjà sauvegardées porter des clés que le
-  schéma ne déclarait plus (valeurs fantômes), et sans les clés nouvellement ajoutées.
+- `registry.create()` **threw** on an unknown type, so the absence of a single definition file made
+  you lose **the whole scene** at load time;
+- a modified definition left already-saved instances carrying keys the schema no longer declared
+  (phantom values), and without the newly added keys.
 
-## Décision
+## Decision
 
-### 1. `type` est l'identité, `label` est le nom affiché
+### 1. `type` is the identity, `label` is the displayed name
 
-| | Component livré | Component d'un créateur |
+| | A shipped Component | A creator's Component |
 |---|---|---|
-| `static type` | `'Transform'` — c'est du **code**, donc stable par nature | le `ResourceId` de sa définition — c'est de la **donnée**, donc instable par nature |
-| `static label` | absent ; le type est lu tel quel | `'Controller'` — librement modifiable |
+| `static type` | `'Transform'` — it is **code**, and therefore stable by nature | the `ResourceId` of its definition — it is **data**, and therefore unstable by nature |
+| `static label` | absent; the type is read as is | `'Controller'` — freely editable |
 
-**L'asymétrie est assumée** et c'est elle qui rend le choix bon marché : le nom d'un
-composant livré ne peut pas changer sous les pieds d'un projet, celui d'un composant
-utilisateur si.
+**The asymmetry is accepted** and it is what makes the choice cheap: a shipped component's name
+cannot change under a project's feet, a user component's can.
 
-**Renommer devient un `SET_PROPERTY` sur le `label` de la définition.** Aucune instance
-n'est touchée, aucune scène réécrite, aucun projet cassé.
+**Renaming becomes a `SET_PROPERTY` on the definition's `label`.** No instance is touched, no scene
+rewritten, no project broken.
 
-> **Amendement à ADR-0004.** La lettre est respectée : la clé de `object.components` reste
-> `componentType(component)`. Ce qui est précisé, c'est que ce type est une **identité
-> opaque** pour un Component utilisateur, et non son nom d'affichage — l'intention
-> « comme dans Legacy » supposait un nom lisible et ne tient plus pour ce cas.
+> **An amendment to ADR-0004.** The letter is honoured: the key in `object.components` stays
+> `componentType(component)`. What is clarified is that this type is an **opaque identity** for a
+> user Component, and not its display name — the "as in Legacy" intent presumed a readable name and
+> no longer holds for that case.
 
-### 2. Ce que cela coûte, consommateur par consommateur
+### 2. What it costs, consumer by consumer
 
-| Consommateur | Effet |
+| Consumer | Effect |
 |---|---|
-| Sérialisation | clefe par `componentType()` → **inchangé**. Le JSON porte l'identifiant |
-| `describeType()` (`editor/registry.js`) | lisait déjà `ComponentClass?.label ?? SHIPPED[type]?.label ?? type` → **la couture existait** |
-| Icônes | `iconForComponent()` lit `ComponentClass.icon` **avant** la table par nom → inchangé |
-| Recherche Inspector | filtrait sur `humanise(type)` → **corrigé**, filtre sur le label |
-| Titres de section | affichaient le type → **corrigés**, affichent le label ; l'état replié reste indexé par le **type**, pour qu'un renommage ne déplie pas un panneau |
-| Runtime | le type n'est qu'une clé → **inchangé** |
-| Registre | clefe par une chaîne opaque → **inchangé** |
+| Serialization | keys by `componentType()` → **unchanged**. The JSON carries the identifier |
+| `describeType()` (`editor/registry.js`) | already read `ComponentClass?.label ?? SHIPPED[type]?.label ?? type` → **the seam existed** |
+| Icons | `iconForComponent()` reads `ComponentClass.icon` **before** the name table → unchanged |
+| Inspector search | filtered on `humanise(type)` → **fixed**, it filters on the label |
+| Section titles | displayed the type → **fixed**, they display the label; the collapsed state stays indexed by the **type**, so that a rename does not expand a panel |
+| Runtime | the type is only a key → **unchanged** |
+| Registry | keys by an opaque string → **unchanged** |
 
-### 3. Réconciliation structurelle au chargement (stratégie S1)
+### 3. Structural reconciliation at load time (strategy S1)
 
-Les valeurs stockées sont filtrées par le schéma courant : **clé inconnue jetée, clé
-manquante remplie par le défaut du constructeur.**
+The stored values are filtered by the current schema: **an unknown key is dropped, a missing key is
+filled with the constructor's default.**
 
-C'est ADR-0016 §4 — « une instance neuve a exactement les propriétés déclarées » — appliqué
-au **chargement** et non seulement à la construction. Ajouter une propriété la fait
-apparaître avec son défaut ; en retirer une jette la valeur fantôme. Aucun script de
-migration n'est écrit, et le résultat est déterministe sur toutes les machines.
+This is ADR-0016 §4 — "a fresh instance has exactly the declared properties" — applied at **load
+time** and not only at construction. Adding a property makes it appear with its default; removing
+one drops the phantom value. No migration script is written, and the result is deterministic on
+every machine.
 
-Un composant **sans schéma** garde tout ce qu'on lui donne : le repli réflexif est une
-exigence, pas une tolérance (ADR-0007).
+A component **with no schema** keeps everything it is given: the reflective fallback is a
+requirement, not a tolerance (ADR-0007).
 
-`active` n'est jamais filtré : il appartient au contrat du Component, pas au schéma
-(ADR-0004).
+`active` is never filtered: it belongs to the Component contract, not to the schema (ADR-0004).
 
-**Le seul cas non couvert est le renommage d'une propriété.** Le remède honnête, le jour où
-le besoin se présente, est un `previousNames: [...]` sur le descripteur. **Non construit.**
+**The only case not covered is renaming a property.** The honest remedy, the day the need arises, is
+a `previousNames: [...]` on the descriptor. **Not built.**
 
-### 4. Un type introuvable ne fait plus perdre la scène
+### 4. A missing type no longer loses the scene
 
-La désérialisation d'un Component de type inconnu produit un **`MissingComponent`** qui :
+Deserializing a Component of an unknown type produces a **`MissingComponent`** that:
 
-- conserve son nom de type, donc la place qu'il occupe ;
-- conserve **intégralement** ses valeurs sérialisées, octet pour octet ;
-- conserve son rang dans la collection ordonnée (ADR-0018) ;
-- ne s'exécute pas — ni `update`, ni `draw` ;
-- se signale dans l'Inspector, avec les valeurs qu'il détient.
+- keeps its type name, and therefore the place it occupies;
+- keeps its serialized values **in full**, byte for byte;
+- keeps its rank in the ordered collection (ADR-0018);
+- does not run — neither `update` nor `draw`;
+- reports itself in the Inspector, with the values it holds.
 
-Perdre une scène parce qu'un fichier manque est le pire comportement possible pour un
-éditeur. Un placeholder qui préserve les données permet de restaurer la définition et de
-retrouver le projet intact.
+Losing a scene because a file is missing is the worst possible behaviour for an editor. A
+placeholder that preserves the data lets you restore the definition and find the project intact.
 
-`registry.create(type)` **continue de jeter** sur un type inconnu : demander au registre un
-type qu'il n'a pas reste une erreur de programmation. Ce qui change, c'est le chargement.
+`registry.create(type)` **still throws** on an unknown type: asking the registry for a type it does
+not have remains a programming error. What changes is loading.
 
-### 5. `revision` sert à l'invalidation, pas à la migration
+### 5. `revision` serves invalidation, not migration
 
-Elle dit à `Behaviors` qu'un graphe a changé et à l'Editor qu'un panneau doit se
-reconstruire. **Les instances ne la stockent pas** — c'est ce qui garde S1 simple.
+It tells `Behaviors` that a graph has changed and the Editor that a panel must be rebuilt.
+**Instances do not store it** — that is what keeps S1 simple.
 
-## Ce que cet ADR ne décide pas
+## What this ADR does not decide
 
-| Point ouvert | Où il sera tranché |
+| Open point | Where it will be settled |
 |---|---|
-| Le renommage d'une **propriété** d'une définition | quand le besoin se présentera (`previousNames`) |
-| Ce qu'un **serveur autoritaire** fait d'une scène incomplète : la refuser, ou la charger avec des placeholders | politique serveur, hors périmètre |
-| L'UI de création et d'édition d'une définition | Editor |
+| Renaming a **property** of a definition | when the need arises (`previousNames`) |
+| What an **authoritative server** does with an incomplete scene: refuse it, or load it with placeholders | server policy, out of scope |
+| The UI for creating and editing a definition | Editor |
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Renommer un Component est gratuit et sans risque.
-- Une collision de noms entre deux projets importés est impossible.
-- Une définition peut évoluer sans script de migration.
-- Un fichier manquant coûte un placeholder, plus une scène.
+- Renaming a Component is free and risk-free.
+- A name collision between two imported projects is impossible.
+- A definition can evolve with no migration script.
+- A missing file costs a placeholder, not a scene.
 
-### Négatives
+### Negative
 
-- Le JSON d'une scène est moins lisible : `"type": "res_c3"` au lieu de `"type": "Controller"`.
-  Le manifeste donne la correspondance, et c'est le prix d'une identité stable.
-- Deux notions à ne pas confondre en lisant le code — mais elles sont maintenant nommées
-  différemment, ce qui est précisément le remède.
+- A scene's JSON is less readable: `"type": "res_c3"` instead of `"type": "Controller"`. The
+  manifest provides the mapping, and that is the price of a stable identity.
+- Two notions not to confuse when reading the code — but they are now named differently, which is
+  precisely the remedy.
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **`type` toujours lisible** | Renommer casse toutes les instances. C'est le défaut qu'on corrige. |
-| **Slug lisible figé à la création** | Renommer reste gratuit, mais slug et label divergent avec le temps, et une collision inter-projets redevient possible. Toute la complexité d'un identifiant sans son bénéfice. |
-| **S2 — versions + scripts de migration** | Complexité élevée, déterminisme réseau dépendant des scripts, pour un besoin qu'S1 couvre. |
-| **S3 — ne rien faire** | Valeurs fantômes sérialisées, propriétés ajoutées absentes. Incorrect. |
-| **Jeter au chargement sur un type inconnu** | Fait perdre la scène entière parce qu'un fichier manque. |
+| **A `type` that is always readable** | Renaming breaks every instance. That is the defect being fixed. |
+| **A readable slug fixed at creation** | Renaming stays free, but the slug and the label diverge over time, and a cross-project collision becomes possible again. All the complexity of an identifier without its benefit. |
+| **S2 — versions + migration scripts** | High complexity, network determinism depending on the scripts, for a need S1 covers. |
+| **S3 — do nothing** | Phantom values serialized, added properties absent. Incorrect. |
+| **Throwing at load time on an unknown type** | It loses the whole scene because a file is missing. |

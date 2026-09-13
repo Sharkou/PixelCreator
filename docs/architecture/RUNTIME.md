@@ -1,26 +1,25 @@
 # Runtime
 
-> Organisation par **modules de domaine**, pas en « Systems » (ADR-0005).
+> Organized by **domain modules**, not by "Systems" (ADR-0005).
 
-## OBSERVÉ
+## OBSERVED
 
-### Il n'y a pas de runtime identifié
+### There is no identifiable runtime
 
-`src/runtime/` ne contient que `environment.js` — 411 lignes de détection de plateforme
-(WebGL, WebGPU, IndexedDB, mobile…), sans rapport avec la boucle de jeu. Le dossier est
-un faux ami.
+`src/runtime/` contains only `environment.js` — 411 lines of platform detection (WebGL, WebGPU,
+IndexedDB, mobile…), unrelated to the game loop. The directory is a false friend.
 
-Le runtime réel est :
+The real runtime is:
 
-- `Renderer.render(scene, camera)` — la boucle unique ;
-- les modules de domaine : `physics/`, `graphics/`, `anim/`, `input/`, `audio/`, `time/`.
+- `Renderer.render(scene, camera)` — the one loop;
+- the domain modules: `physics/`, `graphics/`, `anim/`, `input/`, `audio/`, `time/`.
 
-**Aucun « System » n'existe.** La physique est dans `Collider.update()`, l'animation dans
-`Animator.update()`. La logique vit dans les composants.
+**No "System" exists.** Physics is in `Collider.update()`, animation in `Animator.update()`.
+The logic lives in the components.
 
-### La boucle client
+### The client loop
 
-`app.js` :
+`app.js`:
 
 ```js
 Stats.begin();
@@ -34,144 +33,142 @@ Grid.active   ? Grid.draw(...)    : false;
 Stats.end();
 ```
 
-`Renderer.render()` fait, **dans une seule passe par objet** :
+`Renderer.render()` does, **in a single pass per object**:
 
-1. tri par `layer` — `Object.values(...).sort()`, **réalloué à chaque frame** ;
-2. `obj.update()` si non en pause ;
-3. **picking souris et détection des poignées de redimensionnement — code Editor** ;
-4. `ctx.save()`, projection caméra, zoom, rotation ;
-5. `obj.draw()`, puis `obj.preview()` si `inspector` ;
-6. `ctx.restore()` ;
-7. `obj.select(ctx)` si sélectionné.
+1. sort by `layer` — `Object.values(...).sort()`, **reallocated every frame**;
+2. `obj.update()` if not paused;
+3. **mouse picking and resize-handle detection — Editor code**;
+4. `ctx.save()`, camera projection, zoom, rotation;
+5. `obj.draw()`, then `obj.preview()` if `inspector`;
+6. `ctx.restore()`;
+7. `obj.select(ctx)` if selected.
 
-### Deux problèmes structurels
+### Two structural problems
 
-**a) Update et draw sont entrelacés par objet.** L'objet 2 est mis à jour *après* que
-l'objet 1 a été dessiné. Un composant qui lit la position d'un autre objet lit un état
-mixte, dépendant de l'ordre de tri par `layer`. Pour un moteur multijoueur, c'est une
-source de non-déterminisme.
+**a) Update and draw are interleaved per object.** Object 2 is updated *after* object 1 has
+been drawn. A component that reads another object's position reads a mixed state, dependent on
+the `layer` sort order. For a multiplayer engine, that is a source of non-determinism.
 
-Le serveur, lui, sépare proprement : il boucle sur tous les `update()` sans dessiner.
+The server, for its part, separates them cleanly: it loops over every `update()` without
+drawing.
 
-**b) Le Core importe l'Editor.**
+**b) The Core imports the Editor.**
 
 ```js
 // src/core/renderer.js:6
 import { Dnd } from '/editor/system/dnd.js';
 ```
 
-Le runtime de jeu ne peut pas être chargé sans le module de drag & drop de l'IDE.
-C'est la violation de couche la plus visible du dépôt.
+The game runtime cannot be loaded without the IDE's drag-and-drop module. It is the most
+visible layer violation in the repository.
 
-### Ambiguïté de Camera
+### The Camera ambiguity
 
-`Camera` est une **classe de composant** (`background`, `max_x`, `offset`, `preview()`),
-mais `Camera.main` contient un **`Object`** qui porte ce composant. Le renderer écrit
-`camera.getComponent('Camera').background` tout en lisant `camera.x`, `camera.scale`.
-Le même identifiant désigne deux choses selon le contexte.
+`Camera` is a **component class** (`background`, `max_x`, `offset`, `preview()`), but
+`Camera.main` holds an **`Object`** that carries that component. The renderer writes
+`camera.getComponent('Camera').background` while also reading `camera.x`, `camera.scale`. The
+same identifier designates two things depending on the context.
 
-→ Tranché par **ADR-0013**, voir « Camera et Viewport » plus bas.
+→ Settled by **ADR-0013**, see "Camera and Viewport" below.
 
-### Le runtime est cassé hors ligne
+### The runtime is broken offline
 
-Voir `MIGRATION.md` §4.1. `Controller` → `Keyboard` → `Network.users` (undefined) →
-`TypeError` par frame, absorbée par le `try/catch` de `Object.update()`.
-**Le mode solo ne fonctionne pas et rien ne le signale.**
+See `MIGRATION.md` §4.1. `Controller` → `Keyboard` → `Network.users` (undefined) → a
+`TypeError` every frame, swallowed by the `try/catch` in `Object.update()`. **Single-player
+mode does not work and nothing says so.**
 
 ---
 
-## DÉCISIONS V2
+## V2 DECISIONS
 
-**VALIDÉ :** domaines directement sous `runtime/`, sans couche `Systems/`.
+**SETTLED:** domains sit directly under `runtime/`, with no `Systems/` layer.
 
 ```
 runtime/
-├── clock/           temps, delta-time, timers
-├── physics/         collisions, corps, spatial hash
+├── clock/           time, delta-time, timers
+├── physics/         collisions, bodies, spatial hash
 ├── animation/       animator, animation, tween
-├── rendering/       Canvas 2D, projection, abstraction de rendu
-├── input/           état des entrées par owner, sans dépendance réseau
-├── scripting/       comportements de Components définis par un graphe .px
-├── loop.js          orchestration des phases
-└── mod.js           point d'entrée client (le serveur ne l'importe pas)
+├── rendering/       Canvas 2D, projection, rendering abstraction
+├── input/           input state per owner, with no network dependency
+├── scripting/       Component behaviours defined by a .px graph
+├── loop.js          phase orchestration
+└── mod.js           the client entry point (the server does not import it)
 ```
 
-`audio/` et `camera/` s'ajoutent selon le besoin ; la liste n'est pas figée, c'est le
-principe qui l'est : **un dossier = un domaine, pas de couche d'abstraction au-dessus.**
+`audio/` and `camera/` are added as needed; the list is not frozen, the principle is: **one
+directory = one domain, no abstraction layer above it.**
 
-### Rendering — VALIDÉ
+### Rendering — SETTLED
 
-Backend v2 : **Canvas 2D**. Une abstraction légère est interposée pour qu'un backend
-WebGL ou WebGPU reste possible plus tard, sans être conçue pour lui aujourd'hui.
+v2 backend: **Canvas 2D**. A thin abstraction sits in front so that a WebGL or WebGPU backend
+stays possible later, without being designed for it today.
 
-Concrètement : `draw(self, renderer)` reçoit un objet `renderer` au lieu de lire le
-singleton `Graphics.ctx`. Le vocabulaire se limite à ce que les composants utilisent
-déjà (`rect`, `circle`, `image`, `text`, `fill`, `stroke`, `light`, transformations).
+Concretely: `draw(self, renderer)` receives a `renderer` object instead of reading the
+`Graphics.ctx` singleton. The vocabulary is limited to what components already use (`rect`,
+`circle`, `image`, `text`, `fill`, `stroke`, `light`, transforms).
 
-**Ne pas surarchitecturer** : pas de graphe de commandes, pas de batching, pas de
-matériaux, pas de passes tant qu'un besoin réel ne l'exige pas.
+**Do not over-architect**: no command graph, no batching, no materials, no passes until a real
+need demands them.
 
-### Phases séparées
+### Separate phases
 
 ```
 frame:
   input.poll()
-  for each object: object.update(ctx)     ← toute la simulation
+  for each object: object.update(ctx)     ← all the simulation
   collisions.resolve()
-  renderer.render(scene, camera)          ← puis tout le rendu
-  editor.overlay()                        ← puis les surcouches IDE
+  renderer.render(scene, camera)          ← then all the rendering
+  editor.overlay()                        ← then the IDE overlays
 ```
 
-C'est ce que le serveur fait déjà. Le client s'aligne.
+This is what the server already does. The client falls into line.
 
-### Ordre de rendu — tri par frame, assumé
+### Render order — sorting every frame, deliberately
 
-Le `SceneRenderer` trie les objets par `layer` **à chaque frame**. Ce n'est pas un
-oubli : `layer` peut changer à tout moment, et trier quelques centaines d'objets est
-négligeable devant le coût de les dessiner.
+The `SceneRenderer` sorts objects by `layer` **every frame**. This is not an oversight: `layer`
+can change at any moment, and sorting a few hundred objects is negligible next to the cost of
+drawing them.
 
-Un cache invalidé à chaque écriture de `layer` serait une optimisation spéculative et un
-état de plus à maintenir correct. **Pas d'optimisation sans mesure qui la justifie** ; il
-sera introduit le jour où un profil le demande, et pas avant.
+A cache invalidated on every `layer` write would be a speculative optimization and one more
+piece of state to keep correct. **No optimization without a measurement to justify it**; it
+will be introduced the day a profile asks for it, and not before.
 
-> Ce paragraphe remplace une prescription antérieure de tri mis en cache, écrite avant
-> qu'un renderer existe. Le comportement implémenté est le comportement normatif.
+> This paragraph replaces an earlier prescription of a cached sort, written before a renderer
+> existed. The implemented behaviour is the normative behaviour.
 
-**Attention (risque R7)** : séparer update et draw change l'ordre d'observation.
-Un jeu Legacy peut dépendre involontairement de l'entrelacement. À vérifier sur une
-scène de référence.
+**Careful (risk R7)**: separating update and draw changes the observation order. A Legacy game
+may unintentionally depend on the interleaving. To be checked against a reference scene.
 
-### Input — VALIDÉ (ADR-0014)
+### Input — SETTLED (ADR-0014)
 
-`runtime/input/`, jamais `core/`. L'état est **abstrait** — touches, boutons, pointeur,
-axes nommés — et ne connaît ni `KeyboardEvent`, ni `window`, ni `document`.
+`runtime/input/`, never `core/`. The state is **abstract** — keys, buttons, pointer, named axes
+— and knows neither `KeyboardEvent`, nor `window`, nor `document`.
 
 ```js
-const input = ctx.input.of(self.owner);   // indexé par owner ; l'owner "local" existe toujours
+const input = ctx.input.of(self.owner);   // indexed by owner; the "local" owner always exists
 if (input.isDown('ArrowRight')) self.x += this.speed * ctx.deltaTime;
 ```
 
-Il est **passé au pas de simulation**, jamais cherché dans un global :
+It is **passed into the simulation step**, never fetched from a global:
 
 ```js
 runtime.step(input);
 runtime.advance(elapsed, input);
 ```
 
-Mêmes scène initiale et mêmes entrées ⇒ même résultat. C'est ce qui permet à un serveur
-de rejouer ce que les joueurs ont envoyé. Un runtime sans input tourne sur un input vide
-— **c'est ce qui répare le mode solo hors ligne.**
+The same initial scene and the same inputs ⇒ the same result. That is what lets a server replay
+what the players sent. A runtime with no input runs on empty input — **that is what repairs
+offline single-player.**
 
-`pressed()` / `released()` sont vrais sur exactement un pas : le runtime appelle
-`input.commit()` après chaque pas, donc une pression compte une fois quel que soit le
-nombre de pas qu'une frame doit.
+`pressed()` / `released()` are true for exactly one step: the runtime calls `input.commit()`
+after each step, so one press counts once no matter how many steps a frame owes.
 
-**L'adaptateur navigateur n'appartient pas ici.** Il vit dans la couche qui possède le
-DOM ; le runtime n'en définit que le contrat.
+**The browser adapter does not belong here.** It lives in the layer that owns the DOM; the
+runtime only defines its contract.
 
-### Comportement d'un Component — VALIDÉ (ADR-0015)
+### A Component's behaviour — SETTLED (ADR-0015)
 
-Un Component concret peut avoir un graphe `.px` qui définit son comportement :
+A concrete Component may have a `.px` graph that defines its behaviour:
 
 ```
 Object
@@ -182,102 +179,98 @@ Object
 └── Collider
 ```
 
-`Controller.px` n'est pas un composant et n'en devient pas un. **Il n'existe pas de
-Component `Script`**, et aucun type de composant n'est généré par un `.px`.
+`Controller.px` is not a component and does not become one. **There is no `Script` Component**,
+and no component type is generated by a `.px`.
 
 ```
 graph ──(interpret)──► create(component) ──► behavior.update(self, ctx)
-        une fois par graphe    une fois par instance      à chaque pas
+        once per graph        once per instance         every step
 ```
 
-L'hôte `Behaviors` lie un **type de Component** à un graphe (`behaviors.bind(Controller,
-graph)`). L'interprète de graphe lui est passé : ni langage, ni modèle de graphe, ni VM
-n'est construit à ce stade (ADR-0009).
+The `Behaviors` host binds a **Component type** to a graph (`behaviors.bind(Controller,
+graph)`). The graph interpreter is passed to it: no language, no graph model and no VM is built
+at that stage (ADR-0009).
 
-Le graphe est lu une fois ; **chaque instance de composant reçoit son propre behavior**,
-donc deux `Controller` ne partagent jamais un état d'exécution. Le behavior vit dans une
-`WeakMap` indexée par le composant : ce qui sérialise, ce sont les propriétés du composant,
-jamais des fonctions.
+The graph is read once; **each component instance receives its own behavior**, so two
+`Controller`s never share an execution state. The behavior lives in a `WeakMap` keyed by the
+component: what serializes is the component's properties, never functions.
 
-**Il n'y a pas de `ScriptSystem`.** Le runtime exécute, par composant actif et dans l'ordre
-de la scène, son `update` puis le graphe lié à son type — un composant, une place dans
-l'ordre, un `try`/`catch`. Le graphe hérite ainsi de l'isolation des erreurs, du pas fixe,
-de l'ordre déterministe et de l'exécution headless, sans second chemin client/serveur.
+**There is no `ScriptSystem`.** The runtime runs, per active component and in scene order, its
+`update` and then the graph bound to its type — one component, one place in the order, one
+`try`/`catch`. The graph thereby inherits error isolation, the fixed step, the deterministic
+order and headless execution, with no second client/server path.
 
 ```js
 new Runtime(scene, { behaviors });
 ```
 
-### L'interprète de graphe — IMPLÉMENTÉ (ADR-0027)
+### The graph interpreter — IMPLEMENTED (ADR-0027)
 
-`runtime/scripting/interpreter.js` remplit la couture qu'ADR-0015 avait laissée vide, sans
-la modifier :
+`runtime/scripting/interpreter.js` fills the seam ADR-0015 had left empty, without changing it:
 
 ```js
 const behaviors = new Behaviors(createGraphInterpreter());
-behaviors.bind(Controller, graph);   // le graphe RÉSOLU, jamais un ResourceId
+behaviors.bind(Controller, graph);   // the RESOLVED graph, never a ResourceId
 ```
 
-Il reçoit le **payload** d'un `.px` — pas le modèle vivant de l'Editor — et le lit une fois
-par graphe ; la fabrique donne ensuite à chaque instance son propre état d'exécution.
+It receives a `.px`'s **payload** — not the Editor's live model — and reads it once per graph;
+the factory then gives each instance its own execution state.
 
-| Ce qu'il détient | Pourquoi ici et pas dans un nœud |
+| What it holds | Why here and not in a node |
 |---|---|
-| **Flux poussé, données tirées** | l'ordre n'appartient à aucun nœud pris isolément |
-| **Profondeur d'abord, dans l'ordre déclaré** | `Sequence` veut dire « la première branche entière, puis la seconde » ; le déterminisme *est* cet ordre |
-| **Cache de valeurs remis à zéro à chaque pas de flux** | mémoriser sur tout l'événement laisserait un `Get Property` servir l'ancienne valeur après un `Set Property` |
-| **Un budget par événement** (4096 nœuds) | un flux qui boucle est une boucle ; ce qui est interdit est une frame qui ne finit pas |
-| **Un plafond d'exécutions suspendues** (256 par instance) | le budget borne UN `walk` ; rien ne bornait combien un pas en effectuait, donc `On Update ▸ Every` en empilait une par pas, sans fin (ADR-0072) |
-| **`GraphError` structurées, levées** | le runtime les isole et les rapporte sans toucher au modèle (ADR-0012) |
+| **Flow pushed, data pulled** | the order belongs to no node taken on its own |
+| **Depth-first, in declared order** | `Sequence` means "the whole first branch, then the second"; determinism *is* that order |
+| **A value cache reset at every flow step** | memoizing across the whole event would let a `Get Property` serve the old value after a `Set Property` |
+| **A budget per event** (4096 nodes) | a flow that loops is a loop; what is forbidden is a frame that never ends |
+| **A ceiling on suspended executions** (256 per instance) | the budget bounds ONE `walk`; nothing bounded how many a step started, so `On Update ▸ Every` piled one up per step, endlessly (ADR-0072) |
+| **Structured `GraphError`s, thrown** | the runtime isolates and reports them without touching the model (ADR-0012) |
 
-**Aucun `eval`, aucune `new Function`, aucune génération de code** — ADR-0009 Q7. Rien n'y
-lit une horloge, un aléatoire, le DOM ou le stockage : le temps vient du contexte de pas,
-les valeurs viennent du Component. Le même graphe atteint donc le même état sur un client et
-sur un serveur, ce qu'exige ADR-0011.
+**No `eval`, no `new Function`, no code generation** — ADR-0009 Q7. Nothing in it reads a
+clock, a source of randomness, the DOM or storage: time comes from the step context, values
+come from the Component. The same graph therefore reaches the same state on a client and on a
+server, which is what ADR-0011 requires.
 
-**Un graphe écrit par une écriture simple**, jamais par `setProperty()` : ce qui tourne dans
-`update()` est une sortie de simulation, pas une intention (ADR-0003). L'écriture reste
-observable, parce que le composant est le Proxy réactif que l'Object détient.
+**A graph writes with a plain write**, never through `setProperty()`: what runs inside
+`update()` is a simulation output, not an intent (ADR-0003). The write stays observable,
+because the component is the reactive Proxy the Object holds.
 
-### Erreurs d'exécution — VALIDÉ (ADR-0012)
+### Execution errors — SETTLED (ADR-0012)
 
-Le Runtime **isole** une exception levée par un Component et la **rapporte**. Il ne
-modifie jamais l'état du modèle en réaction à une erreur.
+The Runtime **isolates** an exception thrown by a Component and **reports** it. It never
+modifies the model's state in reaction to an error.
 
 ```js
-new Runtime(scene, { onError: report => { /* politique */ } });
+new Runtime(scene, { onError: report => { /* policy */ } });
 ```
 
-Le rapport est structuré — `{ error, object, component, type, phase, time }` — et
-l'`Error` d'origine n'est jamais modifiée. Le consommateur lit des champs, il ne parse
-pas de message.
+The report is structured — `{ error, object, component, type, phase, time }` — and the original
+`Error` is never modified. The consumer reads fields; it does not parse a message.
 
 | | |
 |---|---|
-| Isolation | Runtime — `try/catch` autour de `update()` et `draw()` |
-| Signalement | Runtime — `onError(report)`, voie unique |
-| Politique (afficher, compter, pauser, désactiver) | couche supérieure — Editor, serveur, hôte |
-| État de simulation | modèle seul — jamais écrit par le Runtime |
+| Isolation | Runtime — a `try/catch` around `update()` and `draw()` |
+| Reporting | Runtime — `onError(report)`, a single channel |
+| Policy (display, count, pause, disable) | a higher layer — Editor, server, host |
+| Simulation state | the model alone — never written by the Runtime |
 
-**Aucune auto-désactivation.** Un Component qui échoue n'est pas désactivé après N
-erreurs : ce serait transformer une exception en mutation d'état répliquée, et faire
-diverger deux machines selon qu'un script a levé ou non. `component.active` reste une
-propriété réactive normale, **lue** par le Runtime et le SceneRenderer, **écrite** par
-l'utilisateur, un Component ou l'Editor.
+**No auto-disabling.** A Component that fails is not disabled after N errors: that would turn
+an exception into a replicated state mutation, and make two machines diverge depending on
+whether a script threw. `component.active` stays an ordinary reactive property, **read** by the
+Runtime and the SceneRenderer, **written** by the user, a Component or the Editor.
 
-Sans `onError`, l'erreur est relancée en différé avec l'originale en `cause` : le
-silence de Legacy n'est jamais reproduit.
+Without an `onError`, the error is rethrown asynchronously with the original as its `cause`:
+Legacy's silence is never reproduced.
 
-### Camera et Viewport — VALIDÉ (ADR-0013)
+### Camera and Viewport — SETTLED (ADR-0013)
 
-L'ambiguïté Legacy est tranchée :
+The Legacy ambiguity is settled:
 
 | | v2 |
 |---|---|
-| **Caméra** | un `Object` ordinaire, avec un `Transform`. `camera.x` **est** sa position |
-| **Composant `Camera`** | l'objectif seul : `zoom` |
-| **`Viewport`** | l'écran : `width`, `height`. Pas dans la scène, pas de transform |
-| **Matrice de vue** | **dérivée**, jamais stockée |
+| **Camera** | an ordinary `Object`, with a `Transform`. `camera.x` **is** its position |
+| **The `Camera` component** | the lens alone: `zoom` |
+| **`Viewport`** | the screen: `width`, `height`. Not in the scene, no transform |
+| **View matrix** | **derived**, never stored |
 
 ```
 view = centre(viewport) · zoom · inverse(worldMatrix(camera))
@@ -288,49 +281,46 @@ const view = viewMatrix(camera, viewport);
 runtime.render({ view, clear: '#101018' });
 ```
 
-Le renderer reçoit une `Matrix` et **ne sait pas ce qu'est une caméra** — c'est ce qui
-empêche définitivement un `Core → renderer`.
+The renderer receives a `Matrix` and **does not know what a camera is** — that is what
+permanently rules out a `Core → renderer` dependency.
 
-Aucune seconde position : pas d'`offset`. Parenter la caméra au joueur la fait suivre le
-joueur, parce que c'est déjà ce que parenter veut dire.
+No second position: no `offset`. Parenting the camera to the player makes it follow the player,
+because that is already what parenting means.
 
-`worldToScreen()` / `screenToWorld()` complètent l'API. `screenToWorld()` est le premier
-maillon du futur picking de l'Editor — **le runtime fournit le mapping, pas la politique
-de sélection.**
+`worldToScreen()` / `screenToWorld()` complete the API. `screenToWorld()` is the first link of
+the Editor's future picking — **the runtime provides the mapping, not the selection policy.**
 
-### Ce qui sort du renderer
+### What leaves the renderer
 
-`Dnd`, le picking souris, la détection des poignées, le rectangle de sélection et
-`preview()` partent vers `editor/viewport/`. **C'est ce qui supprime l'import
-`/editor/...` du Core.**
+`Dnd`, mouse picking, handle detection, the selection rectangle and `preview()` move to
+`editor/viewport/`. **That is what removes the `/editor/...` import from the Core.**
 
-Le renderer expose une abstraction passée aux composants (`draw(self, renderer)`,
-ADR-0004) au lieu du singleton `Graphics.ctx`.
+The renderer exposes an abstraction passed to the components (`draw(self, renderer)`, ADR-0004)
+instead of the `Graphics.ctx` singleton.
 
-### Corrections attendues
+### Expected fixes
 
-| Problème | Correction |
+| Problem | Fix |
 |---|---|
-| Update/draw entrelacés | phases séparées |
-| Erreurs avalées par le `try/catch` | isolées **et** rapportées (`onError`, ADR-0012) |
-| `Input → Network`, solo cassé | input abstrait passé à `step()`, owner « local » toujours présent (ADR-0014) |
-| Ambiguïté `Camera` | `Camera` = objectif ; l'`Object` porteur = la position ; `Viewport` = l'écran (ADR-0013) |
-| `Core → Editor` | picking et surcouches déplacés |
-| `Collider` O(n²) | `CollisionSystem` sur grille spatiale — **le seul « System » justifié** (ADR-0005) ; `SpatialHash` existe déjà et n'est branché à rien |
-| `environment.js` mal rangé | vers `core/` ou `platform/` — ce n'est pas du runtime |
+| Update/draw interleaved | separate phases |
+| Errors swallowed by the `try/catch` | isolated **and** reported (`onError`, ADR-0012) |
+| `Input → Network`, single-player broken | abstract input passed to `step()`, a "local" owner always present (ADR-0014) |
+| The `Camera` ambiguity | `Camera` = the lens; the carrying `Object` = the position; `Viewport` = the screen (ADR-0013) |
+| `Core → Editor` | picking and overlays moved out |
+| `Collider` O(n²) | a `CollisionSystem` over a spatial grid — **the only justified "System"** (ADR-0005); `SpatialHash` already exists and is wired to nothing |
+| `environment.js` misfiled | into `core/` or `platform/` — it is not runtime |
 
-### Client vs serveur
+### Client vs server
 
-La différence n'est pas dans le modèle mais dans les **modules chargés** :
+The difference is not in the model but in the **modules loaded**:
 
-| | Client | Serveur |
+| | Client | Server |
 |---|---|---|
 | `core/` | ✅ | ✅ |
 | `runtime/physics`, `input`, `animation`, `clock` | ✅ | ✅ |
 | `runtime/rendering`, `audio` | ✅ | ❌ |
 | `component.update()` | ✅ | ✅ |
 | `component.draw()` | ✅ | ❌ |
-| `editor/` | optionnel | ❌ |
+| `editor/` | optional | ❌ |
 
-`ParticleSystem` illustre la coupure : `update()` des deux côtés, `draw()` client
-uniquement.
+`ParticleSystem` illustrates the cut: `update()` on both sides, `draw()` on the client only.

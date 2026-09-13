@@ -1,313 +1,307 @@
-# Audit architectural — fondations du modèle de données
+# Architectural audit — data model foundations
 
-> **Nature :** audit et **proposition** d'architecture. Ce document n'est pas une décision.
-> **Date :** 2026-08-14
-> **Vérifié contre :** `HEAD = 19107304aabaeee5a29c340c3f4d81d7219de490` (`docs: move reference documentation`), aligné avec `origin/master`.
-> **État d'implémentation : AUCUN.** Rien de ce document n'est écrit dans `src/`. Aucun fichier de code n'a été créé ni modifié.
+> **Nature:** an audit and an architecture **proposal**. This document is not a decision.
+> **Date:** 2026-08-14
+> **Verified against:** `HEAD = 19107304aabaeee5a29c340c3f4d81d7219de490` (`docs: move reference documentation`), aligned with `origin/master`.
+> **Implementation status: NONE.** Nothing in this document is written in `src/`. No code file was created or modified.
 
 ---
 
-## 0. Comment lire ce document
+## 0. How to read this document
 
-### 0.1 Son rôle par rapport aux ADR
+### 0.1 Its role relative to the ADRs
 
-**ADR = Architecture Decision Record** — un enregistrement de décision d'architecture. Les
-ADR du dépôt (`docs/decisions/ADR-XXXX-*.md`) enregistrent des décisions **prises**, datées
-et acceptées. Ils font autorité.
+**ADR = Architecture Decision Record.** The repository's ADRs (`docs/decisions/ADR-XXXX-*.md`)
+record decisions that have been **made**, dated and accepted. They are authoritative.
 
-**Ce document ne fait pas autorité.** C'est un audit du code réel suivi d'une proposition
-d'architecture. Il occupe la place qui précède un ADR : il expose ce qui existe, ce qui
-manque, ce qui est proposé, et ce qui reste à arbitrer. Une décision retenue ici deviendra
-un ADR à part entière (§10) ; tant qu'elle n'en est pas un, elle reste une proposition.
+**This document is not authoritative.** It is an audit of the real code followed by an
+architecture proposal. It occupies the place that precedes an ADR: it sets out what exists,
+what is missing, what is proposed, and what remains to be arbitrated. A decision adopted here
+will become an ADR in its own right (§10); until it is one, it stays a proposal.
 
-Aucun ADR existant n'a été modifié pour faire correspondre son contenu à cette proposition.
-Là où la proposition ferait évoluer une décision déjà écrite, c'est signalé nommément
-(§8.2, §5.4) et soumis à arbitrage.
+No existing ADR was modified to make its content match this proposal. Where the proposal would
+change an already-written decision, that is flagged by name (§8.2, §5.4) and submitted for
+arbitration.
 
-### 0.2 Étiquetage des affirmations
+### 0.2 Labelling of claims
 
-`CONVENTIONS.md` impose d'étiqueter la nature de toute affirmation. Ce document utilise les
-quatre étiquettes canoniques, plus une cinquième nécessaire ici :
+`CONVENTIONS.md` requires every claim to be labelled by nature. This document uses the four
+canonical labels, plus a fifth needed here:
 
-| Étiquette | Sens |
+| Label | Meaning |
 |---|---|
-| **OBSERVÉ** | vérifié dans le code du dépôt, à la révision indiquée en tête |
-| **DÉCIDÉ (ADR-XXXX)** | tranché par un ADR accepté — fait autorité |
-| **DÉCISION VALIDÉE (2026-08-14)** | tranché par le mainteneur dans l'échange qui a produit ce document, **pas encore consigné dans un ADR** |
-| **PROPOSITION** | recommandation de cet audit — non implémentée, non décidée |
-| **À ARBITRER** | demande une décision explicite du mainteneur avant toute implémentation |
+| **OBSERVED** | verified in the repository's code, at the revision stated at the top |
+| **DECIDED (ADR-XXXX)** | settled by an accepted ADR — authoritative |
+| **DECISION ACCEPTED (2026-08-14)** | settled by the maintainer in the exchange that produced this document, **not yet recorded in an ADR** |
+| **PROPOSAL** | a recommendation of this audit — not implemented, not decided |
+| **TO ARBITRATE** | requires an explicit decision from the maintainer before any implementation |
 
-L'étiquette **DÉCISION VALIDÉE** est un ajout aux quatre de `CONVENTIONS.md`. Elle existe
-parce qu'une décision peut être prise avant d'être consignée ; elle est transitoire par
-construction, et disparaît quand l'ADR correspondant est écrit.
+The **DECISION ACCEPTED** label is an addition to the four in `CONVENTIONS.md`. It exists
+because a decision can be taken before it is recorded; it is transitory by construction, and
+disappears when the corresponding ADR is written.
 
-### 0.3 Avertissement de vocabulaire — deux numérotations de « phase »
+### 0.3 A vocabulary warning — two "phase" numberings
 
-Deux découpages en phases coexistent dans la documentation, et ils ne parlent pas de la
-même chose :
+Two phase breakdowns coexist in the documentation, and they are not talking about the same
+thing:
 
-| Numérotation | Où | Sens |
+| Numbering | Where | Meaning |
 |---|---|---|
-| **Phase 0**, puis étapes 1, 2, 2.8, 3, 3.5, 4… | `migration/MIGRATION_STATUS.md` | l'avancement de la migration Legacy → v2. **Phase 0 est close.** L'étape courante est la 4 |
-| **Phase 1, Phase 2, Phase 3** | ce document | le découpage du seul chantier « fondations du modèle de données » : audit (1), proposition (2), implémentation (3) |
+| **Phase 0**, then steps 1, 2, 2.8, 3, 3.5, 4… | `migration/MIGRATION_STATUS.md` | progress of the Legacy → v2 migration. **Phase 0 is closed.** The current step is 4 |
+| **Phase 1, Phase 2, Phase 3** | this document | the breakdown of the "data model foundations" effort alone: audit (1), proposal (2), implementation (3) |
 
-Ce document est la **Phase 2 du chantier**, à l'intérieur de l'**étape 4 de la migration**.
-La « Phase 3 » qu'il évoque est l'implémentation de ses propres propositions, pas une phase
-de migration.
+This document is **Phase 2 of that effort**, inside **step 4 of the migration**. The "Phase 3"
+it mentions is the implementation of its own proposals, not a migration phase.
 
-### 0.4 Méthode, et ce qu'elle ne couvre pas
+### 0.4 Method, and what it does not cover
 
-Ce qui a été fait : lecture des refs et du reflog Git ; lecture de `src/core`, `src/runtime`,
-`src/editor`, des 17 ADR, de `ARCHITECTURE.md` et de `MIGRATION_STATUS.md` ; exécution de la
-suite de tests et du contrôle de couches sur une copie du dépôt ; une sonde d'exécution
-jetable, hors dépôt, pour **mesurer** le comportement de l'ordre et de la sérialisation au
-lieu de le déduire du code.
+What was done: reading the Git refs and reflog; reading `src/core`, `src/runtime`,
+`src/editor`, the 17 ADRs, `ARCHITECTURE.md` and `MIGRATION_STATUS.md`; running the test suite
+and the layer check on a copy of the repository; a throwaway execution probe, outside the
+repository, to **measure** the behaviour of ordering and serialization instead of inferring it
+from the code.
 
-Limites, à connaître :
+Limits, worth knowing:
 
-| Limite | Conséquence |
+| Limit | Consequence |
 |---|---|
-| Aucun shell n'était exposé sur la machine du mainteneur | **`git status` n'a pas pu être exécuté.** La propreté du working tree est déduite de dates de modification, pas vérifiée |
-| `legacy/` et `tools/parity/baseline/` non copiés | **`tools/parity/run.js` n'a pas été exécuté.** Les 39 scénarios de parité ne sont pas revalidés ici |
+| No shell was exposed on the maintainer's machine | **`git status` could not be run.** The cleanliness of the working tree is inferred from modification dates, not verified |
+| `legacy/` and `tools/parity/baseline/` were not copied | **`tools/parity/run.js` was not run.** The 39 parity scenarios are not revalidated here |
 
-Résultats obtenus :
+The results obtained:
 
 ```
-tools/test.sh              497 tests, 497 passés, 0 échec
-node tools/layers/run.js   profil v2 : 0 import interdit sur 325 imports
-                           profil legacy : ignoré (legacy/ absent de la copie)
+tools/test.sh              497 tests, 497 passed, 0 failed
+node tools/layers/run.js   v2 profile: 0 forbidden imports out of 325
+                           legacy profile: skipped (legacy/ absent from the copy)
 ```
 
 ---
 
-## 1. Décisions validées avant lecture
+## 1. Decisions accepted before reading further
 
-Quatre décisions ont été prises par le mainteneur au cours de cet audit. Elles ne sont pas
-des propositions et ne doivent pas être rediscutées ici. **Aucune n'est encore consignée
-dans un ADR** (§10).
+Four decisions were taken by the maintainer during this audit. They are not proposals and must
+not be reopened here. **None is yet recorded in an ADR** (§10).
 
-### 1.1 L'ordre des Components est signifiant et persistant
+### 1.1 Component order is meaningful and persistent
 
-**DÉCISION VALIDÉE (2026-08-14).** L'ordre des Components d'un `Object` fait partie de
-l'état persistant du projet. Il n'est pas une préférence d'affichage. Voir §4.
+**DECISION ACCEPTED (2026-08-14).** The order of an `Object`'s Components is part of the
+project's persistent state. It is not a display preference. See §4.
 
-### 1.2 Le réordonnancement est une mutation du Core
+### 1.2 Reordering is a Core mutation
 
-**DÉCISION VALIDÉE (2026-08-14).** Réordonner des Components, des enfants ou des objets
-racines est une mutation structurelle du Core, représentable par une Operation, donc
-compatible avec la réplication et l'Undo/Redo. Ce n'est pas un comportement d'Editor. Voir §6.
+**DECISION ACCEPTED (2026-08-14).** Reordering Components, children or root objects is a
+structural mutation of the Core, representable as an Operation, and therefore compatible with
+replication and Undo/Redo. It is not an Editor behaviour. See §6.
 
-### 1.3 Une définition de Component a une identité stable distincte de son nom
+### 1.3 A Component definition has a stable identity distinct from its name
 
-**DÉCISION VALIDÉE (2026-08-14).** Renommer une définition ne doit pas casser les instances
-existantes. Voir §5.2.
+**DECISION ACCEPTED (2026-08-14).** Renaming a definition must not break existing instances.
+See §5.2.
 
-### 1.4 `.px` reste une ressource JSON interprétée par le Runtime
+### 1.4 `.px` stays a JSON resource interpreted by the Runtime
 
-**DÉCISION VALIDÉE (2026-08-14),** en cohérence avec **ADR-0009**, **ADR-0015** et
-**ADR-0016** : le Core ne l'interprète pas ; le graphe appartient au type/définition et est
-partagé par les instances ; chaque instance garde son propre état d'exécution. Voir §9.
+**DECISION ACCEPTED (2026-08-14),** consistently with **ADR-0009**, **ADR-0015** and
+**ADR-0016**: the Core does not interpret it; the graph belongs to the type/definition and is
+shared by the instances; each instance keeps its own execution state. See §9.
 
-### 1.5 Terminologie : `Graph`, jamais `Composer`
+### 1.5 Terminology: `Graph`, never `Composer`
 
-**DÉCISION VALIDÉE (2026-08-14).** L'éditeur visuel de graphes s'appelle **`Graph`** en
-anglais, **« graphe »** ou **« éditeur de graphe »** en français.
+**DECISION ACCEPTED (2026-08-14).** The visual graph editor is called **`Graph`**.
 
-> **`Composer` est réservé** à une éventuelle future fenêtre de composition musicale. Ce
-> terme ne doit désigner l'éditeur de graphes nulle part — ni dans l'UI, ni dans la
-> documentation, ni dans les commentaires de code.
+> **`Composer` is reserved** for a possible future music composition window. That term must not
+> designate the graph editor anywhere — not in the UI, not in the documentation, not in code
+> comments.
 
-La distinction à ne pas perdre :
+The distinction not to lose:
 
-| Terme | Ce qu'il désigne | Couche |
+| Term | What it designates | Layer |
 |---|---|---|
-| **`Graph`** | le graphe en tant que notion produit, et la fenêtre qui l'édite | produit / Editor |
-| **`GraphResource`** | la **ressource persistée** qui porte les données du graphe (§3) | Project |
-| le **graphe** (donnée) | la structure `{ version, nodes, connections, variables, metadata }` d'ADR-0009 | donnée, transportée par le Core, interprétée par le Runtime |
+| **`Graph`** | the graph as a product notion, and the window that edits it | product / Editor |
+| **`GraphResource`** | the **persisted resource** that carries the graph's data (§3) | Project |
+| the **graph** (data) | the `{ version, nodes, connections, variables, metadata }` structure from ADR-0009 | data, transported by the Core, interpreted by the Runtime |
 
-Une fenêtre `Graph` édite une `GraphResource`, dont le payload est un graphe.
+A `Graph` window edits a `GraphResource`, whose payload is a graph.
 
-**OBSERVÉ.** Le terme `Composer` n'apparaît nulle part dans `docs/`. Il apparaît **une fois**
-dans le code, dans un commentaire : `src/editor/ui/tabs.js:10` — *« Project alongside a
-Composer »*. **Correction à faire en Phase 3** : ce commentaire doit dire `Graph`. Il n'a pas
-été modifié ici, cette étape étant documentaire.
+**OBSERVED.** The term `Composer` appears nowhere in `docs/`. It appears **once** in the code,
+in a comment: `src/editor/ui/tabs.js:10` — *"Project alongside a Composer"*. **A fix for
+Phase 3**: that comment must say `Graph`. It was not modified here, this step being
+documentation only.
 
-### 1.6 `Object` n'est pas un Component, et reste une section intrinsèque de l'Inspector
+### 1.6 `Object` is not a Component, and stays an intrinsic Inspector section
 
-**DÉCISION VALIDÉE (2026-08-14).** Deux affirmations, à tenir ensemble.
+**DECISION ACCEPTED (2026-08-14).** Two claims, to be held together.
 
-**`Object` n'est pas un Component.** Il n'est pas rangé dans `object.components`, ne
-s'attache pas, ne se détache pas, n'a pas de schéma de Component. `name`, `tag`, `layer`,
-`active`, `visible`, `lock`, `owner` sont des propriétés intrinsèques de l'`Object`
-(**OBSERVÉ** : `src/core/object.js:46-52`, et `src/core/serialize.js:28` en fixe la liste
-sérialisée). Cela reste conforme à **ADR-0001** et **ADR-0002** : ce qui a été sorti de
-l'`Object` vers un Component, c'est le placement (`Transform`), pas l'identité.
+**`Object` is not a Component.** It is not filed in `object.components`, it does not attach, it
+does not detach, it has no Component schema. `name`, `tag`, `layer`, `active`, `visible`,
+`lock` and `owner` are intrinsic properties of the `Object` (**OBSERVED**:
+`src/core/object.js:46-52`, and `src/core/serialize.js:28` fixes the serialized list). That
+stays consistent with **ADR-0001** and **ADR-0002**: what was moved out of the `Object` into a
+Component is placement (`Transform`), not identity.
 
-**`Object` reste une section intrinsèque de l'Inspector.** Le créateur doit pouvoir éditer
-le nom et le tag depuis l'Inspector, sans que cela fasse de l'`Object` un faux Component.
+**`Object` stays an intrinsic section of the Inspector.** The creator must be able to edit the
+name and the tag from the Inspector, without that turning the `Object` into a fake Component.
 
 ```
 Inspector
-├── Object                ← section intrinsèque, PAS un Component
+├── Object                ← an intrinsic section, NOT a Component
 │   ├── Name
 │   └── Tag
-├── Transform             ← Component
+├── Transform             ← a Component
 │   ├── Position
 │   ├── Rotation
 │   └── Scale
-└── …                     ← les autres Components
+└── …                     ← the other Components
 ```
 
-**OBSERVÉ — c'est déjà le comportement du dépôt, cette décision le confirme :**
+**OBSERVED — this is already the repository's behaviour; this decision confirms it:**
 
-- `src/editor/inspector/schema.js` exporte `objectFields()`, une liste **écrite à la main**
-  (`name`, `tag`, `layer`, `active`), distincte de `describeComponent()` qui, lui, lit un
-  schéma ou réfléchit sur une instance ;
-- `src/editor/windows/inspector.js` rend une section `Object` **au-dessus** des Components,
-  alimentée par `objectFields()` ;
-- `visible` et `lock` en sont absents volontairement : la ligne de Hierarchy les porte, où
-  ils sont accessibles pour tous les objets à la fois. `id` est absent parce qu'un créateur
-  n'en a pas l'usage.
+- `src/editor/inspector/schema.js` exports `objectFields()`, a **hand-written** list (`name`,
+  `tag`, `layer`, `active`), distinct from `describeComponent()`, which reads a schema or
+  reflects over an instance;
+- `src/editor/windows/inspector.js` renders an `Object` section **above** the Components, fed
+  by `objectFields()`;
+- `visible` and `lock` are deliberately absent from it: the Hierarchy row carries them, where
+  they are reachable for every object at once. `id` is absent because a creator has no use for
+  it.
 
-**Compatibilité avec l'architecture Operations.** Aucune adaptation n'est nécessaire :
-`Object.setProperty()` produit déjà une Operation dont la cible est
-`{ object: id, component: null }` (`src/core/object.js:160-168`). Le `component: null`
-**est** la façon dont le format exprime « une propriété intrinsèque de l'Object ». Éditer
-`name` depuis l'Inspector est donc déjà une mutation répliquable et annulable.
+**Compatibility with the Operations architecture.** No adaptation is needed:
+`Object.setProperty()` already produces an Operation whose target is
+`{ object: id, component: null }` (`src/core/object.js:160-168`). The `component: null` **is**
+how the format expresses "an intrinsic property of the Object". Editing `name` from the
+Inspector is therefore already a replicable, undoable mutation.
 
-**Conséquence sur la proposition §4.1 :** le passage de `components` à une collection
-ordonnée ne touche **pas** la section `Object` — elle n'est pas dans cette collection.
+**Consequence for proposal §4.1:** moving `components` to an ordered collection does **not**
+touch the `Object` section — it is not in that collection.
 
-> **Note de lecture du croquis.** Dans l'Inspector, `Object` et `Transform` apparaissent au
-> même niveau visuel. Cette platitude d'affichage ne dit rien du modèle : `Transform` est un
-> Component rangé dans `object.components`, `Object` ne l'est pas.
+> **A note on reading the sketch.** In the Inspector, `Object` and `Transform` appear at the
+> same visual level. That flatness of display says nothing about the model: `Transform` is a
+> Component filed in `object.components`, `Object` is not.
 
 ---
 
-## 2. Ce que le modèle est aujourd'hui — constats de l'audit
+## 2. What the model is today — the audit's findings
 
-**OBSERVÉ.** Toutes les affirmations de cette section ont été revérifiées contre `HEAD`.
+**OBSERVED.** Every claim in this section was re-verified against `HEAD`.
 
-### 2.1 Table de vérification
+### 2.1 Verification table
 
-| Constat | Emplacement |
+| Finding | Location |
 |---|---|
-| Les Components sont stockés dans une `Map`, l'ordre est l'ordre d'attachement | `core/object.js:56` |
-| Les enfants sont un tableau ; `addChild` ajoute **toujours en fin** | `core/object.js:59`, `:297` |
-| Les racines d'une Scene se déduisent par filtrage de l'ordre d'insertion d'une `Map` | `core/scene.js:167-169` |
-| La sérialisation **trie les Components par ordre alphabétique** | `core/serialize.js:151-155` |
-| Le Runtime exécute les Components **dans l'ordre d'attachement** | `core/runtime.js:113`, `runtime/runtime.js:137-141` |
-| `OperationType` ne contient que `SET_PROPERTY` | `core/operations/operation.js:11` |
-| `Operations.register(type, handler)` existe et **n'a aucun consommateur** | `core/operations/operations.js:67` |
-| `seq` est un compteur **de module**, partagé par tout le processus | `core/operations/operation.js:14` |
-| `Matrix` n'a **pas** de `decompose()` | `core/math/matrix.js` |
-| L'interdiction de cycle vit dans `addChild`, pas dans une Operation | `core/object.js:291` |
-| `describeType()` lit déjà `ComponentClass.label` | `editor/registry.js:59-63` |
-| `Sprite` déclare déjà `source: { type: 'resource', default: null }` | `runtime/rendering/components/sprite.js:12` |
-| `Tilemap` déclare `tiles` et `palette` en `type: 'array'` | `runtime/rendering/components/tilemap.js:21-22` |
-| `src/network/` et `src/project/` n'existent pas | — |
-| `Resource` n'existe pas dans `src/` | — |
-| `Document` n'existe nulle part : ni code, ni ADR, ni `ARCHITECTURE.md` | — |
-| `px-tabs` est une primitive complète **sans consommateur**, conservée délibérément | `editor/ui/tabs.js` |
+| Components are stored in a `Map`; the order is the attachment order | `core/object.js:56` |
+| Children are an array; `addChild` **always** appends | `core/object.js:59`, `:297` |
+| A Scene's roots are derived by filtering a `Map`'s insertion order | `core/scene.js:167-169` |
+| Serialization **sorts Components alphabetically** | `core/serialize.js:151-155` |
+| The Runtime runs Components **in attachment order** | `core/runtime.js:113`, `runtime/runtime.js:137-141` |
+| `OperationType` contains only `SET_PROPERTY` | `core/operations/operation.js:11` |
+| `Operations.register(type, handler)` exists and has **no consumer** | `core/operations/operations.js:67` |
+| `seq` is a **module-level** counter, shared by the whole process | `core/operations/operation.js:14` |
+| `Matrix` has **no** `decompose()` | `core/math/matrix.js` |
+| The cycle prohibition lives in `addChild`, not in an Operation | `core/object.js:291` |
+| `describeType()` already reads `ComponentClass.label` | `editor/registry.js:59-63` |
+| `Sprite` already declares `source: { type: 'resource', default: null }` | `runtime/rendering/components/sprite.js:12` |
+| `Tilemap` declares `tiles` and `palette` as `type: 'array'` | `runtime/rendering/components/tilemap.js:21-22` |
+| `src/network/` and `src/project/` do not exist | — |
+| `Resource` does not exist in `src/` | — |
+| `Document` exists nowhere: not in code, not in an ADR, not in `ARCHITECTURE.md` | — |
+| `px-tabs` is a complete primitive **with no consumer**, kept deliberately | `editor/ui/tabs.js` |
 
-### 2.2 Correction d'une affirmation d'un rapport antérieur
+### 2.2 Correcting a claim from an earlier report
 
-Le rapport d'audit de Phase 1 affirmait que le type `resource` « n'existe nulle part ».
-**C'est faux :** `Sprite.source` le déclare depuis l'étape 2.8, et `Tilemap` déclare deux
-propriétés `array`. Les trois retombent en `READONLY` dans l'Inspector.
+The Phase 1 audit report claimed that the `resource` type "exists nowhere". **That is false:**
+`Sprite.source` has declared it since step 2.8, and `Tilemap` declares two `array` properties.
+All three fall back to `READONLY` in the Inspector.
 
-Conséquence : `resource` et `array` ne sont pas des types hypothétiques à ajouter pour
-compléter une liste. **Trois propriétés de composants livrés ne sont pas éditables
-aujourd'hui.** Et `Sprite.source` est déjà une référence vers une ressource, dans un moteur
-qui n'a pas de notion de ressource : le trou `Resource` n'est pas seulement devant, il est
-déjà ouvert derrière.
+Consequence: `resource` and `array` are not hypothetical types to add for the sake of
+completing a list. **Three properties of shipped components are not editable today.** And
+`Sprite.source` is already a reference to a resource, in an engine that has no notion of a
+resource: the `Resource` gap is not only ahead of us, it is already open behind us.
 
-### 2.3 Le défaut central, mesuré
+### 2.3 The central defect, measured
 
-Sonde exécutée hors dépôt sur le Core réel :
+A probe run outside the repository against the real Core:
 
 ```
-ordre d'attachement (= ordre d'exécution Runtime, = ordre Inspector) : [ Zeta, Alpha ]
-ordre des clés sérialisées                                           : [ Alpha, Zeta ]
-après aller-retour serialize → deserialize                           : [ Alpha, Zeta ]
+attachment order (= Runtime execution order, = Inspector order) : [ Zeta, Alpha ]
+serialized key order                                            : [ Alpha, Zeta ]
+after a serialize → deserialize round trip                      : [ Alpha, Zeta ]
 
-ordre des enfants                        : [ a, b ]
-enfants après aller-retour               : [ a, b ]     ← préservé
-valeurs d'un Component après remove+add  : 42 → 1       ← perdues
+child order                             : [ a, b ]
+children after a round trip             : [ a, b ]     ← preserved
+a Component's values after remove+add   : 42 → 1       ← lost
 ```
 
-Deux fichiers du Core s'opposent :
+Two Core files contradict each other:
 
-| Fichier | Affirmation |
+| File | Claim |
 |---|---|
-| `core/serialize.js:151` | *« component type carries no ordering meaning »* → tri alphabétique |
-| `runtime/runtime.js:113` | *« runs […] in scene insertion order »* → l'ordre d'attachement **est** l'ordre d'exécution |
+| `core/serialize.js:151` | *"component type carries no ordering meaning"* → an alphabetical sort |
+| `runtime/runtime.js:113` | *"runs […] in scene insertion order"* → attachment order **is** execution order |
 
-**Conséquence concrète, aujourd'hui, sans rien changer : sauvegarder puis recharger un
-projet change l'ordre d'exécution des Components d'un objet.** Deux Components dont l'un lit
-ce que l'autre écrit dans le même pas ne se comportent pas pareil avant et après une
-sauvegarde. La décision §1.1 tranche ce conflit en faveur de l'ordre signifiant.
+**The concrete consequence, today, with nothing changed: saving and reloading a project changes
+the execution order of an object's Components.** Two Components where one reads what the other
+writes within the same step do not behave the same before and after a save. Decision §1.1
+settles this conflict in favour of meaningful order.
 
 ---
 
-## 3. Proposition — Project / Resource, et pourquoi pas de `Document`
+## 3. Proposal — Project / Resource, and why there is no `Document`
 
-### 3.1 Le schéma proposé
+### 3.1 The proposed shape
 
-**PROPOSITION.**
+**PROPOSAL.**
 
 ```mermaid
 graph TD
     P[Project]
-    P -->|possède N| R[Resource]
+    P -->|owns N| R[Resource]
 
     R --> RS[SceneResource]
     R --> RC[ComponentResource]
     R --> RG[GraphResource]
     R --> RA[AssetResource]
 
-    RS -->|charge en| S[Scene]
-    RC -->|charge en| D[ComponentDefinition]
-    RG -->|charge en| G[graphe, donnee opaque]
-    RA -->|charge en| B[payload binaire]
+    RS -->|loads into| S[Scene]
+    RC -->|loads into| D[ComponentDefinition]
+    RG -->|loads into| G[graph, opaque data]
+    RA -->|loads into| B[binary payload]
 
-    S -->|racines ordonnees| O[Object]
-    O -->|enfants ordonnes| O
-    O -->|components ordonnes| CI[ComponentInstance]
+    S -->|ordered roots| O[Object]
+    O -->|ordered children| O
+    O -->|ordered components| CI[ComponentInstance]
 
     CI -.->|type| D
     D -.->|graph: ResourceId| RG
-    D -.->|propriete type resource| RA
+    D -.->|resource-typed property| RA
 ```
 
-Trait plein = possession et sérialisation. Trait pointillé = référence par identifiant.
+A solid line = ownership and serialization. A dotted line = a reference by identifier.
 
-Deux règles gouvernent tout le schéma :
+Two rules govern the whole diagram:
 
-1. **Une seule chose possède une donnée.** Ce qui est possédé est sérialisé en ligne ; tout
-   le reste est une référence par `ResourceId`.
-2. **Un identifiant n'est jamais un nom, jamais un chemin.** Ni pour une ressource, ni pour
-   une définition de Component, ni pour un Object. C'est **ADR-0010** appliqué au-delà des
-   jeux.
+1. **Only one thing owns a piece of data.** What is owned is serialized inline; everything else
+   is a reference by `ResourceId`.
+2. **An identifier is never a name, never a path.** Neither for a resource, nor for a Component
+   definition, nor for an Object. This is **ADR-0010** applied beyond games.
 
-### 3.2 `Resource` — l'unité unique
+### 3.2 `Resource` — the single unit
 
-**PROPOSITION.** `Resource` est l'unité d'identité, de stockage, de chargement et de
-référence du projet. `kind ∈ { scene, component, graph, asset }`.
+**PROPOSAL.** `Resource` is the project's unit of identity, storage, loading and reference.
+`kind ∈ { scene, component, graph, asset }`.
 
 | | |
 |---|---|
-| **Identité** | `ResourceId` opaque (`createId()`), **immuable pour toujours**, indépendante du nom et du chemin |
-| **Contient** | `id`, `kind`, `name` (affiché, modifiable), `path` (rangement, indicatif), `formatVersion`, payload |
-| **Ne contient surtout pas** | une référence par chemin ; de l'état d'exécution ; de l'état d'Editor |
-| **Propriétaire** | couche **Project** |
-| **Persistance** | JSON pour scene/component/graph ; payload binaire hors JSON pour asset |
+| **Identity** | an opaque `ResourceId` (`createId()`), **immutable forever**, independent of the name and the path |
+| **Holds** | `id`, `kind`, `name` (displayed, editable), `path` (filing, indicative), `formatVersion`, payload |
+| **Must never hold** | a reference by path; execution state; Editor state |
+| **Owner** | the **Project** layer |
+| **Persistence** | JSON for scene/component/graph; a binary payload outside the JSON for an asset |
 
 ```json
 {
   "format": 1,
   "id": "prj_9k2m",
-  "name": "Mon jeu",
+  "name": "My game",
   "resources": [
     { "id": "res_c3", "kind": "component", "name": "Controller", "path": "components/" },
     { "id": "res_d4", "kind": "graph",     "name": "Controller", "path": "components/" },
@@ -316,108 +310,103 @@ référence du projet. `kind ∈ { scene, component, graph, asset }`.
 }
 ```
 
-- `id` : identité. Jamais dérivée du nom ni du chemin, jamais réutilisée.
-- `name` : affichage. Modifiable, non unique, sans effet sur les références.
-- `path` : rangement. Le déplacer ne casse rien.
+- `id`: identity. Never derived from the name or the path, never reused.
+- `name`: display. Editable, non-unique, with no effect on references.
+- `path`: filing. Moving it breaks nothing.
 
-**Déplacer un projet** : les chemins changent, les ids non → rien à faire.
-**Copier un projet** : ids identiques, cohérence interne préservée → rien à faire.
-**Importer une ressource d'un autre projet** : seul cas de collision concevable ; le
-traitement honnête est une passe de remappage à l'import. **À ne pas construire maintenant.**
+**Moving a project**: the paths change, the ids do not → nothing to do.
+**Copying a project**: identical ids, internal coherence preserved → nothing to do.
+**Importing a resource from another project**: the only conceivable collision case; the honest
+treatment is a remapping pass at import time. **Not to be built now.**
 
-C'est exactement le défaut de Legacy que `ARCHITECTURE.md` §9 relève : `id = path + name`,
-donc renommer un fichier change son identité.
+This is exactly the Legacy defect `ARCHITECTURE.md` §9 notes: `id = path + name`, so renaming a
+file changes its identity.
 
-### 3.3 `Asset` — concept évalué et rejeté
+### 3.3 `Asset` — a concept evaluated and rejected
 
-**PROPOSITION.** `Asset` n'existe pas comme entité distincte. Une image est une `Resource` de
-`kind: 'asset'` dont le payload vit hors du JSON.
+**PROPOSAL.** `Asset` does not exist as a distinct entity. An image is a `Resource` of
+`kind: 'asset'` whose payload lives outside the JSON.
 
-En faire un pair de `Resource` créerait deux schémas d'identité, deux formes de référence
-dans les propriétés, deux chemins de chargement et de réplication, et une question sans
-réponse : pourquoi une image serait-elle un `Asset` et un `.px` une `Resource`, alors qu'une
-propriété les référence de la même façon ?
+Making it a peer of `Resource` would create two identity schemes, two forms of reference in
+properties, two loading and replication paths, and one unanswerable question: why would an
+image be an `Asset` and a `.px` a `Resource`, when a property references them the same way?
 
-Le mot « asset » reste un mot d'interface — le panneau peut s'appeler ainsi — pas un concept
-du modèle.
+The word "asset" stays an interface word — the panel may be called that — not a model concept.
 
-### 3.4 `Document` — concept évalué et rejeté
+### 3.4 `Document` — a concept evaluated and rejected
 
-**PROPOSITION.** Il n'y a pas de `Document` dans le modèle.
+**PROPOSAL.** There is no `Document` in the model.
 
-| Ce que `Document` apporterait | Qui le détient déjà |
+| What `Document` would bring | Who already holds it |
 |---|---|
-| identité | `Resource.id` |
-| contenu | payload de la `Resource` |
-| persistance | `ResourceStore` |
-| état « modifié » | dérivable du pipeline `Operations` de la ressource chargée |
-| pile d'undo | l'historique, **par ressource**, donc déjà indexable par `ResourceId` |
-| état de vue (scroll, zoom, repli) | **état d'Editor, qui ne doit jamais entrer dans le projet** |
+| identity | `Resource.id` |
+| content | the `Resource`'s payload |
+| persistence | `ResourceStore` |
+| a "modified" state | derivable from the loaded resource's `Operations` pipeline |
+| an undo stack | the history, **per resource**, therefore already indexable by `ResourceId` |
+| view state (scroll, zoom, collapse) | **Editor state, which must never enter the project** |
 
-`Document` serait donc soit un alias de `Resource`, soit un mélange de modèle et d'état
-d'IDE. La seconde forme est précisément l'erreur que `core/scene.js` documente en tête de
-fichier à propos de `scene.current` de Legacy, et que **ADR-0017** pose comme règle pour la
-sélection.
+`Document` would therefore be either an alias for `Resource` or a mixture of model and IDE
+state. The second form is precisely the mistake `core/scene.js` documents at the top of the
+file about Legacy's `scene.current`, and that **ADR-0017** turns into a rule for selection.
 
-**Ce que `px-tabs` ouvre s'appelle un `OpenEditor`** : un objet de la couche Editor,
-`{ resourceId, kind, viewState, history }`, jamais sérialisé dans le projet. Son éventuelle
-persistance (« quels onglets étaient ouverts ») appartient à un **workspace** — un artefact
-jetable, séparé du projet, dont la perte ne coûte rien.
+**What `px-tabs` opens is called an `OpenEditor`**: an Editor-layer object,
+`{ resourceId, kind, viewState, history }`, never serialized into the project. Its possible
+persistence ("which tabs were open") belongs to a **workspace** — a disposable artefact,
+separate from the project, whose loss costs nothing.
 
-### 3.5 `ResourceStore` — le seul point de contact avec le stockage
+### 3.5 `ResourceStore` — the only point of contact with storage
 
-**PROPOSITION.** Une interface, plusieurs implémentations, aucune dans le Core :
+**PROPOSAL.** One interface, several implementations, none in the Core:
 
 ```
 ResourceStore
-  list()            → entrées du manifeste
+  list()            → manifest entries
   read(id)          → payload
-  write(id, data)   → persiste
+  write(id, data)   → persists
   delete(id)
 ```
 
-| Backend | Quand | Ce qu'il change |
+| Backend | When | What it changes |
 |---|---|---|
-| mémoire | tests, démarrage | rien |
-| IndexedDB | mode local / hors ligne (`Store` déjà écrit et inutilisé, `ARCHITECTURE.md` §9) | l'implémentation seule |
-| HTTP / distant | plus tard | l'implémentation seule, plus une politique de cache |
+| memory | tests, startup | nothing |
+| IndexedDB | local / offline mode (`Store` already written and unused, `ARCHITECTURE.md` §9) | the implementation alone |
+| HTTP / remote | later | the implementation alone, plus a cache policy |
 
-Chargement **paresseux et par id** : ouvrir un projet lit le manifeste, pas les payloads.
-Les payloads binaires ne sont **jamais** en base64 dans le JSON d'une scène — corrige le
-défaut relevé par `ARCHITECTURE.md` §9, et évite qu'un instantané de scène répliqué
-transporte des images.
+**Lazy loading, by id**: opening a project reads the manifest, not the payloads. Binary
+payloads are **never** base64 inside a scene's JSON — which fixes the defect noted by
+`ARCHITECTURE.md` §9, and keeps a replicated scene snapshot from carrying images.
 
-### 3.6 Une nouvelle couche `src/project/`
+### 3.6 A new `src/project/` layer
 
-**PROPOSITION.**
+**PROPOSAL.**
 
 ```
 editor/  ──►  project/  ──►  core/
 runtime/ ──►  core/
-core/    ──►  (rien)
+core/    ──►  (nothing)
 ```
 
-`project/` n'importe ni le DOM, ni `runtime/`, ni `editor/`. Un serveur headless doit
-pouvoir charger un projet — c'est ce qu'impose **ADR-0011** (le serveur autoritaire charge
-les mêmes définitions et les mêmes scènes que le client).
+`project/` imports neither the DOM, nor `runtime/`, nor `editor/`. A headless server must be
+able to load a project — which is what **ADR-0011** requires (the authoritative server loads
+the same definitions and the same scenes as the client).
 
-**Alternative rejetée :** mettre le chargement dans `editor/`. Un serveur ne peut pas
-dépendre d'un IDE.
+**Rejected alternative:** putting loading in `editor/`. A server cannot depend on an IDE.
 
-**Impact outillage :** `tools/layers/rules.js` devra déclarer la couche `project` et les
-interdictions `project → editor`, `project → runtime`, `core → project`. Sans quoi le
-contrôle de couches laisserait passer une inversion.
+**Tooling impact:** `tools/layers/rules.js` will have to declare the `project` layer and the
+prohibitions `project → editor`, `project → runtime`, `core → project`. Otherwise the layer
+check would let an inversion through.
 
 ---
 
-## 4. Proposition — collections ordonnées
+## 4. Proposal — ordered collections
 
-### 4.1 La forme du stockage
+### 4.1 The shape of the storage
 
-**PROPOSITION.** Le problème mesuré au §2.3 n'est pas l'absence d'API, c'est la **forme du
-conteneur**. Une `Map` sérialisée en objet JSON trié ne peut pas porter un ordre.
+**PROPOSAL.** The problem measured in §2.3 is not a missing API, it is the **shape of the
+container**. A `Map` serialized as a sorted JSON object cannot carry an order.
 
-`components` devient une **collection ordonnée, sérialisée en tableau** :
+`components` becomes an **ordered collection, serialized as an array**:
 
 ```json
 "components": [
@@ -427,89 +416,88 @@ conteneur**. Une `Map` sérialisée en objet JSON trié ne peut pas porter un or
 ]
 ```
 
-Pourquoi un tableau plutôt qu'un champ `order` dans un objet :
+Why an array rather than an `order` field inside an object:
 
-- un tableau **est** ordonné ; un champ `order` est un ordre qu'il faut maintenir cohérent,
-  valider, et réparer quand il ne l'est pas ;
-- il n'y a plus de tri à supprimer dans `serialize.js` : il n'y a plus rien à trier ;
-- deux sérialisations du même modèle restent identiques octet pour octet — ce que le tri
-  cherchait à garantir, et qu'un tableau obtient sans détruire l'information.
+- an array **is** ordered; an `order` field is an ordering you have to keep consistent,
+  validate, and repair when it is not;
+- there is no longer a sort to remove in `serialize.js`: there is nothing left to sort;
+- two serializations of the same model stay identical byte for byte — which is what the sort
+  was trying to guarantee, and which an array achieves without destroying the information.
 
-Le même raisonnement s'applique aux racines : **la Scene tient une liste ordonnée de
-racines**, sérialisée `roots: [id, id, …]`, exactement comme `children` l'est déjà pour un
-`Object`. `roots()` la renvoie au lieu de filtrer.
+The same reasoning applies to the roots: **the Scene holds an ordered list of roots**,
+serialized as `roots: [id, id, …]`, exactly as `children` already is for an `Object`.
+`roots()` returns it instead of filtering.
 
-**`FORMAT_VERSION` passe de 1 à 2.** Aucune migration de données à écrire : il n'existe pas
-de projet v1 (**ADR / Q6**, `ARCHITECTURE.md` §10).
+**`FORMAT_VERSION` goes from 1 to 2.** No data migration to write: there is no v1 project
+(**ADR / Q6**, `ARCHITECTURE.md` §10).
 
-### 4.2 Ce que l'ordre signifie, désormais explicitement
+### 4.2 What order means, now explicitly
 
-**PROPOSITION.** Une fois ce chantier fait, une seule phrase, écrite à un seul endroit :
+**PROPOSAL.** Once this work is done, one sentence, written in one place:
 
-> L'ordre des Components d'un `Object` est l'ordre dans lequel le Runtime exécute leur
-> `update`, et l'ordre dans lequel l'Inspector les affiche. C'est le même ordre. Il est
-> persistant.
+> The order of an `Object`'s Components is the order in which the Runtime runs their `update`,
+> and the order in which the Inspector displays them. It is the same order. It is persistent.
 
-Cela résout la contradiction du §2.3 **par le haut** : `serialize.js` cesse d'affirmer que
-l'ordre n'a pas de sens, parce qu'il en a un.
+That resolves the contradiction in §2.3 **from above**: `serialize.js` stops claiming that
+order has no meaning, because it has one.
 
-L'ordre de **dessin** reste gouverné par `layer` puis par l'ordre de la scène
-(`SceneRenderer.#drawOrder`, tri stable) — inchangé, et volontairement distinct de l'ordre
-d'`update`.
+**Draw** order stays governed by `layer` and then by scene order
+(`SceneRenderer.#drawOrder`, a stable sort) — unchanged, and deliberately distinct from
+`update` order.
 
 ---
 
-## 5. Proposition — Components utilisateur
+## 5. Proposal — user Components
 
-### 5.1 Le cycle complet
+### 5.1 The full cycle
 
 ```mermaid
 sequenceDiagram
-    participant U as Créateur
+    participant U as Creator
     participant E as Editor
     participant P as Project
     participant C as Core
     participant R as Runtime
 
-    U->>E: « Créer un Component » (nom : Controller)
+    U->>E: "Create a Component" (name: Controller)
     E->>P: ADD_RESOURCE kind=component → res_c3
     E->>P: ADD_RESOURCE kind=graph → res_d4
     Note over P: definition type=res_c3 label=Controller<br/>revision=1 graph=res_d4
     P->>C: components.register(defineComponent(def))
-    P->>R: behaviors.bind("res_c3", graphe)
-    U->>E: Add Component ▸ Controller sur un Object
+    P->>R: behaviors.bind("res_c3", graph)
+    U->>E: Add Component ▸ Controller on an Object
     E->>C: ADD_COMPONENT { object, type:"res_c3", index }
-    Note over C: instance = valeurs seules
+    Note over C: the instance = values only
 ```
 
-### 5.2 Identité stable vs nom affiché
+### 5.2 A stable identity vs a displayed name
 
-**PROPOSITION**, mettant en œuvre la **DÉCISION VALIDÉE §1.3**.
+**PROPOSAL**, implementing **DECISION ACCEPTED §1.3**.
 
-> Le champ `type` devient l'identité stable, jamais éditable par le créateur.
-> Le champ `label` devient le nom affiché, librement modifiable.
+> The `type` field becomes the stable identity, never editable by the creator.
+> The `label` field becomes the displayed name, freely editable.
 
-| | Component natif | Component utilisateur |
+| | A native Component | A user Component |
 |---|---|---|
-| `static type` | `'Transform'` — figé dans le code | `'res_c3'` — le `ResourceId` de sa définition |
-| `static label` | `'Transform'` (implicite) | `'Controller'` — modifiable |
+| `static type` | `'Transform'` — fixed in the code | `'res_c3'` — the `ResourceId` of its definition |
+| `static label` | `'Transform'` (implicit) | `'Controller'` — editable |
 
-Trois raisons qui font que ce choix coûte presque rien :
+Three reasons this choice costs almost nothing:
 
-1. **La couture existe déjà.** `editor/registry.js:59-63` lit
+1. **The seam already exists.** `editor/registry.js:59-63` reads
    `ComponentClass?.label ?? shipped?.label ?? type`.
-2. **Le registre et la sérialisation continuent de fonctionner à l'identique** : ils clefent
-   par `type`, qui reste une chaîne opaque.
-3. **Renommer devient un `SET_PROPERTY` sur le `label` de la définition.** Aucune instance
-   n'est touchée, aucune scène réécrite, aucun projet cassé.
+2. **The registry and serialization keep working identically**: they key by `type`, which stays
+   an opaque string.
+3. **Renaming becomes a `SET_PROPERTY` on the definition's `label`.** No instance is touched,
+   no scene rewritten, no project broken.
 
-**Asymétrie assumée** — `type` lisible pour un natif, opaque pour un composant utilisateur :
-le nom d'un composant natif est du code, donc stable par nature ; celui d'un composant
-utilisateur est de la donnée, donc instable par nature. **→ Point d'arbitrage n° 4 (§11).**
+**An accepted asymmetry** — a readable `type` for a native component, an opaque one for a user
+component: a native component's name is code, and therefore stable by nature; a user
+component's is data, and therefore unstable by nature. **→ Arbitration point 4 (§11).**
 
-### 5.3 Forme d'une définition
+### 5.3 The shape of a definition
 
-**PROPOSITION.**
+**PROPOSAL.**
 
 ```json
 {
@@ -527,132 +515,128 @@ utilisateur est de la donnée, donc instable par nature. **→ Point d'arbitrage
 }
 ```
 
-`icon` et `category` sont déjà honorés par `editor/registry.js` via `ComponentClass.category`
-— donc gratuits.
+`icon` and `category` are already honoured by `editor/registry.js` through
+`ComponentClass.category` — so they are free.
 
-### 5.4 Le graphe référencé par id — écart signalé avec ADR-0016
+### 5.4 The graph referenced by id — a flagged divergence from ADR-0016
 
-**PROPOSITION — À ARBITRER.** **ADR-0016** montre, dans son exemple JSON, le graphe **en
-ligne** dans la définition : `"graph": { "version": 1, "nodes": [], … }`. La proposition est
-que la définition référence son graphe **par `ResourceId`** : `"graph": "res_d4"`.
+**PROPOSAL — TO ARBITRATE.** **ADR-0016** shows, in its JSON example, the graph **inline**
+inside the definition: `"graph": { "version": 1, "nodes": [], … }`. The proposal is that the
+definition reference its graph **by `ResourceId`**: `"graph": "res_d4"`.
 
-Ce n'est pas une contradiction du raisonnement d'ADR-0016 — son §5 pose que « pour le Core,
-un graphe est une donnée » et son tableau de points ouverts laisse explicitement en suspens
-« le format de fichier et le stockage d'une définition (une ressource) ». Mais l'exemple
-écrit montre l'autre forme, et **cela demande donc un accord explicite.**
+This is not a contradiction of ADR-0016's reasoning — its §5 establishes that "for the Core, a
+graph is data", and its table of open points explicitly leaves "the file format and storage of
+a definition (a resource)" unresolved. But the written example shows the other form, and **this
+therefore needs explicit agreement.**
 
-Arguments pour la référence : un graphe en ligne empêcherait d'ouvrir `Controller.px` dans
-une fenêtre `Graph` sans ouvrir aussi le fichier de définition, et ferait diverger deux
-copies du même graphe.
+Arguments for the reference: an inline graph would make it impossible to open `Controller.px`
+in a `Graph` window without also opening the definition file, and would let two copies of the
+same graph diverge.
 
-**→ Point d'arbitrage n° 1 (§11).**
+**→ Arbitration point 1 (§11).**
 
-### 5.5 Évolution d'une définition, et le sort des instances
+### 5.5 A definition evolving, and the fate of the instances
 
-**PROPOSITION.** Trois stratégies évaluées :
+**PROPOSAL.** Three strategies evaluated:
 
-| | **S1 — Réconciliation structurelle** ★ | **S2 — Versions + migrations** | **S3 — Rien** |
+| | **S1 — Structural reconciliation** ★ | **S2 — Versions + migrations** | **S3 — Nothing** |
 |---|---|---|---|
-| Principe | au chargement, les valeurs stockées sont filtrées par le schéma courant : clés inconnues jetées, clés manquantes remplies par le défaut | chaque définition porte une version ; l'instance stocke la sienne ; des scripts de migration montent les instances | les instances gardent ce qu'elles ont |
-| Ajouter une propriété | défaut appliqué ✅ | ✅ | absente ❌ |
-| Retirer une propriété | valeur jetée ✅ | ✅ | valeur fantôme sérialisée ❌ |
-| Renommer une propriété | perd la valeur | possible | perd la valeur |
-| Complexité | **très faible** | élevée | nulle mais incorrecte |
-| Déterminisme réseau | total | dépend des scripts | mauvais |
+| Principle | at load time, the stored values are filtered by the current schema: unknown keys dropped, missing keys filled with the default | each definition carries a version; the instance stores its own; migration scripts move instances up | instances keep what they have |
+| Adding a property | the default is applied ✅ | ✅ | absent ❌ |
+| Removing a property | the value is dropped ✅ | ✅ | a phantom value serialized ❌ |
+| Renaming a property | loses the value | possible | loses the value |
+| Complexity | **very low** | high | none, but incorrect |
+| Network determinism | total | depends on the scripts | poor |
 
-**Recommandation : S1.** **ADR-0016** §4 pose déjà qu'« une instance neuve a exactement les
-propriétés déclarées » et que « le schéma d'un composant défini est nécessairement
-exhaustif ». S1 n'est que l'application de cette règle **au chargement** et non seulement à
-la construction.
+**Recommendation: S1.** **ADR-0016** §4 already establishes that "a fresh instance has exactly
+the declared properties" and that "the schema of a defined component is necessarily
+exhaustive". S1 is merely that rule applied **at load time** and not only at construction.
 
-Le seul cas non couvert est le **renommage d'une propriété**. Le remède honnête, le jour où
-le besoin se présente, est un champ de donnée sur le descripteur (`previousNames: [...]`) lu
-par la réconciliation. **À ne pas construire maintenant.**
+The only case not covered is **renaming a property**. The honest remedy, the day the need
+arises, is a data field on the descriptor (`previousNames: [...]`) read by the reconciliation.
+**Not to be built now.**
 
-`revision` sert à deux choses et deux seulement : dire à `Behaviors` qu'un graphe a changé,
-et dire à l'Editor qu'un panneau doit se reconstruire. **Les instances ne stockent pas de
-`revision`** — c'est ce qui garde S1 simple.
+`revision` serves two purposes and only two: telling `Behaviors` that a graph has changed, and
+telling the Editor that a panel must be rebuilt. **Instances do not store a `revision`** —
+which is what keeps S1 simple.
 
-### 5.6 Suppression d'une définition encore utilisée
+### 5.6 Deleting a definition that is still in use
 
-**PROPOSITION.** Le comportement actuel serait un `throw` de `registry.create()` au
-chargement, et une scène entière perdue.
+**PROPOSAL.** The current behaviour would be a `throw` from `registry.create()` at load time,
+and a whole scene lost.
 
-Proposition : la désérialisation d'un Component de type inconnu **ne jette pas** ; elle
-produit un `MissingComponent` qui conserve intégralement ses valeurs sérialisées, son type
-et son index, ne s'exécute pas, et se signale dans l'Inspector.
+Proposal: deserializing a Component of an unknown type **does not throw**; it produces a
+`MissingComponent` that keeps its serialized values, its type and its index in full, does not
+run, and reports itself in the Inspector.
 
-Perdre une scène parce qu'un fichier manque est le pire comportement possible pour un
-éditeur. Un placeholder qui préserve les données permet de restaurer la définition et de
-retrouver le projet intact.
+Losing a scene because a file is missing is the worst possible behaviour for an editor. A
+placeholder that preserves the data lets you restore the definition and find the project
+intact.
 
-**Point volontairement laissé ouvert :** un serveur autoritaire doit-il, lui, **refuser** de
-charger une scène incomplète ? C'est une décision de politique serveur, hors périmètre de
-cet audit.
+**A point deliberately left open:** should an authoritative server, for its part, **refuse** to
+load an incomplete scene? That is a server policy decision, outside this audit's scope.
 
 ---
 
-## 6. Proposition — hiérarchie, réordonnancement, reparentage
+## 6. Proposal — hierarchy, reordering, reparenting
 
-### 6.1 `REPARENT` unifié
+### 6.1 A unified `REPARENT`
 
-**PROPOSITION**, mettant en œuvre la **DÉCISION VALIDÉE §1.2**.
+**PROPOSAL**, implementing **DECISION ACCEPTED §1.2**.
 
-`UNPARENT` ne doit pas être une Operation distincte : `REPARENT` avec `parent: null` le
-couvre exactement. Raisons : son inverse est un `REPARENT` (deux opérations qui s'inversent
-l'une l'autre sont la même opération) ; `Object.addChild()` détache déjà de l'ancien parent,
-donc « ajouter un enfant » *est* un reparentage ; deux opérations pour une mutation, c'est
-deux règles d'inversion, deux validations de cycle, deux chemins de réplication.
+`UNPARENT` must not be a separate Operation: `REPARENT` with `parent: null` covers it exactly.
+Reasons: its inverse is a `REPARENT` (two operations that invert each other are the same
+operation); `Object.addChild()` already detaches from the previous parent, so "adding a child"
+*is* a reparent; two operations for one mutation means two inversion rules, two cycle
+validations, two replication paths.
 
-Et, point le plus structurant de la proposition :
+And, the most structural point of the proposal:
 
-> **`REPARENT` porte aussi l'index.** Il couvre alors : reparenter, détacher, réordonner
-> parmi ses frères, et réordonner parmi les racines.
+> **`REPARENT` also carries the index.** It then covers: reparenting, detaching, reordering
+> among siblings, and reordering among the roots.
 
-Le geste réel dans une Hierarchy est un dépôt *entre deux lignes* — il change le parent **et**
-la position, atomiquement. Les séparer produirait deux opérations qui doivent toujours voyager
-ensemble, s'annuler ensemble, et dont l'ordre importe.
+The real gesture in a Hierarchy is a drop *between two rows* — it changes the parent **and** the
+position, atomically. Separating them would produce two operations that must always travel
+together, undo together, and whose order matters.
 
-Par symétrie : **les racines d'une Scene sont les enfants d'un parent implicite `null`.**
-Réordonner une racine, c'est `REPARENT { parent: null, index }`. Un seul modèle mental, une
-seule opération, un seul inverse.
+By symmetry: **a Scene's roots are the children of an implicit `null` parent.** Reordering a
+root is `REPARENT { parent: null, index }`. One mental model, one operation, one inverse.
 
-### 6.2 Les primitives Core
+### 6.2 The Core primitives
 
-**PROPOSITION.**
+**PROPOSAL.**
 
-| Primitive | Portée | Pourquoi cette forme |
+| Primitive | Scope | Why this shape |
 |---|---|---|
-| `object.moveComponent(component, index)` | Object | Un Component ne change pas de propriétaire, seulement de rang |
-| `scene.reparent(object, parent, index)` | Scene | **Remplace `moveChild` et `moveRoot`.** Réordonner parmi ses frères = reparenter vers le même parent à un autre index ; réordonner une racine = reparenter vers `null` |
+| `object.moveComponent(component, index)` | Object | A Component does not change owner, only rank |
+| `scene.reparent(object, parent, index)` | Scene | **Replaces `moveChild` and `moveRoot`.** Reordering among siblings = reparenting to the same parent at another index; reordering a root = reparenting to `null` |
 
-Pourquoi `reparent` porté par la **Scene** et non par l'`Object` : réordonner une racine n'a
-pas d'`Object` propriétaire — c'est la Scene qui possède la liste ; un reparentage touche
-**deux** parents, le faire porter par l'un des deux est arbitraire ; et la Scene est déjà
-propriétaire du pipeline `Operations` et résolveur d'identité.
+Why `reparent` is carried by the **Scene** and not by the `Object`: reordering a root has no
+owning `Object` — the Scene owns the list; a reparent touches **two** parents, and making one
+of the two carry it is arbitrary; and the Scene already owns the `Operations` pipeline and is
+the identity resolver.
 
-`addChild` / `removeChild` restent, inchangés, comme raccourcis conservant le transform local
-— c'est ce qu'un script attend et ce que `editor/project/starter.js` utilise.
+`addChild` / `removeChild` stay, unchanged, as shortcuts preserving the local transform — which
+is what a script expects and what `editor/project/starter.js` uses.
 
 ### 6.3 Cycles
 
-**PROPOSITION.** La garde existe déjà (`core/object.js:291`, `isAncestorOf`) mais elle vit
-dans `addChild`. Elle doit être portée par le **gestionnaire de l'Operation `REPARENT`**,
-pour trois raisons :
+**PROPOSAL.** The guard already exists (`core/object.js:291`, `isAncestorOf`) but it lives in
+`addChild`. It must be carried by the **`REPARENT` Operation's handler**, for three reasons:
 
-1. une opération **répliquée** passe par `apply()` et doit être validée aussi ;
-2. une opération invalide doit produire `applied: false`, **pas un `throw`** — un `throw`
-   dans `#applyNow` remonterait au transport ;
-3. l'autorité (**ADR-0011**) doit pouvoir refuser en amont, pas seulement constater en aval.
+1. a **replicated** operation goes through `apply()` and must be validated too;
+2. an invalid operation must produce `applied: false`, **not a `throw`** — a `throw` inside
+   `#applyNow` would propagate to the transport;
+3. the authority (**ADR-0011**) must be able to refuse upstream, not merely observe downstream.
 
-**Cycle en réseau :** deux clients reparentent simultanément A sous B et B sous A. Chaque
-opération est valide localement, leur composition ne l'est pas. C'est le serveur autoritaire
-qui tranche : il arbitre dans **son** ordre et rejette la seconde. C'est exactement ce pour
-quoi **ADR-0011** existe, et cela ne demande aucune machinerie supplémentaire.
+**A cycle over the network:** two clients simultaneously reparent A under B and B under A. Each
+operation is valid locally; their composition is not. It is the authoritative server that
+decides: it arbitrates in **its** order and rejects the second. That is exactly what
+**ADR-0011** exists for, and it requires no extra machinery.
 
-### 6.4 Transform au reparentage — la question, et la réponse
+### 6.4 Transform on reparenting — the question, and the answer
 
-**PROPOSITION.**
+**PROPOSAL.**
 
 ```
 Scene                      Scene
@@ -661,61 +645,60 @@ Scene                      Scene
                                 └── Sword
 ```
 
-- **A — conserver le Transform local** : les valeurs stockées ne bougent pas. L'épée saute
-  visuellement là où le nouveau parent la place.
-- **B — conserver le Transform monde** : les valeurs locales sont recalculées pour que l'épée
-  ne bouge pas à l'écran.
+- **A — keep the local Transform**: the stored values do not move. The sword visually jumps to
+  wherever the new parent places it.
+- **B — keep the world Transform**: the local values are recomputed so that the sword does not
+  move on screen.
 
-**Recommandation : B, préservation du monde par défaut — mais composée dans l'Editor, jamais
-intégrée au Core.**
+**Recommendation: B, world preservation by default — but composed in the Editor, never built
+into the Core.**
 
 ```
-Geste dans la Hierarchy  =  batch {
-                              REPARENT      { object, parent, index, previous… }
-                              SET_PROPERTY  x
-                              SET_PROPERTY  y
-                              SET_PROPERTY  rotation
-                              SET_PROPERTY  scaleX
-                              SET_PROPERTY  scaleY
-                            }
+A gesture in the Hierarchy  =  batch {
+                                 REPARENT      { object, parent, index, previous… }
+                                 SET_PROPERTY  x
+                                 SET_PROPERTY  y
+                                 SET_PROPERTY  rotation
+                                 SET_PROPERTY  scaleX
+                                 SET_PROPERTY  scaleY
+                               }
 ```
 
-Cinq raisons, toutes vérifiables dans le code actuel :
+Five reasons, all verifiable in the current code:
 
-1. **`REPARENT` reste inversible par sa seule structure.** Un `REPARENT` qui recalculerait le
-   Transform devrait aussi transporter les cinq valeurs précédentes pour être annulable — il
-   porterait deux mutations sous un seul nom.
-2. **La réplication reste exacte.** Les valeurs recalculées voyagent comme des nombres. Si
-   chaque nœud recalculait sa propre décomposition, deux machines divergeraient sur des
-   flottants. C'est le genre de désynchronisation qu'on ne diagnostique jamais.
-3. **`batch` existe déjà** (`core/operations/operation.js`, **ADR-0008**) et fait exactement
-   cela : « un drag = une entrée d'historique ». Une seule entrée d'undo, six opérations.
-4. **Le Core garde une seule loi.** `parent.addChild(child)` depuis un script conserve le
-   local — ce que du code attend. La préservation du monde est une **politique d'éditeur**,
-   écrite dans `editor/commands.js`, déjà déclaré comme le point d'insertion des Operations
-   structurelles.
-5. **ADR-0002 est respecté** : les valeurs restent locales, le monde reste dérivé, rien n'est
-   stocké en double.
+1. **`REPARENT` stays invertible by its structure alone.** A `REPARENT` that recomputed the
+   Transform would also have to carry the five previous values to be undoable — it would carry
+   two mutations under one name.
+2. **Replication stays exact.** The recomputed values travel as numbers. If each node
+   recomputed its own decomposition, two machines would diverge on floats. That is the kind of
+   desynchronization you never diagnose.
+3. **`batch` already exists** (`core/operations/operation.js`, **ADR-0008**) and does exactly
+   this: "one drag = one history entry". One undo entry, six operations.
+4. **The Core keeps one law.** `parent.addChild(child)` from a script preserves the local
+   transform — which is what code expects. World preservation is an **editor policy**, written
+   in `editor/commands.js`, already declared as the insertion point for structural Operations.
+5. **ADR-0002 is honoured**: values stay local, the world stays derived, nothing is stored
+   twice.
 
-Pourquoi B plutôt que A comme défaut : dans Unity, Godot et Blender, glisser un objet dans la
-hiérarchie ne le déplace pas. Un créateur qui range son arborescence range, il ne déplace pas.
+Why B rather than A as the default: in Unity, Godot and Blender, dragging an object in the
+hierarchy does not move it. A creator tidying their tree is tidying, not moving.
 
-A n'est pas abandonné pour autant : c'est ce que fait `addChild()` depuis un script, et un
-jour une case « conserver la position locale » dans l'Editor.
+A is not abandoned for all that: it is what `addChild()` does from a script, and one day a
+"keep the local position" checkbox in the Editor.
 
-### 6.5 `Matrix.decompose()` et le problème du cisaillement
+### 6.5 `Matrix.decompose()` and the shear problem
 
-**OBSERVÉ.** `Matrix` n'a pas de `decompose()`. **PROPOSITION :** l'ajouter — pur, testable
-sous Node, sans dépendance.
+**OBSERVED.** `Matrix` has no `decompose()`. **PROPOSAL:** add it — pure, testable under Node,
+with no dependency.
 
-`Matrix.compose` produit T·R·S :
+`Matrix.compose` produces T·R·S:
 
 ```
 | cos·sx   -sin·sy   x |
 | sin·sx    cos·sy   y |
 ```
 
-La décomposition inverse est directe :
+The inverse decomposition is direct:
 
 ```
 x, y     = e, f
@@ -724,571 +707,565 @@ rotation = atan2(b, a)
 scaleY   = hypot(c, d)
 ```
 
-> **Elle est exacte si et seulement si les deux colonnes sont orthogonales.** Elles cessent
-> de l'être dès qu'un ancêtre porte une échelle **non uniforme** *et* qu'un nœud intermédiaire
-> est **tourné** : la composition produit alors un **cisaillement**, que
-> `(x, y, rotation, scaleX, scaleY)` ne peut pas représenter.
+> **It is exact if and only if the two columns are orthogonal.** They stop being so as soon as
+> an ancestor carries a **non-uniform** scale *and* an intermediate node is **rotated**: the
+> composition then produces a **shear**, which `(x, y, rotation, scaleX, scaleY)` cannot
+> represent.
 
-C'est le même problème que la `lossyScale` d'Unity, et il n'a pas de solution propre dans un
-modèle local à cinq valeurs.
+This is the same problem as Unity's `lossyScale`, and it has no clean solution in a local
+five-value model.
 
-**Politique proposée pour ce cas :** décomposer au mieux (ajustement orthogonal) **et le
-signaler** au créateur via le canal de rapport, dans l'esprit d'**ADR-0012** : le système ne
-corrige pas en silence, il dit ce qu'il n'a pas pu faire. Un reparentage sous un parent
-cisaillant est rare ; le rendre silencieusement déformant serait pire que le rendre bruyant.
+**Proposed policy for that case:** decompose as best as possible (an orthogonal fit) **and say
+so** to the creator through the reporting channel, in the spirit of **ADR-0012**: the system
+does not silently correct, it says what it could not do. Reparenting under a shearing parent is
+rare; making it silently distorting would be worse than making it noisy.
 
-**Alternatives rejetées :** interdire l'échelle non uniforme sur un parent (trop restrictif
-pour un moteur 2D où étirer un décor est courant) ; stocker des matrices monde (contredit
-**ADR-0002** et `core/components/transform.js`, et réintroduit deux sources de vérité).
+**Rejected alternatives:** forbidding non-uniform scale on a parent (too restrictive for a 2D
+engine where stretching scenery is common); storing world matrices (contradicts **ADR-0002**
+and `core/components/transform.js`, and reintroduces two sources of truth).
 
-**Point volontairement laissé ouvert :** la politique exacte de repli sur matrice cisaillée
-(ajustement orthogonal ? conservation du local ? refus du geste ?) reste à décider au moment
-de l'implémenter.
+**A point deliberately left open:** the exact fallback policy for a sheared matrix (an
+orthogonal fit? keeping the local transform? refusing the gesture?) remains to be decided at
+implementation time.
 
-### 6.6 Conséquences du reparentage par domaine
+### 6.6 Consequences of reparenting, by domain
 
-| Domaine | Effet |
+| Domain | Effect |
 |---|---|
-| Matrices | ajout de `Matrix.decompose()` |
-| Position / Rotation / Scale | recalculées, exactes hors cisaillement |
-| Sérialisation | **aucun changement** — ce sont des valeurs locales ordinaires |
-| Undo/Redo | un seul `batch` inverse les six opérations, dans l'ordre inverse |
-| Réplication | des nombres voyagent, aucun recalcul distant, aucune divergence |
+| Matrices | `Matrix.decompose()` added |
+| Position / Rotation / Scale | recomputed, exact outside shear |
+| Serialization | **no change** — these are ordinary local values |
+| Undo/Redo | a single `batch` inverts the six operations, in reverse order |
+| Replication | numbers travel, no remote recomputation, no divergence |
 
 ---
 
-## 7. Proposition — les Operations
+## 7. Proposal — the Operations
 
-### 7.1 L'ensemble minimal
+### 7.1 The minimal set
 
-**PROPOSITION.** Sept types pour la Scene, deux pour le Project.
+**PROPOSAL.** Seven types for the Scene, two for the Project.
 
-| Type | Existe | Portée | Payload | Inverse |
+| Type | Exists | Scope | Payload | Inverse |
 |---|---|---|---|---|
 | `SET_PROPERTY` | ✅ | Scene | `{ target, prop, value, previous }` | `previous` ↔ `value` |
-| `ADD_OBJECT` | à créer | Scene | `{ object: <sérialisé, id inclus>, parent, index }` | `REMOVE_OBJECT` |
-| `REMOVE_OBJECT` | à créer | Scene | `{ object, subtree, parent, index }` | `ADD_OBJECT` du sous-arbre à sa position |
-| `ADD_COMPONENT` | à créer | Scene | `{ object, type, index, values }` | `REMOVE_COMPONENT` mêmes `index`/`values` |
-| `REMOVE_COMPONENT` | à créer | Scene | `{ object, type, index, values }` | `ADD_COMPONENT` mêmes `index`/`values` |
-| `REPARENT` | à créer | Scene | `{ object, parent, index, previousParent, previousIndex }` | le même, `previous*` échangés |
-| `MOVE_COMPONENT` | à créer | Scene | `{ object, type, index, previousIndex }` | le même, indices échangés |
-| `ADD_RESOURCE` / `REMOVE_RESOURCE` | à créer | **Project** | manifeste + payload | l'un l'autre |
+| `ADD_OBJECT` | to create | Scene | `{ object: <serialized, id included>, parent, index }` | `REMOVE_OBJECT` |
+| `REMOVE_OBJECT` | to create | Scene | `{ object, subtree, parent, index }` | `ADD_OBJECT` of the subtree at its position |
+| `ADD_COMPONENT` | to create | Scene | `{ object, type, index, values }` | `REMOVE_COMPONENT` with the same `index`/`values` |
+| `REMOVE_COMPONENT` | to create | Scene | `{ object, type, index, values }` | `ADD_COMPONENT` with the same `index`/`values` |
+| `REPARENT` | to create | Scene | `{ object, parent, index, previousParent, previousIndex }` | the same, `previous*` swapped |
+| `MOVE_COMPONENT` | to create | Scene | `{ object, type, index, previousIndex }` | the same, indices swapped |
+| `ADD_RESOURCE` / `REMOVE_RESOURCE` | to create | **Project** | manifest + payload | each other |
 
-Points de détail qui font la différence entre une opération et une opération correcte :
+Details that make the difference between an operation and a correct operation:
 
-- **`REMOVE_OBJECT.subtree` et `index`** : sans eux, annuler une suppression rend un objet
-  dépouillé, replacé en fin de liste.
-- **`REMOVE_COMPONENT.values`** : corrige exactement le `42 → 1` mesuré au §2.3.
-- **`MOVE_COMPONENT` ne détache rien**, ne réinstancie rien, ne touche à aucune valeur. C'est
-  un `splice` sur la collection ordonnée.
-- **`REPARENT` no-op** : `parent === previousParent && index === previousIndex` →
-  `applied: false`, aucune Operation émise. Même garde que `setProperty` aujourd'hui.
-- **Créer un enfant** est le **même** `ADD_OBJECT` avec `parent ≠ null`. Aucune opération
-  supplémentaire.
+- **`REMOVE_OBJECT.subtree` and `index`**: without them, undoing a deletion gives back a
+  stripped object, placed at the end of the list.
+- **`REMOVE_COMPONENT.values`**: fixes exactly the `42 → 1` measured in §2.3.
+- **`MOVE_COMPONENT` detaches nothing**, re-instantiates nothing, touches no value. It is a
+  `splice` on the ordered collection.
+- **A no-op `REPARENT`**: `parent === previousParent && index === previousIndex` →
+  `applied: false`, no Operation emitted. The same guard `setProperty` has today.
+- **Creating a child** is the **same** `ADD_OBJECT` with `parent ≠ null`. No extra operation.
 
-### 7.2 Écart signalé avec ADR-0008
+### 7.2 A flagged divergence from ADR-0008
 
-**PROPOSITION — À ARBITRER.** **ADR-0008** et `ARCHITECTURE.md` §6.2 listent `ADD_CHILD` et
-`REMOVE_CHILD`, et aucune opération de réordonnancement. La proposition les fusionne dans
-`REPARENT`.
+**PROPOSAL — TO ARBITRATE.** **ADR-0008** and `ARCHITECTURE.md` §6.2 list `ADD_CHILD` and
+`REMOVE_CHILD`, and no reordering operation. The proposal merges them into `REPARENT`.
 
-Ce n'est **pas** un renversement de décision : la liste d'ADR-0008 est un inventaire dérivé
-des messages réseau de Legacy, et la capacité couverte est rigoureusement identique. Mais
-c'est une simplification d'une liste écrite dans un ADR accepté, **et elle demande donc un
-accord explicite.** L'ADR-0008 n'a pas été modifié.
+This is **not** a reversal of a decision: ADR-0008's list is an inventory derived from Legacy's
+network messages, and the capability covered is rigorously identical. But it is a
+simplification of a list written in an accepted ADR, **and it therefore needs explicit
+agreement.** ADR-0008 was not modified.
 
-**→ Point d'arbitrage n° 2 (§11).**
+**→ Arbitration point 2 (§11).**
 
-### 7.3 `submit()` / `apply()` et l'absence d'écho
+### 7.3 `submit()` / `apply()` and the absence of echo
 
-**OBSERVÉ — rien à changer.** Le design existant est correct et suffit.
+**OBSERVED — nothing to change.** The existing design is correct and sufficient.
 
 | | `submit(op)` | `apply(op)` |
 |---|---|---|
-| Autorité (**ADR-0011**) | oui | non |
-| Applique | si autorisé | oui |
-| Émet `'operation'` | oui | **non** |
-| Qui l'utilise | l'auteur d'une intention (Editor, joueur, serveur qui arbitre) | un nœud qui reçoit une opération déjà autoritaire |
+| Authority (**ADR-0011**) | yes | no |
+| Applies | if authorized | yes |
+| Emits `'operation'` | yes | **no** |
+| Who uses it | the author of an intent (Editor, player, the server arbitrating) | a node receiving an already-authoritative operation |
 
-L'anti-écho tient parce qu'appliquer n'émet rien, et parce qu'appliquer effectue une écriture
-directe qui ne produit aucune Operation (`core/operations/operations.js:15-17`). **La boucle
-n'est pas prévenue, elle est irreprésentable.**
+The anti-echo holds because applying emits nothing, and because applying performs a direct
+write that produces no Operation (`core/operations/operations.js:15-17`). **The loop is not
+prevented, it is unrepresentable.**
 
-Les nouveaux types n'y changent rien, **à une condition** : leurs gestionnaires doivent muter
-le modèle par le chemin interne, jamais en rappelant une API publique qui resoumettrait.
+The new types change none of that, **on one condition**: their handlers must mutate the model
+through the internal path, never by calling back a public API that would resubmit.
 
-`Operations.register(type, handler)` existe déjà et n'a aucun consommateur : c'est exactement
-la couture prévue. Scene et Object enregistrent leurs gestionnaires ; le pipeline reste
-ignorant du modèle.
+`Operations.register(type, handler)` already exists and has no consumer: that is exactly the
+intended seam. Scene and Object register their handlers; the pipeline stays ignorant of the
+model.
 
-### 7.4 Un second pipeline, pas un second système
+### 7.4 A second pipeline, not a second system
 
-**PROPOSITION.** Les mutations de ressources ne sont pas des mutations de Scene : le
-`resolve` d'un pipeline de Scene résout des ids d'`Object`, il ne peut pas résoudre une
-ressource.
+**PROPOSAL.** Resource mutations are not Scene mutations: a Scene pipeline's `resolve` resolves
+`Object` ids, and cannot resolve a resource.
 
-Un **second pipeline `Operations` à la portée du Project**. Même classe, même contrat, même
-anti-écho, `resolve` différent. Ce n'est pas un système parallèle — c'est la même machine
-instanciée deux fois, exactement comme un `Object` détaché instancie déjà son propre pipeline
+A **second `Operations` pipeline at Project scope**. The same class, the same contract, the
+same anti-echo, a different `resolve`. It is not a parallel system — it is the same machine
+instantiated twice, exactly as a detached `Object` already instantiates its own pipeline
 (`core/object.js:90`).
 
-### 7.5 Payload : ce qui voyage, ce qui reste
+### 7.5 Payload: what travels, what stays
 
-**PROPOSITION.**
+**PROPOSAL.**
 
-| Champ | Nécessaire à **appliquer** | Nécessaire à **inverser** |
+| Field | Needed to **apply** | Needed to **invert** |
 |---|---|---|
-| `SET_PROPERTY.previous` | non | **oui** |
-| `REMOVE_OBJECT.subtree` | non | **oui** |
-| `REMOVE_COMPONENT.values` | non | **oui** |
-| `REPARENT.previous*` | non | **oui** |
+| `SET_PROPERTY.previous` | no | **yes** |
+| `REMOVE_OBJECT.subtree` | no | **yes** |
+| `REMOVE_COMPONENT.values` | no | **yes** |
+| `REPARENT.previous*` | no | **yes** |
 
-**ADR-0008** note déjà la « charge utile plus lourde » comme conséquence négative. Les champs
-d'inversion font partie de l'Operation, et **un transport est libre de les élaguer** : un
-serveur n'a pas besoin de `previous` pour appliquer ; l'historique local garde l'opération
-complète. C'est une optimisation de transport **à ne pas construire maintenant**, mais le
-format doit la rendre possible — et il la rend possible dès lors que les champs d'inversion
-sont nommés et séparables.
+**ADR-0008** already notes the "heavier payload" as a negative consequence. The inversion
+fields are part of the Operation, and **a transport is free to prune them**: a server does not
+need `previous` in order to apply; the local history keeps the complete operation. That is a
+transport optimization **not to be built now**, but the format must make it possible — and it
+does, as soon as the inversion fields are named and separable.
 
-### 7.6 Identité et `seq`
+### 7.6 Identity and `seq`
 
-**PROPOSITION.** Deux règles sans lesquelles la réplication ne peut pas fonctionner :
+**PROPOSAL.** Two rules without which replication cannot work:
 
-1. **Les identifiants sont générés par l'auteur** et voyagent dans le payload. Jamais par le
-   récepteur, sinon les ids divergent d'une machine à l'autre.
-2. **`seq` doit devenir par pipeline.** **OBSERVÉ** : c'est aujourd'hui un compteur de module
-   (`core/operations/operation.js:14`), partagé par toutes les scènes du processus. Sans
-   conséquence tant qu'il n'est qu'un numéro d'ordre local ; faux le jour où il devient un
-   numéro de séquence réseau ou une clé d'ordre d'historique.
+1. **Identifiers are generated by the author** and travel in the payload. Never by the
+   receiver, or the ids diverge from one machine to another.
+2. **`seq` must become per-pipeline.** **OBSERVED**: it is today a module-level counter
+   (`core/operations/operation.js:14`), shared by every scene in the process. Harmless as long
+   as it is only a local ordering number; wrong the day it becomes a network sequence number or
+   a history ordering key.
 
 ### 7.7 Batching
 
-**OBSERVÉ.** `batch` existe et suffit. Trois usages, tous couverts :
+**OBSERVED.** `batch` exists and is sufficient. Three uses, all covered:
 
-- un drag dans le viewport → n `SET_PROPERTY`, un `batch` ;
-- un dépôt dans la Hierarchy → `REPARENT` + 5 `SET_PROPERTY`, un `batch` ;
-- créer un Component utilisateur → `ADD_RESOURCE` × 2, un `batch` (pipeline Project).
+- a drag in the viewport → n `SET_PROPERTY`s, one `batch`;
+- a drop in the Hierarchy → `REPARENT` + 5 `SET_PROPERTY`s, one `batch`;
+- creating a user Component → `ADD_RESOURCE` × 2, one `batch` (the Project pipeline).
 
 ---
 
-## 8. Proposition — Undo / Redo
+## 8. Proposal — Undo / Redo
 
-### 8.1 Le partage de responsabilité
+### 8.1 The division of responsibility
 
-**PROPOSITION.**
+**PROPOSAL.**
 
-| Ce qui | Où | Pourquoi |
+| What | Where | Why |
 |---|---|---|
-| Une Operation porte de quoi s'inverser | **Core** — format | c'est déjà le cas pour `SET_PROPERTY` (`previous`) |
-| `invert(operation) → operation` | **Core** | une seule place connaît la règle d'inversion de chaque type ; pur, testable sous Node ; empêche l'Editor de re-dériver ces règles |
-| La pile, le groupement, le raccourci | **Editor** | annuler est un acte d'auteur. Un serveur headless qui rejoue n'annule rien |
+| An Operation carries what it needs to invert | **Core** — the format | already the case for `SET_PROPERTY` (`previous`) |
+| `invert(operation) → operation` | **Core** | one place knows each type's inversion rule; pure, testable under Node; stops the Editor from re-deriving those rules |
+| The stack, the grouping, the shortcut | **Editor** | undoing is an authoring act. A headless server replaying operations undoes nothing |
 
-C'est **ADR-0008** (« undo/redo devient une conséquence de l'architecture, pas une
-fonctionnalité à part ») rendu concret : le Core rend inversible, l'Editor décide quoi annuler.
+This is **ADR-0008** ("undo/redo becomes a consequence of the architecture, not a separate
+feature") made concrete: the Core makes things invertible, the Editor decides what to undo.
 
-### 8.2 L'historique
+### 8.2 The history
 
 ```
 Operations.on('operation')  ──►  History  ──►  undo() ──► operations.submit(invert(op))
 ```
 
-Quatre règles, et elles suffisent :
+Four rules, and they are enough:
 
-1. **On enregistre ce que `submit()` a émis** — donc jamais une opération reçue par `apply()`.
-   L'anti-écho protège l'historique gratuitement.
-2. **On n'enregistre que ses propres opérations** (`actor === moi`). Sans cette règle,
-   `Ctrl Z` annulerait le travail d'un autre créateur. Aucune machinerie : le champ `actor`
-   existe déjà.
-3. **Annuler passe par `submit()`, jamais par `apply()`.** Un undo est une nouvelle
-   intention : elle doit être arbitrée (le serveur peut la refuser) et elle doit se répliquer.
-   Un undo appliqué localement désynchroniserait le projet en silence. *C'est le point le plus
-   facile à se tromper de tout le système.*
-4. **Un `batch` est une entrée.** Inversé dans l'ordre inverse.
+1. **We record what `submit()` emitted** — therefore never an operation received through
+   `apply()`. The anti-echo protects the history for free.
+2. **We record only our own operations** (`actor === me`). Without that rule, `Ctrl Z` would
+   undo another creator's work. No machinery needed: the `actor` field already exists.
+3. **Undoing goes through `submit()`, never through `apply()`.** An undo is a new intent: it
+   must be arbitrated (the server may refuse it) and it must replicate. An undo applied locally
+   would silently desynchronize the project. *This is the easiest point in the whole system to
+   get wrong.*
+4. **A `batch` is one entry.** Inverted in reverse order.
 
-La pile de « redo » est la pile des opérations annulées, vidée dès qu'une nouvelle opération
-est soumise.
+The "redo" stack is the stack of undone operations, cleared as soon as a new operation is
+submitted.
 
-### 8.3 Portée : une pile par ressource
+### 8.3 Scope: one stack per resource
 
-**PROPOSITION.** Une pile globale est une erreur classique : `Ctrl Z` dans la fenêtre `Graph`
-annulerait une modification faite dans la scène.
+**PROPOSAL.** A global stack is a classic mistake: `Ctrl Z` in the `Graph` window would undo a
+change made in the scene.
 
-| Pile | Sur quel pipeline | Ce qu'elle annule |
+| Stack | On which pipeline | What it undoes |
 |---|---|---|
-| Project | pipeline Project | créer / supprimer / renommer une ressource |
-| Scene (une par scène ouverte) | pipeline de cette Scene | tout le §6 |
-| Graph (une par graphe ouvert) | pipeline de ce graphe | l'édition du graphe, quand son modèle existera |
+| Project | the Project pipeline | creating / deleting / renaming a resource |
+| Scene (one per open scene) | that Scene's pipeline | all of §6 |
+| Graph (one per open graph) | that graph's pipeline | graph editing, once its model exists |
 
-### 8.4 Ce qui n'est pas restauré, et doit être dit
+### 8.4 What is not restored, and must be said
 
-L'état d'exécution d'un graphe (la `WeakMap` de `Behaviors`) et les champs de travail d'un
-Component ne sont **pas** restaurés. Ce sont de l'état vivant, pas des données de projet ;
-annuler ne remonte pas le temps de la simulation. C'est la même frontière qu'entre une
-écriture directe et un `setProperty` (**ADR-0003**), et il faut qu'elle soit énoncée plutôt
-que découverte.
+A graph's execution state (the `Behaviors` `WeakMap`) and a Component's working fields are
+**not** restored. They are live state, not project data; undoing does not rewind the
+simulation. It is the same boundary as between a direct write and a `setProperty`
+(**ADR-0003**), and it needs to be stated rather than discovered.
 
-### 8.5 Aucun système parallèle
+### 8.5 No parallel system
 
-L'historique **ne mute jamais le modèle directement**. Il n'a qu'une action :
-`submit(invert(op))`. Il n'existe donc pas de second chemin de mutation, et rien n'est
-annulable qui ne soit pas répliquable.
+The history **never mutates the model directly**. It has one action: `submit(invert(op))`.
+There is therefore no second mutation path, and nothing is undoable that is not replicable.
 
 ---
 
-## 9. Proposition — le graphe `.px`, la fenêtre `Graph`, et `px-tabs`
+## 9. Proposal — the `.px` graph, the `Graph` window, and `px-tabs`
 
-Aucune décision d'ADR n'est rouverte ici : **ADR-0009** (`.px` est un graphe JSON interprété,
-pas de `eval`, pas de `new Function`), **ADR-0015** (un graphe est le comportement d'un
-**type**) et **ADR-0016** (une définition est propriétés + graphe) tiennent intégralement.
-Cette section ne comble que les trous que ces ADR ont explicitement laissés ouverts.
+No ADR decision is reopened here: **ADR-0009** (`.px` is an interpreted JSON graph, no `eval`,
+no `new Function`), **ADR-0015** (a graph is the behaviour of a **type**) and **ADR-0016** (a
+definition is properties + a graph) all hold in full. This section only fills the gaps those
+ADRs explicitly left open.
 
-### 9.1 Ce que la proposition ajoute
+### 9.1 What the proposal adds
 
-| Manque | Proposition |
+| Gap | Proposal |
 |---|---|
-| **Stockage** | une `GraphResource` par graphe. JSON, payload = la forme d'ADR-0009 |
-| **Identité** | le `ResourceId` de sa ressource. Renommer ne casse rien |
-| **Version** | `version` du format de graphe (déjà dans ADR-0009) + `revision` de la ressource, pour l'invalidation |
-| **Référence depuis une définition** | `definition.graph = "res_d4"` — un id (§5.4, à arbitrer) |
-| **Chargement / sauvegarde** | via le `ResourceStore` (§3.5) |
-| **Binding** | **la couche Project appelle `behaviors.bind(type, graph)`** à l'ouverture du projet, et à chaque `revision` du graphe. C'est la réponse au point ouvert « qui appelle `bind()` », laissé par **ADR-0009**, **ADR-0015** *et* **ADR-0016** |
-| **Relation à Resource** | un graphe **est** une ressource, comme une scène ou une image |
-| **Relation à la fenêtre `Graph`** | la fenêtre édite une `GraphResource` via un pipeline `Operations`, donc undo et réplication gratuits |
-| **Graphe vs état d'exécution** | inchangé, **ADR-0015** §3 et §4 : le graphe appartient au type, l'état d'exécution vit dans la `WeakMap` de `Behaviors`, une par instance. **Rien de cette proposition ne le touche** |
+| **Storage** | one `GraphResource` per graph. JSON, payload = the shape from ADR-0009 |
+| **Identity** | its resource's `ResourceId`. Renaming breaks nothing |
+| **Version** | the graph format's `version` (already in ADR-0009) + the resource's `revision`, for invalidation |
+| **Reference from a definition** | `definition.graph = "res_d4"` — an id (§5.4, to arbitrate) |
+| **Loading / saving** | through the `ResourceStore` (§3.5) |
+| **Binding** | **the Project layer calls `behaviors.bind(type, graph)`** when the project is opened, and at every `revision` of the graph. That is the answer to the "who calls `bind()`" open point left by **ADR-0009**, **ADR-0015** *and* **ADR-0016** |
+| **Relation to Resource** | a graph **is** a resource, like a scene or an image |
+| **Relation to the `Graph` window** | the window edits a `GraphResource` through an `Operations` pipeline, so undo and replication come for free |
+| **Graph vs execution state** | unchanged, **ADR-0015** §3 and §4: the graph belongs to the type, the execution state lives in the `Behaviors` `WeakMap`, one per instance. **Nothing in this proposal touches it** |
 
-### 9.2 Ce qui reste ouvert, là où les ADR l'ont laissé
+### 9.2 What stays open, where the ADRs left it
 
-1. **le modèle de nœuds et de connexions** — **ADR-0009** ;
-2. **le sort des `variables` d'un graphe vis-à-vis du schéma du Component** — ouvert dans
-   **ADR-0009** *et* **ADR-0015** ;
-3. **si les mutations de graphe méritent leurs propres types d'Operation** (`ADD_NODE`,
-   `CONNECT`…). L'architecture le permet (`Operations.register`) et n'en dépend pas : tant
-   que le modèle de graphe n'existe pas, un graphe se sauvegarde entier. **Report délibéré,
-   pas oubli.**
+1. **the node and connection model** — **ADR-0009**;
+2. **the fate of a graph's `variables` with respect to the Component's schema** — open in
+   **ADR-0009** *and* **ADR-0015**;
+3. **whether graph mutations deserve their own Operation types** (`ADD_NODE`, `CONNECT`…). The
+   architecture allows it (`Operations.register`) and does not depend on it: as long as the
+   graph model does not exist, a graph is saved whole. **A deliberate deferral, not an
+   oversight.**
 
-### 9.3 `px-tabs` — les contrats, et rien de plus
+### 9.3 `px-tabs` — the contracts, and nothing more
 
-**OBSERVÉ.** `px-tabs` est une primitive complète, sans consommateur, conservée délibérément.
-Son fichier documente déjà ce qui ne doit **pas** être construit : cycle de vie de document,
-onglets fermables, overflow, drag pour réordonner, détachement.
+**OBSERVED.** `px-tabs` is a complete primitive, with no consumer, kept deliberately. Its file
+already documents what must **not** be built: a document lifecycle, closeable tabs, overflow,
+drag to reorder, detachment.
 
-**PROPOSITION.** Ce que cette architecture lui fournit est la seule chose qui lui manquait :
-savoir ce qu'un onglet désigne.
+**PROPOSAL.** What this architecture gives it is the only thing it was missing: knowing what a
+tab designates.
 
-| Question | Réponse |
+| Question | Answer |
 |---|---|
-| Qu'est-ce qu'un onglet ouvert ? | un **`OpenEditor`** — objet de la couche Editor : `{ resourceId, kind, viewState, history }` |
-| Est-ce une `Resource` ? | **non** — c'est une *vue vivante* sur une `Resource` |
-| Est-ce un `Document` ? | **non** — `Document` n'existe pas (§3.4) |
-| Plusieurs scènes / graphes ouverts ? | N `OpenEditor`, au plus un par `resourceId` |
-| Comment une modification est-elle persistée ? | par le `ResourceStore`, sur la ressource identifiée par `resourceId` |
-| Comment savoir si c'est modifié ? | un drapeau `dirty` levé par l'événement `'operation'` du pipeline de la ressource, abaissé à la sauvegarde. Une seule source, aucune comparaison de contenu |
-| Undo sur plusieurs documents ? | une pile par ressource (§8.3) |
+| What is an open tab? | an **`OpenEditor`** — an Editor-layer object: `{ resourceId, kind, viewState, history }` |
+| Is it a `Resource`? | **no** — it is a *live view* onto a `Resource` |
+| Is it a `Document`? | **no** — `Document` does not exist (§3.4) |
+| Several scenes / graphs open? | N `OpenEditor`s, at most one per `resourceId` |
+| How is a change persisted? | through the `ResourceStore`, on the resource identified by `resourceId` |
+| How do you know it is modified? | a `dirty` flag raised by the resource pipeline's `'operation'` event, lowered on save. One source, no content comparison |
+| Undo across several documents? | one stack per resource (§8.3) |
 
-**Rien à construire dans `px-tabs` maintenant.**
+**Nothing to build in `px-tabs` now.**
 
-### 9.4 Ambiguïté signalée plutôt qu'inventée
+### 9.4 An ambiguity flagged rather than invented
 
-**Une action qui touche deux ressources d'un coup n'a pas de portée d'undo évidente.**
+**An action that touches two resources at once has no obvious undo scope.**
 
-Exemple : « Créer un Component » crée une `ComponentResource` *et* une `GraphResource`. C'est
-un `batch` du pipeline Project, donc une entrée de la pile Project — cohérent. Mais si le
-créateur édite ensuite le graphe, annule trois fois dans la fenêtre `Graph`, puis annule une
-fois dans le panneau Project : la création du composant est annulée alors que des
-modifications de son graphe sont encore dans une pile qui vise une ressource disparue.
+Example: "Create a Component" creates a `ComponentResource` *and* a `GraphResource`. That is a
+`batch` on the Project pipeline, so one entry in the Project stack — coherent. But if the
+creator then edits the graph, undoes three times in the `Graph` window, and then undoes once in
+the Project panel: the component's creation is undone while changes to its graph are still in a
+stack pointing at a resource that no longer exists.
 
-Solutions possibles — **aucune n'est retenue ici** :
+Possible solutions — **none is adopted here**:
 
-- fermer un onglet vide sa pile (simple, un peu brutal) ;
-- la suppression d'une ressource invalide les entrées d'historique qui la visent (correct,
-  demande une passe) ;
-- interdire l'annulation d'une suppression de ressource depuis une autre pile (restrictif).
+- closing a tab clears its stack (simple, a little brutal);
+- deleting a resource invalidates the history entries that target it (correct, requires a
+  pass);
+- forbidding the undo of a resource deletion from another stack (restrictive).
 
-C'est le seul point de ce document où inventer serait une faute. **Il ne bloque pas la
-Phase 3** : il devient décidable quand la fenêtre `Graph` existe.
+This is the one point in this document where inventing would be a mistake. **It does not block
+Phase 3**: it becomes decidable once the `Graph` window exists.
 
 ---
 
-## 10. Vocabulaire des types de propriétés
+## 10. The property-type vocabulary
 
-### 10.1 La divergence, mesurée
+### 10.1 The divergence, measured
 
-**OBSERVÉ.**
+**OBSERVED.**
 
-| `core/definition.js` — `DEFAULTS` | `editor/inspector/schema.js` — `FieldKind` | **ADR-0007** (envisagés) |
+| `core/definition.js` — `DEFAULTS` | `editor/inspector/schema.js` — `FieldKind` | **ADR-0007** (contemplated) |
 |---|---|---|
 | number, int, boolean, string, color, array, object | number, int, **range**, boolean, string, color, **enum**, **readonly** | number, int, boolean, string, color, enum, range, vector2, resource, object, array, action |
 
-Et dans le code livré : `Sprite.source` = `resource`, `Tilemap.tiles`/`palette` = `array`,
-`Transform.rotation` = `number` + `unit: 'rad'`, `ParticleSystem` = `unit: 's'` et `'/s'`.
+And in the shipped code: `Sprite.source` = `resource`, `Tilemap.tiles`/`palette` = `array`,
+`Transform.rotation` = `number` + `unit: 'rad'`, `ParticleSystem` = `unit: 's'` and `'/s'`.
 
-### 10.2 La cause, et la solution proposée
+### 10.2 The cause, and the proposed solution
 
-**PROPOSITION.** La divergence n'est pas un oubli : **deux questions différentes sont posées
-avec un seul mot.**
+**PROPOSAL.** The divergence is not an oversight: **two different questions are being asked
+with one word.**
 
-- *« quelle forme a cette valeur ? »* → défaut, validation, sérialisation, réplication →
-  **question du Core** ;
-- *« avec quel contrôle l'éditer ? »* → curseur, case, sélecteur → **question de l'Editor**.
+- *"what shape does this value have?"* → default, validation, serialization, replication → **a
+  Core question**;
+- *"with what control should it be edited?"* → slider, checkbox, picker → **an Editor
+  question**.
 
-`range` le prouve : ce n'est pas une forme de valeur, c'est un `number` borné aux deux bouts,
-et `schema.js` le dérive déjà correctement sans qu'aucun composant ne le déclare. `readonly`
-aussi : c'est un repli d'affichage, pas un type de donnée.
+`range` proves it: it is not a shape of value, it is a `number` bounded at both ends, and
+`schema.js` already derives it correctly without any component declaring it. `readonly` too: it
+is a display fallback, not a data type.
 
-> **Deux vocabulaires, une seule source : le Core possède `PropertyType`, l'Editor en dérive
-> `FieldKind`.**
+> **Two vocabularies, one source: the Core owns `PropertyType`, the Editor derives `FieldKind`
+> from it.**
 
-### 10.3 `PropertyType` — huit membres, chacun justifié
+### 10.3 `PropertyType` — eight members, each justified
 
-**PROPOSITION.**
+**PROPOSAL.**
 
-| Type | Justification | Défaut |
+| Type | Justification | Default |
 |---|---|---|
-| `number` | omniprésent | `0` |
+| `number` | ubiquitous | `0` |
 | `int` | `layer`, `columns`, `rows` | `0` |
 | `boolean` | `active`, `emitting`, `additive` | `false` |
 | `string` | `name`, `tag` | `''` |
 | `color` | `ParticleSystem.color`, `RectangleRenderer` | `''` |
-| `enum` | **déjà rendu par l'Inspector, sans défaut Core aujourd'hui** — l'incohérence est là | première valeur |
-| `resource` | **`Sprite.source` le déclare déjà** ; indispensable au `.px` et aux Components utilisateur | `null` |
-| `array` | **`Tilemap.tiles` et `palette` le déclarent déjà** | `[]` |
+| `enum` | **already rendered by the Inspector, with no Core default today** — that is where the inconsistency is | the first value |
+| `resource` | **`Sprite.source` already declares it**; indispensable for `.px` and for user Components | `null` |
+| `array` | **`Tilemap.tiles` and `palette` already declare it** | `[]` |
 
-Le Core répond, pour chaque descripteur : quelle est la valeur de départ, cette valeur est-elle
-valide, comment se sérialise-t-elle.
+For each descriptor, the Core answers: what the starting value is, whether that value is valid,
+and how it serializes.
 
-### 10.4 Écartés, et pourquoi
+### 10.4 Rejected, and why
 
 | Type | Verdict |
 |---|---|
-| `object` | **retiré de `DEFAULTS`.** Sans schéma, sans validation, sans éditeur, sans sens pour la réplication. C'est le seul membre actuel que rien ne justifie. **C'est un retrait → point d'arbitrage n° 3 (§11)** |
-| `vector2` | inutile — le tableau `PAIRS` de l'Inspector fait déjà de `x`/`y` une ligne unique |
-| `action` | ce n'est pas une propriété. Un bouton est une commande, pas une donnée sérialisable. Sa place est un futur registre de commandes (déjà listé comme ouvert dans `MIGRATION_STATUS.md` pour `Ctrl K`) |
-| `range` | dérivé de `number + min + max`, pas déclaré |
+| `object` | **removed from `DEFAULTS`.** No schema, no validation, no editor, no meaning for replication. It is the only current member nothing justifies. **This is a removal → arbitration point 3 (§11)** |
+| `vector2` | unnecessary — the Inspector's `PAIRS` table already puts `x`/`y` on a single row |
+| `action` | it is not a property. A button is a command, not serializable data. Its place is a future command registry (already listed as open in `MIGRATION_STATUS.md` for `Ctrl K`) |
+| `range` | derived from `number + min + max`, not declared |
 
-**Ce que cela ferme concrètement :** trois propriétés de composants livrés cessent d'être des
-impasses ; un Component utilisateur ne peut plus déclarer une propriété que le Core initialise
-mal. `array` **reste `READONLY` avec son compte d'éléments** — honnête, déjà en place
-(`describeOpaque`), et à ne pas améliorer maintenant.
+**What this concretely closes:** three properties of shipped components stop being dead ends; a
+user Component can no longer declare a property the Core initializes wrongly. `array` **stays
+`READONLY` with its element count** — honest, already in place (`describeOpaque`), and not to
+be improved now.
 
-**Aucun type n'est ajouté pour compléter une liste :** deux sont déjà déclarés dans le code,
-un est déjà rendu, un est retiré.
+**No type is added to complete a list:** two are already declared in the code, one is already
+rendered, one is removed.
 
 ---
 
-## 11. Les cinq points d'arbitrage
+## 11. The five arbitration points
 
-**À ARBITRER.** Ces cinq points sont **toujours ouverts** au 2026-08-14. Aucun n'a été tranché.
-Les trois premiers **bloquent** la Phase 3.
+**TO ARBITRATE.** These five points are **still open** as of 2026-08-14. None has been settled.
+The first three **block** Phase 3.
 
-| # | Point | Renvoi |
+| # | Point | Reference |
 |---|---|---|
-| **1** | **Le graphe d'une définition est-il référencé par `ResourceId`, ou en ligne comme le montre l'exemple JSON d'ADR-0016 ?** — recommandation : par id | §5.4 |
-| **2** | **`ADD_CHILD` / `REMOVE_CHILD` fusionnent-ils dans `REPARENT` ?** C'est une simplification d'une liste écrite dans **ADR-0008** et `ARCHITECTURE.md` §6.2 | §7.2 |
-| **3** | **Le type `object` est-il retiré de `DEFAULTS` ?** C'est un retrait, pas un ajout | §10.4 |
-| **4** | **L'asymétrie `type` lisible pour un Component natif / opaque pour un Component utilisateur est-elle acceptée ?** | §5.2 |
-| **5** | **Q8 — l'Inspector doit-il présenter un `Renderer [ Type ▼ ]` unique ?** Ouverte depuis le 2026-08-13 (`MIGRATION_STATUS.md`). Elle **interagit désormais avec l'ordre des Components** : un sélecteur de type unique impliquerait un retrait + un ajout, donc un changement de rang **en plus** d'une perte de valeurs. Le §4 rend ce coût plus visible qu'avant | §4, `MIGRATION_STATUS.md` |
+| **1** | **Is a definition's graph referenced by `ResourceId`, or inline as ADR-0016's JSON example shows?** — recommendation: by id | §5.4 |
+| **2** | **Do `ADD_CHILD` / `REMOVE_CHILD` merge into `REPARENT`?** This is a simplification of a list written in **ADR-0008** and `ARCHITECTURE.md` §6.2 | §7.2 |
+| **3** | **Is the `object` type removed from `DEFAULTS`?** This is a removal, not an addition | §10.4 |
+| **4** | **Is the asymmetry — a readable `type` for a native Component, opaque for a user Component — accepted?** | §5.2 |
+| **5** | **Q8 — should the Inspector present a single `Renderer [ Type ▼ ]`?** Open since 2026-08-13 (`MIGRATION_STATUS.md`). It now **interacts with Component order**: a single type selector would imply a removal plus an addition, and therefore a change of rank **on top of** a loss of values. §4 makes that cost more visible than before | §4, `MIGRATION_STATUS.md` |
 
-### Points volontairement laissés ouverts (distincts des arbitrages)
+### Points deliberately left open (distinct from the arbitrations)
 
-Ceux-ci ne demandent pas de décision maintenant et ne bloquent rien :
+These require no decision now and block nothing:
 
-1. **portée d'undo d'une action inter-ressources** (§9.4) ;
-2. **politique serveur face à une définition manquante** (§5.6) ;
-3. **granularité des Operations de graphe** (§9.2) ;
-4. **politique de repli sur matrice cisaillée** (§6.5) ;
-5. **le modèle de graphe et son interprète** — **ADR-0009**, hors périmètre ;
-6. **le sort des `variables` d'un graphe** — **ADR-0009** et **ADR-0015**, hors périmètre.
+1. **the undo scope of a cross-resource action** (§9.4);
+2. **server policy for a missing definition** (§5.6);
+3. **the granularity of graph Operations** (§9.2);
+4. **the fallback policy for a sheared matrix** (§6.5);
+5. **the graph model and its interpreter** — **ADR-0009**, out of scope;
+6. **the fate of a graph's `variables`** — **ADR-0009** and **ADR-0015**, out of scope.
 
 ---
 
-## 12. ADR à créer — à ne pas écrire sans arbitrage
+## 12. ADRs to create — not to be written without arbitration
 
-**Aucun ADR n'a été créé pour cette proposition, et aucun ne doit l'être avant arbitrage.**
-Le tableau ci-dessous identifie les décisions qui, **si elles sont retenues**, méritent un ADR
-propre. La numérotation est **indicative** : elle dépendra de l'ordre réel des acceptations.
+**No ADR was created for this proposal, and none must be before arbitration.** The table below
+identifies the decisions that, **if adopted**, deserve an ADR of their own. The numbering is
+**indicative**: it will depend on the real order of acceptance.
 
-| Provisoire | Sujet | Dépend de |
+| Provisional | Subject | Depends on |
 |---|---|---|
-| ADR-0018 | Ordre structurel signifiant et persistant : collections ordonnées, `components` en tableau, `roots` ordonné, `FORMAT_VERSION` 2 | §1.1, §4 |
-| ADR-0019 | Operations structurelles, `invert()`, et `REPARENT` unifié | §6.1, §7 — **bloqué par l'arbitrage n° 2** |
-| ADR-0020 | `Resource` / `ResourceId` / `ResourceStore` ; ni `Document` ni `Asset` ; couche `src/project/` | §3 |
-| ADR-0021 | Identité d'une définition de Component : `type` stable, `label` affiché | §5.2 — **bloqué par l'arbitrage n° 4** |
-| ADR-0022 | Politique de Transform au reparentage : monde préservé, composé dans l'Editor | §6.4, §6.5 |
-| ADR-0023 | Vocabulaire des types de propriétés : `PropertyType` (Core) / `FieldKind` (Editor) | §10 — **bloqué par l'arbitrage n° 3** |
-| ADR-0024 | Undo/Redo : `invert()` en Core, `History` en Editor, une pile par ressource | §8 |
+| ADR-0018 | Meaningful, persistent structural order: ordered collections, `components` as an array, ordered `roots`, `FORMAT_VERSION` 2 | §1.1, §4 |
+| ADR-0019 | Structural Operations, `invert()`, and a unified `REPARENT` | §6.1, §7 — **blocked by arbitration 2** |
+| ADR-0020 | `Resource` / `ResourceId` / `ResourceStore`; neither `Document` nor `Asset`; the `src/project/` layer | §3 |
+| ADR-0021 | A Component definition's identity: a stable `type`, a displayed `label` | §5.2 — **blocked by arbitration 4** |
+| ADR-0022 | Transform policy on reparenting: the world preserved, composed in the Editor | §6.4, §6.5 |
+| ADR-0023 | The property-type vocabulary: `PropertyType` (Core) / `FieldKind` (Editor) | §10 — **blocked by arbitration 3** |
+| ADR-0024 | Undo/Redo: `invert()` in the Core, `History` in the Editor, one stack per resource | §8 |
 
-Les décisions **§1.5** (terminologie `Graph`) et **§1.6** (`Object` section intrinsèque de
-l'Inspector, `Object` n'est pas un Component) ne demandent probablement pas d'ADR :
+Decisions **§1.5** (the `Graph` terminology) and **§1.6** (`Object` as an intrinsic Inspector
+section, `Object` is not a Component) probably do not need an ADR:
 
-- la terminologie relève du **vocabulaire produit**, dont `PROJECT.md` §2 est le lieu naturel ;
-- la nature de l'`Object` **confirme le comportement déjà implémenté** et la direction déjà
-  prise par **ADR-0001**, **ADR-0002** et **ADR-0007** ; il n'y a pas de décision nouvelle à
-  enregistrer, seulement une règle à ne pas transgresser.
+- terminology is a matter of **product vocabulary**, for which `PROJECT.md` §2 is the natural
+  place;
+- the nature of the `Object` **confirms already-implemented behaviour** and the direction
+  already taken by **ADR-0001**, **ADR-0002** and **ADR-0007**; there is no new decision to
+  record, only a rule not to break.
 
 ---
 
-## 13. Frontières architecturales
+## 13. Architectural boundaries
 
-**PROPOSITION.**
+**PROPOSAL.**
 
-| Responsabilité | Core | Runtime | Editor | Project/Storage |
+| Responsibility | Core | Runtime | Editor | Project/Storage |
 |---|---|---|---|---|
-| **Object** — structure, ordre, identité, `name`/`tag` | **possède** | lit | lit, mute via Operations | sérialise via Core |
-| **Scene** — objets, racines ordonnées, pipeline | **possède** | lit, exécute | lit, mute via Operations | charge / sauve |
-| **Component Definition** — forme, `defineComponent` | **possède la forme** | lit `graph` via `Behaviors` | édite via Operations | **possède le stockage** |
-| **Component Instance** — valeurs | **possède** | lit, exécute | affiche, mute via Operations | sérialise via Core |
-| **Resource** — id, kind, payload | — | — | consomme | **possède** |
-| **`.px`** — graphe | transporte, **n'interprète jamais** | **interprète** | édite (fenêtre `Graph`) | **stocke** |
-| **Operations** — format, pipeline, `invert()` | **possède** | — | émet | émet (portée projet) |
-| **Undo/Redo** — pile, raccourcis | fournit `invert()` | — | **possède** | — |
-| **Serialization** — Scene / Object / Component | **possède** | — | — | appelle |
-| **Serialization** — manifeste, ressources | — | — | — | **possède** |
-| **Loading** | — | — | déclenche | **possède** |
-| **UI** | — | — | **possède** | — |
-| **Selection, viewState, onglets** | — | — | **possède** (**ADR-0017**) | — |
+| **Object** — structure, order, identity, `name`/`tag` | **owns** | reads | reads, mutates through Operations | serializes through the Core |
+| **Scene** — objects, ordered roots, pipeline | **owns** | reads, runs | reads, mutates through Operations | loads / saves |
+| **Component Definition** — shape, `defineComponent` | **owns the shape** | reads `graph` through `Behaviors` | edits through Operations | **owns the storage** |
+| **Component Instance** — values | **owns** | reads, runs | displays, mutates through Operations | serializes through the Core |
+| **Resource** — id, kind, payload | — | — | consumes | **owns** |
+| **`.px`** — the graph | transports it, **never interprets it** | **interprets** | edits (the `Graph` window) | **stores** |
+| **Operations** — format, pipeline, `invert()` | **owns** | — | emits | emits (project scope) |
+| **Undo/Redo** — stack, shortcuts | provides `invert()` | — | **owns** | — |
+| **Serialization** — Scene / Object / Component | **owns** | — | — | calls |
+| **Serialization** — manifest, resources | — | — | — | **owns** |
+| **Loading** | — | — | triggers | **owns** |
+| **UI** | — | — | **owns** | — |
+| **Selection, viewState, tabs** | — | — | **owns** (**ADR-0017**) | — |
 
-### 13.1 L'Editor reste-t-il consommateur ?
+### 13.1 Does the Editor stay a consumer?
 
-**OBSERVÉ** : oui aujourd'hui. La Hierarchy lit `scene.roots()` et `object.children` ;
-l'Inspector lit `object.components` puis `componentSchema()` ou la réflexion ; la sélection
-est un état d'Editor ; le contrôle de couches passe. Là où l'Editor a rencontré une capacité
-manquante du Core, il a **refusé de contourner** et l'a écrit (`editor/windows/inspector.js:99`).
+**OBSERVED**: yes, today. The Hierarchy reads `scene.roots()` and `object.children`; the
+Inspector reads `object.components` and then `componentSchema()` or reflection; selection is
+Editor state; the layer check passes. Where the Editor met a missing Core capability, it
+**refused to work around it** and wrote it down (`editor/windows/inspector.js:99`).
 
-**PROPOSITION** — la proposition le maintient, et c'est vérifiable par trois tests :
+**PROPOSAL** — the proposal keeps it that way, and that is verifiable by three tests:
 
-1. **Aucune collection parallèle.** Le réordonnancement lit `object.children` et
-   `object.components` et mute par Operation. Aucune liste d'affichage.
-2. **Aucune règle métier dupliquée.** Interdiction de cycle, clamp d'index, validation de
-   schéma sont dans le Core. L'Editor peut désactiver un dépôt visuellement, le Core reste
-   seul juge.
-3. **La seule chose que l'Editor décide seul** est la *politique* de préservation du monde au
-   reparentage (§6.4) — et elle s'exprime en Operations Core, pas en écritures directes.
+1. **No parallel collection.** Reordering reads `object.children` and `object.components` and
+   mutates through an Operation. No display list.
+2. **No duplicated business rule.** The cycle prohibition, index clamping and schema validation
+   are in the Core. The Editor may disable a drop visually; the Core remains the sole judge.
+3. **The only thing the Editor decides alone** is the *policy* of world preservation on
+   reparenting (§6.4) — and it expresses it in Core Operations, not in direct writes.
 
 ---
 
-## 14. Recommandation, et ordre d'implémentation proposé
+## 14. Recommendation, and proposed implementation order
 
-### 14.1 La recommandation, en neuf points
+### 14.1 The recommendation, in nine points
 
-**PROPOSITION.**
+**PROPOSAL.**
 
-1. **Nouvelle couche `src/project/`**, entre le Core et l'Editor, propriétaire du manifeste,
-   des `ResourceId` et du `ResourceStore`.
-2. **`Resource` est l'unique unité d'identité, de stockage et de référence.** Pas de
-   `Document`, pas d'`Asset`.
-3. **`px-tabs` ouvre des `OpenEditor`** — `{ resourceId, kind, viewState, history }`, côté
-   Editor, jamais persistés dans le projet.
-4. **Les collections ordonnées deviennent des tableaux :** `components` en tableau
-   `{ type, values }`, `roots` en liste ordonnée d'ids. `FORMAT_VERSION` → 2.
-5. **`type` est l'identité, `label` est le nom.** Pour un Component utilisateur, `type` est
-   son `ResourceId`.
-6. **Sept types d'Operations**, dont un seul `REPARENT { object, parent, index }` qui couvre
-   reparenter, détacher, réordonner parmi ses frères et réordonner les racines.
-7. **`REPARENT` ne touche jamais au Transform.** La préservation du monde est une politique
-   d'Editor, exprimée comme un `batch` de `REPARENT` + cinq `SET_PROPERTY`.
-8. **Le Core fournit `invert()`, l'Editor possède l'historique**, une pile par ressource,
-   `submit()` pour annuler, jamais `apply()`.
-9. **Deux vocabulaires de types :** `PropertyType` au Core, `FieldKind` dérivé à l'Editor.
+1. **A new `src/project/` layer**, between the Core and the Editor, owner of the manifest, of
+   the `ResourceId`s and of the `ResourceStore`.
+2. **`Resource` is the single unit of identity, storage and reference.** No `Document`, no
+   `Asset`.
+3. **`px-tabs` opens `OpenEditor`s** — `{ resourceId, kind, viewState, history }`, on the
+   Editor side, never persisted into the project.
+4. **Ordered collections become arrays:** `components` as an array of `{ type, values }`,
+   `roots` as an ordered list of ids. `FORMAT_VERSION` → 2.
+5. **`type` is the identity, `label` is the name.** For a user Component, `type` is its
+   `ResourceId`.
+6. **Seven Operation types**, including a single `REPARENT { object, parent, index }` covering
+   reparenting, detaching, reordering among siblings and reordering the roots.
+7. **`REPARENT` never touches the Transform.** World preservation is an Editor policy,
+   expressed as a `batch` of `REPARENT` + five `SET_PROPERTY`s.
+8. **The Core provides `invert()`, the Editor owns the history**, one stack per resource,
+   `submit()` to undo, never `apply()`.
+9. **Two type vocabularies:** `PropertyType` in the Core, `FieldKind` derived in the Editor.
 
-### 14.2 Pourquoi celle-ci
+### 14.2 Why this one
 
-**Parce qu'elle ne crée aucun concept que le code ne réclame pas.** `Document` a été évalué et
-rejeté ; `Asset` a été évalué et rejeté ; les migrations de définitions ont été évaluées et
-remplacées par une réconciliation structurelle.
+**Because it creates no concept the code is not asking for.** `Document` was evaluated and
+rejected; `Asset` was evaluated and rejected; definition migrations were evaluated and replaced
+by a structural reconciliation.
 
-**Parce qu'elle referme des trous déjà ouverts, pas seulement des trous futurs.**
-`Sprite.source` est déclaré `resource` depuis l'étape 2.8 sans ressource à référencer ;
-`Tilemap` a deux propriétés non éditables ; la contradiction ordre-Runtime / ordre-sérialisé
-change le comportement d'un projet rechargé.
+**Because it closes gaps that are already open, not only future ones.** `Sprite.source` has
+been declared `resource` since step 2.8 with no resource to reference; `Tilemap` has two
+non-editable properties; the runtime-order / serialized-order contradiction changes the
+behaviour of a reloaded project.
 
-**Parce qu'elle laisse le Core petit.** Le Core ne gagne que : des collections ordonnées, six
-types d'Operations, `invert()`, `PropertyType`, `Matrix.decompose()`. Il ne gagne ni ressource,
-ni chargement, ni historique, ni interprète. Il continue de ne dépendre de rien.
+**Because it leaves the Core small.** The Core only gains: ordered collections, six Operation
+types, `invert()`, `PropertyType`, `Matrix.decompose()`. It gains no resource, no loading, no
+history, no interpreter. It still depends on nothing.
 
-**Parce qu'elle est cohérente avec ce qui est déjà écrit :** `Operations.register()` attendait
-ses consommateurs ; `batch` attendait un geste composé ; `previous` attendait un historique ;
-`describeType()` lisait déjà un `label` ; `px-tabs` attendait de savoir ce qu'un onglet
-désigne ; **ADR-0016** laissait ouverts le stockage d'une définition et l'appelant de `bind()`.
+**Because it is consistent with what is already written:** `Operations.register()` was waiting
+for its consumers; `batch` was waiting for a composed gesture; `previous` was waiting for a
+history; `describeType()` already read a `label`; `px-tabs` was waiting to know what a tab
+designates; **ADR-0016** left open both a definition's storage and the caller of `bind()`.
 
-**Parce qu'elle rend le réseau possible sans le construire.** Ids générés par l'auteur,
-opérations inversibles, arbitrage par `submit()`, champs d'inversion élaguables, `seq` par
-pipeline. C'est exactement le mandat d'**ADR-0008**.
+**Because it makes the network possible without building it.** Ids generated by the author,
+invertible operations, arbitration through `submit()`, prunable inversion fields, `seq` per
+pipeline. That is exactly **ADR-0008**'s mandate.
 
-### 14.3 Ordre d'implémentation proposé pour la Phase 3
+### 14.3 A proposed implementation order for Phase 3
 
-**PROPOSITION.** Chaque étape est utile seule et laisse le dépôt vert.
+**PROPOSAL.** Each step is useful on its own and leaves the repository green.
 
-| # | Contenu | Pourquoi ici |
+| # | Contents | Why here |
 |---|---|---|
-| 1 | Collections ordonnées + `FORMAT_VERSION` 2 + `PropertyType` dans le Core | ferme la contradiction mesurée, sans aucune API nouvelle |
-| 2 | `invert()` + les six Operations structurelles + validation (cycles, index) | tout le reste en dépend |
-| 3 | `Matrix.decompose()` + `editor/commands.js` compose le `batch` de reparentage | rend la Hierarchy manipulable |
-| 4 | `src/project/` : manifeste, `ResourceId`, `ResourceStore` mémoire | permet de sauver et de recharger |
-| 5 | `History` côté Editor, une pile par ressource | Undo/Redo devient visible |
-| 6 | `type` / `label`, Components utilisateur, réconciliation S1 | c'est l'étape 4 de la migration |
-| 7 | `GraphResource` + `bind()` appelé par la couche Project | prépare la fenêtre `Graph`, sans interprète |
+| 1 | Ordered collections + `FORMAT_VERSION` 2 + `PropertyType` in the Core | closes the measured contradiction, with no new API |
+| 2 | `invert()` + the six structural Operations + validation (cycles, indices) | everything else depends on it |
+| 3 | `Matrix.decompose()` + `editor/commands.js` composing the reparent `batch` | makes the Hierarchy manipulable |
+| 4 | `src/project/`: manifest, `ResourceId`, an in-memory `ResourceStore` | makes saving and reloading possible |
+| 5 | `History` on the Editor side, one stack per resource | Undo/Redo becomes visible |
+| 6 | `type` / `label`, user Components, S1 reconciliation | this is step 4 of the migration |
+| 7 | `GraphResource` + `bind()` called by the Project layer | prepares the `Graph` window, with no interpreter |
 
-**Rien de cette liste n'est commencé.** Les étapes 2, 6 et 1 sont respectivement bloquées par
-les arbitrages n° 2, n° 4 et n° 3 (§11).
+**Nothing in this list has been started.** Steps 2, 6 and 1 are blocked by arbitrations 2, 4 and
+3 respectively (§11).
 
 ---
 
-## 15. Matrice de couverture
+## 15. Coverage matrix
 
-Vérification que chaque besoin fonctionnel a une place dans l'architecture proposée.
+A check that every functional need has a place in the proposed architecture.
 
-| Besoin | Où il est traité | Statut |
+| Need | Where it is handled | Status |
 |---|---|---|
-| Create | `ADD_OBJECT` §7.1 | couvert |
-| Delete | `REMOVE_OBJECT` + `subtree` + `index` §7.1 | couvert |
-| Add Component | `ADD_COMPONENT { index, values }` §7.1 | couvert |
-| Remove Component | `REMOVE_COMPONENT { index, values }` §7.1 | couvert |
-| Reorder Components | `MOVE_COMPONENT` + tableau ordonné §4, §6.2 | couvert |
-| Create Child | `ADD_OBJECT { parent, index }` §7.1 | couvert |
-| Delete Child | `REMOVE_OBJECT` §7.1 | couvert |
-| Reorder Children | `REPARENT { parent identique, index }` §6.1 | couvert |
-| Reparent | `REPARENT` + `batch` Transform §6.1, §6.4 | couvert |
-| Unparent | `REPARENT { parent: null }` §6.1 | couvert |
-| Reorder Roots | `REPARENT { parent: null, index }` + `roots` ordonné §4.1 | couvert |
-| Éditer `name` / `tag` depuis l'Inspector | section `Object` intrinsèque + `SET_PROPERTY { component: null }` §1.6 | couvert, **déjà implémenté** |
-| Save | `ResourceStore.write` §3.5 | couvert |
-| Load | manifeste + lecture paresseuse par id §3.5 | couvert |
-| Undo | `invert()` Core + `History` Editor §8 | couvert |
-| Redo | pile miroir §8.2 | couvert |
-| Fenêtre `Graph` | `OpenEditor` sur `GraphResource` + pipeline §9.3 | contrat défini, non construit |
-| `.px` | `GraphResource`, id, `bind()` par la couche Project §9.1 | contrat défini, interprète non construit |
-| `px-tabs` | `OpenEditor`, un par `resourceId` §9.3 | contrat défini, rien à construire |
-| Resources | `Resource` unique, `ResourceId` opaque §3 | couvert |
-| Futur réseau | ids par l'auteur, `invert()`, `submit()`, `seq` par pipeline, élagage §7.5-7.6 | rendu possible, non construit |
+| Create | `ADD_OBJECT` §7.1 | covered |
+| Delete | `REMOVE_OBJECT` + `subtree` + `index` §7.1 | covered |
+| Add Component | `ADD_COMPONENT { index, values }` §7.1 | covered |
+| Remove Component | `REMOVE_COMPONENT { index, values }` §7.1 | covered |
+| Reorder Components | `MOVE_COMPONENT` + the ordered array §4, §6.2 | covered |
+| Create Child | `ADD_OBJECT { parent, index }` §7.1 | covered |
+| Delete Child | `REMOVE_OBJECT` §7.1 | covered |
+| Reorder Children | `REPARENT { same parent, index }` §6.1 | covered |
+| Reparent | `REPARENT` + the Transform `batch` §6.1, §6.4 | covered |
+| Unparent | `REPARENT { parent: null }` §6.1 | covered |
+| Reorder Roots | `REPARENT { parent: null, index }` + ordered `roots` §4.1 | covered |
+| Editing `name` / `tag` from the Inspector | the intrinsic `Object` section + `SET_PROPERTY { component: null }` §1.6 | covered, **already implemented** |
+| Save | `ResourceStore.write` §3.5 | covered |
+| Load | manifest + lazy read by id §3.5 | covered |
+| Undo | `invert()` in the Core + `History` in the Editor §8 | covered |
+| Redo | the mirror stack §8.2 | covered |
+| The `Graph` window | an `OpenEditor` on a `GraphResource` + a pipeline §9.3 | contract defined, not built |
+| `.px` | `GraphResource`, an id, `bind()` by the Project layer §9.1 | contract defined, interpreter not built |
+| `px-tabs` | `OpenEditor`, one per `resourceId` §9.3 | contract defined, nothing to build |
+| Resources | a single `Resource`, an opaque `ResourceId` §3 | covered |
+| A future network | ids from the author, `invert()`, `submit()`, `seq` per pipeline, pruning §7.5-7.6 | made possible, not built |
 
 ---
 
-## 16. État d'implémentation
+## 16. Implementation status
 
-> **Au 2026-08-14, aucune ligne de la Phase 3 n'est implémentée.**
+> **As of 2026-08-14, not a single line of Phase 3 is implemented.**
 >
-> Aucun fichier de `src/` n'a été créé ni modifié par ce chantier. `src/project/` n'existe
-> pas. `OperationType` ne contient que `SET_PROPERTY`. `components` est toujours une `Map`
-> sérialisée triée. `Matrix` n'a pas de `decompose()`. `Resource` n'existe pas.
+> No file in `src/` was created or modified by this effort. `src/project/` does not exist.
+> `OperationType` contains only `SET_PROPERTY`. `components` is still a `Map` serialized
+> sorted. `Matrix` has no `decompose()`. `Resource` does not exist.
 >
-> Le seul artefact produit est ce document.
+> The only artefact produced is this document.
 
-Deux corrections identifiées par cet audit et **non appliquées**, car hors du périmètre
-documentaire de cette étape :
+Two fixes identified by this audit and **not applied**, being outside this step's documentary
+scope:
 
-1. `src/editor/ui/tabs.js:10` dit *« Project alongside a Composer »* → doit dire `Graph`
-   (§1.5) ;
-2. `tools/layers/rules.js` devra déclarer la couche `project` (§3.6).
+1. `src/editor/ui/tabs.js:10` says *"Project alongside a Composer"* → it must say `Graph`
+   (§1.5);
+2. `tools/layers/rules.js` will have to declare the `project` layer (§3.6).
 
 ---
 
-## 17. Renvois
+## 17. Cross-references
 
-| Sujet | Document |
+| Subject | Document |
 |---|---|
-| Vocabulaire produit, périmètre | `PROJECT.md` |
-| Architecture v2, registre des décisions | `ARCHITECTURE.md` |
-| Avancement, étapes, questions ouvertes | `migration/MIGRATION_STATUS.md` |
-| Comportement réel de Legacy | `migration/LEGACY_ANALYSIS.md` |
-| Règles d'écriture et d'étiquetage | `CONVENTIONS.md` |
-| Décisions acceptées | `decisions/ADR-0001` à `ADR-0017` |
+| Product vocabulary, scope | `PROJECT.md` |
+| The v2 architecture, the decision register | `ARCHITECTURE.md` |
+| Progress, steps, open questions | `migration/MIGRATION_STATUS.md` |
+| Legacy's real behaviour | `migration/LEGACY_ANALYSIS.md` |
+| Writing and labelling rules | `CONVENTIONS.md` |
+| Accepted decisions | `decisions/ADR-0001` to `ADR-0017` |

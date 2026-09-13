@@ -1,95 +1,91 @@
-# ADR-0031 — Une valeur autorisée vit sur l'instance, une déclaration vit sur le type, et changer le type ne détruit pas ce qu'un créateur a écrit
+# ADR-0031 — An authored value lives on the instance, a declaration lives on the type, and changing the type does not destroy what a creator wrote
 
-- **Statut :** **accepté** (2026-08-18)
-- **Dépend de :** ADR-0003 (Property System), ADR-0007 (schéma d'Inspector), ADR-0008 (Operations), ADR-0011 (autorité), ADR-0016 (définition de Component), ADR-0021 (identité de Component), ADR-0023 (types de propriétés), ADR-0024 (Undo/Redo), ADR-0026 (`.px` = une ressource), ADR-0027 (modèle de graphe), ADR-0030 (références et rangs)
-- **Amende :** ADR-0023 (`enum` et `array` n'avaient pas de configuration), ADR-0027 (un port n'avait pas de valeur d'instance)
+- **Status:** **accepted** (2026-08-18)
+- **Depends on:** ADR-0003 (Property System), ADR-0007 (Inspector schema), ADR-0008 (Operations), ADR-0011 (authority), ADR-0016 (Component definition), ADR-0021 (Component identity), ADR-0023 (property types), ADR-0024 (Undo/Redo), ADR-0026 (`.px` = one resource), ADR-0027 (the graph model), ADR-0030 (references and ranks)
+- **Amends:** ADR-0023 (`enum` and `array` had no configuration), ADR-0027 (a port had no instance value)
 
-## Contexte observé
+## Observed context
 
-Un audit headless des cycles de vie que l'Editor prétend supporter (ressources, `.px`,
-descripteurs) est passé sur **tout** sauf trois points — et ces trois-là ne sont pas des
-bugs, ce sont les trois endroits où **une décision manque** :
+A headless audit of the lifecycles the Editor claims to support (resources, `.px`, descriptors)
+passed on **everything** but three points — and those three are not bugs, they are the three places
+where **a decision is missing**:
 
-| Constat mesuré | Ce qui manque |
+| Measured finding | What is missing |
 |---|---|
-| `fieldFor('x', { type: 'enum' })` → `readonly` | un `enum` déclaré par un créateur n'a **nulle part** où mettre ses options |
-| `fieldFor('x', { type: 'array' })` → `readonly` | idem pour les éléments d'une liste |
-| `graph.addNode({ type: 'math.add' }).params` → `{}`, `ports.inputs[].default` → `0` | un port porte le défaut **du type**, et l'instance n'a aucun endroit où en écrire un autre |
-| une propriété ajoutée à un `.px` déjà attaché : `instance.speed` → `undefined` | rien ne dit ce qu'un changement de schéma fait aux instances vivantes |
+| `fieldFor('x', { type: 'enum' })` → `readonly` | an `enum` declared by a creator has **nowhere** to put its options |
+| `fieldFor('x', { type: 'array' })` → `readonly` | the same for a list's elements |
+| `graph.addNode({ type: 'math.add' }).params` → `{}`, `ports.inputs[].default` → `0` | a port carries the **type's** default, and the instance has nowhere to write another one |
+| a property added to an already-attached `.px`: `instance.speed` → `undefined` | nothing says what a schema change does to live instances |
 
-Les trois posent **une seule** question, et c'est pour cela qu'ils sont dans un seul ADR :
+All three ask **one** question, and that is why they are in one ADR:
 
-> **Où vit une valeur qu'un créateur a écrite, quand ce qu'elle configure appartient à un
-> type — et que le type peut changer ?**
+> **Where does a value a creator wrote live, when what it configures belongs to a type — and the type
+> can change?**
 
-## La contrainte qui tranche : le multijoueur
+## The constraint that decides: multiplayer
 
-`docs/PROJECT.md` §3.2 : le serveur exécute la même `Scene` et le même Core. Cela n'est pas
-une intention lointaine, c'est ce qui **élimine** la moitié des réponses possibles :
+`docs/PROJECT.md` §3.2: the server runs the same `Scene` and the same Core. That is not a distant
+intention, it is what **eliminates** half the possible answers:
 
-- une valeur autorisée doit être **sérialisable** — sinon elle ne traverse pas le réseau ;
-- elle doit changer par une **Operation** — sinon elle ne se réplique pas et ne s'annule pas
-  (ADR-0008, ADR-0024) ;
-- sa résolution doit être **déterministe et pure** — même graphe, mêmes entrées, même état,
-  sur le client comme sur le serveur (ADR-0011) ;
-- rien de tout cela ne doit demander de DOM (ADR-0006).
+- an authored value must be **serializable** — otherwise it does not cross the network;
+- it must change through an **Operation** — otherwise it does not replicate and does not undo
+  (ADR-0008, ADR-0024);
+- its resolution must be **deterministic and pure** — the same graph, the same inputs, the same
+  state, on client and server alike (ADR-0011);
+- none of that may require a DOM (ADR-0006).
 
-Toute solution qui garde une valeur « dans le contrôle » ou « dans le panneau » est donc
-morte avant d'être écrite. C'est le filtre appliqué aux trois sections ci-dessous.
+Any solution that keeps a value "in the control" or "in the panel" is therefore dead before it is
+written. That is the filter applied to the three sections below.
 
-## Décision
+## Decision
 
-### 1. Un port a une valeur d'instance, à côté des params — amende ADR-0027
+### 1. A port has an instance value, beside the params — amends ADR-0027
 
-**VALIDÉ.** Un nœud gagne **un** champ, symétrique de `params` :
+**SETTLED.** A node gains **one** field, symmetric with `params`:
 
 ```js
 { id, type, x, y, params: {…}, inputs: { a: 3 } }
 ```
 
-`inputs` associe un **identifiant de port d'entrée** à la valeur que ce port prend **quand
-rien n'y est branché**.
+`inputs` maps an **input port identifier** to the value that port takes **when nothing is wired to
+it**.
 
-**La priorité, dans cet ordre, et il n'y en a pas d'autre :**
+**The priority, in this order, and there is no other:**
 
 ```
-connexion  >  node.inputs[port]  >  port.default déclaré par le type
+a connection  >  node.inputs[port]  >  the port.default declared by the type
 ```
 
-C'est l'ordre du plus spécifique au plus général, et c'est le seul qui rende les trois
-utiles : une connexion est un choix explicite et immédiat ; une valeur d'instance est un
-choix explicite et durable ; un défaut de type est ce que le catalogue promet à un nœud que
-personne n'a touché.
+It is the order from most specific to most general, and it is the only one that makes all three
+useful: a connection is an explicit, immediate choice; an instance value is an explicit, lasting
+choice; a type default is what the catalogue promises a node nobody has touched.
 
-**Résolu en UN endroit**, `defaultOf()` dans `runtime/scripting/interpreter.js` — la
-fonction qui répond déjà « que vaut une entrée non connectée ». Elle consulte `node.inputs`
-avant le port. Il n'y a pas de second chemin, donc pas de moyen pour l'Editor et le Runtime
-de répondre différemment.
+**Resolved in ONE place**, `defaultOf()` in `runtime/scripting/interpreter.js` — the function that
+already answers "what is an unconnected input worth". It consults `node.inputs` before the port.
+There is no second path, and therefore no way for the Editor and the Runtime to answer differently.
 
-**Pourquoi pas dans `params`.** `params` est ce que le TYPE déclare (`definition.params`) ;
-les entrées sont ce que le type déclare comme PORTS. Les mélanger ferait qu'un type gagnant
-un param nommé comme un port écraserait silencieusement une valeur, et qu'un `Set Property`
-— qui a un param `property` **et** un port `value` — n'aurait plus deux espaces de noms.
+**Why not inside `params`.** `params` is what the TYPE declares (`definition.params`); the inputs are
+what the type declares as PORTS. Mixing them would mean that a type gaining a param named like a port
+would silently overwrite a value, and that a `Set Property` — which has a `property` param **and** a
+`value` port — would no longer have two namespaces.
 
-**Pourquoi pas un nœud « Number » branché à la place.** C'est ce qu'il fallait faire jusqu'à
-maintenant, et c'est la raison de cette décision : trois nœuds littéraux pour additionner
-deux constantes, c'est un graphe qui décrit sa propre plomberie.
+**Why not a "Number" node wired in instead.** That is what had to be done until now, and it is the
+reason for this decision: three literal nodes to add two constants is a graph describing its own
+plumbing.
 
-**Ce que ça coûte :** rien de neuf. `setInput()` soumet un `SET_PROPERTY` sur `inputs`,
-exactement comme `setParam()` le fait sur `params` — donc réplication, inversion et
-historique sont déjà écrits. La sérialisation écrit `inputs` seulement quand il n'est pas
-vide, donc un graphe existant ne change pas d'un octet.
+**What it costs:** nothing new. `setInput()` submits a `SET_PROPERTY` on `inputs`, exactly as
+`setParam()` does on `params` — so replication, inversion and history are already written.
+Serialization writes `inputs` only when it is non-empty, so an existing graph does not change by a
+byte.
 
-**Une valeur d'instance sur un port CONNECTÉ est conservée, pas effacée.** Débrancher un fil
-rend la valeur qui était là avant — ce qui est ce qu'un créateur attend, et ce qui rend le
-branchement/débranchement non destructeur. L'Editor la montre grisée pendant qu'elle est
-masquée par une connexion.
+**An instance value on a CONNECTED port is kept, not erased.** Unplugging a wire gives back the
+value that was there before — which is what a creator expects, and what makes plugging and
+unplugging non-destructive. The Editor shows it greyed while a connection masks it.
 
-### 2. `Choice` : les options vivent dans le descripteur — amende ADR-0023
+### 2. `Choice`: the options live in the descriptor — amends ADR-0023
 
-**VALIDÉ.** Une propriété `enum` déclarée par un créateur porte ses options **dans son
-propre descripteur**, sous `values` — le champ qu'ADR-0007 lit déjà pour les composants
-écrits en JavaScript :
+**SETTLED.** An `enum` property declared by a creator carries its options **in its own descriptor**,
+under `values` — the field ADR-0007 already reads for components written in JavaScript:
 
 ```js
 properties: {
@@ -97,159 +93,152 @@ properties: {
 }
 ```
 
-**Pas de ressource, pas de structure dédiée, et c'est la partie qui mérite d'être défendue.**
-Une « ressource Enum » partageable est séduisante et fausse ici : elle ajoute une identité,
-un cycle de vie, une résolution, une référence cassée possible et une question de propriété
-— pour une liste de trois mots qui appartient à une propriété d'un seul Component. Le jour
-où deux Components doivent partager une énumération, ce sera une ressource, et cette
-décision-ci ne l'empêche pas : `values` deviendra une référence, ce qui est exactement le
-mouvement qu'ADR-0030 §1 a fait pour `resource`.
+**No resource, no dedicated structure, and that is the part worth defending.** A shareable "Enum
+resource" is seductive and wrong here: it adds an identity, a lifecycle, a resolution, a possible
+broken reference and a question of ownership — for a list of three words belonging to one property of
+one Component. The day two Components have to share an enumeration, it will be a resource, and this
+decision does not prevent it: `values` will become a reference, which is exactly the move ADR-0030
+§1 made for `resource`.
 
-| Question | Réponse |
+| Question | Answer |
 |---|---|
-| **Identité d'une option** | **Aucune.** Une option EST sa valeur. C'est ce qui est stocké dans l'instance, ce qui est sérialisé et ce qu'un nœud compare. Ajouter un id demanderait une table de correspondance et une migration à chaque renommage, pour un gain nul : renommer une option **est** changer la valeur, et §4 dit ce que ça fait aux instances |
-| **Ajouter / supprimer / réordonner** | `setPropertyField(id, 'values', [...])` — un `SET_PROPERTY` sur le descripteur réactif, donc réplicable, inversible, une entrée d'historique par session de frappe (ADR-0027 §renommage) |
-| **Valeur par défaut** | La première option, quand celle qui était choisie disparaît. Un `enum` dont le défaut n'est pas dans ses options est une valeur invalide au sens d'ADR-0023 |
-| **Sérialisation** | `values` est un tableau de chaînes dans le payload `.px`. Déjà JSON |
-| **Zéro option** | Reste `readonly`, **et c'est correct** : un choix sans choix n'est pas un contrôle. L'Inspector le dit au lieu de dessiner une liste vide |
+| **An option's identity** | **None.** An option IS its value. It is what is stored on the instance, what is serialized and what a node compares. Adding an id would require a mapping table and a migration on every rename, for no gain: renaming an option **is** changing the value, and §4 says what that does to instances |
+| **Add / remove / reorder** | `setPropertyField(id, 'values', [...])` — a `SET_PROPERTY` on the reactive descriptor, therefore replicable, invertible, one history entry per typing session (ADR-0027 §renaming) |
+| **Default value** | The first option, when the chosen one disappears. An `enum` whose default is not among its options is an invalid value in ADR-0023's sense |
+| **Serialization** | `values` is an array of strings in the `.px` payload. Already JSON |
+| **Zero options** | Stays `readonly`, **and that is correct**: a choice with no choices is not a control. The Inspector says so instead of drawing an empty list |
 
-### 3. `List` : homogène, typée par déclaration — amende ADR-0023
+### 3. `List`: homogeneous, typed by declaration — amends ADR-0023
 
-**VALIDÉ.** Une `array` déclare **le type de ses éléments** :
+**SETTLED.** An `array` declares **the type of its elements**:
 
 ```js
 properties: { waypoints: { id: 'p_2', type: 'array', of: 'number', default: [] } }
 ```
 
-**Homogène, et le refus de l'hétérogène est la décision.** Une liste hétérogène n'a pas de
-contrôle possible (quel champ dessine-t-on ?), pas de validation possible, et pas de port
-possible dans un graphe — `typesCompatible()` n'aurait rien à comparer. Un créateur qui veut
-des choses différentes ensemble veut un Component, pas une liste.
+**Homogeneous, and refusing the heterogeneous is the decision.** A heterogeneous list has no possible
+control (which field do you draw?), no possible validation, and no possible port in a graph —
+`typesCompatible()` would have nothing to compare. A creator who wants different things together
+wants a Component, not a list.
 
-`of` prend n'importe quel `PropertyType` **sauf `array`** : une liste de listes est une
-structure, et une structure est la question qu'ADR-0023 laisse ouverte, pas celle-ci.
+`of` takes any `PropertyType` **except `array`**: a list of lists is a structure, and a structure is
+the question ADR-0023 leaves open, not this one.
 
-| Question | Réponse |
+| Question | Answer |
 |---|---|
-| **Défaut** | `[]`. Jamais `null` : une liste vide est une liste, l'absence de liste n'est pas un état qu'un créateur peut vouloir |
-| **Ajouter / supprimer / réordonner** | Sur la valeur, par `setProperty` du tableau complet — une liste est **une valeur**, pas une collection structurelle. Les Operations structurelles (ADR-0019) sont pour ce qui a une identité ; un élément de liste n'en a pas |
-| **Édition** | Une ligne par élément, avec le contrôle de `of` — la même dérivation que partout ailleurs, donc rien de neuf à écrire par type |
-| **Sérialisation** | Un tableau JSON de valeurs déjà sérialisables, puisque `of` est un `PropertyType` |
-| **`of` absent** | `any`, et la liste est en lecture seule : on peut voir ce qu'elle contient, pas l'éditer. Honnête plutôt que deviné |
+| **Default** | `[]`. Never `null`: an empty list is a list, and the absence of a list is not a state a creator can want |
+| **Add / remove / reorder** | On the value, through a `setProperty` of the whole array — a list is **a value**, not a structural collection. The structural Operations (ADR-0019) are for things that have an identity; a list element has none |
+| **Editing** | One row per element, with `of`'s control — the same derivation as everywhere else, so nothing new to write per type |
+| **Serialization** | A JSON array of already-serializable values, since `of` is a `PropertyType` |
+| **`of` absent** | `any`, and the list is read-only: you can see what it holds, not edit it. Honest rather than guessed |
 
-### 4. Changer le schéma d'un `.px` : les instances se **réconcilient**, elles ne se remplacent pas
+### 4. Changing a `.px`'s schema: instances **reconcile**, they are not replaced
 
-**VALIDÉ.** C'est la décision la plus lourde des quatre.
+**SETTLED.** It is the heaviest of the four decisions.
 
-Ce qui se passait : `definitions.install()` réenregistrait la classe, et les instances déjà
-attachées gardaient l'ancienne — donc une propriété ajoutée était invisible jusqu'à un
-rechargement de scène. Ce qui NE doit pas se passer : recréer les composants, ce qui
-effacerait toutes les valeurs qu'un créateur a réglées.
+What used to happen: `definitions.install()` re-registered the class, and already-attached instances
+kept the old one — so an added property was invisible until the scene was reloaded. What must NOT
+happen: recreating the components, which would erase every value a creator had set.
 
-**La réconciliation, propriété par propriété :**
+**The reconciliation, property by property:**
 
-| Cas | Ce qui arrive à l'instance | Pourquoi |
+| Case | What happens to the instance | Why |
 |---|---|---|
-| **Propriété ajoutée** | prend la valeur par défaut déclarée | c'est ce qu'une instance neuve aurait ; il n'y a pas d'autre valeur candidate |
-| **Propriété supprimée** | la valeur est **retirée** de l'instance | la garder ferait une donnée que rien ne lit, que la sérialisation écrirait et qu'aucun panneau ne montrerait |
-| **Propriété renommée** | la valeur **suit le nom**, parce que l'identité suit | un descripteur porte un `id` stable (ADR-0027) : renommer n'est pas supprimer-puis-ajouter, et le modèle le sait déjà |
-| **Type changé** | la valeur est remise au défaut du nouveau type | `setPropertyType()` fait déjà exactement ça sur le descripteur (ADR-0027) ; l'instance suit la même règle plutôt qu'une deuxième |
-| **Valeur locale d'une propriété conservée** | **intacte** | c'est tout l'intérêt : changer une déclaration ne doit pas coûter le réglage de trente objets |
+| **A property is added** | it takes the declared default value | that is what a fresh instance would have; there is no other candidate value |
+| **A property is removed** | the value is **removed** from the instance | keeping it would make data nothing reads, that serialization would write and no panel would show |
+| **A property is renamed** | the value **follows the name**, because the identity follows | a descriptor carries a stable `id` (ADR-0027): renaming is not delete-then-add, and the model already knows it |
+| **The type changes** | the value is reset to the new type's default | `setPropertyType()` already does exactly that on the descriptor (ADR-0027); the instance follows the same rule rather than a second one |
+| **A kept property's local value** | **untouched** | that is the whole point: changing a declaration must not cost the settings of thirty objects |
 
-**Elle est AUTOMATIQUE, et non versionnée.** Un schéma de `.px` n'a pas de version parce
-qu'il n'a pas d'historique publié : c'est un fichier du projet ouvert, édité par la personne
-qui l'utilise, dans la même session. Une migration versionnée sert à faire traverser un
-format à des données qu'on ne contrôle plus ; ici les deux côtés sont sous la main. Ce qui
-serait faux serait de demander un clic : « votre Component a changé, voulez-vous mettre à
-jour les objets ? » est une question dont la réponse est toujours oui.
+**It is AUTOMATIC, and not versioned.** A `.px`'s schema has no version because it has no published
+history: it is a file of the open project, edited by the person using it, in the same session. A
+versioned migration exists to carry data you no longer control across a format; here both sides are
+at hand. What would be wrong is asking for a click: "your Component has changed, do you want to
+update the objects?" is a question whose answer is always yes.
 
-**Elle passe par des Operations.** Chaque valeur ajoutée ou retirée est un `SET_PROPERTY`
-sur le composant, `origin: EDITOR`, groupée sous **un** `batch` — donc un `Ctrl Z` défait la
-réconciliation entière, elle se réplique, et un serveur qui rejoue la session obtient le
-même état. C'est ce qui la rend compatible avec ADR-0011 plutôt que d'être une écriture
-sauvage.
+**It goes through Operations.** Every value added or removed is a `SET_PROPERTY` on the component,
+`origin: EDITOR`, grouped under **one** `batch` — so one `Ctrl Z` undoes the entire reconciliation,
+it replicates, and a server replaying the session reaches the same state. That is what makes it
+compatible with ADR-0011 rather than a wild write.
 
-**Un type de `.px` est UNE classe pour toute la session, mise à jour sur place.**
+**A `.px` type is ONE class for the whole session, updated in place.**
 
-C'est la partie que la première rédaction de cet ADR avait sautée, et l'implémentation l'a
-trouvée : réconcilier les *valeurs* ne suffit pas. Une instance porte sa classe, et
-`componentSchema(instance)` lit `instance.constructor.schema` — donc réenregistrer une
-**nouvelle** classe laissait chaque instance déclarer l'ancien schéma. L'Inspector
-n'affichait aucune ligne, alors que la valeur venait d'être écrite.
+This is the part the first draft of this ADR skipped, and the implementation found it: reconciling
+the *values* is not enough. An instance carries its class, and `componentSchema(instance)` reads
+`instance.constructor.schema` — so re-registering a **new** class left every instance declaring the
+old schema. The Inspector showed no row, even though the value had just been written.
 
-Les deux issues possibles, et pourquoi une seule tient :
+The two possible outcomes, and why only one holds:
 
-| Issue | Verdict |
+| Outcome | Verdict |
 |---|---|
-| Remplacer l'instance par une neuve et recopier les valeurs | Change l'identité du composant, son rang dans la collection (ADR-0018) et casse toute référence tenue ailleurs |
-| **Garder la classe, mettre son schéma à jour sur place** | L'identité d'un type EST sa ResourceId (ADR-0021) : deux classes pour un type étaient déjà l'anomalie |
+| Replace the instance with a fresh one and copy the values across | It changes the component's identity, its rank in the collection (ADR-0018) and breaks any reference held elsewhere |
+| **Keep the class, update its schema in place** | A type's identity IS its ResourceId (ADR-0021): two classes for one type were already the anomaly |
 
-Donc l'installateur tient **un enregistrement de schéma vivant par type**, et une
-réinstallation le **mute** au lieu de le remplacer. Le constructeur généré par
-`defineComponent()` itère cet enregistrement à chaque construction, et `static schema`
-pointe dessus — la même référence, donc les instances anciennes et neuves lisent la même
-chose, par construction plutôt que par synchronisation.
+So the installer holds **one live schema record per type**, and a reinstall **mutates** it instead of
+replacing it. The constructor generated by `defineComponent()` iterates that record on every
+construction, and `static schema` points at it — the same reference, so old and new instances read
+the same thing, by construction rather than by synchronization.
 
-**Le Core ne change pas d'une ligne.** C'est la couche Project qui décide qu'un type a une
-classe pour la session, ce qui est exactement le genre de décision qu'ADR-0016 lui laisse.
+**The Core does not change by a line.** It is the Project layer that decides a type has one class for
+the session, which is exactly the kind of decision ADR-0016 leaves to it.
 
-**Les nœuds qui référencent une propriété supprimée ne sont pas réécrits**, et ADR-0027 a
-déjà tranché ça : `validateGraph()` retourne `MISSING_PROPERTY`, la fenêtre marque le nœud,
-l'interprète lève une `GraphError` structurée. Une réconciliation qui débrancherait des
-nœuds ferait qu'annuler une suppression de propriété ne rendrait pas le graphe.
+**Nodes referencing a deleted property are not rewritten**, and ADR-0027 already settled that:
+`validateGraph()` returns `MISSING_PROPERTY`, the window marks the node, the interpreter throws a
+structured `GraphError`. A reconciliation that unplugged nodes would mean undoing a property deletion
+would not give the graph back.
 
-### 5. Ce que tout cela préserve pour le multijoueur
+### 5. What all this preserves for multiplayer
 
-Chacune des quatre décisions produit **de la donnée JSON changée par des Operations** :
+Each of the four decisions produces **JSON data changed by Operations**:
 
-- `node.inputs` : sérialisé avec le nœud, écrit par `SET_PROPERTY` ;
-- `values` et `of` : dans le payload `.px`, écrits par `SET_PROPERTY` ;
-- la réconciliation : une suite de `SET_PROPERTY` sous un batch.
+- `node.inputs`: serialized with the node, written by `SET_PROPERTY`;
+- `values` and `of`: in the `.px` payload, written by `SET_PROPERTY`;
+- the reconciliation: a series of `SET_PROPERTY`s under one batch.
 
-Rien n'introduit d'état vivant hors modèle, rien ne dépend de l'ordre dans lequel une
-fenêtre s'est ouverte, et rien n'exige un navigateur. Le serveur qui exécutera `advance()`
-sur la même `Scene` lira les mêmes valeurs par le même `defaultOf()`.
+Nothing introduces live state outside the model, nothing depends on the order in which a window was
+opened, and nothing requires a browser. The server that will run `advance()` on the same `Scene` will
+read the same values through the same `defaultOf()`.
 
-## Ce que cet ADR ne décide pas
+## What this ADR does not decide
 
-- **Les structures** (un type `object` avec des champs nommés) : ADR-0023 les laisse
-  ouvertes et §3 s'arrête volontairement avant.
-- **Le partage d'une énumération entre deux Components** (§2) : ce sera une ressource, le
-  jour où deux Components la demandent.
-- **Le protocole réseau lui-même** : rien ici n'en écrit une ligne, et c'est délibéré.
-- **La migration d'un projet enregistré vers un format futur** : §4 traite une session
-  vivante, pas un fichier venu d'une autre version.
+- **Structures** (an `object` type with named fields): ADR-0023 leaves them open and §3 deliberately
+  stops short of them.
+- **Sharing an enumeration between two Components** (§2): it will be a resource, the day two
+  Components ask for it.
+- **The network protocol itself**: nothing here writes a line of it, and that is deliberate.
+- **Migrating a saved project to a future format**: §4 handles a live session, not a file from
+  another version.
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Un `Add` s'additionne sans trois nœuds littéraux autour.
-- `Choice` et `List` cessent d'être des entrées de menu qui ne mènent nulle part.
-- Déclarer une propriété sur un `.px` la fait apparaître sur les objets qui le portent déjà,
-  sans perdre un seul réglage.
-- Les quatre passent par le même chemin que tout le reste : Operation, historique,
-  réplication.
+- An `Add` adds without three literal nodes around it.
+- `Choice` and `List` stop being menu entries that lead nowhere.
+- Declaring a property on a `.px` makes it appear on the objects that already carry it, without
+  losing a single setting.
+- All four go through the same path as everything else: Operation, history, replication.
 
-### Négatives
+### Negative
 
-- Le format de nœud gagne un champ. Borné : omis quand vide, donc invisible pour un graphe
-  qui n'en a pas.
-- La réconciliation écrit dans la scène quand un `.px` change, donc marque le projet comme
-  modifié. Correct — il l'est — mais c'est un effet qu'un créateur verra sans l'avoir demandé
-  explicitement.
-- Une liste homogène refuse un cas que quelqu'un finira par vouloir. Assumé (§3).
+- The node format gains a field. Bounded: omitted when empty, and therefore invisible to a graph that
+  has none.
+- The reconciliation writes into the scene when a `.px` changes, and therefore marks the project as
+  modified. Correct — it is — but it is an effect a creator will see without having asked for it
+  explicitly.
+- A homogeneous list refuses a case someone will eventually want. Accepted (§3).
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **Valeur de port dans `params`** | Un type qui gagne un param homonyme d'un port écrase une valeur en silence |
-| **Défaut de port modifié sur le TYPE** | Le catalogue est partagé : régler `a = 3` sur un `Add` les changerait tous |
-| **Options d'enum dans une ressource** | Une identité, un cycle de vie et une référence cassable pour trois mots |
-| **Options d'enum avec un id par option** | Une table de correspondance et une migration par renommage, pour un gain nul |
-| **Liste hétérogène** | Aucun contrôle, aucune validation, aucun port possible |
-| **Migration versionnée du schéma `.px`** | Un format à faire traverser à des données qu'on contrôle des deux côtés |
-| **Recréer les composants au changement de schéma** | Efface toutes les valeurs réglées, ce que la migration existe précisément pour éviter |
-| **Une nouvelle classe par réinstallation** | Les instances existantes déclarent alors l'ancien schéma : la valeur est écrite et aucun panneau ne la montre |
-| **Demander confirmation avant de réconcilier** | Une question dont la réponse est toujours oui |
+| **A port value inside `params`** | A type gaining a param named like a port silently overwrites a value |
+| **A port default modified on the TYPE** | The catalogue is shared: setting `a = 3` on one `Add` would change them all |
+| **Enum options in a resource** | An identity, a lifecycle and a breakable reference for three words |
+| **Enum options with an id per option** | A mapping table and a migration per rename, for no gain |
+| **A heterogeneous list** | No control, no validation, no possible port |
+| **A versioned migration of the `.px` schema** | A format to carry data across, when you control both sides |
+| **Recreating the components on a schema change** | It erases every value that was set, which is exactly what the migration exists to avoid |
+| **A new class per reinstall** | Existing instances then declare the old schema: the value is written and no panel shows it |
+| **Asking for confirmation before reconciling** | A question whose answer is always yes |

@@ -1,11 +1,11 @@
-# ADR-0005 — Le Runtime s'organise par modules de domaine, pas en « Systems »
+# ADR-0005 — The Runtime is organized by domain modules, not by "Systems"
 
-- **Statut :** **accepté** (2026-08-12)
-- **Répond à :** l'hypothèse `Runtime/Systems/{Physics,Animation,Render,Script}System`
+- **Status:** **accepted** (2026-08-12)
+- **Answers:** the `Runtime/Systems/{Physics,Animation,Render,Script}System` hypothesis
 
-## Contexte observé
+## Observed context
 
-Une proposition antérieure suggérait :
+An earlier proposal suggested:
 
 ```
 runtime/systems/
@@ -15,66 +15,64 @@ runtime/systems/
 └── ScriptSystem
 ```
 
-Confrontation au code : **Legacy n'a jamais eu de System.**
+Checked against the code: **Legacy never had a System.**
 
-- La physique est dans `Collider.update()` et `Body.update()`.
-- L'animation est dans `Animator.update()`, qui délègue à `Animation.update()`.
-- Le rendu est dans `Renderer.render()` **plus** le `draw()` de chaque composant.
-- Le scripting est un composant chargé par `import()` dynamique.
+- Physics lives in `Collider.update()` and `Body.update()`.
+- Animation lives in `Animator.update()`, which delegates to `Animation.update()`.
+- Rendering lives in `Renderer.render()` **plus** each component's `draw()`.
+- Scripting is a component loaded by dynamic `import()`.
 
-L'organisation historique est **par domaine** :
+The historical organization is **by domain**:
 
 ```
 src/physics/  src/graphics/  src/anim/  src/input/  src/audio/  src/time/  src/math/
 ```
 
-Elle se lit bien : on cherche une collision, on ouvre `physics/collider.js`.
+It reads well: you are looking for a collision, you open `physics/collider.js`.
 
-Note : `src/runtime/` existe mais ne contient que `environment.js` (détection de
-plateforme, 411 lignes) — aucun rapport avec la boucle de jeu. Le dossier est un
-faux ami.
+A note: `src/runtime/` exists but contains only `environment.js` (platform detection, 411 lines)
+— unrelated to the game loop. The directory is a false friend.
 
-## Décision
+## Decision
 
-**VALIDÉ : conserver l'organisation par module de domaine**, directement sous
-`runtime/`, sans couche intermédiaire.
+**SETTLED: keep the organization by domain module**, directly under `runtime/`, with no
+intermediate layer.
 
 ```
 runtime/
-├── clock/         temps, delta-time, timers
-├── physics/       collisions, corps, spatial hash
+├── clock/         time, delta-time, timers
+├── physics/       collisions, bodies, spatial hash
 ├── animation/     animator, animation, tween
-├── rendering/     backend Canvas 2D + abstraction
-├── input/         état des entrées par owner
-├── scripting/     comportements de Components définis par un graphe .px
-└── loop.js        orchestration des phases
+├── rendering/     Canvas 2D backend + abstraction
+├── input/         input state per owner
+├── scripting/     Component behaviours defined by a .px graph
+└── loop.js        phase orchestration
 ```
 
-Le mot « System » n'est pas interdit. Il est **réservé aux modules qui orchestrent
-réellement plusieurs objets** — et seulement quand l'algorithme n'a nulle part ailleurs
-où vivre.
+The word "System" is not forbidden. It is **reserved for modules that genuinely orchestrate
+several objects** — and only when the algorithm has nowhere else to live.
 
-### Le seul candidat identifié
+### The only candidate identified
 
-`Collider.testCollisions(self)` boucle sur `Scene.main.objects` depuis un composant :
-O(n²), couplage du composant à la scène globale, et référence `Scene` non importée
-(bug masqué par le `try/catch` de `Object.update()`). `SpatialHash` existe dans
-`src/physics/` et n'est branché à rien.
+`Collider.testCollisions(self)` loops over `Scene.main.objects` from inside a component: O(n²),
+a coupling of the component to the global scene, and a `Scene` reference that is never imported
+(a bug masked by the `try/catch` in `Object.update()`). `SpatialHash` exists in `src/physics/`
+and is wired to nothing.
 
-Un `CollisionSystem` qui balaie une grille spatiale puis appelle `obj.onCollision(other)`
-serait un vrai système : il résout un problème algorithmique que le composant ne peut
-pas résoudre seul. **C'est le seul cas où le terme est justifié à ce jour.**
+A `CollisionSystem` that sweeps a spatial grid and then calls `obj.onCollision(other)` would be a
+real system: it solves an algorithmic problem the component cannot solve on its own. **It is the
+only case where the term is justified to date.**
 
-## Justification
+## Rationale
 
-- Aucune observation ne soutient l'architecture Systems.
-- Sortir la logique des composants casserait `Component.update()`/`draw()` (ADR-0004),
-  la sérialisabilité, et le modèle mental débutant.
-- Une architecture Systems impose un ordre d'exécution global et des requêtes typées —
-  de la complexité sans bénéfice à cette échelle.
+- No observation supports the Systems architecture.
+- Taking the logic out of the components would break `Component.update()`/`draw()` (ADR-0004),
+  serializability, and the beginner mental model.
+- A Systems architecture imposes a global execution order and typed queries — complexity with no
+  benefit at this scale.
 
-## Conséquence
+## Consequence
 
-Le mot « System » disparaît aussi de `core/system.js`, qui est aujourd'hui un
-fourre-tout (ids, aléatoire, réactivité, fichiers, validation d'`<input>`, événements,
-logs) et non un système. Son contenu est réparti — voir `architecture/CORE.md`.
+The word "System" also disappears from `core/system.js`, which is today a catch-all (ids,
+randomness, reactivity, files, `<input>` validation, events, logs) and not a system. Its contents
+are redistributed — see `architecture/CORE.md`.

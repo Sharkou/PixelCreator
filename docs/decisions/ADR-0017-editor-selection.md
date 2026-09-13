@@ -1,113 +1,109 @@
-# ADR-0017 — La sélection et le picking appartiennent à l'Editor
+# ADR-0017 — Selection and picking belong to the Editor
 
-- **Statut :** **accepté** (2026-08-13)
-- **Décide :** ce qu'un créateur peut cliquer dans le Viewport, et où vit cette connaissance
-- **Lié à :** ADR-0004 (Components), ADR-0006 (Editor), ADR-0013 (Camera / Viewport)
-
----
-
-## Contexte
-
-ADR-0013 s'arrête à `screenToWorld()` : « le runtime fournit le mapping, pas la politique
-de sélection ». `core/component.js` va plus loin et pose la contrainte sans la résoudre :
-
-> Editor picking must also reach objects that carry no geometry at all, so it needs an
-> editorial representation that `bounds()` alone cannot provide.
-
-Il fallait donc trancher deux choses : **quelle géométrie** est cliquable, et **où** la
-sélection est stockée.
-
-**OBSERVÉ DANS LEGACY.** Les deux réponses étaient mauvaises, et couplées :
-
-- `Renderer.render()` importe `editor/system/dnd.js` pour lire `Dnd.hovering` et
-  `Dnd.resize` — le moteur de rendu dépend de l'IDE. `tools/layers/rules.js` suit encore
-  cette violation, et c'est la seule du dépôt.
-- `detectMouse(self, x, y)` et `detectSide()` sont portés par `Collider`,
-  `RectCollider`, `CircleCollider` : **un objet n'était sélectionnable que s'il avait un
-  composant de collision de gameplay.**
-- La sélection vivait dans le modèle, en `scene.current` / `scene.currentComponent`, lue
-  par cinq modules — dont `Network`.
+- **Status:** **accepted** (2026-08-13)
+- **Decides:** what a creator can click in the Viewport, and where that knowledge lives
+- **Related to:** ADR-0004 (Components), ADR-0006 (Editor), ADR-0013 (Camera / Viewport)
 
 ---
 
-## Décision
+## Context
 
-### 1. Trois géométries distinctes, qui ne se prêtent rien
+ADR-0013 stops at `screenToWorld()`: "the runtime provides the mapping, not the selection
+policy". `core/component.js` goes further and states the constraint without solving it:
 
-| Géométrie | Qui la définit | À quoi elle sert |
+> Editor picking must also reach objects that carry no geometry at all, so it needs an editorial
+> representation that `bounds()` alone cannot provide.
+
+Two things therefore had to be settled: **which geometry** is clickable, and **where** the
+selection is stored.
+
+**OBSERVED IN LEGACY.** Both answers were wrong, and coupled:
+
+- `Renderer.render()` imports `editor/system/dnd.js` to read `Dnd.hovering` and `Dnd.resize` — the
+  render engine depends on the IDE. `tools/layers/rules.js` still tracks that violation, and it is
+  the only one in the repository.
+- `detectMouse(self, x, y)` and `detectSide()` are carried by `Collider`, `RectCollider` and
+  `CircleCollider`: **an object was selectable only if it had a gameplay collision component.**
+- Selection lived in the model, as `scene.current` / `scene.currentComponent`, read by five modules
+  — including `Network`.
+
+---
+
+## Decision
+
+### 1. Three distinct geometries, which lend each other nothing
+
+| Geometry | Who defines it | What it is for |
 |---|---|---|
-| **Gameplay** | un futur `Collider` | ce que le jeu heurte |
-| **Rendu** | `bounds(self)` d'un composant qui dessine | ce qui est peint |
-| **Editorial** | l'Editor, `viewport/picking.js` | ce qu'un créateur peut cliquer |
+| **Gameplay** | a future `Collider` | what the game hits |
+| **Rendering** | the `bounds(self)` of a component that draws | what is painted |
+| **Editorial** | the Editor, `viewport/picking.js` | what a creator can click |
 
-Détourner l'une pour l'autre est le défaut de Legacy, pas un raccourci.
+Diverting one for another is Legacy's defect, not a shortcut.
 
-### 2. Tout Object a une étendue éditoriale
+### 2. Every Object has an editorial extent
 
 ```
-editorBounds(object) = union des bounds() des composants qui en déclarent
-                     = sinon, un carré de préhension de 24 unités sur l'origine
+editorBounds(object) = the union of the bounds() of the components that declare one
+                     = otherwise, a 24-unit grab square on the origin
 ```
 
-Un objet vide, une caméra, un point d'apparition, un nœud de regroupement : **cliquables,
-sans qu'on leur ajoute quoi que ce soit.** `bounds(self)` reste une capacité optionnelle
-et n'est jamais rendue obligatoire par la sélection.
+An empty object, a camera, a spawn point, a grouping node: **clickable, without anything being
+added to them.** `bounds(self)` stays an optional capability and is never made mandatory by
+selection.
 
-### 3. Le test se fait en espace local
+### 3. The test is done in local space
 
-Le pointeur traverse l'inverse de `view · worldMatrix(object)`, puis est comparé à une
-boîte alignée sur les axes **locaux**. Rotation, échelle et composition parentale sont
-donc traitées par les matrices, pas par des cas particuliers — et le contour de sélection
-suit l'objet au lieu de l'encadrer.
+The pointer goes through the inverse of `view · worldMatrix(object)`, and is then compared against
+a box aligned to the **local** axes. Rotation, scale and parent composition are therefore handled
+by matrices, not by special cases — and the selection outline follows the object instead of
+boxing it.
 
-`lock`, `visible` et `active` excluent un objet du picking. C'est le seul rôle de `lock`.
+`lock`, `visible` and `active` exclude an object from picking. That is `lock`'s only role.
 
-### 4. La sélection est un objet de l'Editor, pas un champ du modèle
+### 4. Selection is an Editor object, not a model field
 
-`editor/selection.js` : un objet courant, `set` / `clear` / `has` / `observe`. Le Core ne
-la connaît pas, elle n'est pas sérialisée, elle ne produit pas d'Operation et elle n'est
-pas répliquée — deux créateurs sur le même projet ont chacun la leur.
+`editor/selection.js`: a current object, `set` / `clear` / `has` / `observe`. The Core does not
+know about it, it is not serialized, it produces no Operation and it is not replicated — two
+creators on the same project each have their own.
 
-**Sélection simple pour l'instant.** Une sélection multiple change ce que « l'objet
-sélectionné » veut dire pour chaque consommateur ; elle se décidera avec les outils qui en
-ont besoin, pas en plaçant d'avance un tableau que personne ne lit.
+**Single selection for now.** Multiple selection changes what "the selected object" means for
+every consumer; it will be decided together with the tools that need it, not by placing an array
+in advance that nobody reads.
 
-### 5. Les surcouches sont dessinées après le rendu, par l'Editor
+### 5. Overlays are drawn after rendering, by the Editor
 
-Contour et pivot passent par le **contrat de renderer ordinaire** (`setTransform`,
-`strokeRect`, `fillRect`), sur la surface, après `Runtime.render()`. Aucune API de dessin
-réservée à l'IDE, aucun second backend, et surtout : **rien dans `runtime/` ne sait qu'un
-éditeur existe.**
+The outline and the pivot go through the **ordinary renderer contract** (`setTransform`,
+`strokeRect`, `fillRect`), on the surface, after `Runtime.render()`. No IDE-only drawing API, no
+second backend, and above all: **nothing in `runtime/` knows an editor exists.**
 
 ---
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Un jeu publié ne charge rien de l'IDE : la dépendance `engine → editor` de Legacy n'est
-  pas reproduite.
-- Un objet est sélectionnable dès sa création, avant tout composant.
-- La physique pourra changer sans toucher à la sélection, et réciproquement.
-- `picking.js` est du calcul pur : testé sous Node, sans DOM.
+- A published game loads nothing of the IDE: Legacy's `engine → editor` dependency is not
+  reproduced.
+- An object is selectable from the moment it is created, before any component.
+- Physics will be able to change without touching selection, and vice versa.
+- `picking.js` is pure computation: tested under Node, with no DOM.
 
-### Négatives
+### Negative
 
-- Le carré de préhension de 24 unités est une constante choisie à la main. Elle est
-  correcte tant qu'elle correspond au marqueur affiché ; si le marqueur change, elle doit
-  changer avec lui.
-- Une étendue éditoriale n'est pas une silhouette : cliquer dans le coin transparent d'un
-  sprite sélectionne le sprite. Acceptable — et corrigeable plus tard par un test alpha,
-  sans que le modèle bouge.
+- The 24-unit grab square is a hand-picked constant. It is correct as long as it matches the
+  marker that is drawn; if the marker changes, it must change with it.
+- An editorial extent is not a silhouette: clicking a sprite's transparent corner selects the
+  sprite. Acceptable — and fixable later with an alpha test, without the model moving.
 
 ---
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **Réutiliser les Colliders** | Rend la sélection dépendante du gameplay. C'est exactement le défaut de Legacy. |
-| **Rendre `bounds()` obligatoire** | Force une géométrie sur des composants qui n'en ont pas (un système de particules, de la logique pure) et contredit ADR-0004. |
-| **Sélection dans le Core (`scene.current`)** | De l'état d'IDE dans un modèle que le serveur exécute aussi. `core/scene.js` le refuse explicitement. |
-| **Picking par lecture de pixels du canvas** | Impose un tampon de rendu supplémentaire, ne survit pas à un backend headless, et lie la sélection au fait qu'un objet dessine. |
-| **Picking dans le Runtime** | Recrée `runtime → editor` ; ADR-0013 a déjà tranché que le runtime fournit le mapping et pas la politique. |
+| **Reusing the Colliders** | It makes selection depend on gameplay. That is exactly Legacy's defect. |
+| **Making `bounds()` mandatory** | It forces a geometry onto components that have none (a particle system, pure logic) and contradicts ADR-0004. |
+| **Selection in the Core (`scene.current`)** | IDE state inside a model the server also runs. `core/scene.js` explicitly refuses it. |
+| **Picking by reading canvas pixels** | It requires an extra render buffer, does not survive a headless backend, and ties selection to whether an object draws. |
+| **Picking in the Runtime** | It recreates `runtime → editor`; ADR-0013 already settled that the runtime provides the mapping and not the policy. |

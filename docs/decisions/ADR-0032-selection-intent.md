@@ -1,137 +1,131 @@
-# ADR-0032 — Il y a un seul sujet, et une intention de sélection s'annonce au lieu de se propager
+# ADR-0032 — There is a single subject, and a selection intent is announced instead of propagated
 
-- **Statut :** **accepté** (2026-08-19)
-- **Décide :** comment un panneau dit « voilà ce que le créateur regarde », et ce qui garantit
-  qu'un seul panneau le dit à la fois
-- **Dépend de :** ADR-0006 (Web Components, aucune fenêtre ne connaît les autres), ADR-0011
-  (autorité et anti-écho), ADR-0017 (la sélection appartient à l'Editor), ADR-0020
-  (Resources), ADR-0025 (le Workspace possède la ressource sélectionnée), ADR-0027 (un nœud
-  sélectionné est une sélection de `.px`)
-- **Amende :** ADR-0017 §4 (la sélection d'Object n'était pas le seul sujet ; il en existe
-  trois), et la routine d'écho de `editor.js`
+- **Status:** **accepted** (2026-08-19)
+- **Decides:** how a panel says "this is what the creator is looking at", and what guarantees that
+  only one panel says it at a time
+- **Depends on:** ADR-0006 (Web Components, no window knows the others), ADR-0011 (authority and
+  anti-echo), ADR-0017 (selection belongs to the Editor), ADR-0020 (Resources), ADR-0025 (the
+  Workspace owns the selected resource), ADR-0027 (a selected node is a `.px` selection)
+- **Amends:** ADR-0017 §4 (Object selection was not the only subject; there are three), and the echo
+  routine in `editor.js`
 
 ---
 
-## Contexte observé
+## Observed context
 
-L'Editor a **trois sujets** — un Object, une Resource, un nœud de graphe — et **deux
-détenteurs** : `Selection` (ADR-0017) et `Workspace.selectedId` (ADR-0025). Aucun des deux
-n'est de trop : la sélection d'objet n'est pas répliquée et n'a pas de cycle de vie, la
-ressource sélectionnée en a un (elle peut être supprimée, fermée, renommée). Ce qui manquait
-est ce qui les **relie**.
+The Editor has **three subjects** — an Object, a Resource, a graph node — and **two holders**:
+`Selection` (ADR-0017) and `Workspace.selectedId` (ADR-0025). Neither is redundant: object selection
+is not replicated and has no lifecycle, while the selected resource does have one (it can be
+deleted, closed, renamed). What was missing is what **links** them.
 
-Faute de ce lien, `editor.js` propageait chaque changement vers l'autre détenteur, avec un
-drapeau `routing` pour couper l'écho. Trois défauts mesurés, tous du même geste :
+Lacking that link, `editor.js` propagated every change to the other holder, with a `routing` flag to
+cut the echo. Three measured defects, all from the same gesture:
 
-| Constat | Cause |
+| Finding | Cause |
 |---|---|
-| Cliquer dans le vide de la scène ne désélectionne pas la ressource du Project | `Selection.set(null)` **n'émet rien** quand la sélection était déjà vide : l'écho ne part jamais |
-| `hierarchy.js` et `project.js` vident **les deux** détenteurs à la main | chaque fenêtre a dû découvrir seule que l'écho ne suffisait pas — et le Viewport ne l'a jamais découvert |
-| Le drapeau `routing` doit être vrai pendant exactement un aller-retour | une garde qui dépend de l'ordre d'appel des observateurs |
+| Clicking empty space in the scene did not deselect the Project's resource | `Selection.set(null)` **emits nothing** when the selection was already empty: the echo never leaves |
+| `hierarchy.js` and `project.js` clear **both** holders by hand | each window had to discover on its own that the echo was not enough — and the Viewport never discovered it |
+| The `routing` flag has to be true for exactly one round trip | a guard that depends on the order in which observers are called |
 
-Le drapeau n'était pas mal écrit : il répondait à la mauvaise question. Un écho existe
-lorsqu'un changement doit **traverser** un système ; ici les deux détenteurs répondent à un
-seul geste du créateur, et ce geste peut être annoncé une fois, en amont, au lieu d'être
-reconstruit après coup à partir de ses conséquences.
+The flag was not badly written: it answered the wrong question. An echo exists when a change has to
+**cross** a system; here the two holders respond to a single gesture by the creator, and that gesture
+can be announced once, upstream, instead of being reconstructed afterwards from its consequences.
 
 ---
 
-## Décision
+## Decision
 
-### 1. Une intention est annoncée, elle n'est pas déduite
+### 1. An intent is announced, it is not inferred
 
-**VALIDÉ.** `editor/subject.js` porte le seul vocabulaire dont une fenêtre a besoin :
+**SETTLED.** `editor/subject.js` carries the only vocabulary a window needs:
 
 ```js
-subject.object(object)     // « le créateur travaille sur cet Object »
-subject.resource(id)       // « … sur cette Resource »
-subject.clear()            // « … sur rien »
+subject.object(object)     // "the creator is working on this Object"
+subject.resource(id)       // "… on this Resource"
+subject.clear()            // "… on nothing"
 ```
 
-Une fenêtre appelle **une** de ces trois méthodes. Elle n'a pas à savoir qu'il existe un
-second détenteur, ni à le vider, ni à vérifier ce qu'il contient — c'est exactement la
-contrainte d'ADR-0006 : aucune fenêtre ne connaît les autres.
+A window calls **one** of those three methods. It does not have to know a second holder exists, nor
+clear it, nor check what it contains — which is exactly ADR-0006's constraint: no window knows the
+others.
 
-### 2. `Subject` est un aiguilleur, jamais un troisième détenteur
+### 2. `Subject` is a router, never a third holder
 
-**VALIDÉ, et c'est la moitié importante de la décision.**
+**SETTLED, and it is the important half of the decision.**
 
-Il ne stocke aucune valeur. `Selection` reste la source de vérité de l'Object, le
-`Workspace` reste celle de la Resource, et les vues continuent d'observer celui qui les
-concerne — rien à re-brancher, aucune notification en double.
+It stores no value. `Selection` stays the source of truth for the Object, the `Workspace` stays the
+one for the Resource, and the views keep observing whichever concerns them — nothing to rewire, no
+duplicated notification.
 
-Un troisième détenteur aurait été un état de plus à tenir en phase avec deux autres, pour
-une idée qui n'a pas de donnée propre : « quel est le sujet » se **lit** dans les deux
-détenteurs, il ne se stocke pas.
+A third holder would have been one more state to keep in step with two others, for an idea that has
+no data of its own: "what is the subject" is **read** from the two holders, it is not stored.
 
-> **L'invariant, et il est testable sans navigateur :** après n'importe quelle méthode de
-> `Subject`, **au plus un** des deux détenteurs est non vide.
+> **The invariant, and it is testable without a browser:** after any `Subject` method, **at most one**
+> of the two holders is non-empty.
 
-### 3. La réentrance est bornée par le geste, pas par un aller-retour
+### 3. Reentrancy is bounded by the gesture, not by a round trip
 
-**VALIDÉ.** `Subject` applique ses deux écritures sous une garde de réentrance. La
-différence avec le drapeau qu'il remplace est qu'elle ne protège plus d'un **écho** — il
-n'y en a plus, puisque plus personne ne re-propage — mais d'un **observateur qui réagit en
-sélectionnant autre chose** : supprimer un objet depuis un panneau qui écoute la sélection,
-par exemple. Le premier geste gagne, les suivants sont ignorés jusqu'à ce qu'il soit fini.
+**SETTLED.** `Subject` applies its two writes under a reentrancy guard. The difference from the flag
+it replaces is that it no longer protects against an **echo** — there is none any more, since nobody
+re-propagates — but against an **observer that reacts by selecting something else**: deleting an
+object from a panel that listens to the selection, for instance. The first gesture wins, the
+following ones are ignored until it has finished.
 
-Ce n'est pas la même garde qu'ADR-0011 : celle-ci distingue une intention locale d'une
-opération répliquée, tandis que celle-là ordonne deux écritures d'un même geste.
+It is not the same guard as ADR-0011's: that one tells a local intent from a replicated operation,
+while this one orders two writes of a single gesture.
 
-### 4. Vider est une intention comme une autre
+### 4. Clearing is an intent like any other
 
-**VALIDÉ.** C'était le bug, et c'est la règle qui le ferme : `subject.clear()` écrit dans
-les deux détenteurs **sans condition**. Que l'un des deux ait déjà été vide n'a jamais été
-une raison de laisser l'autre plein.
+**SETTLED.** That was the bug, and this is the rule that closes it: `subject.clear()` writes into both
+holders **unconditionally**. That one of them was already empty was never a reason to leave the other
+full.
 
-Le clic dans le vide — la scène, la grille du Project, l'espace sous l'arbre — appelle donc
-`subject.clear()`, et les trois panneaux répondent au même geste par le même effet.
+The click in empty space — the scene, the Project's grid, the space below the tree — therefore calls
+`subject.clear()`, and all three panels answer the same gesture with the same effect.
 
-### 5. Sélectionner un nœud reste une sélection de `.px`
+### 5. Selecting a node stays a `.px` selection
 
-**VALIDÉ, inchangé (ADR-0027 §10).** Un nœud sélectionné veut dire « le Component est ce sur
-quoi tu travailles », donc c'est `subject.resource(definition.type)`. La fenêtre Graph garde
-sa propre sélection de nœud pour déplacer et supprimer : c'est un état de vue, pas un sujet.
-
----
-
-## Ce que cet ADR ne décide pas
-
-- **La sélection multiple.** ADR-0017 §4 la laisse ouverte et rien ici ne la ferme :
-  `Subject` prend un Object, et le jour où il en prendra plusieurs, ce sera une décision sur
-  ce que « l'objet sélectionné » veut dire pour chaque consommateur.
-- **La sélection d'un Component d'un Object** comme sujet à part entière : l'Inspector
-  montre déjà les Components de l'objet sélectionné, et rien ne demande un quatrième sujet.
-- **La réplication de la sélection** entre deux créateurs : ADR-0017 l'exclut, et ce n'est
-  pas rouvert.
+**SETTLED, unchanged (ADR-0027 §10).** A selected node means "the Component is what you are working
+on", so it is `subject.resource(definition.type)`. The Graph window keeps its own node selection for
+moving and deleting: that is view state, not a subject.
 
 ---
 
-## Conséquences
+## What this ADR does not decide
 
-### Positives
-
-- Un clic dans le vide veut dire la même chose dans les quatre fenêtres.
-- Le drapeau `routing` disparaît, et avec lui la dépendance à l'ordre des observateurs.
-- Une fenêtre nouvelle n'a qu'un vocabulaire à apprendre, et ne peut pas oublier le second
-  détenteur : elle ne le voit pas.
-- L'invariant « au plus un sujet » est un test sous Node, pas une inspection à l'œil.
-
-### Négatives
-
-- Une indirection de plus entre une fenêtre et `Selection`. Bornée : trois méthodes, aucun
-  état.
-- Les appels directs à `selection.set()` restent possibles depuis le code qui *lit* la
-  sélection. C'est assumé — `Selection` est encore l'API de lecture — et c'est ce que le
-  test d'invariant surveille.
+- **Multiple selection.** ADR-0017 §4 leaves it open and nothing here closes it: `Subject` takes one
+  Object, and the day it takes several, that will be a decision about what "the selected object"
+  means for each consumer.
+- **Selecting a Component of an Object** as a subject in its own right: the Inspector already shows
+  the selected object's Components, and nothing asks for a fourth subject.
+- **Replicating the selection** between two creators: ADR-0017 rules it out, and that is not
+  reopened.
 
 ---
 
-## Alternatives écartées
+## Consequences
 
-| Alternative | Pourquoi non |
+### Positive
+
+- A click in empty space means the same thing in all four windows.
+- The `routing` flag disappears, and with it the dependency on observer ordering.
+- A new window has only one vocabulary to learn, and cannot forget the second holder: it does not see
+  it.
+- The "at most one subject" invariant is a test under Node, not an inspection by eye.
+
+### Negative
+
+- One more indirection between a window and `Selection`. Bounded: three methods, no state.
+- Direct calls to `selection.set()` remain possible from code that *reads* the selection. That is
+  accepted — `Selection` is still the read API — and it is what the invariant test watches.
+
+---
+
+## Rejected alternatives
+
+| Alternative | Why not |
 |---|---|
-| **Garder l'écho et faire émettre `Selection.set(null)` même à vide** | Une notification qui ne correspond à aucun changement, envoyée à chaque clic dans le vide, à toutes les vues |
-| **Fusionner les deux détenteurs en un** | Un Object et une Resource n'ont ni le même cycle de vie ni les mêmes observateurs ; ADR-0017 et ADR-0025 les ont séparés pour de bonnes raisons |
-| **Un troisième détenteur qui possède « le sujet »** | Trois états à tenir en phase pour une idée qui se lit dans les deux autres |
-| **Laisser chaque fenêtre vider les deux** | C'est l'état de départ : deux fenêtres l'avaient trouvé, une ne l'avait pas trouvé, et rien ne le disait |
+| **Keeping the echo and making `Selection.set(null)` emit even when empty** | A notification matching no change, sent to every view on every click in empty space |
+| **Merging the two holders into one** | An Object and a Resource have neither the same lifecycle nor the same observers; ADR-0017 and ADR-0025 separated them for good reasons |
+| **A third holder that owns "the subject"** | Three states to keep in step for an idea that is readable from the other two |
+| **Letting each window clear both** | That is the starting state: two windows had found it, one had not, and nothing said so |

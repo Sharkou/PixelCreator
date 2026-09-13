@@ -1,178 +1,169 @@
-# ADR-0012 — Le Runtime isole et rapporte les erreurs, il ne modifie pas le modèle
+# ADR-0012 — The Runtime isolates and reports errors, it does not modify the model
 
-- **Statut :** **accepté** (2026-08-12)
-- **Décide :** ce que le Runtime fait — et ne fait pas — quand un Component lève une exception
-- **Lié à :** ADR-0004 (cycle de vie des Components), ADR-0003 (Property System), ADR-0011 (autorité)
+- **Status:** **accepted** (2026-08-12)
+- **Decides:** what the Runtime does — and does not do — when a Component throws
+- **Related to:** ADR-0004 (Component lifecycle), ADR-0003 (Property System), ADR-0011 (authority)
 
 ---
 
-## Contexte observé
+## Observed context
 
-### Legacy avale les erreurs
+### Legacy swallows errors
 
-`Object.update()` entoure chaque appel de composant d'un `try/catch` qui **ne signale
-rien**. C'est ce qui a rendu invisibles trois défauts documentés dans
-`migration/LEGACY_ANALYSIS.md` :
+`Object.update()` wraps every component call in a `try/catch` that **reports nothing**. That is
+what made three defects documented in `migration/LEGACY_ANALYSIS.md` invisible:
 
-| Défaut | Ce que le `try/catch` en a fait |
+| Defect | What the `try/catch` made of it |
 |---|---|
-| `Tilemap.draw(ctx, camera)` reçoit un `Object` | `TypeError` à chaque frame, jamais affichée |
-| `Collider.update()` référence `Scene.main` non importé | `ReferenceError` à chaque frame, jamais affichée |
-| `Controller` → `Keyboard` → `Network.users` hors ligne | mode solo cassé, **et silencieux** |
+| `Tilemap.draw(ctx, camera)` receives an `Object` | a `TypeError` every frame, never shown |
+| `Collider.update()` references `Scene.main` without importing it | a `ReferenceError` every frame, never shown |
+| `Controller` → `Keyboard` → `Network.users` offline | single-player broken, **and silent** |
 
-L'isolation était bonne : une frame ne tombait pas. Le signalement était absent.
+The isolation was good: a frame did not fall over. The reporting was absent.
 
-### La première v2 a corrigé le signalement et introduit un défaut plus grave
+### The first v2 fixed the reporting and introduced a worse defect
 
-L'étape 2.8 a ajouté un `onError`, mais aussi un compteur d'échecs : après
-`maxFailures` exceptions consécutives (3 par défaut), le Runtime exécutait
+Step 2.8 added an `onError`, but also a failure counter: after `maxFailures` consecutive
+exceptions (3 by default), the Runtime ran
 
 ```js
 component.active = false;
 ```
 
-L'intention était raisonnable — ne pas rejouer soixante fois par seconde une erreur
-systématique. Le mécanisme, lui, ne l'est pas.
+The intent was reasonable — do not replay a systematic error sixty times a second. The mechanism
+is not.
 
-**Un Component attaché est enveloppé dans un Proxy réactif** (`Object.addComponent()`
-appelle `makeReactive()`). Cette écriture n'est donc pas un détail interne du Runtime :
-elle traverse le trap `set` du Property System, **émet un `Change`**, est visible de
-l'Inspector et est candidate à la réplication.
+**An attached Component is wrapped in a reactive Proxy** (`Object.addComponent()` calls
+`makeReactive()`). That write is therefore not an internal Runtime detail: it goes through the
+Property System's `set` trap, **emits a `Change`**, is visible to the Inspector and is a candidate
+for replication.
 
-Autrement dit : **une exception dans un script utilisateur mutait l'état de simulation.**
+In other words: **an exception in a user script mutated simulation state.**
 
-Pour un moteur multijoueur autoritaire (ADR-0011), c'est exactement à l'envers. L'état
-que le serveur arbitre se mettrait à dépendre du fait qu'un script a levé une exception,
-sur cette machine-là, à cette frame-là. Deux clients exécutant la même simulation
-divergeraient parce que l'un a rencontré une erreur et l'autre non. La désactivation
-serait par surcroît répliquée comme une intention légitime, sans qu'aucune intention
-n'ait jamais existé.
+For an authoritative multiplayer engine (ADR-0011) that is exactly backwards. The state the server
+arbitrates would start depending on whether a script threw, on that machine, on that frame. Two
+clients running the same simulation would diverge because one hit an error and the other did not.
+The disabling would furthermore be replicated as a legitimate intent, when no intent ever existed.
 
 ---
 
-## Décision
+## Decision
 
-**Le Runtime isole les erreurs d'exécution et les rapporte. Il ne modifie jamais
-automatiquement l'état du modèle en réaction à une erreur.**
+**The Runtime isolates execution errors and reports them. It never automatically modifies the
+model's state in reaction to an error.**
 
-Quatre préoccupations étaient confondues ; elles sont désormais séparées :
+Four concerns were conflated; they are now separated:
 
-| Préoccupation | À qui elle appartient |
+| Concern | Whose it is |
 |---|---|
-| Isolation d'une exception | **Runtime** — `try/catch` autour de `update()` et `draw()` |
-| Signalement | **Runtime** — un rapport structuré passé à `onError` |
-| Politique (afficher, compter, mettre en pause, désactiver) | **couche supérieure** — Editor, serveur, hôte |
-| État de simulation | **modèle seul** — jamais écrit par le Runtime |
+| Isolating an exception | **Runtime** — a `try/catch` around `update()` and `draw()` |
+| Reporting | **Runtime** — a structured report passed to `onError` |
+| Policy (display, count, pause, disable) | **a higher layer** — Editor, server, host |
+| Simulation state | **the model alone** — never written by the Runtime |
 
-### 1. Aucune auto-désactivation
+### 1. No auto-disabling
 
-`maxFailures`, le compteur d'échecs et l'écriture `component.active = false` sont
-supprimés. Un Component qui lève une exception à chaque frame sera appelé à chaque
-frame, et signalé à chaque frame. C'est à la couche supérieure de décider que cela
-suffit.
+`maxFailures`, the failure counter and the `component.active = false` write are removed. A
+Component that throws every frame will be called every frame, and reported every frame. It is for
+the higher layer to decide that is enough.
 
-**Invariant, couvert par un test :** une exception d'exécution ne produit aucun `Change`
-du seul fait que le Runtime la traite.
+**An invariant, covered by a test:** an execution error produces no `Change` merely because the
+Runtime handled it.
 
-### 2. `active` reste une propriété normale du Component
+### 2. `active` stays an ordinary Component property
 
-Aucun mécanisme spécial n'est créé pour `active`. C'est une propriété réactive
-ordinaire, dont seule la **direction d'usage** est normative :
+No special mechanism is created for `active`. It is an ordinary reactive property, of which only
+the **direction of use** is normative:
 
-- **lue** par le Runtime et le SceneRenderer, pour décider d'exécuter `update()` /
-  `draw()`. Une propriété absente vaut « actif » ;
-- **écrite** par le code utilisateur, par un Component ou par l'Editor, via le Property
-  System normal ;
-- **jamais écrite par le Runtime.**
+- **read** by the Runtime and the SceneRenderer, to decide whether to run `update()` / `draw()`.
+  An absent property means "active";
+- **written** by user code, by a Component or by the Editor, through the normal Property System;
+- **never written by the Runtime.**
 
-Une couche supérieure qui *choisit* de désactiver un script après N erreurs reste
-parfaitement libre de le faire : elle écrira `active` elle-même, explicitement, et cette
-écriture sera alors une intention réelle, attribuable et représentable en Operation
-(ADR-0008).
+A higher layer that *chooses* to disable a script after N errors remains perfectly free to do so:
+it will write `active` itself, explicitly, and that write will then be a real intent, attributable
+and representable as an Operation (ADR-0008).
 
-### 3. Un rapport structuré, une seule voie
+### 3. A structured report, a single channel
 
 ```js
-new Runtime(scene, { onError: report => { /* politique */ } });
+new Runtime(scene, { onError: report => { /* policy */ } });
 ```
 
 ```js
 {
-    error,      // l'objet Error original, jamais modifié
-    object,     // l'Object concerné
-    component,  // le Component concerné
-    type,       // nom de type du Component
+    error,      // the original Error object, never modified
+    object,     // the Object concerned
+    component,  // the Component concerned
+    type,       // the Component's type name
     phase,      // 'update' | 'draw'
-    time        // temps de simulation de l'échec, null si inconnu
+    time        // the simulation time of the failure, null if unknown
 }
 ```
 
-Le consommateur **lit des champs, il ne parse jamais un message**. C'est ce qui permet à
-l'Editor de regrouper par composant, d'ouvrir l'objet fautif, ou de distinguer un échec
-de simulation d'un échec de rendu — rien de tout cela n'est récupérable depuis une chaîne.
+The consumer **reads fields; it never parses a message**. That is what lets the Editor group by
+component, open the offending object, or tell a simulation failure from a rendering failure — none
+of which is recoverable from a string.
 
-La version précédente réécrivait `error.message` pour y injecter le contexte : elle
-mutait un objet qui ne lui appartenait pas, et détruisait le message d'origine. **L'Error
-originale n'est plus jamais touchée.**
+The previous version rewrote `error.message` to inject the context: it mutated an object that did
+not belong to it, and destroyed the original message. **The original Error is never touched
+again.**
 
-**Une seule voie de signalement.** Pas d'émetteur `runtime.errors` en parallèle. Une API
-minimale, sur laquelle l'Editor branchera sa propre politique le moment venu.
+**One reporting channel.** No parallel `runtime.errors` emitter. A minimal API, onto which the
+Editor will plug its own policy when the time comes.
 
-### 4. Sans `onError`, l'erreur reste bruyante
+### 4. Without an `onError`, the error stays noisy
 
-Le rapporteur par défaut diffère le lancement (`queueMicrotask`) pour que la frame
-courante s'achève, puis lève une erreur de contexte dont `cause` est l'erreur
-d'origine, intacte. Elle atterrit sur le chemin des erreurs non capturées de
-l'environnement, où elle ne peut pas passer inaperçue.
+The default reporter defers the throw (`queueMicrotask`) so that the current frame finishes, then
+throws a context error whose `cause` is the original error, intact. It lands on the environment's
+uncaught-error path, where it cannot go unnoticed.
 
-**Le silence de Legacy n'est jamais reproduit.** Une erreur non consommée reste visible.
-
----
-
-## Conséquences
-
-### Positives
-
-- Le Runtime n'a plus aucun chemin d'écriture vers le modèle. La règle se vérifie par
-  lecture du fichier, et par un test.
-- La simulation ne peut plus diverger entre deux machines à cause d'une exception.
-- La politique d'erreur est décidée là où le contexte existe : l'Editor peut mettre en
-  pause en développement, le serveur peut appliquer une règle plus stricte, sans que le
-  Runtime ait à connaître l'un ou l'autre.
-- Le rapport est directement exploitable par l'Editor, avant même qu'il existe.
-- Le contrat est fixé **avant** l'arrivée du scripting, de la physique et des autres
-  domaines runtime, qui le consommeront tous.
-
-### Négatives
-
-- Un Component systématiquement cassé est appelé et signalé à chaque frame. Sans
-  consommateur `onError`, cela peut produire beaucoup de bruit. C'est délibéré : le bruit
-  est un symptôme visible, le silence de Legacy ne l'était pas. La couche supérieure a
-  tout ce qu'il faut pour throttler ou désactiver — explicitement.
-- `onError` est appelé dans la boucle chaude. S'il lève une exception, la frame tombe :
-  c'est un défaut de la couche de politique, pas du Runtime, et il doit être visible.
+**Legacy's silence is never reproduced.** An unconsumed error stays visible.
 
 ---
 
-## Alternatives écartées
+## Consequences
 
-| Alternative | Pourquoi non |
+### Positive
+
+- The Runtime no longer has any write path into the model. The rule is verifiable by reading the
+  file, and by a test.
+- The simulation can no longer diverge between two machines because of an exception.
+- Error policy is decided where the context exists: the Editor can pause in development, the
+  server can apply a stricter rule, without the Runtime having to know about either.
+- The report is directly usable by the Editor, before it even exists.
+- The contract is fixed **before** scripting, physics and the other runtime domains arrive, all of
+  which will consume it.
+
+### Negative
+
+- A systematically broken Component is called and reported every frame. With no `onError`
+  consumer, that can produce a lot of noise. That is deliberate: noise is a visible symptom,
+  Legacy's silence was not. The higher layer has everything it needs to throttle or disable —
+  explicitly.
+- `onError` is called in the hot loop. If it throws, the frame falls over: that is a defect in the
+  policy layer, not in the Runtime, and it must be visible.
+
+---
+
+## Rejected alternatives
+
+| Alternative | Why not |
 |---|---|
-| **Conserver l'auto-désactivation** | Transforme une exception en mutation d'état répliquée. Incompatible avec ADR-0011. |
-| **Désactiver via un drapeau interne au Runtime plutôt que `component.active`** | N'émettrait pas de `Change`, mais créerait un second état d'activation invisible du modèle et de l'Inspector — deux sources de vérité, et une désactivation que rien n'explique. |
-| **Émetteur `runtime.errors` en plus de `onError`** | Deux voies pour un seul besoin. `onError` suffit ; un émetteur pourra être ajouté par la couche supérieure si elle en veut un. |
-| **Enrichir `error.message` avec le contexte** | Mute un objet qui appartient à l'appelant et impose de parser une chaîne. C'est le rôle des champs du rapport. |
-| **Avaler l'erreur en l'absence de consommateur** | C'est précisément le bug Legacy. |
-| **Compter les erreurs dans le Runtime sans désactiver** | Un compteur est déjà une politique. La couche supérieure compte si elle en a besoin ; le Runtime n'a pas à décider ce qu'est « trop ». |
+| **Keep auto-disabling** | It turns an exception into a replicated state mutation. Incompatible with ADR-0011. |
+| **Disable through a Runtime-internal flag rather than `component.active`** | It would emit no `Change`, but it would create a second activation state invisible to the model and to the Inspector — two sources of truth, and a disabling nothing explains. |
+| **A `runtime.errors` emitter in addition to `onError`** | Two channels for one need. `onError` is enough; an emitter can be added by the higher layer if it wants one. |
+| **Enriching `error.message` with the context** | It mutates an object belonging to the caller and forces string parsing. That is what the report's fields are for. |
+| **Swallowing the error when there is no consumer** | That is precisely the Legacy bug. |
+| **Counting errors in the Runtime without disabling** | A counter is already a policy. The higher layer counts if it needs to; the Runtime does not get to decide what "too many" is. |
 
 ---
 
-## Portée
+## Scope
 
-Cette décision porte sur les erreurs d'exécution des Components pendant `update()` et
-`draw()`. Elle ne traite pas :
+This decision covers Components' execution errors during `update()` and `draw()`. It does not
+cover:
 
-- le chargement et l'exécution des scripts `.px` / `.js` — le scripting n'existe pas
-  encore (ADR-0009) ;
-- les erreurs de validation d'Operation, qui relèvent de l'autorité (ADR-0011) ;
-- l'affichage des erreurs dans l'Editor, qui est une politique et sera conçue avec lui.
+- loading and running `.px` / `.js` scripts — scripting does not exist yet (ADR-0009);
+- Operation validation errors, which belong to the authority (ADR-0011);
+- displaying errors in the Editor, which is a policy and will be designed with it.

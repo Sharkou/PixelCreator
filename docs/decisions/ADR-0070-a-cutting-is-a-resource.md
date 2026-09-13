@@ -1,232 +1,228 @@
-# ADR-0070 — Un découpage est une ressource
+# ADR-0070 — A cutting is a resource
 
-- **Statut :** **accepté** (2026-09-12)
-- **Décide :** où vit le découpage d'une planche de tuiles ; ce qu'une cellule de Tilemap contient ; qui calcule un rectangle de frame ; comment on édite le contenu d'une Resource ; ce qu'un Tilemap dessine quand la caméra ne voit qu'un coin
-- **Dépend de :** ADR-0020 (Resource, store, manifeste), ADR-0023 (Property System), ADR-0059 §3 (l'AABB conservatrice), ADR-0062 (une seule table de ressources résolues, `ImageCache`, la grille d'une animation), ADR-0068 (un niveau se peint), ADR-0069 (une écriture n'est pas une intention, `SET_CELLS`)
-- **Amende :** ADR-0068 §10 — le pipeline de tileset arrive, et la palette de couleurs s'en va ; ADR-0062 §4 — le `BLOCKED` sur l'édition du payload d'une animation est levé
-- **Ne décide pas :** autotiling, Wang/rule tiles, terrains, tuiles animées, propriétés par tuile, collisions par tuile, calques d'objets, import TMX, cartes infinies ou en chunks — voir §11
+- **Status:** **accepted** (2026-09-12)
+- **Decides:** where the cutting of a tile sheet lives; what a Tilemap cell holds; who computes a frame rectangle; how the contents of a Resource are edited; what a Tilemap draws when the camera sees only one corner
+- **Depends on:** ADR-0020 (Resource, store, manifest), ADR-0023 (Property System), ADR-0059 §3 (the conservative AABB), ADR-0062 (one table of resolved resources, `ImageCache`, an animation's grid), ADR-0068 (a level is painted), ADR-0069 (a write is not an intention, `SET_CELLS`)
+- **Amends:** ADR-0068 §10 — the tileset pipeline arrives, and the colour palette goes; ADR-0062 §4 — the `BLOCKED` on editing an animation's payload is lifted
+- **Does not decide:** autotiling, Wang/rule tiles, terrains, animated tiles, per-tile properties, per-tile collision, object layers, TMX import, infinite or chunked maps — see §11
 
 ---
 
-## 1. Le modèle
+## 1. The model
 
 ```
 Tileset  (Resource)          Tilemap  (Component)
-  source      ResourceId       tileset   ResourceId  ──▶ le Tileset
+  source      ResourceId       tileset   ResourceId  ──▶ the Tileset
   tileWidth   16               tileSize  32
   tileHeight  16               columns   60
   columns     4                rows      16
   count       16               tiles[]   [0, 0, 2, 2, 1, …]
 ```
 
-Une cellule est **un petit entier** : `0` vide, `n` la n-ième tuile de la planche.
+A cell is **a small integer**: `0` empty, `n` the nth tile of the sheet.
 
-| Décision | Raison |
+| Decision | Reason |
 |---|---|
-| **le découpage est une Resource** | Deux cartes d'un même donjon nomment **un** `Tileset` ; le recouper les recoupe toutes les deux. C'est l'argument d'ADR-0062 §4 pour un clip et d'ADR-0061 pour un prefab, appliqué à ce dont un niveau est fait |
-| **pas de `{source, frame}` répété dans une palette** | Une palette de quatre-vingts entrées aurait été quatre-vingts copies du même `ResourceId` dans **chaque** carte, et une planche recoupée aurait dû être recoupée dans chacune |
-| **une cellule ne stocke qu'un index** | Un niveau de quarante mille cellules est quarante mille petits entiers — ce qui rend `SET_CELLS` (ADR-0069 §4) possible et un fichier de projet lisible |
-| **1-based, parce que 0 était déjà pris** | `Tilemap` dit depuis toujours que `0` est vide, et le Tilemap Collider ne lit que ça (ADR-0068 §3). Donc la tuile `1` est la première cellule de la planche, et tout le mapping est `tile - 1` |
-| **`columns` et `count` sont DÉCLARÉS** | Les dériver de la planche décodée ferait dépendre un rectangle de tuile de la fin d'un décodage : la même cellule serait deux rectangles selon la frame. C'est la règle qu'ADR-0062 §4 a posée pour un clip, et elle vaut ici mot pour mot |
+| **the cutting is a Resource** | Two maps of the same dungeon name **one** `Tileset`; recutting it recuts both. It is ADR-0062 §4's argument for a clip and ADR-0061's for a prefab, applied to what a level is made of |
+| **no `{source, frame}` repeated in a palette** | An eighty-entry palette would have been eighty copies of the same `ResourceId` in **every** map, and a recut sheet would have had to be recut in each one |
+| **a cell stores nothing but an index** | A forty-thousand-cell level is forty thousand small integers — which is what makes `SET_CELLS` (ADR-0069 §4) possible and a project file readable |
+| **1-based, because 0 was already taken** | `Tilemap` has always said that `0` is empty, and the Tilemap Collider reads nothing else (ADR-0068 §3). So tile `1` is the sheet's first cell, and the whole mapping is `tile - 1` |
+| **`columns` and `count` are DECLARED** | Deriving them from the decoded sheet would make a tile rectangle depend on the end of a decode: the same cell would be two rectangles depending on the frame. That is the rule ADR-0062 §4 laid down for a clip, and it holds here word for word |
 
 ---
 
-## 2. Un seul rectangle, deux lecteurs
+## 2. One rectangle, two readers
 
 `core/frames.js` — `frameRect({ index, frameWidth, frameHeight, columns, first })`.
 
-C'était la boucle privée de `animation.js` jusqu'au jour où un second appelant en a eu besoin :
-**c'est le moment où une primitive partagée gagne son fichier**, et pas avant. Une animation
-parcourt des cellules le long d'une bande, un tileset indexe des cellules sur une page ; les
-deux demandent « la n-ième cellule d'une grille régulière, en travers puis vers le bas », et
-deux arithmétiques auraient dérivé d'un pixel sans que personne sache laquelle avait raison.
+It was `animation.js`'s private loop until the day a second caller needed it: **that is the moment
+a shared primitive earns its file**, and not before. An animation walks cells along a strip, a
+tileset indexes cells on a page; both ask for "the nth cell of a regular grid, across then down",
+and two pieces of arithmetic would have drifted by a pixel with nobody knowing which was right.
 
-Une contre-épreuve compare les deux sur quinze cellules de la même grille : elles ne diffèrent
-que du décalage de 1, celui que `0 = vide` impose.
+A counter-test compares the two across fifteen cells of the same grid: they differ only by the
+offset of 1 that `0 = empty` imposes.
 
 ---
 
-## 3. Valeurs invalides
+## 3. Invalid values
 
-Tout est borné **à la construction**, une fois, jamais à chaque lecture :
+Everything is bounded **at construction**, once, never on every read:
 
-| Entrée | Résultat |
+| Input | Result |
 |---|---|
-| `tileWidth: -8`, `tileHeight: 0` | `0` — et `tilesetOf()` refuse la définition |
+| `tileWidth: -8`, `tileHeight: 0` | `0` — and `tilesetOf()` refuses the definition |
 | `columns: 'four'` | `1` |
-| `count: -3` | `0` — un tileset qui ne peut répondre aucun rectangle n'en est pas un |
-| pas de `source` | refusé |
-| `version` inconnue | refusé, comme un clip, un graphe ou un prefab d'une version inconnue |
+| `count: -3` | `0` — a tileset that can answer with no rectangle is not one |
+| no `source` | refused |
+| unknown `version` | refused, like a clip, a graph or a prefab of an unknown version |
 
-Un rectangle de `NaN` atteint un canvas, ne dessine rien et ne rapporte rien : c'est le défaut
-que ce bornage existe pour empêcher.
-
----
-
-## 4. Le créer depuis une image
-
-`+ ▸ Graphics ▸ Tileset…` — le même geste que `Animation…` (ADR-0062 §4) : choisir la planche,
-qui est importée **et** découpée. Le défaut est **seize pixels par cellule**, les colonnes et le
-compte suivant de la taille du fichier.
-
-Ce n'est pas une détection : c'est ce que fait toute planche de tutoriel, **dit comme une
-supposition** et corrigible en une ligne. Un créateur dont les tuiles font 32 a deux nombres à
-changer dans l'Inspector — ce qui est mieux qu'une détection juste quatre fois sur cinq et
-inexplicable la cinquième.
+A `NaN` rectangle reaches a canvas, draws nothing and reports nothing: that is the defect this
+bounding exists to prevent.
 
 ---
 
-## 5. Éditer ce qu'une ressource contient
+## 4. Creating one from an image
 
-Deux ressources structurées voulaient être modifiées — une animation et un tileset — et aucune
-n'a de fenêtre à elle. C'était le moment de la petite primitive générique, pas avant :
+`+ ▸ Graphics ▸ Tileset…` — the same gesture as `Animation…` (ADR-0062 §4): pick the sheet, which is
+imported **and** cut up. The default is **sixteen pixels per cell**, with columns and count
+following from the file's size.
+
+This is not detection: it is what every tutorial sheet does, **stated as a guess** and fixable in one
+line. A creator whose tiles are 32 has two numbers to change in the Inspector — which is better than
+a detection that is right four times out of five and inexplicable the fifth.
+
+---
+
+## 5. Editing what a resource contains
+
+Two structured resources wanted to be modified — an animation and a tileset — and neither has a
+window of its own. That was the moment for the small generic primitive, not before:
 
 ```
 Project.setPayload(id, payload)  →  SET_PAYLOAD  →  store.write + revision
 ```
 
-| Décision | Raison |
+| Decision | Reason |
 |---|---|
-| **une Operation, pas `save()`** | `save()` écrit ce qu'un modèle vivant a déjà décidé et n'est **pas** annulable : une sauvegarde n'est pas une intention (ADR-0069 §2). Ceci est l'autre moitié — un créateur qui édite le contenu lui-même — donc ça passe par le pipeline : arbitré, répliqué, annulable |
-| **remplacé en entier** | Ces payloads sont petits et plats. Le jour où l'un ne l'est plus, `SET_CELLS` est la forme à copier |
-| **l'écriture passe par le constructeur du genre** | `createTileset({ ...payload, tileWidth: -8 })`, jamais `{...payload, x}` : une ressource éditée dans l'Inspector et une créée par le menu ne peuvent pas avoir deux formes |
-| **la révision bouge avec** | Ce qui regarde la ressource se reconstruit exactement comme après une sauvegarde |
-| **le dessin reçoit un contexte** | `component.draw(self, renderer, { resources })` — la même registry qu'un pas de simulation, résolue **avant** la frame (ADR-0062 §1). Jamais une lecture de store pendant qu'on dessine |
+| **an Operation, not `save()`** | `save()` writes what a live model has already decided and is **not** undoable: a save is not an intention (ADR-0069 §2). This is the other half — a creator editing the contents themselves — so it goes through the pipeline: arbitrated, replicated, undoable |
+| **replaced whole** | These payloads are small and flat. The day one is not, `SET_CELLS` is the shape to copy |
+| **the write goes through the kind's constructor** | `createTileset({ ...payload, tileWidth: -8 })`, never `{...payload, x}`: a resource edited in the Inspector and one created by the menu cannot have two shapes |
+| **the revision moves with it** | Whatever is watching the resource rebuilds exactly as it does after a save |
+| **drawing receives a context** | `component.draw(self, renderer, { resources })` — the same registry a simulation step uses, resolved **before** the frame (ADR-0062 §1). Never a store read while drawing |
 
 ---
 
-## 6. Le culling
+## 6. Culling
 
-Le renderer répond `visibleBounds()` : le rectangle de **l'espace en cours de dessin** que la
-surface couvre. Un Tilemap en tire une plage de lignes et de colonnes.
+The renderer answers `visibleBounds()`: the rectangle of **the space currently being drawn** that the
+surface covers. A Tilemap derives a range of rows and columns from it.
 
-`node tools/bench-tilemap.mjs` :
+`node tools/bench-tilemap.mjs`:
 
-| carte | cellules | caméra | cellules inspectées | dessinées | ms/frame |
+| map | cells | camera | cells inspected | drawn | ms/frame |
 |---|---|---|---|---|---|
-| 100 × 100 | 10 000 | 0,0 | 651 | 651 | 0,08 |
-| 1000 × 1000 | 1 000 000 | 0,0 | 651 | 651 | **0,013** |
-| 1000 × 1000 | 1 000 000 | 500,500 | 651 | 651 | 0,017 |
-| 1000 × 1000 | 1 000 000 | 975,975 | 525 | 525 | 0,013 |
+| 100 × 100 | 10,000 | 0,0 | 651 | 651 | 0.08 |
+| 1000 × 1000 | 1,000,000 | 0,0 | 651 | 651 | **0.013** |
+| 1000 × 1000 | 1,000,000 | 500,500 | 651 | 651 | 0.017 |
+| 1000 × 1000 | 1,000,000 | 975,975 | 525 | 525 | 0.013 |
 
-**Contre-épreuve** : un backend qui ne sait pas dire ce qu'il montre dessine la grille entière —
-1 000 000 de cellules, 24,1 ms pour **une** frame. C'est ce que faisait le Tilemap avant cette
-ligne, et ce n'est jamais faux, seulement lent.
+**Counter-test**: a backend that cannot say what it is showing draws the whole grid — 1,000,000
+cells, 24.1 ms for **one** frame. That is what the Tilemap did before this line, and it is never
+wrong, only slow.
 
-Quatre coins, pas deux : sous une transformation tournée, le rectangle de l'écran est un
-quadrilatère tourné dans l'espace dessiné, et sa boîte englobante est la seule réponse honnête
-pour qui itère des lignes et des colonnes — conservatrice, jamais courte (la même approximation
-qu'ADR-0059 §3 accepte pour un collider tourné).
-
----
-
-## 7. Changer de Tileset
-
-Une carte peinte avec quatre-vingts indices, pointée vers une planche qui en a vingt :
-
-- `tiles` n'est **pas touché** — le niveau n'est pas corrompu, seulement dépeint ;
-- les cellules au-delà de la planche **ne dessinent rien** : aucune substitution, aucune frame
-  de remplacement. Mettre un mur là où le créateur a peint une porte, sans le dire, serait pire
-  que de ne rien mettre ;
-- elles restent **occupées**, donc elles bloquent toujours (ADR-0068 §3) ;
-- le créateur peut les repeindre : ce sont des cellules comme les autres.
+Four corners, not two: under a rotated transformation, the screen's rectangle is a rotated
+quadrilateral in the space being drawn, and its bounding box is the only honest answer for anyone
+iterating rows and columns — conservative, never short (the same approximation ADR-0059 §3 accepts
+for a rotated collider).
 
 ---
 
-## 8. Choisir une tuile
+## 7. Changing Tileset
 
-Le sélecteur de la Scene montre **les vraies tuiles**, découpées dans la planche que la carte
-dessine : on choisit un mur en regardant un mur. C'est un **sélecteur**, pas un éditeur —
-changer ce qu'un tileset **contient** reste les lignes de l'Inspector.
+A map painted with eighty indices, pointed at a sheet that has twenty:
 
-Une page fixe de trois rangées, et deux flèches quand la planche en demande plus : cinq cents
-miniatures recouvriraient la scène qu'on est en train de peindre. **Choisir une tuile ne produit
-aucune Operation** : regarder un autre mur n'est pas une modification du niveau.
-
----
-
-## 9. Ce qu'il advient de la palette de couleurs
-
-**Supprimée.** Il ne reste pas un modèle de couleurs à côté d'un modèle de tuiles : le projet
-est en développement, et une dette permanente coûte plus cher qu'une migration franche. Ce que
-l'ancienne palette servait — « cette cellule est verte » — est dit mieux par une planche, et la
-démo `tools/demo/tiles.js` est passée de trois couleurs à quatre tuiles dessinées.
-
-Les tests de `<px-list>` qui s'en servaient comme sujet portent maintenant sur une liste
-déclarée dans le test lui-même : le contrôle est **générique**, et l'épingler au composant
-livré qui déclare un élément ce jour-là est ce qui a fait échouer ce fichier pour une raison
-qui n'avait rien à voir avec les listes.
+- `tiles` is **not touched** — the level is not corrupted, only undrawn;
+- cells beyond the sheet **draw nothing**: no substitution, no replacement frame. Putting a wall
+  where the creator painted a door, without saying so, would be worse than putting nothing;
+- they stay **occupied**, so they still block (ADR-0068 §3);
+- the creator can repaint them: they are cells like any others.
 
 ---
 
-## 10. Persistance, Preview, export
+## 8. Picking a tile
 
-Rien de spécial nulle part. Un `Tileset` est une Resource : il est dans le manifeste, son
-payload est dans le store, il traverse l'autosave IndexedDB, le canal live et le bundle
-`.pxgame.json` **comme les autres**. La planche voyage parce que c'est une ressource que le
-projet déclare — exactement comme la planche d'un `Sprite` ou d'une animation.
+The Scene's picker shows **the real tiles**, cut from the sheet the map draws: you pick a wall by
+looking at a wall. It is a **picker**, not an editor — changing what a tileset **contains** is still
+the Inspector's rows.
+
+A fixed page of three rows, and two arrows when the sheet asks for more: five hundred thumbnails
+would cover the scene being painted. **Picking a tile produces no Operation**: looking at a different
+wall is not a change to the level.
 
 ---
 
-## 11. Ce que cet ADR ne décide pas
+## 9. What becomes of the colour palette
 
-| Refusé | Pourquoi |
+**Removed.** There is no colour model left beside a tile model: the project is under development, and
+a permanent debt costs more than a clean migration. What the old palette was for — "this cell is
+green" — is better said with a sheet, and the `tools/demo/tiles.js` demo went from three colours to
+four drawn tiles.
+
+The `<px-list>` tests that used it as their subject now use a list declared in the test itself: the
+control is **generic**, and pinning it to whichever shipped component declared an item that day is
+what made that file fail for a reason that had nothing to do with lists.
+
+---
+
+## 10. Persistence, Preview, export
+
+Nothing special anywhere. A `Tileset` is a Resource: it is in the manifest, its payload is in the
+store, it crosses the IndexedDB autosave, the live channel and the `.pxgame.json` bundle **like the
+others**. The sheet travels because it is a resource the project declares — exactly like a `Sprite`'s
+or an animation's sheet.
+
+---
+
+## 11. What this ADR does not decide
+
+| Refused | Why |
 |---|---|
-| **Autotiling, Wang tiles, rule tiles, terrains** | Des règles sur ce qu'une tuile devient selon ses voisines : un produit, pas une case à cocher |
-| **Tuiles animées** | Un clip par cellule demande un playhead par cellule ; le modèle de cette tranche est « une cellule est un entier » |
-| **Propriétés ou collisions par tuile** | ADR-0068 §3 a tranché : vide ou pas vide. Une échelle, un piège ou une pente sont chacun une décision sur ce qu'**est** une tuile |
-| **Calques d'objets, import TMX** | Des formats, donc des pipelines |
-| **Cartes infinies / en chunks, génération procédurale** | Rien ne les demande : une carte d'un million de cellules coûte déjà 0,013 ms par frame (§6) |
-| **Un `SET_PAYLOAD` par champ** | Ces payloads sont quatre nombres. Un patch par champ serait la machinerie de `SET_CELLS` pour une ligne d'Inspector |
+| **Autotiling, Wang tiles, rule tiles, terrains** | Rules about what a tile becomes depending on its neighbours: a product, not a checkbox |
+| **Animated tiles** | A clip per cell needs a playhead per cell; this batch's model is "a cell is an integer" |
+| **Per-tile properties or collision** | ADR-0068 §3 settled it: empty or not empty. A ladder, a trap or a slope is each a decision about what a tile **is** |
+| **Object layers, TMX import** | Formats, therefore pipelines |
+| **Infinite / chunked maps, procedural generation** | Nothing asks for them: a million-cell map already costs 0.013 ms per frame (§6) |
+| **A `SET_PAYLOAD` per field** | These payloads are four numbers. A patch per field would be `SET_CELLS`'s machinery for one Inspector row |
 
 ---
 
-## 12. Contre-épreuves
+## 12. Counter-tests
 
-| Vérifié | Où |
+| Verified | Where |
 |---|---|
-| Un tileset est de la donnée plate qui survit à un aller-retour JSON | `core/tileset.test.js` |
-| Ses valeurs par défaut, et le bornage de tout ce qui n'a pas de sens | idem |
-| Pas de planche, version inconnue : refusés | idem |
-| La tuile 0 est vide et n'est pas la première | idem |
-| Première, dernière, deuxième rangée, colonne d'une seule tuile | idem |
-| Un compte qui n'est pas un multiple des colonnes s'arrête où il le dit | idem |
-| Une tuile au-delà de la planche n'a aucun rectangle | idem |
-| **Un tileset et une animation découpent la même grille en les mêmes rectangles** | idem |
-| La primitive elle-même : en travers puis vers le bas, `first`, et rien sans taille de cellule | idem |
-| Une cellule vide ne dessine rien ; une tuile dessine son propre rectangle de la planche | `runtime/tilemap/tilemap.test.js` |
-| Une tuile absente de la planche ne dessine rien, et le niveau n'est pas corrompu | idem |
-| Pas de tileset, un inconnu, une registry muette : rien ne casse | idem |
-| Une planche en cours de décodage est demandée par identité, une fois | idem |
-| **Seules les cellules visibles sont dessinées**, et la plage suit la caméra | idem |
-| **Contre-épreuve** : sans `visibleBounds`, la grille entière | idem |
-| **Le collider n'apprend jamais qu'un tileset existe** | idem |
-| Un tileset créé depuis une planche, grille lue dans le fichier ; en-tête muet ; refus d'inventer | `editor/project/commands.test.js` |
-| L'Inspector nomme la planche et laisse taper le découpage | `editor/inspector/resource.test.js` |
-| Une édition passe par le constructeur du genre, donc le n'importe quoi est borné | idem |
-| **Une édition de payload est une intention annulable, et la révision bouge avec** | idem |
-| Une miniature choisit ce qui est peint, **et choisir n'est pas une édition** | `editor/viewport/tools/tile-tool.test.js` |
-| Une miniature est la tuile elle-même, découpée dans la planche de la carte | idem |
-| Une planche trop grande pour une page est paginée | idem |
-| Sans tileset : Empty seul, et peindre marche quand même | idem |
-| Le niveau est une planche, un découpage et deux cartes qui le nomment | `tools/demo/tiles.test.js` |
-| **Le bundle exporté porte la planche, sans chemin spécial** | idem |
+| A tileset is flat data that survives a JSON round trip | `core/tileset.test.js` |
+| Its default values, and the bounding of everything that makes no sense | the same |
+| No sheet, unknown version: refused | the same |
+| Tile 0 is empty and is not the first one | the same |
+| First, last, second row, single-tile column | the same |
+| A count that is not a multiple of the columns stops where it says it does | the same |
+| A tile beyond the sheet has no rectangle | the same |
+| **A tileset and an animation cut the same grid into the same rectangles** | the same |
+| The primitive itself: across then down, `first`, and nothing without a cell size | the same |
+| An empty cell draws nothing; a tile draws its own rectangle of the sheet | `runtime/tilemap/tilemap.test.js` |
+| A tile missing from the sheet draws nothing, and the level is not corrupted | the same |
+| No tileset, an unknown one, a silent registry: nothing breaks | the same |
+| A sheet still decoding is requested by identity, once | the same |
+| **Only the visible cells are drawn**, and the range follows the camera | the same |
+| **Counter-test**: without `visibleBounds`, the whole grid | the same |
+| **The collider never learns that a tileset exists** | the same |
+| A tileset created from a sheet, grid read from the file; silent header; refusing to invent | `editor/project/commands.test.js` |
+| The Inspector names the sheet and lets you type the cutting | `editor/inspector/resource.test.js` |
+| An edit goes through the kind's constructor, so nonsense is bounded | the same |
+| **A payload edit is an undoable intention, and the revision moves with it** | the same |
+| A thumbnail picks what is painted, **and picking is not an edit** | `editor/viewport/tools/tile-tool.test.js` |
+| A thumbnail is the tile itself, cut from the map's sheet | the same |
+| A sheet too big for one page is paginated | the same |
+| With no tileset: Empty alone, and painting still works | the same |
+| The level is one sheet, one cutting and two maps that name it | `tools/demo/tiles.test.js` |
+| **The exported bundle carries the sheet, with no special path** | the same |
 
 ---
 
-## 13. Conséquences
+## 13. Consequences
 
-### Positives
+### Positive
 
-- Un niveau graphique se peint dans la Scene et se joue dans Preview, sans une ligne de code.
-- Le découpage d'une planche existe **une fois**, et deux cartes le partagent.
-- Une carte d'un million de cellules coûte ce qu'une fenêtre montre.
-- Le contenu d'une Resource structurée est enfin éditable — et annulable.
-- Une seule arithmétique de frame pour l'animation et les tuiles.
+- A graphical level is painted in the Scene and played in Preview, without a line of code.
+- A sheet's cutting exists **once**, and two maps share it.
+- A million-cell map costs what one window shows.
+- The contents of a structured Resource are finally editable — and undoable.
+- One frame arithmetic for animation and for tiles.
 
-### Négatives
+### Negative
 
-- La palette de couleurs n'existe plus : un projet qui en avait une perd ses couleurs (§9).
-- Un Tilemap tourné ne bloque toujours pas (ADR-0068 §4) et son culling est conservateur (§6).
-- `SET_PAYLOAD` remplace le payload entier : deux créateurs éditant le même tileset en même
-  temps s'écrasent l'un l'autre, ce que la collaboration n'a de toute façon pas encore décidé.
+- The colour palette no longer exists: a project that had one loses its colours (§9).
+- A rotated Tilemap still does not block (ADR-0068 §4) and its culling is conservative (§6).
+- `SET_PAYLOAD` replaces the whole payload: two creators editing the same tileset at the same time
+  overwrite each other, which collaboration has not decided anything about anyway.

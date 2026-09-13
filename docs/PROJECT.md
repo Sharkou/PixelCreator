@@ -1,34 +1,34 @@
-# Pixel Creator — Projet
+# Pixel Creator — Project
 
-> Document d'entrée. Lire dans l'ordre : `PROJECT.md` → `ARCHITECTURE.md` → `MIGRATION.md` → `CONVENTIONS.md`.
+> Entry document. Read in order: `PROJECT.md` → `ARCHITECTURE.md` → `MIGRATION.md` → `CONVENTIONS.md`.
 
-## 1. Ce qu'est Pixel Creator
+## 1. What Pixel Creator is
 
-Un environnement de création de jeux 2D **dans le navigateur**, orienté multijoueur, pensé
-autour de trois verbes :
+A 2D game creation environment **in the browser**, multiplayer-oriented, built around three
+verbs:
 
 ```
 CREATE  →  PLAY  →  SHARE
 ```
 
-Le créateur ouvre l'éditeur, compose une scène, appuie sur Play, voit son jeu tourner,
-et le partage. Le réseau est censé être invisible pour lui.
+The creator opens the editor, composes a scene, presses Play, watches the game run, and
+shares it. The network is meant to be invisible to them.
 
-Ce n'est **pas** un clone de Unity/Godot, pas un ECS académique, pas un framework
-générique. C'est un produit avec une ergonomie propre qu'il faut préserver.
+It is **not** a Unity/Godot clone, not an academic ECS, not a generic framework. It is a
+product with ergonomics of its own, and those must be preserved.
 
-## 2. Le vocabulaire du produit
+## 2. The product vocabulary
 
-Le vocabulaire est stable depuis l'origine et ne change pas en v2 :
+The vocabulary has been stable since the beginning and does not change in v2:
 
-| Terme | Sens |
+| Term | Meaning |
 |---|---|
-| `Project` | Un jeu : ses scènes, ses ressources, son identité |
-| `Scene` | Un ensemble d'`Object` |
-| `Object` | Une entité de scène — **jamais** renommée `Entity` |
-| `Component` | Un morceau de comportement/données attaché à un `Object` |
-| `Property` | Une valeur observable d'un `Object` ou d'un `Component` |
-| `Resource` | Un fichier de projet (image, script, graphe) |
+| `Project` | A game: its scenes, its resources, its identity |
+| `Scene` | A set of `Object`s |
+| `Object` | A scene entity — **never** renamed `Entity` |
+| `Component` | A piece of behaviour/data attached to an `Object` |
+| `Property` | An observable value of an `Object` or a `Component` |
+| `Resource` | A project file (image, script, graph) |
 
 ```
 Project
@@ -39,43 +39,42 @@ Project
         └── Component…
 ```
 
-## 3. Les deux idées qui définissent le projet
+## 3. The two ideas that define the project
 
-Toute l'ergonomie de Pixel Creator repose sur deux mécanismes historiques. Ils sont la
-raison pour laquelle le projet mérite d'être modernisé plutôt que réécrit.
+All of Pixel Creator's ergonomics rest on two historical mechanisms. They are the reason the
+project deserves to be modernized rather than rewritten.
 
-### 3.1 L'écriture de propriété est le canal de communication
+### 3.1 Writing a property is the communication channel
 
-`object.x = 100` ne fait pas que changer une valeur : cela propage l'information à toutes
-les vues et, si demandé, au réseau. L'utilisateur n'écrit jamais `network.updateProperty(...)`.
+`object.x = 100` does not merely change a value: it propagates the information to every view
+and, on request, to the network. The user never writes `network.updateProperty(...)`.
 
-**Cette ergonomie est non négociable.** (voir `architecture/CORE.md`)
+**These ergonomics are non-negotiable.** (see `architecture/CORE.md`)
 
-### 3.2 Le Core est partagé client/serveur
+### 3.2 The Core is shared between client and server
 
-Le serveur historique importe littéralement le même module que le client :
+The historical server literally imports the same module as the client:
 
 ```js
 import * as components from 'https://editor.pixelcreator.io/src/core/mod.js';
 ```
 
-Il n'existe pas de `ServerObject` ni de `ClientObject`. Le serveur exécute `obj.update()`,
-le client exécute `obj.update()` puis `obj.draw()`. Cette symétrie est un acquis majeur.
-(voir `architecture/NETWORK.md`)
+There is no `ServerObject` and no `ClientObject`. The server runs `obj.update()`; the client
+runs `obj.update()` and then `obj.draw()`. That symmetry is a major asset.
+(see `architecture/NETWORK.md`)
 
-## 4. Rôle de l'Editor
+## 4. The Editor's role
 
-L'Editor n'est pas un outil externe qui pilote le moteur : c'est une **vue administrateur
-sur un runtime vivant**. Le créateur doit pouvoir observer le jeu, voir les joueurs
-connectés, modifier un objet et voir l'effet immédiatement — y compris pendant que le
-jeu tourne.
+The Editor is not an external tool driving the engine: it is an **administrator view onto a
+live runtime**. The creator must be able to watch the game, see the connected players, modify
+an object and see the effect immediately — including while the game is running.
 
-C'est pour cela que l'Editor et le Runtime partagent la même `Scene` et les mêmes `Object`,
-et non deux copies synchronisées.
+That is why the Editor and the Runtime share the same `Scene` and the same `Object`s, rather
+than two synchronized copies.
 
-## 5. Identité des jeux
+## 5. Game identity
 
-**VALIDÉ** (ADR-0010). L'identifiant d'un jeu est un ID opaque, pas son nom :
+**SETTLED** (ADR-0010). A game is identified by an opaque ID, not by its name:
 
 ```
 play.pixelcreator.io/7f3a91c2
@@ -85,35 +84,35 @@ play.pixelcreator.io/7f3a91c2
 { "id": "7f3a91c2", "name": "Medieval Arena" }
 ```
 
-Deux jeux peuvent porter le même nom. Un slug esthétique pourra être ajouté plus tard
-comme alias, jamais comme identité.
+Two games may carry the same name. A cosmetic slug may be added later as an alias, never as
+identity.
 
-**OBSERVÉ DANS LEGACY.** Il n'existe aujourd'hui aucune notion de `Project` persistée :
-la scène serveur est un singleton (`let scene = new Scene()`), sans identité ni nom
-de projet. Tout est à construire.
+**OBSERVED IN LEGACY.** There is currently no persisted notion of a `Project`: the server
+scene is a singleton (`let scene = new Scene()`), with no identity and no project name.
+Everything remains to be built.
 
-## 6. Hors périmètre de la v2 initiale
+## 6. Out of scope for the initial v2
 
-- **Collaboration temps réel multi-utilisateurs.** Direction future. L'architecture ne doit
-  pas la rendre impossible, mais elle n'est pas implémentée maintenant.
-- **Intégration IA.** Lya est un projet séparé (agent autonome en Rust). Pixel Creator
-  doit fonctionner parfaitement sans Lya et n'en dépend jamais.
-- **Marketplace, forum, blog.** Autres parties du site, hors moteur.
+- **Real-time multi-user collaboration.** A future direction. The architecture must not make
+  it impossible, but it is not implemented now.
+- **AI integration.** Lya is a separate project (an autonomous agent written in Rust). Pixel
+  Creator must work perfectly without Lya and never depends on it.
+- **Marketplace, forum, blog.** Other parts of the website, outside the engine.
 
-## 7. Contraintes structurelles
+## 7. Structural constraints
 
-- **Natif.** Pas de React/Vue/Angular/Svelte. Web Components, DOM, classes JS.
-- **Pas de dépendances lourdes.** Le projet doit rester lisible intégralement.
-- **Le serveur historique reste privé.** Il ne doit jamais être commité dans le dépôt
-  public. Voir `architecture/NETWORK.md` pour son analyse, faite depuis une copie externe.
-- **`legacy/` est en lecture seule.** Archive de référence fonctionnelle. On lit, on
-  compare, on documente ; on ne refactore pas.
+- **Native.** No React/Vue/Angular/Svelte. Web Components, DOM, JS classes.
+- **No heavy dependencies.** The project must stay readable end to end.
+- **The historical server stays private.** It must never be committed to the public
+  repository. See `architecture/NETWORK.md` for its analysis, done from an external copy.
+- **`legacy/` is read-only.** A functional reference archive. We read it, compare against it,
+  document it; we do not refactor it.
 
-## 8. Phrase directrice
+## 8. Guiding sentence
 
-> Moderniser Pixel Creator, pas le remplacer.
-> On garde le magicien, on améliore la baguette.
+> Modernize Pixel Creator, do not replace it.
+> Keep the magician, improve the wand.
 
-Toute décision d'architecture doit être confrontée à cette phrase. Ne jamais moderniser
-quelque chose au seul motif qu'une autre approche paraît plus moderne — le dépôt contient
-déjà un contre-exemple documenté (voir `migration/LEGACY_ANALYSIS.md`, §« champs privés »).
+Every architecture decision has to be held up against that sentence. Never modernize
+something merely because another approach looks more modern — the repository already holds a
+documented counter-example (see `migration/LEGACY_ANALYSIS.md`, the "private fields" section).

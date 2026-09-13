@@ -1,52 +1,51 @@
-# ADR-0006 — Editor modulaire par Web Components natifs
+# ADR-0006 — A modular Editor built on native Web Components
 
-- **Statut :** **accepté** (2026-08-12)
-- **Décide :** comment rendre l'UI de l'Editor modulaire sans framework
-
----
-
-## Contexte observé
-
-### Ce qui fonctionne aujourd'hui et doit survivre
-
-La synchronisation temps réel de l'Editor repose sur trois mécanismes simples :
-
-1. **Liaison par classe CSS** — chaque champ porte `class="<objectId>-<prop>"`
-   (ou `<objectId>-<Component>.<prop>`).
-2. **Résolution globale** — `document.getElementsByClassName(obj.id + '-' + prop)`
-   retourne toutes les vues de cette propriété, où qu'elles soient.
-3. **Garde de focus** — `if (el[i] !== document.activeElement)` : le champ en cours de
-   saisie n'est jamais réécrit.
-
-Vérifié : taper `P`, `l`, `a`, `y` dans l'Inspector met à jour simultanément le champ
-Inspector et le `contenteditable` de la Hierarchy, lettre par lettre.
-
-**Il y a une source de vérité unique — l'`Object`.** Le DOM n'est qu'une projection.
-C'est simple et correct. **Il ne faut pas introduire de store séparé.**
-
-### Le problème réel
-
-Ce n'est pas l'usage du DOM, c'est la **structure du projet UI** :
-
-- `index.html` fait 700 lignes et contient tout le squelette de l'IDE ;
-- les modules s'accrochent à des `id` fixes au chargement :
-  `document.getElementById('play').addEventListener(...)` ;
-- `sync.js` cible `#sync`, commenté dans le HTML — le module lèverait une erreur, il
-  n'est simplement pas importé ;
-- les fenêtres (`Hierarchy`, `Properties`, `Project`) reçoivent un id de conteneur et
-  supposent que tout leur balisage existe déjà ;
-- 30 feuilles CSS dans un espace de noms global ;
-- **`editor/windows/window.js` contient uniquement `// TODO: Implement base window class`.**
-
-Conséquence : **ajouter une fenêtre exige de modifier `index.html`, `app.js`, un CSS et
-le module.** C'est cela, le défaut de modularité.
+- **Status:** **accepted** (2026-08-12)
+- **Decides:** how to make the Editor's UI modular without a framework
 
 ---
 
-## Décision
+## Observed context
 
-Des **Web Components natifs** comme primitives d'Editor. Pas de React, Vue, Angular ni
-Svelte.
+### What works today and must survive
+
+The Editor's real-time synchronization rests on three simple mechanisms:
+
+1. **Binding by CSS class** — each field carries `class="<objectId>-<prop>"` (or
+   `<objectId>-<Component>.<prop>`).
+2. **Global resolution** — `document.getElementsByClassName(obj.id + '-' + prop)` returns every
+   view of that property, wherever it is.
+3. **A focus guard** — `if (el[i] !== document.activeElement)`: the field being typed into is
+   never rewritten.
+
+Verified: typing `P`, `l`, `a`, `y` in the Inspector updates the Inspector field and the
+Hierarchy's `contenteditable` at the same time, letter by letter.
+
+**There is a single source of truth — the `Object`.** The DOM is only a projection. That is
+simple and correct. **A separate store must not be introduced.**
+
+### The real problem
+
+It is not the use of the DOM, it is the **structure of the UI project**:
+
+- `index.html` is 700 lines and holds the IDE's entire skeleton;
+- the modules latch onto fixed `id`s at load time:
+  `document.getElementById('play').addEventListener(...)`;
+- `sync.js` targets `#sync`, commented out in the HTML — the module would throw; it simply is not
+  imported;
+- the windows (`Hierarchy`, `Properties`, `Project`) receive a container id and assume all their
+  markup already exists;
+- 30 CSS files in a global namespace;
+- **`editor/windows/window.js` contains only `// TODO: Implement base window class`.**
+
+The consequence: **adding a window requires editing `index.html`, `app.js`, a CSS file and the
+module.** That is the modularity defect.
+
+---
+
+## Decision
+
+**Native Web Components** as Editor primitives. No React, Vue, Angular or Svelte.
 
 ### Primitives
 
@@ -56,30 +55,30 @@ Svelte.
 <px-viewport>  <px-modal>   <px-menu>
 ```
 
-### Fenêtres construites dessus
+### Windows built on them
 
 ```
 <px-hierarchy>  <px-inspector>  <px-assets>   <px-scene>
 <px-graph>      <px-players>    <px-console>
 ```
 
-Chaque fenêtre est **un fichier** qui porte son balisage, ses styles (Shadow DOM) et son
-cycle de vie. Ajouter une fenêtre = écrire ce fichier et l'enregistrer auprès du layout.
-`index.html` se réduit à un point de montage.
+Each window is **one file** carrying its markup, its styles (Shadow DOM) and its lifecycle.
+Adding a window = writing that file and registering it with the layout. `index.html` shrinks to a
+mount point.
 
-### Le binding devient scopé
+### Binding becomes scoped
 
-C'est le point délicat. **Le Shadow DOM casse `document.getElementsByClassName`** : un
-champ encapsulé devient invisible depuis la requête globale, et la synchronisation
-temps réel disparaîtrait — silencieusement.
+This is the delicate point. **The Shadow DOM breaks `document.getElementsByClassName`**: an
+encapsulated field becomes invisible to the global query, and real-time synchronization would
+disappear — silently.
 
-Remplacement, à comportement observable identique :
+The replacement, with identical observable behaviour:
 
 ```js
-// <px-property> s'abonne au Change de la propriété qu'il affiche
+// <px-property> subscribes to the Change of the property it displays
 connectedCallback() {
     this.unsubscribe = properties.observe(this.target, this.prop, change => {
-        if (this.input !== this.shadowRoot.activeElement) {   // garde conservée
+        if (this.input !== this.shadowRoot.activeElement) {   // the guard is kept
             this.input.value = change.value;
         }
     });
@@ -87,61 +86,61 @@ connectedCallback() {
 disconnectedCallback() { this.unsubscribe(); }
 ```
 
-Ce que cela préserve : l'édition lettre par lettre, la source de vérité unique, la garde
-de focus. Ce que cela ajoute : le désabonnement (aujourd'hui inexistant — les écouteurs
-s'accumulent), et la fin des requêtes DOM globales à chaque frappe.
+What it preserves: letter-by-letter editing, the single source of truth, the focus guard. What it
+adds: unsubscription (nonexistent today — listeners accumulate), and an end to global DOM queries
+on every keystroke.
 
-**Ordre de migration impératif :** migrer le binding **avant** d'encapsuler en Shadow
-DOM. L'inverse casse la synchronisation sans erreur visible (risque R2).
+**A mandatory migration order:** migrate the binding **before** encapsulating in Shadow DOM. The
+other way round breaks synchronization with no visible error (risk R2).
 
 ---
 
-## Pourquoi les Web Components et pas un framework
+## Why Web Components and not a framework
 
-| Critère | Web Components | Framework UI |
+| Criterion | Web Components | A UI framework |
 |---|---|---|
-| Dépendances runtime | 0 | 1 + son écosystème |
-| Build obligatoire | non | oui en pratique |
-| Encapsulation de style | Shadow DOM natif | via convention/outil |
-| Modèle réactif | **celui qui existe déjà** (Property System) | un second modèle, concurrent |
-| Continuité avec Legacy | directe (c'est du DOM) | réécriture |
-| Canvas + DOM mixtes | naturel | frottements |
+| Runtime dependencies | 0 | 1 + its ecosystem |
+| A build required | no | yes, in practice |
+| Style encapsulation | native Shadow DOM | by convention/tooling |
+| Reactive model | **the one that already exists** (Property System) | a second, competing model |
+| Continuity with Legacy | direct (it is DOM) | a rewrite |
+| Mixing Canvas + DOM | natural | friction |
 
-Le point décisif : Pixel Creator **a déjà un système réactif qui marche** — le Property
-System. Un framework en apporterait un second, et il faudrait les faire cohabiter. C'est
-un coût net sans bénéfice.
-
----
-
-## Conséquences
-
-### Positives
-
-- Une fenêtre = un fichier, ouvrable isolément dans une page de test.
-- Les styles cessent de fuir entre panneaux.
-- Le désabonnement devient possible (fuite mémoire actuelle corrigée).
-- Aucune dépendance ajoutée, aucun build imposé.
-
-### Négatives
-
-- **Le Shadow DOM complique le débogage** et empêche les sélecteurs globaux — y compris
-  ceux, pratiques, utilisés aujourd'hui.
-- Le drag & drop entre panneaux traverse des frontières de Shadow DOM : à vérifier tôt
-  (la Hierarchy, l'Inspector et le Graph échangent tous par drag & drop).
-- Font Awesome et les polices sont chargées globalement : leurs styles n'entrent pas
-  dans le Shadow DOM. Il faudra soit adopter des styles adoptés
-  (`adoptedStyleSheets`), soit renoncer au Shadow DOM sur certains composants.
-- Risque R10 : 700 lignes de HTML peuvent devenir 30 composants tout aussi couplés.
-  Garde-fou : **tout composant doit s'ouvrir seul dans une page de test.**
+The decisive point: Pixel Creator **already has a reactive system that works** — the Property
+System. A framework would bring a second one, and the two would have to coexist. That is a net
+cost with no benefit.
 
 ---
 
-## Alternatives écartées
+## Consequences
 
-| Alternative | Pourquoi non |
+### Positive
+
+- One window = one file, openable on its own in a test page.
+- Styles stop leaking between panels.
+- Unsubscription becomes possible (the current memory leak is fixed).
+- No dependency added, no build imposed.
+
+### Negative
+
+- **The Shadow DOM complicates debugging** and rules out global selectors — including the
+  convenient ones used today.
+- Drag and drop between panels crosses Shadow DOM boundaries: to be checked early (the Hierarchy,
+  the Inspector and the Graph all exchange by drag and drop).
+- Font Awesome and the fonts are loaded globally: their styles do not enter the Shadow DOM. We
+  will have to either adopt adopted stylesheets (`adoptedStyleSheets`) or give up the Shadow DOM
+  on some components.
+- Risk R10: 700 lines of HTML can become 30 equally coupled components. The safeguard: **every
+  component must open on its own in a test page.**
+
+---
+
+## Rejected alternatives
+
+| Alternative | Why not |
 |---|---|
-| **Garder le HTML monolithique** | C'est le problème à résoudre. |
-| **Templates + classes JS, sans Custom Elements** | Améliore un peu, mais ne résout ni le cycle de vie, ni l'encapsulation de style, ni l'enregistrement déclaratif. |
-| **React / Vue / Svelte** | Dépendance lourde, build obligatoire, second système réactif concurrent du Property System. Exclu par la vision. |
-| **Lit / Stencil** (surcouches légères) | Plus raisonnable, mais ajoute une dépendance pour un bénéfice marginal sur ~10 primitives. À reconsidérer si les Custom Elements natifs s'avèrent trop verbeux. |
-| **Store centralisé (Redux-like)** | Introduirait une seconde source de vérité à côté de l'`Object`. Exactement ce que Legacy évite avec raison. |
+| **Keep the monolithic HTML** | It is the problem to solve. |
+| **Templates + JS classes, without Custom Elements** | It helps a little, but it solves neither the lifecycle, nor style encapsulation, nor declarative registration. |
+| **React / Vue / Svelte** | A heavy dependency, a mandatory build, a second reactive system competing with the Property System. Ruled out by the vision. |
+| **Lit / Stencil** (thin layers) | More reasonable, but it adds a dependency for a marginal benefit over ~10 primitives. To reconsider if native Custom Elements prove too verbose. |
+| **A centralized store (Redux-like)** | It would introduce a second source of truth alongside the `Object`. Exactly what Legacy rightly avoids. |

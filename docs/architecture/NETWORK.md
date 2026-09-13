@@ -1,16 +1,15 @@
-# Network et Serveur
+# Network and Server
 
-> Le serveur historique est **privé**. Il n'est jamais commité dans le dépôt public.
-> Cette analyse a été faite depuis une copie externe (`PixelCreator-private/`).
-> Aucun extrait de code serveur n'est reproduit ici au-delà de ce qui est nécessaire
-> à la compréhension du protocole.
+> The historical server is **private**. It is never committed to the public repository.
+> This analysis was made from an external copy (`PixelCreator-private/`).
+> No server code is reproduced here beyond what is necessary to understand the protocol.
 
 ---
 
-## OBSERVÉ — topologie
+## OBSERVED — topology
 
 ```
-Editor (inspector = true)              Joueur (inspector = false)
+Editor (inspector = true)              Player (inspector = false)
   update / add / remove                  mousemove / mousedown / mouseup
   addComponent / removeComponent         keydown / keyup
   addChild / removeChild
@@ -19,208 +18,206 @@ Editor (inspector = true)              Joueur (inspector = false)
           └────────────────┬───────────────────────┘
                            ▼
               ┌──────────────────────────────┐
-              │  Serveur Deno (privé)        │
-              │  import du mod.js du client  │
+              │  Deno server (private)       │
+              │  imports the client's mod.js │
               │  scene = new Scene()         │
               │  loop      : 60 Hz  → update │
-              │  heartbeat : 4 s    → scène  │
+              │  heartbeat : 4 s    → scene  │
               └──────────────────────────────┘
 ```
 
-### Le fait le plus important
+### The single most important fact
 
-Le serveur importe **littéralement le même module que le client**, servi en HTTPS :
+The server imports **literally the same module as the client**, served over HTTPS:
 
 ```js
 import * as components from 'https://editor.pixelcreator.io/src/core/mod.js';
 ```
 
-Puis :
+Then:
 
 ```js
 const Scene = components.Scene;
 let scene = new Scene();
-// boucle : for (obj of scene.objects) obj.update();     ← jamais draw()
+// loop: for (obj of scene.objects) obj.update();     ← never draw()
 ```
 
-**Il n'existe pas de `ServerObject` ni de `ClientObject`.** C'est la preuve, en
-production, que le Core est partageable. C'est l'acquis architectural le plus précieux
-du projet et il doit être préservé sans compromis.
+**There is no `ServerObject` and no `ClientObject`.** It is proof, in production, that the Core
+is shareable. It is the project's most valuable architectural asset and must be preserved
+without compromise.
 
-Le serveur sépare d'ailleurs proprement update et rendu — ce que le client ne fait pas
-(voir `RUNTIME.md`).
+The server also separates update and rendering cleanly — which the client does not (see
+`RUNTIME.md`).
 
 ---
 
-## OBSERVÉ — messages et besoins fonctionnels
+## OBSERVED — messages and functional needs
 
-Il ne faut pas figer cette liste comme protocole v2, mais identifier le besoin derrière.
+This list must not be frozen as the v2 protocol; what matters is identifying the need behind
+each entry.
 
-| Message | Sens | Besoin |
+| Message | Meaning | Need |
 |---|---|---|
-| `init` | le client demande la scène ; le serveur renvoie `scene.objects` | **bootstrap d'état** |
-| `getUID` / `getUsers` / `connection` / `disconnection` | identité et présence | **présence** |
-| `heartbeat` / `beat` | scène complète toutes les 4 s | **réconciliation** |
-| `update` | `{id, type, component, prop, value}` | **mutation de propriété** |
-| `add` / `remove` | objet stringifié / id | **cycle de vie d'objet** |
+| `init` | the client asks for the scene; the server returns `scene.objects` | **state bootstrap** |
+| `getUID` / `getUsers` / `connection` / `disconnection` | identity and presence | **presence** |
+| `heartbeat` / `beat` | the whole scene every 4 s | **reconciliation** |
+| `update` | `{id, type, component, prop, value}` | **property mutation** |
+| `add` / `remove` | a stringified object / an id | **object lifecycle** |
 | `addComponent` / `removeComponent` | | **composition** |
-| `addChild` / `removeChild` | | **hiérarchie** |
-| `upload_file` / `update_file` / `delete_file` | | **cycle de vie de ressource** |
-| `mousemove` / `mousedown` / `mouseup` / `keydown` / `keyup` | par utilisateur | **entrées joueur** |
-| `pause` | démarre/arrête la boucle serveur | **contrôle du runtime** |
-| `save` | **corps vide côté serveur** | persistance — non implémentée |
-| `message` | broadcast texte | chat / debug |
+| `addChild` / `removeChild` | | **hierarchy** |
+| `upload_file` / `update_file` / `delete_file` | | **resource lifecycle** |
+| `mousemove` / `mousedown` / `mouseup` / `keydown` / `keyup` | per user | **player input** |
+| `pause` | starts/stops the server loop | **runtime control** |
+| `save` | **an empty body server-side** | persistence — not implemented |
+| `message` | a text broadcast | chat / debug |
 
-**`update` est déjà un `SET_PROPERTY`.** `add`, `remove`, `addComponent`, `addChild`
-sont déjà des opérations nommées (ADR-0008).
+**`update` already is a `SET_PROPERTY`.** `add`, `remove`, `addComponent` and `addChild` are
+already named operations (ADR-0008).
 
 ---
 
-## OBSERVÉ — comportements structurants
+## OBSERVED — structuring behaviours
 
-### Prévention de l'écho
+### Echo prevention
 
-Deux mécanismes se combinent :
+Two mechanisms combine:
 
-1. Le serveur utilise `client.broadcast(...)`, qui **exclut l'émetteur**.
-2. À la réception, le client applique la valeur par un chemin qui n'émet **pas**
-   `syncProperty` — donc rien ne repart.
+1. The server uses `client.broadcast(...)`, which **excludes the sender**.
+2. On receipt, the client applies the value through a path that does **not** emit
+   `syncProperty` — so nothing goes back out.
 
-C'est correct, et c'est ce que `origin: 'network'` remplacera en v2, de façon explicite.
+That is correct, and it is what `origin: 'network'` will replace in v2, explicitly.
 
-### Seul l'Editor pousse des mutations
+### Only the Editor pushes mutations
 
-`Network.sync()` n'est appelé que si `inspector === true`. Les joueurs n'envoient que
-des entrées. L'Editor est donc, de fait, **le client autoritaire** — sans que cela soit
-formalisé ni vérifié.
+`Network.sync()` is called only if `inspector === true`. Players send only input. The Editor is
+therefore, in practice, **the authoritative client** — without that being formalized or
+checked.
 
-### Aucune autorité serveur
+### No server authority
 
-Le serveur applique ce qu'on lui envoie, puis rediffuse. N'importe quel client peut
-modifier n'importe quel objet. Acceptable pour un prototype coopératif, **bloquant pour
-un jeu compétitif** (.io, MOBA) — qui est pourtant la cible affichée du produit.
+The server applies what it is sent, then rebroadcasts. Any client can modify any object.
+Acceptable for a cooperative prototype, **blocking for a competitive game** (.io, MOBA) — which
+is nevertheless the product's stated target.
 
-### Les entrées sont routées par utilisateur
+### Input is routed per user
 
 ```js
-Network.users[uid].keys      // état clavier par joueur
+Network.users[uid].keys      // keyboard state per player
 Controller.update(self) → Keyboard.keys(self.uid)
 ```
 
-Un objet n'est contrôlable que si son `uid` correspond à un utilisateur connecté.
-**Le modèle multijoueur est dans le moteur, pas à côté** — c'est une force.
+An object is controllable only if its `uid` matches a connected user. **The multiplayer model
+is inside the engine, not beside it** — that is a strength.
 
-Mais `Input` importe `Network`, ce qui **casse le mode solo hors ligne** :
-`Network.users` est `undefined` hors ligne, `Keyboard.keys()` lève une `TypeError`
-absorbée par le `try/catch` de `Object.update()`, et l'objet ne bouge jamais.
-(vérifié — `MIGRATION.md` §4.1)
+But `Input` imports `Network`, which **breaks offline single-player**: `Network.users` is
+`undefined` offline, `Keyboard.keys()` throws a `TypeError` swallowed by the `try/catch` in
+`Object.update()`, and the object never moves. (verified — `MIGRATION.md` §4.1)
 
-### Le heartbeat écrase
+### The heartbeat overwrites
 
-Toutes les 4 s, `broadcast('heartbeat', scene.objects)` → côté client
-`obj.copy(data[id])` sur chaque objet. Conséquences :
+Every 4 s, `broadcast('heartbeat', scene.objects)` → client-side `obj.copy(data[id])` on every
+object. Consequences:
 
-- une valeur en cours de saisie dans l'Inspector peut être écrasée par un heartbeat ;
-- `copy()` porte toutes ses limites (voir `OBJECT.md`) ;
-- la charge utile n'est **pas** filtrée : elle contient les doublons `_x`, `_name`,
-  `_components`… et sérialise chaque enfant deux fois. **Facteur 3,09 mesuré.**
+- a value being typed in the Inspector can be overwritten by a heartbeat;
+- `copy()` brings all its limitations with it (see `OBJECT.md`);
+- the payload is **not** filtered: it contains the `_x`, `_name`, `_components`… duplicates and
+  serializes every child twice. **A measured factor of 3.09.**
 
-### Pas d'interpolation
+### No interpolation
 
-`// TODO: Interpolate the movement` dans `Network.update`. Les positions distantes
-sautent d'une valeur à l'autre.
+`// TODO: Interpolate the movement` in `Network.update`. Remote positions jump from one value
+to the next.
 
-### Throttle neutralisé
+### The throttle is neutralized
 
-`Network.sync()` implémente un throttle avec `const delay = 0` : **chaque frappe clavier
-produit un message**. `syncInputs()` utilise un vrai `delay = 50` pour la souris.
+`Network.sync()` implements a throttle with `const delay = 0`: **every keystroke produces a
+message**. `syncInputs()` uses a real `delay = 50` for the mouse.
 
 ---
 
-## PROPOSITION V2
+## V2 PROPOSAL
 
 ### Operations
 
-Voir ADR-0008. Formalisation de ce qui existe déjà, sans changement d'ergonomie :
+See ADR-0008. A formalization of what already exists, with no change of ergonomics:
 
 ```
 object.x = 100  →  Change  →  Operation SET_PROPERTY  →  transport
 ```
 
-Ajouts : `previous` (undo), `seq` (ordre, perte), `author` (collaboration),
-`batch` (un drag = une opération, au lieu de centaines).
+Additions: `previous` (undo), `seq` (ordering, loss detection), `author` (collaboration),
+`batch` (one drag = one operation, instead of hundreds).
 
-### Réplication d'état
+### State replication
 
-Le heartbeat complet est remplacé par des **snapshots delta** : seules les propriétés
-modifiées depuis le dernier accusé de réception sont transmises. La réconciliation
-complète reste disponible à la connexion et à la demande.
+The full heartbeat is replaced by **delta snapshots**: only the properties modified since the
+last acknowledgement are sent. Full reconciliation stays available on connection and on demand.
 
-Combiné à la suppression des doublons `_prop` et de la duplication des enfants, la
-réduction de charge utile est substantielle.
+Combined with the removal of the `_prop` duplicates and of the child duplication, the payload
+reduction is substantial.
 
-### Découplage des entrées
-
-```
-runtime/input   état des entrées par owner ; un owner « local » existe toujours
-network/        alimente les owners distants
-```
-
-Le Core ne dépend plus du réseau. **Le mode solo fonctionne.**
-
-### Client / Serveur
+### Decoupling input
 
 ```
-                  core/  (identique)
+runtime/input   input state per owner; a "local" owner always exists
+network/        feeds the remote owners
+```
+
+The Core no longer depends on the network. **Single-player mode works.**
+
+### Client / Server
+
+```
+                  core/  (identical)
                         │
           ┌─────────────┴─────────────┐
-       Client                      Serveur
-   runtime + renderer          runtime sans rendu
-   editor (optionnel)          network + persistance
+       Client                      Server
+   runtime + renderer          runtime without rendering
+   editor (optional)           network + persistence
 ```
 
-`mod.js` est scindé en `core/mod.js` (partagé) et `runtime/mod.js` (client), pour que le
-serveur cesse d'importer transitivement le rendu et le DOM.
+`mod.js` is split into `core/mod.js` (shared) and `runtime/mod.js` (client), so that the server
+stops transitively importing rendering and the DOM.
 
 ---
 
-### Autorité — VALIDÉ (ADR-0011)
+### Authority — SETTLED (ADR-0011)
 
-**Le serveur est l'autorité de simulation en multijoueur compétitif.**
+**The server is the simulation authority in competitive multiplayer.**
 
-Le modèle distingue deux natures de mutation :
+The model distinguishes two natures of mutation:
 
-| Nature | Émetteur | Traitement |
+| Nature | Emitter | Handling |
 |---|---|---|
-| **Mutation joueur / client** | un joueur en jeu | intention soumise au serveur ; le client prédit, le serveur tranche |
-| **Mutation éditeur autorisée** | le créateur, avec permissions | Operation autorisée → **validée côté serveur** → appliquée à l'état autoritaire → propagée |
+| **Player / client mutation** | a player in game | an intent submitted to the server; the client predicts, the server decides |
+| **Authorized editor mutation** | the creator, with permissions | an authorized Operation → **validated server-side** → applied to the authoritative state → propagated |
 
-Chemin commun :
+The common path:
 
 ```
-Operation → authority.check(op, actor) → état autoritaire → propagation
+Operation → authority.check(op, actor) → authoritative state → propagation
 ```
 
-Le **système de permissions n'est pas implémenté maintenant**. Ce qui est implémenté :
-le point de passage. Chaque Operation transporte un `actor` et un `origin`, et traverse
-`authority.check()` sans exception — même si la politique initiale accepte tout.
+The **permission system is not implemented now**. What is implemented is the checkpoint: every
+Operation carries an `actor` and an `origin`, and goes through `authority.check()` without
+exception — even if the initial policy accepts everything.
 
-L'Editor applique en **optimiste** et réconcilie si le serveur refuse : la
-synchronisation lettre par lettre reste locale et immédiate, seule la confirmation est
-asynchrone.
+The Editor applies **optimistically** and reconciles if the server refuses: letter-by-letter
+synchronization stays local and immediate, only the confirmation is asynchronous.
 
-En solo / hors ligne, l'autorité est une implémentation locale permissive — aucun
-aller-retour réseau.
+In single-player / offline, the authority is a permissive local implementation — no network
+round trip.
 
 ---
 
-## Questions restantes
+## Remaining questions
 
-| Question | Enjeu |
+| Question | What is at stake |
 |---|---|
-| Le serveur reste-t-il en Deno ? | Il utilise `std@0.117` `ws`, API obsolète ; toute évolution du protocole impose une migration simultanée des deux côtés (risque R4) |
-| Persistance : `save` a un corps vide. Où et comment stocker un projet ? | Prérequis de CREATE/PLAY/SHARE |
-| Un serveur par jeu, ou un serveur multi-projets ? | Legacy : un serveur = une scène singleton (ADR-0010) |
+| Does the server stay on Deno? | It uses `std@0.117` `ws`, an obsolete API; any protocol change forces a simultaneous migration of both sides (risk R4) |
+| Persistence: `save` has an empty body. Where and how is a project stored? | A prerequisite for CREATE/PLAY/SHARE |
+| One server per game, or one multi-project server? | Legacy: one server = one singleton scene (ADR-0010) |
 
-Ces questions concernent l'infrastructure, pas le modèle. Elles ne bloquent pas les
-étapes 1 à 4 de `../MIGRATION.md` §5.
+These questions concern infrastructure, not the model. They do not block steps 1 to 4 of
+`../MIGRATION.md` §5.

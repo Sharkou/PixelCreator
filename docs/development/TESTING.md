@@ -1,144 +1,140 @@
 # Tests
 
-## IMPLÉMENTÉ — état au 2026-09-12
+## IMPLEMENTED — state as of 2026-09-12
 
 ```bash
-tools/test.sh                  # 2300 tests (node --test, zéro dépendance)
-node tools/layers/run.js       # règles de couches + imports morts
-node tools/parity/run.js       # 39 scénarios capturés depuis Legacy
+tools/test.sh                  # 2300 tests (node --test, zero dependencies)
+node tools/layers/run.js       # layer rules + dead imports
+node tools/parity/run.js       # 39 scenarios captured from Legacy
 node tools/check-css-literals.js
-node tools/check-boot.js       # chaque module que les points d'entrée atteignent se charge
-node tools/check-exports.js    # chaque import nommé désigne un export qui existe
+node tools/check-boot.js       # every module the entry points reach loads
+node tools/check-exports.js    # every named import designates an export that exists
 ```
 
-Le nombre de tests est donné pour situer l'ordre de grandeur, pas comme un objectif : ce qui
-compte est ce qu'ils protègent, et la liste des contrats est plus bas.
+The test count is given to convey the order of magnitude, not as a target: what matters is what
+they protect, and the list of contracts is below.
 
-Un test unitaire vit à côté du module qu'il couvre (`x.js` / `x.test.js`), et n'a besoin
-ni de DOM ni de navigateur : ce qui demande un DOM est vérifié dans le navigateur et noté
-dans `../migration/MIGRATION_STATUS.md`, ce qui peut être rendu pur l'est — la géométrie
-d'un dépôt de Hierarchy vit dans `editor/windows/drop.js` pour cette raison exacte.
+A unit test lives next to the module it covers (`x.js` / `x.test.js`), and needs neither a DOM
+nor a browser: what requires a DOM is verified in the browser and noted in
+`../migration/MIGRATION_STATUS.md`, and what can be made pure is — the geometry of a Hierarchy
+drop lives in `editor/windows/drop.js` for exactly that reason.
 
-**`tools/layers/run.js` vérifie deux choses depuis 2026-08-17** : la direction des
-dépendances entre couches, et le fait qu'un import statique désigne un fichier qui existe.
-La seconde a été ajoutée après qu'un `export … from './windows/dock.js'` a survécu deux
-commits à la suppression du fichier, rendant `editor/mod.js` inchargeable sans qu'aucun
-test unitaire puisse le voir. Les imports morts connus et non corrigeables — `legacy/` en
-a deux, vers des fichiers jamais commités — sont déclarés dans `rules.js` et rapportés
-sans faire échouer la vérification.
+**`tools/layers/run.js` checks two things as of 2026-08-17**: the direction of dependencies
+between layers, and the fact that a static import designates a file that exists. The second was
+added after an `export … from './windows/dock.js'` survived two commits past the file's deletion,
+making `editor/mod.js` unloadable without any unit test being able to see it. Known dead imports
+that cannot be fixed — `legacy/` has two, pointing at files that were never committed — are
+declared in `rules.js` and reported without failing the check.
 
-## OBSERVÉ (Phase 0 — Legacy)
+## OBSERVED (Phase 0 — Legacy)
 
-**Il n'existe aucun test.** Aucun framework, aucun fichier de test, aucune CI.
-`legacy/plugins/test.js` est un exemple de composant, pas un test.
+**There are no tests at all.** No framework, no test file, no CI. `legacy/plugins/test.js` is an
+example component, not a test.
 
-Conséquence directe : plusieurs bugs vivent dans le code sans être détectés — le mode
-solo hors ligne cassé, `Collider` qui référence un `Scene` non importé, un plugin
-d'exemple qui appelle une méthode d'instance en statique, un compilateur qui lève
-systématiquement une `ReferenceError`. Voir `../MIGRATION.md` §4.
+The direct consequence: several bugs live in the code undetected — broken offline single-player,
+`Collider` referencing a `Scene` it never imported, an example plugin calling an instance method
+statically, a compiler that systematically throws a `ReferenceError`. See `../MIGRATION.md` §4.
 
-C'est aussi ce qui rend la migration risquée : **rien ne dira qu'une propriété a cessé
-d'être propagée.**
+It is also what makes the migration risky: **nothing will tell you that a property has stopped
+being propagated.**
 
-## PROPOSITION V2
+## V2 PROPOSAL
 
-### Contraintes
+### Constraints
 
-- Zéro dépendance runtime. L'outillage de test est une dépendance de développement,
-  acceptable, mais elle doit rester minimale.
-- Le Core doit être testable **sans DOM** — c'est aussi la garantie qu'il tourne côté
-  serveur.
-- Les tests doivent pouvoir s'exécuter aussi dans un navigateur, pour l'Editor.
+- Zero runtime dependencies. Test tooling is a development dependency, which is acceptable, but
+  it must stay minimal.
+- The Core must be testable **without a DOM** — that is also the guarantee that it runs on the
+  server.
+- The tests must also be runnable in a browser, for the Editor.
 
-### Priorités — dans cet ordre
+### Priorities — in this order
 
-**1. Property System** (risque R1, le plus élevé)
+**1. Property System** (risk R1, the highest)
 
-- `object.x = v` émet un `Change` `{ prop, value, previous, origin }` et **aucune Operation**
-- `object.setProperty('x', v)` émet un `Change` **et** une Operation
-- une propriété **ajoutée après construction** est réactive
-  *(échoue sur Legacy — c'est la régression corrigée)*
-- une Operation `origin: 'network'` appliquée ne produit pas d'Operation sortante
-- la propagation hiérarchique déplace bien les enfants
-- **`_x` / `__x` ne sont exposés par aucune API publique**
-- **harnais de parité** : exécuter la même séquence d'écritures sur Legacy et v2, et
-  comparer la séquence d'événements émis, ordre inclus
+- `object.x = v` emits a `Change` `{ prop, value, previous, origin }` and **no Operation**
+- `object.setProperty('x', v)` emits a `Change` **and** an Operation
+- a property **added after construction** is reactive
+  *(fails on Legacy — that is the regression being fixed)*
+- an applied Operation with `origin: 'network'` produces no outgoing Operation
+- hierarchical propagation does move the children
+- **`_x` / `__x` are exposed by no public API**
+- **a parity harness**: run the same sequence of writes on Legacy and on v2, and compare the
+  sequence of emitted events, ordering included
 
-> **Le harnais doit encoder le mapping sémantique** (risque R14) :
+> **The harness must encode the semantic mapping** (risk R14):
 >
 > | Legacy | v2 |
 > |---|---|
 > | `obj.x = v` | `obj.x = v` |
 > | `obj.$x = v` / `obj.syncProperty('x', v)` | `obj.setProperty('x', v)` |
-> | `obj.setProperty('x', v)` | *sonde Legacy uniquement* — pas d'équivalent v2 |
-> | écriture simple à la réception réseau | `applyOperation({ origin: 'network' })` |
+> | `obj.setProperty('x', v)` | *a Legacy-only probe* — no v2 equivalent |
+> | a plain write on network receipt | `applyOperation({ origin: 'network' })` |
 >
-> **Aucun scénario v2 n'utilise `.$x`** — la syntaxe est supprimée. Sans ce mapping, le
-> harnais signalerait de fausses régressions.
+> **No v2 scenario uses `.$x`** — the syntax is gone. Without this mapping, the harness would
+> report false regressions.
 
-**1 bis. Garde d'écriture** (risque R15)
+**1 bis. The write guard** (risk R15)
 
-En mode développement, une écriture simple `=` dans un contexte `editor` émet un
-avertissement. Tester que la garde se déclenche, et qu'elle est **inerte en production**.
+In development mode, a plain `=` write in an `editor` context emits a warning. Test that the
+guard fires, and that it is **inert in production**.
 
-**2. Règle de dépendance des couches**
+**2. The layer dependency rule**
 
-Test statique : aucun fichier de `core/` n'importe `runtime/`, `editor/`, `network/`,
-ni ne référence `window` / `document`.
-*(Échoue aujourd'hui : `renderer.js` importe `editor/system/dnd.js`.)*
+A static test: no file in `core/` imports `runtime/`, `editor/` or `network/`, nor references
+`window` / `document`.
+*(It fails today: `renderer.js` imports `editor/system/dnd.js`.)*
 
-**3. Import du Core hors navigateur**
+**3. Importing the Core outside a browser**
 
-Charger `core/mod.js` dans Node ou Deno, sans DOM. C'est le test qui protège l'acquis
-le plus précieux du projet : le Core partagé client/serveur (risque R3).
+Load `core/mod.js` in Node or Deno, with no DOM. This is the test that protects the project's
+most valuable asset: the Core shared between client and server (risk R3).
 
-**4. Identité Transform / façade** (risque R5)
+**4. Transform / façade identity** (risk R5)
 
-`object.x === object.getComponent('Transform').x` après écriture par la façade, par le
-composant, par le réseau, par l'Inspector.
+`object.x === object.getComponent('Transform').x` after a write through the façade, through the
+component, through the network, through the Inspector.
 
-**5. Sérialisation**
+**5. Serialization**
 
-- aller-retour `serialize` → `deserialize` sans perte
-- pas de doublons `_`/`$`
-- enfants référencés, **jamais imbriqués deux fois**
-- taille de charge utile contrôlée (garde-fou contre une régression du facteur 3)
+- a `serialize` → `deserialize` round trip with no loss
+- no `_`/`$` duplicates
+- children referenced, **never nested twice**
+- payload size under control (a guard against a regression of the factor of 3)
 
-**6. Composants**
+**6. Components**
 
-- `update` / `draw` appelés uniquement si `active`
-- `draw` jamais appelé côté serveur
-- une erreur dans un composant n'arrête pas la boucle (comportement Legacy conservé)
-- un composant sans `schema` s'affiche correctement dans l'Inspector (repli réflexif)
+- `update` / `draw` called only if `active`
+- `draw` never called on the server
+- an error in one component does not stop the loop (the Legacy behaviour is kept)
+- a component with no `schema` displays correctly in the Inspector (the reflective fallback)
 
-**7. Editor — le test le plus important pour l'utilisateur**
+**7. Editor — the most important test for the user**
 
-**Édition lettre par lettre** : écrire `P`, `Pl`, `Pla`, `Play` dans un champ met à
-jour toutes les autres vues **sauf** celle qui a le focus. C'est le test qui protège le
-risque R2.
+**Letter-by-letter editing**: typing `P`, `Pl`, `Pla`, `Play` in one field updates every other
+view **except** the one that has focus. This is the test that covers risk R2.
 
 **8. Network**
 
-- un `Change` produit l'`Operation` attendue
-- pas d'écho vers l'émetteur
-- `previous` permet de reconstruire l'état antérieur (base de l'undo)
+- a `Change` produces the expected `Operation`
+- no echo back to the sender
+- `previous` allows the earlier state to be reconstructed (the basis of undo)
 
-### Tests de non-régression contre Legacy
+### Regression tests against Legacy
 
-`legacy/` reste exécutable. Pour les comportements difficiles à spécifier, la référence
-est le comportement observé de Legacy — d'où le harnais de parité du point 1.
+`legacy/` stays runnable. For behaviours that are hard to specify, the reference is Legacy's
+observed behaviour — hence the parity harness in point 1.
 
 ### Performance
 
-Le benchmark du Property System est déjà établi (`../migration/LEGACY_ANALYSIS.md` §2.4).
-Il doit être rejoué en CI avec un seuil : lecture ≤ baseline Legacy, écriture
-strictement meilleure.
+The Property System benchmark already exists (`../migration/LEGACY_ANALYSIS.md` §2.4). It must
+be replayed in CI with a threshold: reads ≤ the Legacy baseline, writes strictly better.
 
-Ajouter un benchmark de rendu sur une scène ≥ 500 objets, avant/après l'introduction de
-la façade `Transform` (risque R8).
+Add a rendering benchmark on a scene of ≥ 500 objects, before and after the introduction of the
+`Transform` façade (risk R8).
 
-### Ce qu'on ne teste pas
+### What we do not test
 
-- Le rendu pixel par pixel — trop fragile pour la valeur apportée.
-- L'apparence de l'UI.
-- Le serveur privé depuis le dépôt public.
+- Pixel-by-pixel rendering — too brittle for the value it brings.
+- The UI's appearance.
+- The private server, from the public repository.

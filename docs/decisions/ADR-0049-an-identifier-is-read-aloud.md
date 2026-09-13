@@ -1,82 +1,79 @@
-# ADR-0049 — Un identifiant se lit à voix haute
+# ADR-0049 — An identifier is read aloud
 
-- **Statut :** **accepté** (2026-08-31)
-- **Décide :** de quoi un identifiant est fait ; dans quelle unité les nœuds trigonométriques parlent
-- **Dépend de :** ADR-0010 (l'identité est un ID, pas un nom), ADR-0045 §11.3 (un port est nommé pour son unité)
-- **Amende :** ADR-0010 dans son **implémentation** seulement — la règle « aucune identité ne dérive d'un nom modifiable » est intacte
-- **Ne décide pas :** l'existence d'un slug lisible à côté de l'identité ; `Rotation X / Y` ; la physique
-
----
-
-## 1. Des lettres, et seulement des lettres
-
-Un identifiant est lu à voix haute, recopié depuis une capture d'écran et collé dans une
-URL. Un chiffre à côté d'une lettre est exactement l'endroit où cela échoue : `0` contre `O`,
-`1` contre `l`. Un identifiant fait uniquement de lettres ressemble aussi à un **mot** plutôt
-qu'à une empreinte, ce qu'un créateur qui partage un lien s'attend à voir.
-
-> **L'alphabet perd ses dix chiffres. Il garde ses vingt-deux lettres non ambiguës.**
-
-`i`, `l` et `o` restent dehors — les erreurs de lecture classiques — et `u` aussi, parce que
-le laisser est la façon dont une chaîne aléatoire finit par épeler quelque chose que personne
-n'a voulu.
-
-**ADR-0010 N'EST PAS TOUCHÉE.** Cette ADR interdit une identité qui **dérive** d'un nom que le
-créateur peut changer. Rien ici ne lit un nom : la valeur est toujours **tirée** du CSPRNG.
-Ce qui change est l'alphabet, pas la provenance — renommer un projet ne casse donc toujours
-rien, et une URL partagée survit toujours au renommage.
-
-### 1.1 Quatorze caractères, et un rejet
-
-Vingt-deux symboles valent moins que trente-deux : l'ancien alphabet donnait exactement
-5 bits par caractère, celui-ci donne log₂(22) ≈ 4,46. Douze caractères ne feraient plus que
-53 bits là où la garantie était 60 ; **quatorze** la rétablissent (62 bits) au prix de deux
-caractères que personne ne lit.
-
-Et 22 ne divise pas 256. Masquer ou prendre un reste rendrait les premières lettres de
-l'alphabet plus probables que les dernières — un biais qui **rétrécit l'espace de valeurs
-réel** et qu'aucun test du genre « utilise-t-il toutes les lettres ? » ne verrait, puisque
-toutes apparaîtraient quand même. Le plus grand multiple exact de 22 sous 256 est 242 : un
-octet au-delà est jeté et retiré, ce qui arrive pour 14 valeurs sur 256, environ 5 % du temps.
-
-### 1.2 Ce que la migration coûte : rien
-
-Aucun endroit du moteur ne valide la forme d'un identifiant — ni la génération, ni le
-stockage, ni `idFromHash()` qui prend tout ce qui suit `#p/`, ni les clés du magasin. Les
-identifiants déjà écrits, chiffres compris, continuent donc de se résoudre exactement comme
-avant. Seuls les identifiants **neufs** changent de forme.
-
-### 1.3 Ce que cela ne décide pas
-
-Un **slug lisible** — `mon-jeu` dans l'URL, à côté de l'identité — reste une question ouverte
-et distincte. Elle se pose le jour où une URL doit être jolie ET stable, et elle demande de
-décider ce qui arrive à l'ancienne URL après un renommage.
+- **Status:** **accepted** (2026-08-31)
+- **Decides:** what an identifier is made of; which unit the trigonometric nodes speak in
+- **Depends on:** ADR-0010 (identity is an ID, not a name), ADR-0045 §11.3 (a port is named for its unit)
+- **Amends:** ADR-0010 in its **implementation** only — the rule "no identity derives from an editable name" is intact
+- **Does not decide:** the existence of a readable slug beside the identity; `Rotation X / Y`; physics
 
 ---
 
-## 2. `Sin` et `Cos` parlent en degrés
+## 1. Letters, and only letters
 
-Un créateur qui vient de taper `90` dans un champ Rotation s'attend à taper `90` ici. La
-conversion vit **dans le nœud**, exactement comme dans `Rotate` (ADR-0045 §11.3) : le Core
-continue de penser en radians et rien du modèle de propriété ne bouge.
+An identifier is read aloud, copied from a screenshot and pasted into a URL. A digit next to a letter
+is exactly where that fails: `0` against `O`, `1` against `l`. An identifier made only of letters also
+looks like a **word** rather than a fingerprint, which is what a creator sharing a link expects to
+see.
 
-Le port s'appelle donc `Degrees` et pas `Angle` — un mot pour lever une question qui aurait
-sinon deux réponses.
+> **The alphabet loses its ten digits. It keeps its twenty-two unambiguous letters.**
 
-`Distance` prend **deux Objects** et non quatre coordonnées, parce que c'est la question
-qu'un créateur pose : « l'ennemi est-il assez près ». Quatre ports l'obligeraient à assembler
-la question avant de pouvoir la poser. Un Object sans Transform n'a pas de position, donc pas
-de distance : la réponse est zéro, et non une erreur — la règle qu'ADR-0034 §3.4 pose déjà.
+`i`, `l` and `o` stay out — the classic misreadings — and so does `u`, because leaving it in is how a
+random string ends up spelling something nobody intended.
+
+**ADR-0010 IS NOT TOUCHED.** That ADR forbids an identity that **derives** from a name the creator can
+change. Nothing here reads a name: the value is still **drawn** from the CSPRNG. What changes is the
+alphabet, not the provenance — so renaming a project still breaks nothing, and a shared URL still
+survives a rename.
+
+### 1.1 Fourteen characters, and a rejection
+
+Twenty-two symbols are worth less than thirty-two: the old alphabet gave exactly 5 bits per character,
+this one gives log₂(22) ≈ 4.46. Twelve characters would now be only 53 bits where the guarantee was
+60; **fourteen** restore it (62 bits) at the cost of two characters nobody reads.
+
+And 22 does not divide 256. Masking or taking a remainder would make the alphabet's first letters more
+likely than its last — a bias that **shrinks the real value space** and that no "does it use every
+letter?" test would see, since all of them would still appear. The largest exact multiple of 22 below
+256 is 242: a byte beyond that is thrown away and redrawn, which happens for 14 values out of 256,
+about 5 % of the time.
+
+### 1.2 What the migration costs: nothing
+
+Nowhere in the engine validates an identifier's shape — not the generation, not the storage, not
+`idFromHash()`, which takes everything after `#p/`, not the store's keys. Identifiers already written,
+digits included, therefore keep resolving exactly as before. Only **new** identifiers change shape.
+
+### 1.3 What this does not decide
+
+A **readable slug** — `my-game` in the URL, beside the identity — remains an open and separate
+question. It arises the day a URL has to be pretty AND stable, and it requires deciding what happens
+to the old URL after a rename.
 
 ---
 
-## 3. Contrats observables
+## 2. `Sin` and `Cos` speak in degrees
 
-| Contrat | Vérifiable par |
+A creator who has just typed `90` into a Rotation field expects to type `90` here. The conversion
+lives **in the node**, exactly as in `Rotate` (ADR-0045 §11.3): the Core keeps thinking in radians and
+nothing in the property model moves.
+
+The port is therefore called `Degrees` and not `Angle` — one word to remove a question that would
+otherwise have two answers.
+
+`Distance` takes **two Objects** and not four coordinates, because that is the question a creator
+asks: "is the enemy close enough". Four ports would force them to assemble the question before being
+able to ask it. An Object with no Transform has no position, and therefore no distance: the answer is
+zero, not an error — the rule ADR-0034 §3.4 already sets.
+
+---
+
+## 3. Observable contracts
+
+| Contract | Verifiable by |
 |---|---|
-| Un identifiant neuf ne contient que des lettres non ambiguës | `id.test.js`, et l'Inspector |
-| Chaque lettre est tirée aussi souvent que les autres | `id.test.js` (planéité > 0,9) |
-| Un identifiant ancien, chiffres compris, se résout encore | rien ne valide la forme |
-| L'URL d'un Preview porte l'identifiant tel quel | à l'écran |
-| `Sin(90)` vaut 1 et le port s'appelle `Degrees` | `nodes.test.js` |
-| `Distance` entre deux Objects, 0 sans Transform | idem |
+| A new identifier holds only unambiguous letters | `id.test.js`, and the Inspector |
+| Every letter is drawn as often as the others | `id.test.js` (flatness > 0.9) |
+| An old identifier, digits included, still resolves | nothing validates the shape |
+| A Preview's URL carries the identifier as it is | on screen |
+| `Sin(90)` is 1 and the port is called `Degrees` | `nodes.test.js` |
+| `Distance` between two Objects, 0 with no Transform | the same |

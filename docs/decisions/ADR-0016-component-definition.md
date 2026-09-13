@@ -1,54 +1,51 @@
-# ADR-0016 — Une définition décrit un type de Component : propriétés + graphe
+# ADR-0016 — A definition describes a Component type: properties + graph
 
-- **Statut :** **accepté** (2026-08-13)
-- **Décide :** comment un Component créé par un utilisateur est décrit, partagé et réutilisé
-- **Lié à :** ADR-0004 (Components), ADR-0007 (schéma), ADR-0009 (`.px`), ADR-0015 (comportement)
-
----
-
-## Contexte
-
-ADR-0015 a fixé qu'un graphe `.px` est le **comportement** d'un type de Component, et a
-laissé un point ouvert : **d'où vient le type**. Pour un composant livré avec le moteur, la
-réponse est évidente — une classe JavaScript. Pour un composant qu'un créateur fabrique
-dans l'éditeur, il n'y en avait aucune.
-
-Or c'est un besoin central du produit : un utilisateur doit pouvoir créer son propre
-Component réutilisable, avec ses propriétés, son graphe, et une définition partagée par
-toutes ses instances.
-
-**OBSERVÉ dans Legacy :** un fichier devenait un composant par `URL.createObjectURL` +
-`import()`, et le type était `module.default`. Il n'existait ni schéma, ni définition, ni
-identité stable : le composant *était* le fichier, et rien ne décrivait ce qu'il contenait.
+- **Status:** **accepted** (2026-08-13)
+- **Decides:** how a Component created by a user is described, shared and reused
+- **Related to:** ADR-0004 (Components), ADR-0007 (schema), ADR-0009 (`.px`), ADR-0015 (behaviour)
 
 ---
 
-## Amendement du 2026-08-18 (ADR-0026) — le graphe est PORTÉ, pas référencé
+## Context
 
-Cet ADR exigeait que `definition.graph` soit un `ResourceId`, pour deux raisons : ne pas
-dupliquer un graphe, et laisser la fenêtre Graph l'ouvrir sans charger la définition.
+ADR-0015 established that a `.px` graph is the **behaviour** of a Component type, and left one
+point open: **where the type comes from**. For a component shipped with the engine the answer is
+obvious — a JavaScript class. For a component a creator builds in the editor there was none.
 
-**Un Component et son graphe sont désormais une seule ressource `.px`**, et `graph` porte
-le graphe lui-même. Les deux raisons tiennent toujours, autrement : avec une ressource
-unique la duplication est impossible par construction, et « ouvrir le graphe » *est*
-« ouvrir le `.px` ». Ce qui change est qu'un créateur qui fait un Component obtient **un**
-fichier, pas deux.
+Yet it is a central product need: a user must be able to create their own reusable Component, with
+its properties, its graph, and a definition shared by all of its instances.
 
-`defineComponent()` refuse maintenant une chaîne, avec un message qui dit pourquoi.
+**OBSERVED in Legacy:** a file became a component through `URL.createObjectURL` + `import()`, and
+the type was `module.default`. There was no schema, no definition and no stable identity: the
+component *was* the file, and nothing described what it contained.
 
-## Décision
+---
 
-### 1. Un Component est propriétés + comportement
+## Amendment of 2026-08-18 (ADR-0026) — the graph is CARRIED, not referenced
+
+This ADR required `definition.graph` to be a `ResourceId`, for two reasons: not duplicating a
+graph, and letting the Graph window open it without loading the definition.
+
+**A Component and its graph are now a single `.px` resource**, and `graph` carries the graph
+itself. Both reasons still hold, differently: with a single resource, duplication is impossible by
+construction, and "opening the graph" *is* "opening the `.px`". What changes is that a creator who
+makes a Component gets **one** file, not two.
+
+`defineComponent()` now refuses a string, with a message that says why.
+
+## Decision
+
+### 1. A Component is properties + behaviour
 
 ```
 Controller.px
      ↓
 Component Controller
-├── propriétés     le schéma — donc ce qui se sérialise (ADR-0007)
-└── comportement   le graphe lié au type (ADR-0015)
+├── properties    the schema — therefore what serializes (ADR-0007)
+└── behaviour     the graph bound to the type (ADR-0015)
 ```
 
-Une **définition** est ce couple, écrit comme donnée :
+A **definition** is that pair, written as data:
 
 ```json
 {
@@ -60,121 +57,115 @@ Une **définition** est ce couple, écrit comme donnée :
 }
 ```
 
-> **Amendé le 2026-08-14.** L'exemple d'origine montrait `"type": "Controller"` et le graphe
-> **en ligne**. Deux points ouverts de cet ADR sont désormais fermés :
+> **Amended on 2026-08-14.** The original example showed `"type": "Controller"` and the graph
+> **inline**. Two of this ADR's open points are now closed:
 >
-> - **l'identité (ADR-0021)** — `type` est le `ResourceId` de la définition, `label` est le
->   nom affiché. L'exemple d'origine faisait de tout renommage une réécriture de toutes les
->   scènes du projet ;
-> - **le stockage (ADR-0020)** — `graph` est le `ResourceId` d'une `GraphResource`. Un
->   graphe est une ressource comme une autre : ouvrable seule dans la fenêtre `Graph`,
->   stockée une seule fois, diffée séparément. Un graphe en ligne empêcherait d'ouvrir
->   `Controller.px` sans ouvrir aussi le fichier de définition, et ferait diverger deux
->   copies du même graphe.
+> - **identity (ADR-0021)** — `type` is the definition's `ResourceId`, `label` is the displayed
+>   name. The original example made every rename a rewrite of every scene in the project;
+> - **storage (ADR-0020)** — `graph` is the `ResourceId` of a `GraphResource`. A graph is a
+>   resource like any other: openable on its own in the `Graph` window, stored once, diffed
+>   separately. An inline graph would make it impossible to open `Controller.px` without also
+>   opening the definition file, and would let two copies of the same graph diverge.
 >
-> `defineComponent()` **refuse** un graphe en ligne.
+> `defineComponent()` **refuses** an inline graph.
 
-C'est du JSON : sauvegardable, versionnable, diffable, réplicable — comme le graphe
-lui-même (ADR-0009).
+It is JSON: saveable, versionable, diffable, replicable — like the graph itself (ADR-0009).
 
-### 2. Une définition produit un Component **ordinaire**
+### 2. A definition produces an **ordinary** Component
 
-`defineComponent(definition)` (`core/definition.js`) en fait une classe de composant :
+`defineComponent(definition)` (`core/definition.js`) turns it into a component class:
 
 ```js
 const Controller = components.register(defineComponent(definition));
-behaviors.bind(Controller, graph); // le graphe, résolu par la couche Project (ADR-0020)
+behaviors.bind(Controller, graph); // the graph, resolved by the Project layer (ADR-0020)
 ```
 
-Elle entre dans le `ComponentRegistry`, s'attache par `addComponent()`, s'affiche dans
-l'Inspector par son schéma, se sérialise par ses propriétés. **Rien en aval ne peut
-distinguer un composant né d'une donnée d'un composant écrit à la main** : il n'existe pas
-un second type de Component.
+It enters the `ComponentRegistry`, attaches through `addComponent()`, displays in the Inspector by
+its schema, serializes by its properties. **Nothing downstream can distinguish a component born
+from data from one written by hand**: there is no second kind of Component.
 
-### 3. La définition appartient au type, jamais à l'instance
+### 3. The definition belongs to the type, never to the instance
 
-Le schéma et le graphe vivent sur la classe. Une instance ne porte que **ses valeurs**.
+The schema and the graph live on the class. An instance carries only **its values**.
 
-Une scène de mille `Controller` contient mille `speed` et **un seul** graphe ; un
-instantané ou une charge répliquée ne transporte jamais de comportement. Chaque instance
-possède en revanche son propre état d'exécution (ADR-0015).
+A scene of a thousand `Controller`s contains a thousand `speed`s and **one** graph; a snapshot or a
+replicated payload never carries behaviour. Each instance, by contrast, owns its own execution
+state (ADR-0015).
 
-### 4. Une instance neuve a exactement les propriétés déclarées
+### 4. A fresh instance has exactly the declared properties
 
-Chaque clé du schéma existe sur une instance neuve, avec son défaut. C'est ce qui fait
-coïncider l'Inspector, la sérialisation et le graphe sur ce qu'*est* un `Controller`, et
-cela supprime la dérive signalée en ADR-0007 (« le schéma déclare `speed`, le constructeur
-l'a oublié »).
+Every schema key exists on a fresh instance, with its default. That is what makes the Inspector,
+serialization and the graph agree on what a `Controller` *is*, and it removes the drift flagged in
+ADR-0007 ("the schema declares `speed`, the constructor forgot it").
 
-Un défaut conteneur (tableau, objet) est **copié** par instance : partager un tableau entre
-toutes les instances d'un type est un bug d'alias, pas un défaut.
+A container default (an array, an object) is **copied** per instance: sharing one array across every
+instance of a type is an aliasing bug, not a default.
 
-### 5. Pour le Core, un graphe est une donnée
+### 5. For the Core, a graph is data
 
-`core/definition.js` transporte le graphe et ne le lit jamais. L'interpréter appartient au
-runtime (ADR-0015). **Aucune dépendance Core → Runtime**, et le serveur charge les mêmes
-définitions que le client.
+`core/definition.js` carries the graph and never reads it. Interpreting it belongs to the runtime
+(ADR-0015). **No Core → Runtime dependency**, and the server loads the same definitions as the
+client.
 
-### 6. Redéfinir un type est un acte délibéré
+### 6. Redefining a type is a deliberate act
 
-Deux classes distinctes réclamant le même nom restent une erreur — c'est le bug que le
-registre existe pour attraper. Un créateur qui édite son composant, lui, le dit :
+Two distinct classes claiming the same name stay an error — it is the bug the registry exists to
+catch. A creator editing their component, however, says so:
 
 ```js
 components.register(defineComponent(edited), { replace: true });
 ```
 
-Le nom est rebindé pour ce qui sera créé ensuite. **Les composants déjà attachés gardent la
-classe dont ils sont issus** ; migrer les instances existantes est une décision d'éditeur,
-pas de runtime (voir points ouverts).
+The name is rebound for whatever is created next. **Components already attached keep the class they
+came from**; migrating existing instances is an editor decision, not a runtime one (see the open
+points).
 
-### 7. Un graphe est immuable pour le runtime
+### 7. A graph is immutable as far as the runtime is concerned
 
-Le graphe est lu une fois et identifié par son identité d'objet. Éditer un comportement
-signifie **produire un nouveau graphe et le lier** (`behaviors.bind`), pas muter celui en
-place — sans quoi une modification serait invisible ou prendrait effet à un moment
-imprévisible.
+The graph is read once and identified by its object identity. Editing a behaviour means
+**producing a new graph and binding it** (`behaviors.bind`), not mutating the one in place —
+otherwise a change would be invisible or would take effect at an unpredictable moment.
 
 ---
 
-## Ce que cet ADR ne décide pas
+## What this ADR does not decide
 
-| Point ouvert | Où il a été / sera tranché |
+| Open point | Where it was / will be settled |
 |---|---|
-| ~~Le format de fichier et le stockage d'une définition (une ressource)~~ | **fermé : ADR-0020** — une définition est une `Resource` de `kind: 'component'`, son graphe une `Resource` de `kind: 'graph'` référencée par `ResourceId` |
-| ~~Qui charge les définitions et appelle `register` / `bind`~~ | **fermé : ADR-0020** — la couche `src/project/` (`loadComponentDefinitions`). Elle résout le graphe et passe la **valeur** à `behaviors.bind()` ; le Runtime ne lit jamais le stockage |
-| ~~Ce que deviennent les instances existantes quand une définition change~~ | **fermé : ADR-0021** — réconciliation structurelle au chargement (S1) : clé inconnue jetée, clé manquante remplie par son défaut. Aucun script de migration |
-| Le modèle de graphe, ses `variables` et son interprète | ADR-0009, ADR-0015 |
-| L'interface d'édition du graphe | Editor — la fenêtre **`Graph`**, jamais « Composer » (`PROJECT.md` §2) |
-| Le sort d'une définition **supprimée** alors que des instances l'utilisent | **fermé : ADR-0021** — `MissingComponent`, qui préserve type, valeurs et rang |
+| ~~The file format and storage of a definition (a resource)~~ | **closed: ADR-0020** — a definition is a `Resource` of `kind: 'component'`, its graph a `Resource` of `kind: 'graph'` referenced by `ResourceId` |
+| ~~Who loads the definitions and calls `register` / `bind`~~ | **closed: ADR-0020** — the `src/project/` layer (`loadComponentDefinitions`). It resolves the graph and passes the **value** to `behaviors.bind()`; the Runtime never reads storage |
+| ~~What becomes of existing instances when a definition changes~~ | **closed: ADR-0021** — structural reconciliation at load time (S1): an unknown key is dropped, a missing key is filled with its default. No migration scripts |
+| The graph model, its `variables` and its interpreter | ADR-0009, ADR-0015 |
+| The graph editing interface | Editor — the **`Graph`** window, never "Composer" (`PROJECT.md` §2) |
+| The fate of a definition that is **deleted** while instances use it | **closed: ADR-0021** — `MissingComponent`, which preserves type, values and rank |
 
 ---
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Un créateur peut avoir son propre Component réutilisable sans écrire de JavaScript.
-- Un seul modèle de Component pour le moteur, les `.js` et les définitions.
-- Le graphe n'est stocké qu'une fois, jamais dans les instances ni dans les instantanés.
-- Un schéma existe pour tous les composants créés dans l'éditeur, donc l'Inspector, la
-  validation et la sérialisation sont exacts par construction.
+- A creator can have their own reusable Component without writing any JavaScript.
+- One Component model for the engine, for `.js` files and for definitions.
+- The graph is stored once, never in the instances nor in the snapshots.
+- A schema exists for every component created in the editor, so the Inspector, validation and
+  serialization are exact by construction.
 
-### Négatives
+### Negative
 
-- Une définition modifiée ne met pas à jour les instances déjà attachées : c'est une
-  responsabilité qui revient à l'Editor, et elle reste à concevoir.
-- Le schéma d'un composant défini est nécessairement exhaustif : une propriété non déclarée
-  n'existe pas. C'est voulu — c'est ce qui rend la sérialisation prévisible.
+- A modified definition does not update already-attached instances: that responsibility falls to
+  the Editor, and it is still to be designed.
+- The schema of a defined component is necessarily exhaustive: an undeclared property does not
+  exist. That is intended — it is what makes serialization predictable.
 
 ---
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **L'instance porte son schéma et son graphe** | Duplique la définition dans chaque objet, gonfle les instantanés et permet à deux instances du même type de diverger. |
-| **Un `.px` génère le type de Component** | Le type deviendrait la conséquence d'un fichier de comportement ; contredit ADR-0015 et prive le composant de schéma. |
-| **Générer une classe par `eval`/`new Function`** | Aucun besoin — une classe se construit sans évaluer de source — et contredit la règle de sécurité d'ADR-0009. |
-| **Une classe de base `Component` à étendre** | Contredit ADR-0004 (duck-typing, aucune classe de base) sans rien apporter ici. |
-| **Laisser l'Editor fabriquer ses classes lui-même** | Le serveur charge les mêmes définitions ; la fabrication appartient donc au Core, pas à l'IDE. |
+| **The instance carries its schema and its graph** | It duplicates the definition into every object, bloats snapshots and lets two instances of the same type diverge. |
+| **A `.px` generates the Component type** | The type would become the consequence of a behaviour file; it contradicts ADR-0015 and deprives the component of a schema. |
+| **Generating a class through `eval`/`new Function`** | Unnecessary — a class can be built without evaluating source — and it contradicts ADR-0009's safety rule. |
+| **A `Component` base class to extend** | It contradicts ADR-0004 (duck-typing, no base class) and brings nothing here. |
+| **Letting the Editor build its classes itself** | The server loads the same definitions; building them therefore belongs to the Core, not to the IDE. |

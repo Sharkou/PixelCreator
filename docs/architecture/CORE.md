@@ -1,285 +1,278 @@
 # Core
 
-> Le Core est la seule couche partagée entre client, serveur et éditeur.
-> Il ne dépend de rien.
+> The Core is the only layer shared between client, server and editor.
+> It depends on nothing.
 
-## Règle absolue
+## Absolute rule
 
 ```
-core/  ──►  (rien)
+core/  ──►  (nothing)
 ```
 
-Pas de DOM, pas de `window`, pas de `document`, pas de Canvas, pas de WebSocket,
-pas d'import vers `runtime/`, `editor/` ou `network/`.
+No DOM, no `window`, no `document`, no Canvas, no WebSocket, no import into `runtime/`,
+`editor/` or `network/`.
 
-**OBSERVÉ :** Legacy viole cette règle en trois endroits.
+**OBSERVED:** Legacy breaks this rule in three places.
 
-| Violation | Fichier | Effet |
+| Violation | File | Effect |
 |---|---|---|
-| `import { Dnd } from '/editor/system/dnd.js'` | `src/core/renderer.js:6` | le Core importe l'IDE |
-| `document.createElement('canvas' / 'img')` | `src/core/object.js` (`createImage`) | le Core manipule le DOM |
-| `el.textContent` | `src/core/scene.js` (`updateName`) | le Core lit le DOM |
+| `import { Dnd } from '/editor/system/dnd.js'` | `src/core/renderer.js:6` | the Core imports the IDE |
+| `document.createElement('canvas' / 'img')` | `src/core/object.js` (`createImage`) | the Core touches the DOM |
+| `el.textContent` | `src/core/scene.js` (`updateName`) | the Core reads the DOM |
 
-Le serveur ne charge ces chemins que par chance : il n'appelle jamais `createImage()`
-ni le renderer. La v2 rend la règle vérifiable par un test (voir `../development/TESTING.md`).
+The server only survives these paths by luck: it never calls `createImage()` nor the
+renderer. v2 makes the rule checkable by a test (see `../development/TESTING.md`).
 
 ---
 
-## Contenu
+## Contents
 
 ```
 core/
-├── object.js         Object : identité, hiérarchie, composants
-├── scene.js          Scene : collection d'Object
-├── component.js      contrat + registre de composants
-├── definition.js     définition d'un type de Component : propriétés + graphe (ADR-0016)
-├── graph/            le modèle de graphe `.px` : nœuds, ports, connexions (ADR-0027)
-│   ├── graph.js      Graph : le modèle, et les Operations qui le mutent
-│   ├── nodes.js      NodeRegistry, ports, compatibilité des types
-│   ├── standard.js   la bibliothèque de nœuds livrée
-│   ├── definition.js ComponentDefinition : le modèle vivant d'un `.px`
-│   ├── validate.js   « ce graphe est-il exécutable, et sinon où »
-│   └── errors.js     GraphIssue / GraphError, structurés
+├── object.js         Object: identity, hierarchy, components
+├── scene.js          Scene: a collection of Objects
+├── component.js      the contract + the component registry
+├── definition.js     the definition of a Component type: properties + graph (ADR-0016)
+├── graph/            the `.px` graph model: nodes, ports, connections (ADR-0027)
+│   ├── graph.js      Graph: the model, and the Operations that mutate it
+│   ├── nodes.js      NodeRegistry, ports, type compatibility
+│   ├── standard.js   the node library that ships with the engine
+│   ├── definition.js ComponentDefinition: the live model of a `.px`
+│   ├── validate.js   "is this graph runnable, and if not, where"
+│   └── errors.js     GraphIssue / GraphError, structured
 ├── properties/       Property System (Proxy, Change, observe)
-├── operations/       Operation, application, historique
-├── resources/        Resource, registre, chargement
-├── events.js         bus d'événements synchrone
-├── serialize.js      sérialisation explicite et versionnée
-├── id.js             génération d'identifiants
-└── logger.js         journalisation par catégories
+├── operations/       Operation, application, history
+├── resources/        Resource, registry, loading
+├── events.js         a synchronous event bus
+├── serialize.js      explicit, versioned serialization
+├── id.js             identifier generation
+└── logger.js         logging by category
 ```
 
-`operations/` est dans le Core, pas dans `network/` : une Operation existe même hors
-ligne (historique, undo/redo). Le réseau en est un **transport**, pas le propriétaire.
+`operations/` is in the Core, not in `network/`: an Operation exists offline too (history,
+undo/redo). The network is a **transport** for it, not its owner.
 
-`graph/` est dans le Core pour la même raison que `definition.js` : l'Editor le dessine, le
-Runtime l'interprète, un serveur headless le charge et le valide — trois consommateurs, donc
-la fondation partagée (ADR-0027). Un type de nœud y déclare **sa forme et son évaluation**,
-qui est pure : elle lit ses entrées et écrit à travers le Component, sans DOM, sans horloge
-et sans source aléatoire. Ce qui appartient au Runtime est l'ordre d'exécution, l'état par
-instance, le budget et le rapport d'erreur — pas ce qu'un nœud *est*.
+`graph/` is in the Core for the same reason as `definition.js`: the Editor draws it, the
+Runtime interprets it, a headless server loads and validates it — three consumers, therefore
+the shared foundation (ADR-0027). A node type declares **its shape and its evaluation** there,
+and that evaluation is pure: it reads its inputs and writes through the Component, with no
+DOM, no clock and no source of randomness. What belongs to the Runtime is the execution order,
+the per-instance state, the budget and the error reporting — not what a node *is*.
 
 ---
 
-## Démantèlement de `System`
+## Dismantling `System`
 
-**OBSERVÉ :** `src/core/system.js` est un fourre-tout de 257 lignes réunissant des
-responsabilités sans rapport :
+**OBSERVED:** `src/core/system.js` is a 257-line catch-all bundling unrelated
+responsibilities:
 
-| Contenu actuel | Destination v2 |
+| Current contents | v2 destination |
 |---|---|
 | `createID()` | `core/id.js` |
-| `random(a, b)` | `math/` (doublon de `Random`) |
+| `random(a, b)` | `math/` (a duplicate of `Random`) |
 | `sync(object, component)` | `core/properties/` (ADR-0003) |
 | `createFile(...)` | `core/resources/` |
-| `validate(e, event)` — valide un `<input>` DOM | `editor/ui/` |
+| `validate(e, event)` — validates a DOM `<input>` | `editor/ui/` |
 | `dispatchEvent` / `addEventListener` / `removeEventListener` | `core/events.js` |
-| `setIntervalX`, `include(url)` | supprimés (inutilisés ou obsolètes) |
-| `stringify` / `parse` — sérialisent des **fonctions** | supprimés (voir ci-dessous) |
-| `getDate()` | `core/logger.js` (aujourd'hui jamais appelé) |
+| `setIntervalX`, `include(url)` | removed (unused or obsolete) |
+| `stringify` / `parse` — serialize **functions** | removed (see below) |
+| `getDate()` | `core/logger.js` (never called today) |
 | `log` / `debug` / `warn` | `core/logger.js` |
-| `document.addEventListener('contextmenu', ...)` en effet de bord au chargement | `editor/` |
+| `document.addEventListener('contextmenu', ...)` as a load-time side effect | `editor/` |
 
-Le nom « System » disparaît (ADR-0005) : ce n'est pas un système.
+The name "System" disappears (ADR-0005): it is not a system.
 
-### Note de sécurité
+### Security note
 
-`System.stringify()` sérialise les fonctions en texte, et `System.parse()` était conçu
-pour les réévaluer. La désérialisation a été désactivée (avertissement en console), mais
-**la sérialisation reste**. En v2, aucune fonction ne transite dans l'état : un
-comportement est référencé par le nom de son composant ou par l'id de sa ressource.
+`System.stringify()` serializes functions as text, and `System.parse()` was designed to
+re-evaluate them. Deserialization has been disabled (a console warning), but **the
+serialization remains**. In v2, no function travels in the state: a behaviour is referenced by
+its component name or by its resource id.
 
 ---
 
 ## Object
 
-Voir `OBJECT.md`.
+See `OBJECT.md`.
 
 ## Scene
 
 ```js
 class Scene {
     id, name
-    objects        // plat, indexé par id
+    objects        // flat, indexed by id
     add(obj) / remove(obj) / instantiate(obj)
     getObjectById / getObjectsByName / getObjectsByTag
 }
 ```
 
-Ce qui sort de `Scene` :
+What leaves `Scene`:
 
-- **`current` et `currentComponent`** — état de sélection de l'IDE. Migrent vers
-  `editor/selection.js`. Lus aujourd'hui par Inspector, Hierarchy, Handler, Manager et
-  Network : déplacement transverse à faire d'un bloc.
-- **`updateName(el)`** — lit le DOM. Devient une écriture de propriété normale côté
-  Editor.
+- **`current` and `currentComponent`** — IDE selection state. They move to
+  `editor/selection.js`. Read today by Inspector, Hierarchy, Handler, Manager and Network: a
+  cross-cutting move to do in one go.
+- **`updateName(el)`** — reads the DOM. Becomes a normal property write on the Editor side.
 
-Ce qui reste : la platitude de `objects` (la hiérarchie n'est qu'un lien `parent`/
-`children`), les événements `add`/`remove`/`instantiate`, et `refresh()`.
+What stays: the flatness of `objects` (the hierarchy is only a `parent`/`children` link), the
+`add`/`remove`/`instantiate` events, and `refresh()`.
 
-**PROPOSITION V2 :** introduire `Project`, absent de Legacy — un projet contient des
-scènes, des ressources et une identité (ADR-0010).
+**V2 PROPOSAL:** introduce `Project`, absent from Legacy — a project holds scenes, resources
+and an identity (ADR-0010).
 
 ---
 
 ## Property System
 
-Voir ADR-0003. Résumé du contrat :
+See ADR-0003. The contract in summary:
 
 ```js
-object.x = 100;                  // mutation directe — vues notifiées, aucune Operation
-object.setProperty('x', 100);    // mutation contrôlée — vues + Operation + autorité
+object.x = 100;                  // direct mutation — views notified, no Operation
+object.setProperty('x', 100);    // controlled mutation — views + Operation + authority
 ```
 
-`object.$x` **n'existe pas en v2**.
+`object.$x` **does not exist in v2**.
 
 ```js
 { object, component, prop, value, previous, origin }
 ```
 
 `origin` ∈ `runtime` | `local` | `editor` | `player` | `network`.
-La couche réseau ignore `origin === 'network'` : c'est ce qui empêche l'écho, sans
-recourir au drapeau `dispatch = false` de Legacy.
+The network layer ignores `origin === 'network'`: that is what prevents echoes, without
+resorting to Legacy's `dispatch = false` flag.
 
-> **⚠ `setProperty()` porte le même nom dans Legacy, avec un autre sens.** Il y écrit
-> `_x` directement et **ne réplique pas** ; ce sont `$x` et `syncProperty()` qui
-> répliquent. En v2, `setProperty()` reprend ce rôle et les deux formes Legacy
-> disparaissent. Appliquer un changement entrant se fait par une Operation
-> `origin: 'network'`.
+> **⚠ `setProperty()` carries the same name in Legacy, with another meaning.** There it writes
+> `_x` directly and **does not replicate**; `$x` and `syncProperty()` are what replicate. In
+> v2, `setProperty()` takes over that role and both Legacy forms disappear. Applying an
+> incoming change is done through an Operation with `origin: 'network'`.
 
-> **Les couches internes ne sont pas une API.** `_x` et `__x` restent des possibilités
-> d'implémentation ; aucune API publique v2 n'en dépend, et ni les utilisateurs ni les
-> composants ne les manipulent.
+> **The internal layers are not an API.** `_x` and `__x` remain implementation possibilities;
+> no public v2 API depends on them, and neither users nor components touch them.
 
 ---
 
 ## Events
 
-Le bus synchrone de Legacy est conservé — l'ordre est déterministe et le débogage
-prévisible. Deux corrections :
+Legacy's synchronous bus is kept — the ordering is deterministic and debugging predictable.
+Two fixes:
 
-- `removeEventListener` existe déjà mais **n'est appelé nulle part** : les écouteurs
-  s'accumulent (chaque `new Properties()`, chaque import de script en ajoute).
-  En v2, tout abonnement retourne une fonction de désabonnement.
-- Une erreur dans un écouteur interrompt aujourd'hui la boucle `for` et prive les
-  écouteurs suivants de l'événement. En v2, les erreurs sont isolées par écouteur.
+- `removeEventListener` already exists but is **called nowhere**: listeners accumulate (every
+  `new Properties()`, every script import adds one). In v2, every subscription returns an
+  unsubscribe function.
+- An error in one listener today interrupts the `for` loop and starves the following listeners
+  of the event. In v2, errors are isolated per listener.
 
-### Les événements de structure de la Scene — IMPLÉMENTÉ
+### The Scene's structural events — IMPLEMENTED
 
-Une écriture de propriété s'observe sur l'objet qui la porte (`object.observe`). Un
-changement de **forme** n'est pas une propriété : il n'a pas de nom de champ auquel
-s'abonner. La `Scene` l'annonce donc, et c'est la liste complète :
+A property write is observed on the object that carries it (`object.observe`). A change of
+**shape** is not a property: there is no field name to subscribe to. The `Scene` therefore
+announces it, and this is the complete list:
 
-| Événement | Charge utile |
+| Event | Payload |
 |---|---|
-| `added` / `removed` | l'objet |
+| `added` / `removed` | the object |
 | `component:added` / `component:removed` | `{ object, component, type, index }` |
 | `component:moved` | `{ object, type, index, previousIndex }` |
 | `child:added` / `child:removed` | `{ parent, child, index }` |
 | `roots:reordered` | `{ object, index, previousIndex }` |
 
 ```js
-scene.on('component:added', ({ object, type }) => …);   // renvoie un désabonnement
+scene.on('component:added', ({ object, type }) => …);   // returns an unsubscribe
 ```
 
-Les deux derniers sont arrivés avec l'ordre structurel (ADR-0018) : un rang qui change
-n'ajoute ni ne retire rien, donc aucun des événements existants ne le disait.
+The last two arrived with structural order (ADR-0018): a rank that changes adds and removes
+nothing, so none of the existing events said it.
 
-Mécanique : en rejoignant une scène, un objet reçoit d'elle la fonction par laquelle
-émettre (`attachToScene(object, scene, notify)`). L'objet n'importe donc pas `Scene`, et
-personne d'autre que la `Scene` ne détient ce point d'entrée. Un objet détaché n'annonce
-rien — il n'y a personne pour l'écouter.
+Mechanics: on joining a scene, an object receives from it the function through which to emit
+(`attachToScene(object, scene, notify)`). The object therefore does not import `Scene`, and
+nobody but the `Scene` holds that entry point. A detached object announces nothing — there is
+nobody to listen.
 
-**Ce n'est pas un bus de mutations.** La liste est fermée et ne couvre que ce qu'une
-propriété ne peut pas exprimer. Elle existe pour que l'Editor n'ait pas à pousser ses
-vues depuis le code qui écrit — l'inversion exigée par `EDITOR.md`.
+**This is not a mutation bus.** The list is closed and only covers what a property cannot
+express. It exists so that the Editor does not have to push its views from the code that
+writes — the inversion `EDITOR.md` requires.
 
-#### Un événement n'annonce jamais un arbre à moitié déplacé — CORRIGÉ 2026-08-17
+#### An event never announces a half-moved tree — FIXED 2026-08-17
 
-`Scene.reparent()` délie puis relie. Les notifications de la première moitié étaient
-émises **pendant** le remaniement : un écouteur qui reconstruit sur `child:removed` —
-c'est exactement ce que fait la Hierarchy — lisait une scène où l'objet n'appartenait
-plus à rien, ni à un parent ni aux racines, et dessinait un arbre sans lui. Aucun
-événement ne venait ensuite corriger l'affichage.
+`Scene.reparent()` unlinks and then relinks. The notifications from the first half were emitted
+**during** the rearrangement: a listener that rebuilds on `child:removed` — which is exactly
+what the Hierarchy does — read a scene where the object belonged to nothing, neither to a
+parent nor to the roots, and drew a tree without it. No later event came to correct the
+display.
 
-Les notifications d'un remaniement sont donc **retenues et émises une fois**, quand la
-forme qu'elles décrivent est celle que la scène a vraiment. C'est ce qui faisait
-disparaître un objet de la Hierarchy quand on annulait un dépôt (`Ctrl Z`), sans que le
-modèle soit faux pour autant. Deux tests le fixent : `scene.test.js`, « a structural
-event never announces a tree that is half moved » et son pendant côté Editor dans
-`reparent.test.js`.
+The notifications of a rearrangement are therefore **held and emitted once**, when the shape
+they describe is the one the scene really has. That is what used to make an object vanish from
+the Hierarchy when a drop was undone (`Ctrl Z`), without the model being wrong at all. Two
+tests pin it down: `scene.test.js`, "a structural event never announces a tree that is half
+moved" and its Editor-side counterpart in `reparent.test.js`.
 
 ---
 
-### `Object.visible` a été supprimé — 2026-08-18
+### `Object.visible` has been removed — 2026-08-18
 
-Un `Object` portait `active` **et** `visible` : le Runtime sautait un objet inactif, le
-SceneRenderer sautait en plus un objet invisible. Aucun contrôle de l'Editor n'exposait la
-différence, et les deux qui existaient — l'œil de la Hierarchy et la case de l'Inspector —
-écrivaient chacun un champ différent, donc se contredisaient à l'écran.
+An `Object` carried `active` **and** `visible`: the Runtime skipped an inactive object, and the
+SceneRenderer additionally skipped an invisible one. No Editor control exposed the difference,
+and the two that existed — the Hierarchy's eye and the Inspector's checkbox — each wrote a
+different field, so they contradicted each other on screen.
 
-`active` est désormais le seul état de vie d'un objet, et `serializeObject()` ne l'écrit
-plus qu'une fois (ADR-0026 §2). « Simulé mais non dessiné », s'il redevient un besoin,
-appartiendra à un Component de rendu — là où la question se pose.
+`active` is now an object's only liveness state, and `serializeObject()` writes it only once
+(ADR-0026 §2). "Simulated but not drawn", if it becomes a need again, will belong to a
+rendering Component — where the question actually arises.
 
 ---
 
 ## Serialization
 
-`serialize()` explicite, versionné :
+An explicit, versioned `serialize()`:
 
-- pas de doublons `_prop` / `$prop` — ils n'existent plus ;
-- **enfants référencés par id**, jamais imbriqués (Legacy sérialise chaque enfant deux
-  fois : dans `parent.childs` et dans `scene.objects`) ;
-- images référencées par id de ressource, jamais en base64 dans l'état de scène ;
-- les propriétés dérivées ou d'affichage (`image`, vignettes) sont exclues par nature,
-  et non par une liste noire.
+- no `_prop` / `$prop` duplicates — they no longer exist;
+- **children referenced by id**, never nested (Legacy serializes each child twice: in
+  `parent.childs` and in `scene.objects`);
+- images referenced by resource id, never as base64 in the scene state;
+- derived or display properties (`image`, thumbnails) are excluded by nature, not by a
+  blacklist.
 
-**VALIDÉ :** le format est versionné **pour l'avenir**, pas pour le passé. Il n'existe
-aucun projet v1 à relire : `deserialize()` n'a **aucun chemin de compatibilité Legacy**
-à implémenter. Ne pas concevoir de migration de données.
+**SETTLED:** the format is versioned **for the future**, not for the past. There is no v1
+project to read back: `deserialize()` has **no Legacy compatibility path** to implement. Do not
+design a data migration.
 
-Gain mesuré attendu sur le heartbeat : facteur 3 sur la duplication `_prop`, plus la
-suppression de la duplication des enfants.
+Expected measured gain on the heartbeat: a factor of 3 on the `_prop` duplication, plus the
+removal of the child duplication.
 
-### `active` fait partie du contrat, pas du schéma — IMPLÉMENTÉ
+### `active` is part of the contract, not of the schema — IMPLEMENTED
 
-Un Component déclarant un `static schema` ne sérialise que ses clés de schéma. Or `active`
-n'est dans aucun schéma : c'est une propriété du **contrat** de Component, lue par le
-Runtime et le SceneRenderer, écrite par l'utilisateur ou l'Editor (ADR-0004, ADR-0012 §2).
+A Component that declares a `static schema` serializes only its schema keys. But `active` is in
+no schema: it is a property of the Component **contract**, read by the Runtime and the
+SceneRenderer, written by the user or the Editor (ADR-0004, ADR-0012 §2).
 
-Constaté en 2026-08-13 : désactiver un Component depuis l'Editor produisait bien une
-Operation répliquable, **puis disparaissait à la sauvegarde suivante**. `serializeComponent()`
-écrit donc `active` quand le composant le porte. Absent reste absent — un composant qui n'a
-jamais eu d'`active` n'en gagne pas un, parce que « absent » veut déjà dire « actif ».
+Observed on 2026-08-13: disabling a Component from the Editor did produce a replicable
+Operation, **and then vanished at the next save**. `serializeComponent()` therefore writes
+`active` when the component carries it. Absent stays absent — a component that never had an
+`active` does not gain one, because "absent" already means "active".
 
 ---
 
 ## Resources
 
-**Elles ne sont pas dans le Core, et c'est la décision.** `Resource`, `ResourceStore` et
-`Project` vivent dans `src/project/` (ADR-0020) : le Core ne touche jamais au stockage.
-Voir `../ARCHITECTURE.md` §9 et `../decisions/ADR-0025-folders-and-resource-inspection.md`.
+**They are not in the Core, and that is the decision.** `Resource`, `ResourceStore` and
+`Project` live in `src/project/` (ADR-0020): the Core never touches storage. See
+`../ARCHITECTURE.md` §9 and `../decisions/ADR-0025-folders-and-resource-inspection.md`.
 
-Ce que le Core fournit et que la couche Project réutilise, sans rien de spécifique aux
-ressources :
+What the Core provides and the Project layer reuses, with nothing resource-specific about it:
 
-- `createId()` — une seule notion d'identité dans tout le produit (ADR-0010).
-- `makeReactive()` — une entrée de manifeste s'observe comme un `Object`, ce qui fait que
-  renommer une ressource retitre une ligne et un panneau sans que personne les pousse.
-- `Operations`, `invert()` — le pipeline du Project est **la même classe**, instanciée une
-  seconde fois avec un `resolve` différent. Un dossier créé, déplacé ou supprimé est donc
-  répliqué et annulé par la machinerie du Core, sans un type d'opération de plus
-  (ADR-0025 §3).
+- `createId()` — one single notion of identity across the whole product (ADR-0010).
+- `makeReactive()` — a manifest entry is observed like an `Object`, which is why renaming a
+  resource retitles a row and a panel without anyone pushing them.
+- `Operations`, `invert()` — the Project's pipeline is **the same class**, instantiated a
+  second time with a different `resolve`. A folder created, moved or deleted is therefore
+  replicated and undone by the Core's machinery, without one more operation type (ADR-0025 §3).
 
 ---
 
-## Ce que le Core ne contient pas
+## What the Core does not contain
 
-- Le rendu (`runtime/rendering/`)
-- Les entrées (`runtime/input/`)
-- Le réseau (`network/`)
-- Toute notion de sélection, de fenêtre, de curseur, de vignette (`editor/`)
-- `Camera` — qui est aujourd'hui à la fois un composant et un `Object` porteur
-  (`Camera.main` contient un `Object`, pas un `Camera`). Ambiguïté à lever dans
-  `RUNTIME.md`.
+- Rendering (`runtime/rendering/`)
+- Input (`runtime/input/`)
+- The network (`network/`)
+- Any notion of selection, window, cursor or thumbnail (`editor/`)
+- `Camera` — which is today both a component and an `Object` that carries one (`Camera.main`
+  holds an `Object`, not a `Camera`). An ambiguity to resolve in `RUNTIME.md`.

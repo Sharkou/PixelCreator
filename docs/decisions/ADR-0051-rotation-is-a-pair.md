@@ -1,125 +1,119 @@
-# ADR-0051 — Rotation est une paire
+# ADR-0051 — Rotation is a pair
 
-- **Statut :** **accepté** (2026-08-31)
-- **Décide :** comment le Transform expose la rotation ; comment un type renomme une propriété sans casser les données déjà écrites
-- **Dépend de :** ADR-0002 (Transform local), ADR-0003 (Property System), ADR-0007 (schéma), ADR-0023 §2 (pas de type vecteur), ADR-0021 (une donnée illisible ne fait pas perdre la scène)
-- **Remplace :** ADR-0050 — `rotationX`/`rotationY` en degrés, indépendants, disparaissent au profit d'une paire
-- **Ne décide pas :** l'unité de présentation ailleurs que dans l'Inspector ; une quelconque profondeur ou caméra 3D
+- **Status:** **accepted** (2026-08-31)
+- **Decides:** how the Transform exposes rotation; how a type renames a property without breaking data already written
+- **Depends on:** ADR-0002 (a local Transform), ADR-0003 (Property System), ADR-0007 (schema), ADR-0023 §2 (no vector type), ADR-0021 (unreadable data must not lose the scene)
+- **Supersedes:** ADR-0050 — `rotationX`/`rotationY` in degrees, independent, disappear in favour of a pair
+- **Does not decide:** the presentation unit anywhere other than in the Inspector; any notion of depth or a 3D camera
 
 ---
 
-## 1. Une propriété, deux composantes
+## 1. One property, two components
 
-Le panneau lisait `Position X Y`, puis `Rotation` seule, puis `Scale X Y` : deux paires
-autour d'un scalaire, trois formes pour une même idée.
+The panel read `Position X Y`, then `Rotation` alone, then `Scale X Y`: two pairs around a scalar,
+three shapes for one idea.
 
-> **`Rotation` devient `rotationX` / `rotationY`, appariées comme `Position` et `Scale`.**
+> **`Rotation` becomes `rotationX` / `rotationY`, paired like `Position` and `Scale`.**
 
 | | |
 |---|---|
-| `Rotation.X` | la rotation **dans le plan** de l'écran, comme une aiguille d'horloge. C'est exactement l'ancienne `rotation`, au nom près. |
-| `Rotation.Y` | la rotation **autour de l'axe vertical**, hors du plan. |
+| `Rotation.X` | rotation **in the plane** of the screen, like a clock hand. It is exactly the old `rotation`, bar the name. |
+| `Rotation.Y` | rotation **about the vertical axis**, out of the plane. |
 
-**Aucun type vecteur n'est introduit.** ADR-0023 §2 les a retirés du Property System
-délibérément, et il n'en faut pas : l'Inspector apparie déjà `x`/`y` et `scaleX`/`scaleY` par
-déclaration (`PAIRS`, `inspector/schema.js`). Rotation rejoint cette table. Le Graph, le DnD,
-l'undo et le live sync n'apprennent rien : ce sont deux propriétés déclarées comme les autres.
+**No vector type is introduced.** ADR-0023 §2 removed them from the Property System deliberately, and
+none is needed: the Inspector already pairs `x`/`y` and `scaleX`/`scaleY` by declaration (`PAIRS`,
+`inspector/schema.js`). Rotation joins that table. The Graph, DnD, undo and the live sync learn
+nothing: these are two declared properties like the others.
 
-### 1.1 `Rotation.Y` n'est pas une approximation
+### 1.1 `Rotation.Y` is not an approximation
 
-Le renderer projette déjà orthographiquement. Tourner de φ autour de l'axe vertical envoie
-`(x, y, 0)` sur `(x·cos φ, y, −x·sin φ)` ; laisser tomber `z` laisse `(x·cos φ, y)`.
+The renderer already projects orthographically. Turning by φ about the vertical axis sends `(x, y, 0)`
+to `(x·cos φ, y, −x·sin φ)`; dropping `z` leaves `(x·cos φ, y)`.
 
-> **Une mise à l'échelle horizontale par `cos φ` EST cette rotation, exactement.**
+> **A horizontal scaling by `cos φ` IS that rotation, exactly.**
 
-| Rotation Y | Effet |
+| Rotation Y | Effect |
 |---|---|
-| 0° | au repos |
-| 45° | sprite saisi en plein retournement (×0,707) |
-| 90° | sa tranche — invisible sous cette projection |
-| 180° | son dos, donc un miroir horizontal |
-| 360° | retour au départ |
+| 0° | at rest |
+| 45° | a sprite caught mid-flip (×0.707) |
+| 90° | its edge — invisible under this projection |
+| 180° | its back, and therefore a horizontal mirror |
+| 360° | back to the start |
 
-Que 180° lise comme un miroir est une **conséquence du cosinus**, pas un cas écrit. Rien ici
-n'est un flip sous un nom plus long, et les valeurs intermédiaires sont l'intérêt du modèle.
+That 180° reads as a mirror is a **consequence of the cosine**, not a written case. Nothing here is a
+flip under a longer name, and the intermediate values are the point of the model.
 
-L'axe autour duquel on tourne garde sa longueur : `rotationY` ne touche jamais l'axe vertical.
+The axis you turn about keeps its length: `rotationY` never touches the vertical axis.
 
-### 1.2 Une seule unité
+### 1.2 One unit
 
-Les deux moitiés sont en **radians**, comme l'ancienne `rotation` — migrer celle-ci
-réécrirait toutes les scènes. Une propriété, une unité : l'Inspector convertit les deux en
-degrés par la même entrée `DISPLAY_UNITS`, donc un créateur tape `45` dans l'une comme dans
-l'autre. Rien de mixte sur une même ligne.
+Both halves are in **radians**, like the old `rotation` — migrating that one would rewrite every
+scene. One property, one unit: the Inspector converts both to degrees through the same
+`DISPLAY_UNITS` entry, so a creator types `45` into either. Nothing mixed on one row.
 
-### 1.3 Ce que la matrice rapporte
+### 1.3 What the matrix reports
 
-`Matrix.decompose()` répond `rotation` — un angle, et il n'y en a qu'un dans une affine. Ce
-que le reparentage recopie est donc `rotationX`. **`rotationY` n'est pas décomposée** : elle
-a quitté la matrice sous forme d'échelle horizontale, et `scaleX` la ramène. Écrire une
-sixième valeur là serait inventer un nombre que la géométrie n'a jamais rapporté.
+`Matrix.decompose()` answers `rotation` — one angle, and there is only one in an affine. What
+reparenting copies across is therefore `rotationX`. **`rotationY` is not decomposed**: it left the
+matrix as a horizontal scale, and `scaleX` brings it back. Writing a sixth value there would be
+inventing a number the geometry never reported.
 
-### 1.4 L'ordre positionnel du constructeur n'est pas celui du schéma
+### 1.4 The constructor's positional order is not the schema's
 
-`rotationY` est déclarée **à côté** de `rotationX` — l'Inspector lit le schéma pour dessiner
-ses lignes — et arrive **en dernier** dans le constructeur, parce que la signature
-positionnelle est une surface de compatibilité : tout
-`new Transform(x, y, rotation, scaleX, scaleY)` écrit avant continue de vouloir dire ce qu'il
-voulait dire.
+`rotationY` is declared **beside** `rotationX` — the Inspector reads the schema to draw its rows — and
+arrives **last** in the constructor, because the positional signature is a compatibility surface:
+every `new Transform(x, y, rotation, scaleX, scaleY)` written before keeps meaning what it meant.
 
 ---
 
-## 2. Ce que cela coûte
+## 2. What it costs
 
 | | |
 |---|---|
-| Schéma | un scalaire devient deux `number`, dans l'ordre Position / Rotation / Scale |
-| `localMatrix()` | un `cos` de plus, dans le terme d'échelle que la composition portait déjà |
-| Renderer, picking, caméra | **rien** — tout passe par `worldMatrix()` |
-| Inspector | **une seule ligne `Rotation` avec X et Y**, largeur courte, poignées comme Position |
-| Graph, DnD, undo, live sync | gratuits : deux propriétés du Property System |
+| Schema | a scalar becomes two `number`s, in the order Position / Rotation / Scale |
+| `localMatrix()` | one more `cos`, in the scale term the composition already carried |
+| Renderer, picking, camera | **nothing** — everything goes through `worldMatrix()` |
+| Inspector | **one `Rotation` row with X and Y**, short width, handles like Position |
+| Graph, DnD, undo, live sync | free: two Property System properties |
 
 ---
 
-## 3. Un type peut renommer une propriété
+## 3. A type may rename a property
 
-`reconcileValues()` **jette ce que le schéma ne déclare pas** — c'est ce qui permet à une
-définition de changer sans écrire de migration, et c'est aussi ce qui aurait silencieusement
-détruit ce renommage : une scène enregistrée hier porte `rotation`, et elle se serait
-rouverte avec tous les objets non tournés.
+`reconcileValues()` **drops what the schema does not declare** — that is what lets a definition change
+with no migration written, and it is also what would have silently destroyed this rename: a scene
+saved yesterday carries `rotation`, and it would have reopened with every object unrotated.
 
-> **`static migrate(values)` est le seul endroit où un type dit « ceci s'appelait
-> autrement ». Il tourne avant le filtre, pas autour.**
+> **`static migrate(values)` is the only place where a type says "this used to be called something
+> else". It runs before the filter, not around it.**
 
-Déclaré, pas cousu à la main : n'importe quel Component peut en avoir un, et aucun appelant
-du sérialiseur n'apprend le nom de `Transform`. Une migration qui lève est rattrapée — perdre
-les valeurs d'un composant est fâcheux, perdre le fichier entier parce qu'un renommage a été
-mal écrit est l'échec qu'ADR-0021 existe pour empêcher.
+Declared, not hand-stitched: any Component may have one, and no caller of the serializer learns
+`Transform`'s name. A migration that throws is caught — losing a component's values is annoying,
+losing the whole file because a rename was badly written is the failure ADR-0021 exists to prevent.
 
-La migration est ici une pure lecture : `rotation` → `rotationX`, `rotationY` à sa valeur par
-défaut. Une valeur déjà écrite contre le nouveau schéma l'emporte.
+The migration here is a pure read: `rotation` → `rotationX`, `rotationY` at its default. A value
+already written against the new schema wins.
 
 ---
 
-## 4. Le piège, nommé
+## 4. The trap, named
 
-**Un objet disparaît à `Rotation.Y = 90°` et 270°**, parce que `cos` y vaut zéro. C'est
-géométriquement juste — c'est ce que fait une feuille tournée jusqu'à sa tranche — et aucun
-garde-fou n'est posé : en poser un mentirait sur la géométrie. De même, `cos` est paire, donc
-`+45°` et `−45°` sont visuellement identiques.
+**An object disappears at `Rotation.Y = 90°` and 270°**, because `cos` is zero there. That is
+geometrically right — it is what a sheet turned to its edge does — and no guard is added: adding one
+would lie about the geometry. Likewise, `cos` is even, so `+45°` and `−45°` are visually identical.
 
 ---
 
-## 5. Contrats observables
+## 5. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| `Rotation` est une paire X/Y, et l'Inspector la dessine sur une ligne | `schema.test.js`, et à l'écran |
-| Il n'existe plus de `rotation` scalaire, ni de `Rotation X`/`Y` indépendantes | `transform.test.js` |
-| `flipX` / `flipY` n'existent nulle part | idem |
-| Une valeur `rotation` ancienne devient `rotationX`, `rotationY` au repos | idem |
-| `Rotation.X` compose exactement comme l'ancienne rotation | idem |
-| `Rotation.Y` vaut `cos φ` à 0°, 45°, 90°, 180°, 360° | idem |
-| L'axe vertical est intact quel que soit `rotationY` | idem |
-| Les deux se sérialisent et se relisent | idem |
-| Le reparentage écrit cinq valeurs, pas six | `reparent.test.js` |
+| `Rotation` is an X/Y pair, and the Inspector draws it on one row | `schema.test.js`, and on screen |
+| There is no scalar `rotation` any more, nor independent `Rotation X`/`Y` | `transform.test.js` |
+| `flipX` / `flipY` exist nowhere | the same |
+| An old `rotation` value becomes `rotationX`, with `rotationY` at rest | the same |
+| `Rotation.X` composes exactly like the old rotation | the same |
+| `Rotation.Y` is `cos φ` at 0°, 45°, 90°, 180°, 360° | the same |
+| The vertical axis is untouched whatever `rotationY` is | the same |
+| Both serialize and read back | the same |
+| Reparenting writes five values, not six | `reparent.test.js` |

@@ -1,79 +1,78 @@
-# ADR-0003 — Property System : Proxy, deux API de mutation répliquée
+# ADR-0003 — Property System: a Proxy, and two replicated-mutation APIs
 
-- **Statut :** **accepté** (2026-08-12)
-- **Décide :** comment intercepter les écritures de propriétés en v2
-- **Remplace :** `System.sync()` (`legacy/src/core/system.js:31`)
-- **Lié à :** ADR-0008 (Operations), ADR-0011 (autorité)
+- **Status:** **accepted** (2026-08-12)
+- **Decides:** how property writes are intercepted in v2
+- **Supersedes:** `System.sync()` (`legacy/src/core/system.js:31`)
+- **Related to:** ADR-0008 (Operations), ADR-0011 (authority)
 
 ---
 
-## Contexte observé
+## Observed context
 
-`System.sync(object, component?)` parcourt les propriétés énumérables **au moment de
-l'appel** et remplace chacune par un couple d'accesseurs, plus un accesseur `$prop` en
-écriture seule. Il en résulte trois canaux d'écriture, tous intentionnels :
+`System.sync(object, component?)` walks the enumerable properties **at the moment it is
+called** and replaces each of them with a pair of accessors, plus a write-only `$prop`
+accessor. The result is three write channels, all intentional:
 
-| Écriture | `setProperty` | `syncProperty` | Usage |
+| Write | `setProperty` | `syncProperty` | Use |
 |---|---|---|---|
-| `obj.x = 100` | ✅ | ✗ | simulation, caméra locale |
-| `obj.$x = 100` | ✅ | ✅ | édition utilisateur (Inspector, viewport) |
-| `obj.setProperty('x', 100)` | ✅ | ✗ | réception réseau, sans écho |
+| `obj.x = 100` | ✅ | ✗ | simulation, local camera |
+| `obj.$x = 100` | ✅ | ✅ | user editing (Inspector, viewport) |
+| `obj.setProperty('x', 100)` | ✅ | ✗ | network receipt, with no echo |
 
-Cette distinction est **la raison pour laquelle la simulation n'inonde pas le réseau**
-tout en gardant l'Inspector synchronisé lettre par lettre. Elle doit survivre.
+That distinction is **why the simulation does not flood the network** while keeping the
+Inspector synchronized letter by letter. It has to survive.
 
-### Défauts mesurés
+### Measured defects
 
-1. Une propriété ajoutée après construction n'est **jamais** réactive — silencieusement.
-2. Les champs `#privés` sont invisibles (`for...in` ne les voit pas). Le commit `38906c2`
-   a ainsi retiré `scaleX`, `scaleY`, `scaleFromBox` de `Texture` du Property System
-   sans que personne ne le remarque.
-3. `_prop` et `$prop` sont énumérables : chaque propriété logique occupe 3 entrées.
-   Sérialisation mesurée **1733 o brut vs 560 o filtré — facteur 3,09**.
-4. `$prop` est en écriture seule : `obj.$x` retourne `undefined`.
-5. L'événement ne transporte pas la valeur précédente → undo/redo impossible.
-6. Le seul moyen de savoir *pourquoi* une valeur a changé est de savoir *quelle méthode*
-   a été appelée. Fragile et non transmissible.
+1. A property added after construction is **never** reactive — silently.
+2. `#private` fields are invisible (`for...in` does not see them). Commit `38906c2` thereby
+   removed `scaleX`, `scaleY` and `scaleFromBox` from `Texture`'s Property System without anyone
+   noticing.
+3. `_prop` and `$prop` are enumerable: every logical property occupies 3 entries. Serialization
+   measured at **1733 B raw vs 560 B filtered — a factor of 3.09**.
+4. `$prop` is write-only: `obj.$x` returns `undefined`.
+5. The event does not carry the previous value → undo/redo is impossible.
+6. The only way to know *why* a value changed is to know *which method* was called. Fragile and
+   not transmissible.
 
-### Mesure de performance
+### Performance measurement
 
-3 M opérations, Chrome :
+3 M operations, Chrome:
 
-| Implémentation | Lecture | Écriture |
+| Implementation | Read | Write |
 |---|---|---|
-| Propriété simple | 18,6 ms | 4,8 ms |
-| Accesseurs Legacy | 81,6 ms | **301,5 ms** |
-| `Proxy` | 82,0 ms | **76,9 ms** |
+| A plain property | 18.6 ms | 4.8 ms |
+| Legacy accessors | 81.6 ms | **301.5 ms** |
+| `Proxy` | 82.0 ms | **76.9 ms** |
 
-Le `Proxy` lit aussi vite que l'existant et **écrit 4× plus vite**. Le coût de
-l'écriture Legacy vient de `this['_' + prop] = value` (concaténation + création de
-propriété dynamique). Le surcoût de réactivité en lecture est déjà payé aujourd'hui.
+The `Proxy` reads as fast as what exists and **writes 4× faster**. The cost of a Legacy write
+comes from `this['_' + prop] = value` (concatenation + dynamic property creation). The
+reactivity overhead on reads is already being paid today.
 
 ---
 
-## Décision
+## Decision
 
-Un **`Proxy` par objet et par composant**, remplaçant `Object.defineProperty` par
-propriété. **Deux formes d'écriture, et une seule est publique pour la mutation
-contrôlée.**
+**One `Proxy` per object and per component**, replacing the per-property
+`Object.defineProperty`. **Two forms of writing, and only one is public for controlled
+mutation.**
 
-### Les deux formes d'écriture
+### The two forms of writing
 
 ```js
-object.x = 100;                   // mutation directe de l'état de l'objet
-object.setProperty('x', 100);     // mutation contrôlée, via le Property System
+object.x = 100;                   // direct mutation of the object's state
+object.setProperty('x', 100);     // controlled mutation, through the Property System
 ```
 
-**`object.$x` est supprimé.** Le sigil était trop implicite et trop spécifique à Pixel
-Creator pour constituer une API publique. Il n'existe ni en v2, ni comme syntaxe cible
-du harnais de parité.
+**`object.$x` is removed.** The sigil was too implicit and too specific to Pixel Creator to be a
+public API. It exists neither in v2 nor as target syntax for the parity harness.
 
-### Ce que fait chaque forme
+### What each form does
 
-| Forme | Effet |
+| Form | Effect |
 |---|---|
-| `object.x = 100` | met à jour l'état, émet un `Change` — les vues réagissent. **Aucune Operation.** |
-| `object.setProperty('x', 100)` | passe par le Property System, émet un `Change` **et produit une Operation** |
+| `object.x = 100` | updates the state, emits a `Change` — views react. **No Operation.** |
+| `object.setProperty('x', 100)` | goes through the Property System, emits a `Change` **and produces an Operation** |
 
 ```
 setProperty()
@@ -82,191 +81,186 @@ Property System
     ↓
 Operation
     ↓
-contexte / autorité / destination
+context / authority / destination
 ```
 
-**`setProperty()` n'est pas « la méthode réseau ».** C'est le chemin contrôlé du modèle.
-Ce que devient l'Operation ensuite dépend du contexte : elle peut être validée par
-l'autorité, répliquée, enregistrée dans l'historique, annulée/refaite, partagée en
-collaboration, ou transmise à un autre système. Le réseau n'est qu'une destination
-possible parmi d'autres.
+**`setProperty()` is not "the network method".** It is the model's controlled path. What the
+Operation becomes next depends on the context: it may be validated by the authority, replicated,
+recorded in the history, undone/redone, shared in collaboration, or handed to another system.
+The network is only one possible destination among others.
 
-Aucun code utilisateur n'écrit `network.updateProperty(...)`, et **aucun point d'appel
-ne porte de drapeau de synchronisation**. Le choix du chemin se fait une seule fois, à
-l'écriture, par le choix de la forme.
+No user code writes `network.updateProperty(...)`, and **no call site carries a synchronization
+flag**. The path is chosen once, at the write, by choosing the form.
 
-### L'origine reste explicite
+### The origin stays explicit
 
-Une Operation venue du réseau doit rester identifiable :
+An Operation coming from the network must stay identifiable:
 
 ```js
 { …, origin: 'network' }
 ```
 
-C'est ce qui empêche l'écho, sans recourir au drapeau `dispatch = false` de Legacy.
+That is what prevents echoes, without resorting to Legacy's `dispatch = false` flag.
 `origin` ∈ `runtime` | `local` | `editor` | `player` | `network`.
 
-### ⚠ `setProperty()` ne veut pas dire la même chose dans Legacy
+### ⚠ `setProperty()` does not mean the same thing in Legacy
 
-C'est le piège principal, et il concerne un nom identique de part et d'autre.
+This is the main trap, and it concerns an identical name on both sides.
 
 | | Legacy | v2 |
 |---|---|---|
-| `object.x = v` | écrit l'état, émet `setProperty` | écrit l'état, émet un `Change` — **proche** |
-| `object.setProperty('x', v)` | écrit `_x` directement, émet `setProperty` — **ne réplique pas** | **chemin contrôlé** — `Change` + Operation |
-| `object.$x = v` | écrit + émet `syncProperty` (répliqué) | **n'existe pas** |
-| `object.syncProperty('x', v)` | écrit + émet `syncProperty` (répliqué) | remplacé par `setProperty()` |
+| `object.x = v` | writes the state, emits `setProperty` | writes the state, emits a `Change` — **close** |
+| `object.setProperty('x', v)` | writes `_x` directly, emits `setProperty` — **does not replicate** | the **controlled path** — `Change` + Operation |
+| `object.$x = v` | writes + emits `syncProperty` (replicated) | **does not exist** |
+| `object.syncProperty('x', v)` | writes + emits `syncProperty` (replicated) | replaced by `setProperty()` |
 
-Le rôle historique de `$x` / `syncProperty()` est donc **repris par `setProperty()`**,
-tandis que le `setProperty()` de Legacy — un écrivain direct sans réplication —
-disparaît en tant que tel.
+The historical role of `$x` / `syncProperty()` is therefore **taken over by `setProperty()`**,
+while Legacy's `setProperty()` — a direct writer with no replication — disappears as such.
 
-Quiconque lit `legacy/` et raisonne par analogie se trompera. Rappelé dans
-`CONVENTIONS.md`, dans le JSDoc de `setProperty()`, et **encodé explicitement dans le
-mapping du harnais de parité**.
+Anyone reading `legacy/` and reasoning by analogy will be wrong. Repeated in `CONVENTIONS.md`,
+in `setProperty()`'s JSDoc, and **explicitly encoded in the parity harness's mapping**.
 
-### Le sens de `object.x = 100`
+### What `object.x = 100` means
 
-L'axe de distinction **n'est pas** « répliqué / non répliqué » : c'est
-**« sortie de simulation » contre « intention »**.
+The axis of distinction is **not** "replicated / not replicated": it is **"simulation output"
+versus "intent"**.
 
-| Forme | Nature | Qui fait autorité |
+| Form | Nature | Who is authoritative |
 |---|---|---|
-| `object.x = 100` | sortie de simulation — un composant intègre une vitesse, une caméra suit une cible | les deux côtés calculent ; le serveur tranche par la réplication d'état |
-| `object.setProperty('x', 100)` | **intention** — un humain (ou une IA) décide d'une valeur | l'autorité valide, puis propage |
+| `object.x = 100` | a simulation output — a component integrates a velocity, a camera follows a target | both sides compute; the server decides through state replication |
+| `object.setProperty('x', 100)` | an **intent** — a human (or an AI) decides on a value | the authority validates, then propagates |
 
-Ce cadrage vaut mieux que « non répliqué », pour trois raisons :
+That framing is better than "not replicated", for three reasons:
 
-1. Il explique pourquoi `self.x += vx` dans `Controller.update()` ne doit **pas**
-   produire d'Operation : ce n'est pas une décision, c'est un résultat.
-2. Il s'aligne sur l'autorité serveur (ADR-0011) : une intention client est *soumise*,
-   une sortie de simulation est *prédite*.
-3. Il donne une règle simple :
-   **un Component n'appelle jamais `setProperty()` ; l'Editor n'écrit jamais sans.**
+1. It explains why `self.x += vx` inside `Controller.update()` must **not** produce an
+   Operation: it is not a decision, it is a result.
+2. It aligns with server authority (ADR-0011): a client intent is *submitted*, a simulation
+   output is *predicted*.
+3. It gives a simple rule:
+   **a Component never calls `setProperty()`; the Editor never writes without it.**
 
-**Le mode d'échec est asymétrique.** Appeler `setProperty()` là où `=` suffisait coûte
-du trafic et une entrée d'historique. Écrire `=` là où `setProperty()` était requis
-produit une modification qui **ne se réplique pas et ne s'annule pas** —
-silencieusement. C'est ce second cas qu'il faut détecter.
+**The failure mode is asymmetric.** Calling `setProperty()` where `=` would have done costs
+traffic and one history entry. Writing `=` where `setProperty()` was required produces a change
+that **neither replicates nor undoes** — silently. It is that second case that has to be
+detected.
 
-**Garde (développement uniquement).** Le Property System connaît l'origine active
-(`editor`, `runtime`, `player`). Une écriture directe `=` survenant dans un contexte
-`editor` émet un avertissement nommant la propriété et son fichier. Pas de blocage,
-aucun coût en production — juste la fin d'une classe de bugs invisibles.
+**A guard (development only).** The Property System knows the active origin (`editor`,
+`runtime`, `player`). A direct `=` write occurring in an `editor` context emits a warning naming
+the property and its file. No blocking, no cost in production — just the end of a class of
+invisible bugs.
 
-### Les couches internes ne sont pas une API
+### The internal layers are not an API
 
-Legacy empile `object.x` → `object._x` → `object.__x`. Ces niveaux sont documentés
-(`../migration/LEGACY_ANALYSIS.md` §2.2) parce qu'ils expliquent le comportement
-observable, notamment la propagation hiérarchique.
+Legacy stacks `object.x` → `object._x` → `object.__x`. Those levels are documented
+(`../migration/LEGACY_ANALYSIS.md` §2.2) because they explain observable behaviour, in
+particular hierarchical propagation.
 
-**Ils ne deviennent pas une API v2.** `_x` et `__x` restent des possibilités
-d'implémentation interne ; ni les utilisateurs ni les composants n'ont à les manipuler,
-et **aucune API publique v2 ne dépend de ces conventions**. Le `Proxy` rend d'ailleurs
-le stockage parasite inutile (voir plus bas).
+**They do not become a v2 API.** `_x` and `__x` remain internal implementation possibilities;
+neither users nor components have any business touching them, and **no public v2 API depends on
+those conventions**. The `Proxy` makes the parasitic storage unnecessary anyway (see below).
 
-### Ce qui change à l'intérieur
+### What changes inside
 
-Le trap `set` émet un **Change** au lieu de deux événements distincts :
+The `set` trap emits a **Change** instead of two distinct events:
 
 ```js
 {
-  object,      // l'Object concerné
-  component,   // le Component, ou null
+  object,      // the Object concerned
+  component,   // the Component, or null
   prop,
-  value,       // nouvelle valeur
-  previous,    // ancienne valeur          ← nouveau
-  origin       // 'local' | 'editor' | 'runtime' | 'network'   ← nouveau
+  value,       // the new value
+  previous,    // the old value           ← new
+  origin       // 'local' | 'editor' | 'runtime' | 'network'   ← new
 }
 ```
 
-`origin` remplace l'inférence par méthode appelée :
+`origin` replaces inference from the method called:
 
-| Origine | Émetteur | Réseau réplique ? | Vues réagissent ? |
+| Origin | Emitter | Network replicates? | Views react? |
 |---|---|---|---|
-| `runtime` | `update()` d'un composant | non | oui |
-| `editor` | saisie Inspector, drag viewport (`$`) | oui | oui |
-| `network` | message entrant | **non** (pas d'écho) | oui |
-| `local` | script utilisateur | non | oui |
+| `runtime` | a component's `update()` | no | yes |
+| `editor` | Inspector typing, viewport drag (`$`) | yes | yes |
+| `network` | an incoming message | **no** (no echo) | yes |
+| `local` | a user script | no | yes |
 
-La règle « ne pas renvoyer au réseau ce qui en vient » devient une donnée explicite
-plutôt qu'un effet de bord de `setProperty(prop, value, dispatch=false)`.
+The rule "do not send back to the network what came from it" becomes explicit data rather than a
+side effect of `setProperty(prop, value, dispatch=false)`.
 
-### Ce que cela corrige mécaniquement
+### What this fixes mechanically
 
-| Défaut | Corrigé par |
+| Defect | Fixed by |
 |---|---|
-| Propriétés dynamiques muettes | le trap intercepte toute clé, connue ou non |
-| Champs `#` invisibles | ils sortent du modèle : état interne, non sérialisé, non inspecté — par conception et non par accident |
-| Sérialisation ×3 | il n'existe plus de `_prop` ni de `$prop` stockés |
-| Écriture lente | 77 ms au lieu de 301 ms |
-| Pas de `previous` | lu avant écriture dans le trap |
+| Silent dynamic properties | the trap intercepts every key, known or not |
+| Invisible `#` fields | they leave the model: internal state, not serialized, not inspected — by design rather than by accident |
+| ×3 serialization | there is no longer a stored `_prop` or `$prop` |
+| Slow writes | 77 ms instead of 301 ms |
+| No `previous` | read before writing, inside the trap |
 
 ---
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Le Property System devient testable en isolation (aucune dépendance DOM ni réseau).
-- Base directe pour les Operations (ADR-0008) : un `Change` avec `previous` **est** un
-  `SET_PROPERTY` réversible.
-- La sérialisation devient explicite et compacte.
-- Undo/redo devient possible sans réécriture.
+- The Property System becomes testable in isolation (no DOM or network dependency).
+- A direct basis for Operations (ADR-0008): a `Change` with `previous` **is** a reversible
+  `SET_PROPERTY`.
+- Serialization becomes explicit and compact.
+- Undo/redo becomes possible without a rewrite.
 
-### Négatives et limites
+### Negative, and limits
 
-- **Identité :** `proxy !== target`. Toute comparaison par référence (`obj === other`,
-  clés de `Map`/`Set`, `scene.objects[id] === obj`) doit manipuler **le proxy partout**,
-  jamais la cible. Règle : la cible ne sort jamais de `core/properties`.
-- **Lecture toujours 4× plus lente** qu'une propriété nue. Identique à aujourd'hui, mais
-  cela contraint le rendu : lire `transform` une fois par objet plutôt que `self.x`,
-  `self.y`, `self.width`… répétés.
-- **Les objets imbriqués** (`Vector`, `Color`, `animations`) ne sont pas interceptés en
-  profondeur par défaut. Legacy ne les gérait pas non plus (`// TODO: Gérer les objets`).
-  Décision : interception **peu profonde** au départ ; les types valeur (`Vector`,
-  `Color`) sont remplacés en entier, pas mutés en place.
-- `Proxy` n'existe pas en ES5 — sans objet ici, la cible est le navigateur moderne.
+- **Identity:** `proxy !== target`. Every comparison by reference (`obj === other`, `Map`/`Set`
+  keys, `scene.objects[id] === obj`) must handle **the proxy everywhere**, never the target.
+  Rule: the target never leaves `core/properties`.
+- **Reads are still 4× slower** than a bare property. Identical to today, but it constrains
+  rendering: read `transform` once per object rather than repeating `self.x`, `self.y`,
+  `self.width`…
+- **Nested objects** (`Vector`, `Color`, `animations`) are not intercepted deeply by default.
+  Legacy did not handle them either (`// TODO: Gérer les objets`). The decision: **shallow**
+  interception to begin with; value types (`Vector`, `Color`) are replaced whole, not mutated in
+  place.
+- `Proxy` does not exist in ES5 — moot here, the target is the modern browser.
 
 ---
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **Garder `defineProperty`, corriger les bugs** | Ne résout ni les propriétés dynamiques ni la pollution `_`/`$`, et reste 4× plus lent en écriture. |
-| **API explicite `obj.set('x', 100)`** | Détruit l'ergonomie, qui est le cœur du produit. Explicitement exclu par la vision. |
-| **Signaux / observables** | Impose de déclarer chaque propriété, change l'écriture utilisateur, ajoute un concept. |
-| **Dirty checking par frame** | Perd l'immédiateté lettre par lettre et la valeur précédente. |
-| **Immuabilité + structural sharing** | Incompatible avec `self.x += vx` dans les composants. Réécriture totale du modèle. |
+| **Keep `defineProperty`, fix the bugs** | It solves neither dynamic properties nor the `_`/`$` pollution, and it stays 4× slower on writes. |
+| **An explicit `obj.set('x', 100)` API** | It destroys the ergonomics, which are the heart of the product. Explicitly ruled out by the vision. |
+| **Signals / observables** | They require declaring each property, change how the user writes, and add a concept. |
+| **Per-frame dirty checking** | It loses letter-by-letter immediacy and the previous value. |
+| **Immutability + structural sharing** | Incompatible with `self.x += vx` inside components. A total rewrite of the model. |
 
 ---
 
-## Validation requise
+## Required validation
 
-Avant de considérer cette décision comme acquise :
+Before this decision is considered settled:
 
-1. Un harnais qui exécute une même séquence d'écritures sur Legacy et sur v2 et compare
-   la **séquence d'événements émis** (ordre inclus).
-2. Un benchmark en CI sur une scène réaliste (≥ 500 objets, 60 fps).
-3. Vérification que l'édition lettre par lettre reste identique (Inspector + Hierarchy).
-4. Test que `object.setProperty('x', v)` produit un `Change` **et** une Operation.
-5. Test que `object.x = v` produit un `Change` et **aucune** Operation.
-6. Test qu'une Operation `origin: 'network'` appliquée ne produit **pas** d'Operation
-   sortante (absence d'écho).
+1. A harness that runs the same sequence of writes on Legacy and on v2 and compares the
+   **sequence of emitted events** (ordering included).
+2. A CI benchmark on a realistic scene (≥ 500 objects, 60 fps).
+3. A check that letter-by-letter editing stays identical (Inspector + Hierarchy).
+4. A test that `object.setProperty('x', v)` produces a `Change` **and** an Operation.
+5. A test that `object.x = v` produces a `Change` and **no** Operation.
+6. A test that an applied Operation with `origin: 'network'` produces **no** outgoing Operation
+   (no echo).
 
-> **Attention au harnais de parité (point 1).** Il compare la *forme* et l'*ordre* des
-> notifications, pas la sémantique de `setProperty()`, dont le nom est identique de part
-> et d'autre mais le sens différent. Le mapping doit être explicite :
+> **A warning about the parity harness (point 1).** It compares the *shape* and the *order* of
+> the notifications, not the semantics of `setProperty()`, whose name is identical on both sides
+> but whose meaning differs. The mapping must be explicit:
 >
 > | Legacy | v2 |
 > |---|---|
 > | `obj.x = v` | `obj.x = v` |
 > | `obj.$x = v` / `obj.syncProperty('x', v)` | `obj.setProperty('x', v)` |
-> | `obj.setProperty('x', v)` | *sonde Legacy uniquement* — pas d'équivalent v2 |
-> | plain assign à la réception réseau | `applyOperation({ origin: 'network' })` |
+> | `obj.setProperty('x', v)` | *a Legacy-only probe* — no v2 equivalent |
+> | a plain assignment on network receipt | `applyOperation({ origin: 'network' })` |
 >
-> **Aucun scénario v2 n'utilise `.$x`.** Sans ce mapping, le harnais signalerait de
-> fausses régressions.
+> **No v2 scenario uses `.$x`.** Without this mapping, the harness would report false
+> regressions.
 
-Le sigil `$` est **supprimé** (décision définitive, 2026-08-12).
+The `$` sigil is **removed** (a final decision, 2026-08-12).

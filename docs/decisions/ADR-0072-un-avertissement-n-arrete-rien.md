@@ -1,100 +1,97 @@
-# ADR-0072 — Un avertissement n'arrête rien, et une attente a un plafond
+# ADR-0072 — A warning stops nothing, and a wait has a ceiling
 
-- **Statut :** **accepté** (2026-09-12)
-- **Décide :** ce qu'un nœud fait quand rien n'a encore été choisi dedans ; ce qui distingue un
-  avertissement d'une erreur à l'exécution ; combien d'exécutions suspendues une instance peut
-  tenir ; ce qui arrive aux autres quand l'une d'elles échoue ; d'où vient `io.resumed`
-- **Dépend de :** ADR-0012 (le Runtime isole et rapporte), ADR-0027 (le modèle de graphe et
-  son interprète), ADR-0031 (une valeur portée par l'instance), ADR-0058 (une exécution peut
-  survivre à un pas), ADR-0064 (refuser avant d'exécuter)
-- **Ne décide pas :** une console d'erreurs dans l'Editor, la reprise d'une attente en cours de
-  partie, l'annulation d'une attente depuis le graphe — voir §5
+- **Status:** **accepted** (2026-09-12)
+- **Decides:** what a node does when nothing has been chosen inside it yet; what tells a warning
+  from an error at runtime; how many suspended executions one instance may hold; what happens to
+  the others when one of them fails; where `io.resumed` comes from
+- **Depends on:** ADR-0012 (the Runtime isolates and reports), ADR-0027 (the graph model and
+  its interpreter), ADR-0031 (a value carried by the instance), ADR-0058 (an execution may
+  outlive a step), ADR-0064 (refuse before running)
+- **Does not decide:** an error console in the Editor, resuming a wait mid-game, cancelling a wait
+  from the graph — see §5
 
 ---
 
-## 1. Le défaut : deux couches, une trouvaille, deux verdicts
+## 1. The defect: two layers, one finding, two verdicts
 
-Un créateur dépose un `Set Property` et n'a pas encore choisi la propriété. C'est l'état de
-tout graphe en cours d'écriture, et les deux couches qui le regardent n'en disaient pas la
-même chose :
+A creator drops in a `Set Property` and has not chosen the property yet. That is the state of every
+graph while it is being written, and the two layers looking at it did not say the same thing about
+it:
 
-| Couche | Verdict | Conséquence |
+| Layer | Verdict | Consequence |
 |---|---|---|
-| `validate.js` | **avertissement** | `runnable()` est vrai, `project/graphs.js` lie le graphe |
-| `standard.js` | **`GraphError` jetée** | à chaque instance, à chaque pas |
+| `validate.js` | **warning** | `runnable()` is true, `project/graphs.js` binds the graph |
+| `standard.js` | **`GraphError` thrown** | on every instance, on every step |
 
-Et une exception déroule tout le `walk` : **tout ce qui était câblé APRÈS le nœud non visé ne
-tournait plus**. Le commentaire de `graphs.js` nomme pourtant le cas mot pour mot — « refuser
-d'exécuter un graphe en construction rendrait l'Editor inutilisable ».
+And an exception unwinds the whole `walk`: **everything wired AFTER the unaimed node stopped
+running**. The comment in `graphs.js` names the case word for word, though — "refusing to run a
+graph under construction would make the Editor unusable".
 
-> **La règle : la sévérité décide si un graphe tourne, donc elle décide aussi ce qui peut
-> l'arrêter en cours de route. Ce qu'un avertissement laisse passer, l'exécution ne doit pas
-> le tuer.**
+> **The rule: severity decides whether a graph runs, so it also decides what may stop it along the
+> way. What a warning lets through, execution must not kill.**
 
-Concrètement, deux phrases différentes là où il n'y en avait qu'une :
+Concretely, two different sentences where there had been only one:
 
-- **rien n'a encore été choisi** — le nœud ne fait rien, le flux continue, un `Get` répond
-  `null`. Le validateur continue de dire qu'il manque quelque chose ;
-- **ce qui avait été choisi a disparu** — `MISSING_PROPERTY`, erreur, et le graphe ne tourne
-  pas du tout (ADR-0064 §6, inchangé).
-
----
-
-## 2. Une attente a un plafond
-
-`On Update ▸ Every` est le câblage qu'un débutant écrit en premier. Chaque pas y suspendait
-une exécution de plus, et rien ne les bornait : dix secondes à soixante pas donnent **six
-cents** attentes vivantes, décomptées et reprises à chaque pas, chacune avec son budget
-complet. La cadence des impulsions montait de 0,2/s à 120/s et continuait.
-
-L'en-tête de `interpreter.js` promet « un budget, et une garde de cycle, pour qu'un mauvais
-graphe ne puisse pas figer une frame ». Le budget borne **un** `walk` ; rien ne bornait
-**combien** de `walk` un pas effectuait — donc un mauvais graphe figeait la frame par une route
-que le budget ne voyait pas, et le faisait progressivement, ce qui est la pire sorte.
-
-**`MAX_PENDING = 256` par instance.** Ce n'est pas un repli sur une table indexée par nœud :
-ADR-0058 §3 est explicite, deux passages dans un même `Delay` attendent indépendamment, et la
-liste reste une liste. Ce qui est ajouté est un plafond, et l'atteindre est un **refus
-énoncé** — la `GraphError` que le Runtime isole et rapporte, comme pour le budget.
+- **nothing has been chosen yet** — the node does nothing, the flow carries on, a `Get` answers
+  `null`. The validator goes on saying that something is missing;
+- **what had been chosen has gone** — `MISSING_PROPERTY`, an error, and the graph does not run at
+  all (ADR-0064 §6, unchanged).
 
 ---
 
-## 3. Une exécution qui échoue n'emporte pas les autres
+## 2. A wait has a ceiling
 
-Les exécutions dues sont retirées de `pending` **avant** qu'aucune ne tourne — il le faut, ou
-une re-suspension serait décomptée deux fois dans le même pas. Une exception au milieu de la
-boucle supprimait donc définitivement toutes celles qui suivaient : deux branches d'un
-`Sequence` derrière un `Delay`, un nœud qui échoue, et l'autre branche ne reprenait plus
-jamais.
+`On Update ▸ Every` is the wiring a beginner writes first. Every step suspended one more execution
+there, and nothing bounded them: ten seconds at sixty steps gives **six hundred** live waits,
+counted down and resumed on every step, each with its full budget. The pulse rate climbed from
+0.2/s to 120/s and kept going.
 
-Chacune est désormais isolée ; la première défaillance est relancée une fois la boucle
-terminée, donc le Runtime la reçoit et la rapporte comme avant (ADR-0012). Ce qu'elle
-n'annule plus, c'est du travail qui n'avait rien à voir avec elle.
+`interpreter.js`'s header promises "a budget, and a cycle guard, so that a bad graph cannot freeze
+a frame". The budget bounds **one** `walk`; nothing bounded **how many** `walk`s a step performed —
+so a bad graph froze the frame by a route the budget could not see, and did it gradually, which is
+the worst kind.
 
-**Et le pas lui-même en fait partie.** `resumeDue()` est appelée avant `start` et `update` ;
-une défaillance qui remontait de là emportait l'`On Update` du composant pour ce pas, ce qui
-est exactement la même phrase un étage au-dessus. Elle est retenue et relancée après les deux
-événements : le Runtime la reçoit toujours, une fois que le pas a fait ce qu'il pouvait.
-
----
-
-## 4. `resumed` ne vaut que pour le nœud qui s'est garé sur lui-même
-
-`io.resumed` dit à un nœud « tu reviens » plutôt que « tu arrives par un fil » — c'est ainsi
-qu'`Every` démarre son horloge à l'aller et tire son impulsion au retour.
-
-Une **attente** (`wait`) gare la continuation sur le nœud **suivant** ; un **retour**
-(`again`) la gare sur le nœud lui-même. Marquer les deux comme repris disait au premier une
-chose fausse : un `Every` placé derrière un `Delay` se croyait de retour de son propre
-intervalle et tirait dès l'arrivée. Seule la seconde forme porte la marque.
+**`MAX_PENDING = 256` per instance.** This is not a retreat to a table keyed by node: ADR-0058 §3
+is explicit, two passes through the same `Delay` wait independently, and the list stays a list.
+What is added is a ceiling, and reaching it is a **stated refusal** — the `GraphError` the Runtime
+isolates and reports, as it does for the budget.
 
 ---
 
-## 5. Ce que cet ADR ne décide pas
+## 3. An execution that fails does not take the others with it
 
-- **Une console d'erreurs dans l'Editor.** Une `GraphError` va toujours où `onError`
-  l'envoie ; lui donner une fenêtre est un travail à part.
-- **Reprendre une attente après un rechargement.** ADR-0058 le refuse encore : rien de
-  suspendu n'est sérialisé.
-- **Annuler une attente depuis le graphe.** Aucun nœud ne l'exprime, et en inventer un
-  demanderait de décider ce qu'« annuler » veut dire pour un `Tween` déjà à mi-course.
+Due executions are removed from `pending` **before** any of them runs — they have to be, or a
+re-suspension would be counted down twice in the same step. An exception in the middle of the loop
+therefore permanently deleted all the ones after it: two branches of a `Sequence` behind a `Delay`,
+one node fails, and the other branch never resumed again.
+
+Each one is now isolated; the first failure is rethrown once the loop has finished, so the Runtime
+receives it and reports it as before (ADR-0012). What it no longer cancels is work that had nothing
+to do with it.
+
+**And the step itself is part of that.** `resumeDue()` is called before `start` and `update`; a
+failure coming up from there took the component's `On Update` with it for that step, which is
+exactly the same sentence one storey up. It is now held and rethrown after both events: the Runtime
+still receives it, once the step has done what it could.
+
+---
+
+## 4. `resumed` only applies to the node that parked on itself
+
+`io.resumed` tells a node "you are coming back" rather than "you are arriving down a wire" — that is
+how `Every` starts its clock on the way in and fires its pulse on the way back.
+
+A **wait** (`wait`) parks the continuation on the **next** node; a **return** (`again`) parks it on
+the node itself. Marking both as resumed told the first something untrue: an `Every` placed behind
+a `Delay` believed it was back from its own interval and fired the moment it arrived. Only the
+second form carries the mark.
+
+---
+
+## 5. What this ADR does not decide
+
+- **An error console in the Editor.** A `GraphError` still goes wherever `onError` sends it; giving
+  it a window is separate work.
+- **Resuming a wait after a reload.** ADR-0058 still refuses it: nothing suspended is serialised.
+- **Cancelling a wait from the graph.** No node expresses it, and inventing one would mean deciding
+  what "cancel" means for a `Tween` already halfway through.

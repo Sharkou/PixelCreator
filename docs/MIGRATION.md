@@ -1,229 +1,229 @@
 # Migration v2
 
-> **Statut : PLAN ACTIF.** Décisions validées le 2026-08-12 ; aucune étape encore engagée. Ce document sert de plan et de
-> registre de risques.
+> **Status: ACTIVE PLAN.** Decisions accepted on 2026-08-12; no step started yet. This document
+> serves as the plan and as the risk register.
 
 ---
 
-## 1. Ordre de travail
+## 1. Order of work
 
 ```
-Comprendre → Cartographier → Documenter → Comparer → Proposer → FAIRE VALIDER
-    → Implémenter → Tester → Comparer avec Legacy → Documenter
+Understand → Map → Document → Compare → Propose → GET IT ACCEPTED
+    → Implement → Test → Compare against Legacy → Document
 ```
 
-**Les décisions ont été validées le 2026-08-12.** Phase 0 est close :
-`migration/LEGACY_ANALYSIS.md` décrit le fonctionnement réel, `ARCHITECTURE.md` fixe la
-cible et §10 enregistre les décisions.
+**The decisions were accepted on 2026-08-12.** Phase 0 is closed:
+`migration/LEGACY_ANALYSIS.md` describes how things really work, `ARCHITECTURE.md` sets the
+target, and its §10 records the decisions.
 
-Une seule question reste ouverte (Q7, mode d'exécution de `.px`) et elle **n'est pas
-bloquante** : elle n'intervient qu'à l'étape 9.
+One question remains open (Q7, the `.px` execution mode) and it is **not blocking**: it only
+comes up at step 9.
 
-Nous sommes donc à **« Implémenter »**, dont la première étape est l'outillage (§5).
+We are therefore at **"Implement"**, whose first step is tooling (§5).
 
 ---
 
-## 2. Analyse comparative par système
+## 2. System-by-system comparison
 
-Format : **Legacy → Limites → À conserver → À simplifier → Proposition v2 → Risque**
+Format: **Legacy → Limits → Keep → Simplify → v2 proposal → Risk**
 
 ### 2.1 Object
 
 | | |
 |---|---|
-| **Legacy** | Conteneur + transform + méthodes d'IDE (`detectMouse`, `select`, `createImage`) + `copy()` réflexif |
-| **Limites** | Code Editor et DOM dans le Core ; `copy()` ne copie pas les objets (`TODO`) ; résolution des composants par nom via `mod.js` ; `uid` désigne le joueur, pas l'objet |
-| **À conserver** | Le nom `Object` ; l'identité par id court ; `components{}` et la hiérarchie ; `active`/`visible`/`lock` |
-| **À simplifier** | Sortir picking/sélection/vignette vers `editor/` |
-| **Proposition** | Conteneur pur + `Transform` en composant + façade `object.x` (ADR-0001, ADR-0002) |
-| **Risque** | Une façade qui diverge de `Transform` recréerait deux sources de vérité — exactement ce qu'il faut éviter. Test obligatoire. |
+| **Legacy** | Container + transform + IDE methods (`detectMouse`, `select`, `createImage`) + a reflective `copy()` |
+| **Limits** | Editor and DOM code inside the Core; `copy()` does not copy objects (`TODO`); components resolved by name through `mod.js`; `uid` designates the player, not the object |
+| **Keep** | The name `Object`; identity by short id; `components{}` and the hierarchy; `active`/`visible`/`lock` |
+| **Simplify** | Move picking/selection/thumbnail out to `editor/` |
+| **Proposal** | A pure container + `Transform` as a component + the `object.x` façade (ADR-0001, ADR-0002) |
+| **Risk** | A façade that diverges from `Transform` would recreate the two sources of truth we are trying to avoid. A test is mandatory. |
 
 ### 2.2 Property System
 
 | | |
 |---|---|
-| **Legacy** | `System.sync()` : accesseurs par propriété, stockage `_prop`/`__prop`, canal réseau `$prop` et `syncProperty()` |
-| **Limites** | Propriétés dynamiques muettes ; champs `#` invisibles ; `_`/`$` énumérables (sérialisation ×3) ; écriture 4× plus lente qu'un Proxy ; pas de `previous` ; throttle réseau neutralisé (`delay = 0`) |
-| **À conserver** | **L'ergonomie `object.x = 100`** et la distinction simulation / intention |
-| **À simplifier** | Un `Proxy` par objet remplace N `defineProperty` |
-| **Proposition** | ADR-0003 — `Change { object, component, prop, value, previous, origin }` ; `$prop` **supprimé**, `setProperty()` devient le chemin contrôlé |
-| **Risque** | **Le plus élevé du projet.** Tout en dépend : Inspector, Hierarchy, réseau, ressources. Une régression est invisible (une valeur cesse simplement d'être propagée). Exige des tests avant toute autre migration. |
+| **Legacy** | `System.sync()`: per-property accessors, `_prop`/`__prop` storage, the `$prop` network channel and `syncProperty()` |
+| **Limits** | Dynamic properties stay silent; `#` fields invisible; `_`/`$` enumerable (×3 serialization); writes 4× slower than a Proxy; no `previous`; the network throttle is neutralized (`delay = 0`) |
+| **Keep** | **The `object.x = 100` ergonomics** and the simulation / intent distinction |
+| **Simplify** | One `Proxy` per object replaces N `defineProperty` calls |
+| **Proposal** | ADR-0003 — `Change { object, component, prop, value, previous, origin }`; `$prop` **removed**, `setProperty()` becomes the controlled path |
+| **Risk** | **The highest in the project.** Everything depends on it: Inspector, Hierarchy, network, resources. A regression is invisible (a value simply stops being propagated). Requires tests before any other migration. |
 
 ### 2.3 Scene
 
 | | |
 |---|---|
-| **Legacy** | `objects{}` plat, `current`/`currentComponent`, `Scene.main`, `instantiate()` via `copy()` |
-| **Limites** | État d'IDE (`current`) dans le Core ; `updateName(el)` lit le DOM ; pas de notion de `Project` |
-| **À conserver** | La platitude de `objects{}` ; `refresh()` ; les événements `add`/`remove`/`instantiate` |
-| **À simplifier** | Déplacer `current` vers une sélection d'Editor ; introduire `Project` |
-| **Proposition** | `core/scene.js` sans DOM ; `editor/selection.js` |
-| **Risque** | `scene.current` est lu par Inspector, Hierarchy, Handler, Manager, Network. Déplacement transverse. |
+| **Legacy** | A flat `objects{}`, `current`/`currentComponent`, `Scene.main`, `instantiate()` via `copy()` |
+| **Limits** | IDE state (`current`) inside the Core; `updateName(el)` reads the DOM; no notion of a `Project` |
+| **Keep** | The flatness of `objects{}`; `refresh()`; the `add`/`remove`/`instantiate` events |
+| **Simplify** | Move `current` into an Editor selection; introduce `Project` |
+| **Proposal** | `core/scene.js` without the DOM; `editor/selection.js` |
+| **Risk** | `scene.current` is read by Inspector, Hierarchy, Handler, Manager and Network. A cross-cutting move. |
 
 ### 2.4 Components
 
 | | |
 |---|---|
-| **Legacy** | Classes libres, duck-typing `update(self)`/`draw(self)`, clé = nom de classe |
-| **Limites** | Aucun contrat explicite ; un seul composant par type ; minification interdite ; `Collider` référence `Scene.main` non importé ; `Texture.update()` fait une recherche par frame |
-| **À conserver** | **`self` en argument** ; `update`/`draw` séparés ; l'absence de classe de base obligatoire |
-| **À simplifier** | Contrat documenté, `schema` optionnel, correction des couplages |
-| **Proposition** | ADR-0004 (lifecycle), ADR-0007 (schéma) |
-| **Risque** | Rendre `schema` obligatoire casserait les composants utilisateurs. Il reste optionnel. |
+| **Legacy** | Free-form classes, duck-typed `update(self)`/`draw(self)`, keyed by class name |
+| **Limits** | No explicit contract; only one component per type; minification ruled out; `Collider` references `Scene.main` without importing it; `Texture.update()` does a lookup every frame |
+| **Keep** | **`self` as an argument**; `update`/`draw` kept separate; no mandatory base class |
+| **Simplify** | A documented contract, an optional `schema`, fixing the couplings |
+| **Proposal** | ADR-0004 (lifecycle), ADR-0007 (schema) |
+| **Risk** | Making `schema` mandatory would break user components. It stays optional. |
 
 ### 2.5 Runtime / Renderer
 
 | | |
 |---|---|
-| **Legacy** | `Renderer.render()` fait tri + update + picking IDE + projection + draw + preview + sélection |
-| **Limites** | `import { Dnd } from '/editor/...'` dans le Core ; update/draw entrelacés (non déterministe) ; `sort()` par frame ; `Camera` à double rôle (composant *et* Object) |
-| **À conserver** | Canvas 2D ; la projection caméra ; les surcouches d'affichage éditeur — mais dans `editor/viewport/`, pas comme un hook de Component |
-| **À simplifier** | Séparer les phases ; sortir le picking ; cacher le tri |
-| **Proposition** | `runtime/loop.js` + `runtime/rendering/` ; surcouches IDE dans `editor/viewport/` |
-| **Risque** | Séparer update et draw **change l'ordre d'observation** : un jeu Legacy pourrait dépendre involontairement de l'entrelacement. |
+| **Legacy** | `Renderer.render()` does sorting + update + IDE picking + projection + draw + preview + selection |
+| **Limits** | `import { Dnd } from '/editor/...'` inside the Core; update/draw interleaved (non-deterministic); `sort()` every frame; `Camera` plays two roles (a component *and* an Object) |
+| **Keep** | Canvas 2D; the camera projection; the editor display overlays — but in `editor/viewport/`, not as a Component hook |
+| **Simplify** | Separate the phases; move picking out; cache the sort |
+| **Proposal** | `runtime/loop.js` + `runtime/rendering/`; IDE overlays in `editor/viewport/` |
+| **Risk** | Separating update and draw **changes the observation order**: a Legacy game could unintentionally depend on the interleaving. |
 
 ### 2.6 Network
 
 | | |
 |---|---|
-| **Legacy** | WebSocket, ~20 messages, heartbeat complet toutes les 4 s, aucune autorité |
-| **Limites** | Heartbeat écrase les saisies ; payload ×3 ; enfants dupliqués ; pas d'interpolation (`TODO`) ; `Network.sync()` uniquement si `inspector` ; entrées par `uid` couplées à `Input` |
-| **À conserver** | La forme `{id, prop, value}` ; le non-écho à l'émetteur ; le routage des entrées par utilisateur ; **le Core partagé** |
-| **À simplifier** | Formaliser en Operations ; snapshots delta ; batching |
-| **Proposition** | ADR-0008 |
-| **Risque** | Le serveur est privé et en Deno avec une API WebSocket obsolète (`std@0.117`). Toute évolution du protocole exige de migrer les deux côtés **en même temps**. |
+| **Legacy** | WebSocket, ~20 messages, a full heartbeat every 4 s, no authority |
+| **Limits** | The heartbeat overwrites in-progress edits; ×3 payload; duplicated children; no interpolation (`TODO`); `Network.sync()` only when `inspector`; inputs keyed by `uid` coupled to `Input` |
+| **Keep** | The `{id, prop, value}` shape; not echoing back to the sender; routing input per user; **the shared Core** |
+| **Simplify** | Formalize as Operations; delta snapshots; batching |
+| **Proposal** | ADR-0008 |
+| **Risk** | The server is private, written in Deno against an obsolete WebSocket API (`std@0.117`). Any protocol change requires migrating both sides **at the same time**. |
 
 ### 2.7 Editor
 
 | | |
 |---|---|
-| **Legacy** | HTML monolithique (700 lignes), modules attachés à des `id` fixes, liaison par classe CSS globale |
-| **Limites** | Ajouter une fenêtre = 4 fichiers ; `window.js` vide ; `Handler` de 27 ko ; `getElementsByClassName` sur `document` |
-| **À conserver** | **La synchronisation lettre par lettre** ; la garde `activeElement` ; l'`Object` comme source de vérité unique ; l'Inspector réflexif |
-| **À simplifier** | Web Components ; binding scopé ; viewport en outils |
-| **Proposition** | ADR-0006, ADR-0007 |
-| **Risque** | Le Shadow DOM **casse `getElementsByClassName` global**. Le binding doit être migré *avant* l'encapsulation, sinon la synchronisation temps réel disparaît silencieusement. |
+| **Legacy** | Monolithic HTML (700 lines), modules bound to fixed `id`s, binding through a global CSS class |
+| **Limits** | Adding a window = 4 files; `window.js` is empty; a 27 kB `Handler`; `getElementsByClassName` on `document` |
+| **Keep** | **Letter-by-letter synchronization**; the `activeElement` guard; the `Object` as the single source of truth; the reflective Inspector |
+| **Simplify** | Web Components; scoped binding; a viewport made of tools |
+| **Proposal** | ADR-0006, ADR-0007 |
+| **Risk** | The Shadow DOM **breaks the global `getElementsByClassName`**. The binding has to be migrated *before* encapsulation, or real-time synchronization disappears silently. |
 
 ### 2.8 Visual scripting
 
 | | |
 |---|---|
-| **Legacy** | Éditeur de nœuds fonctionnel, **sans modèle, sans sérialisation, sans exécution** |
-| **Limites** | Le graphe est le DOM ; `updateScript()` est un `console.log` ; `compiler.js` est du code mort ; `.px` traité comme du JS |
-| **À conserver** | L'UI (pan, zoom, Bézier, connecteurs), récemment améliorée ; la palette de nœuds |
-| **À simplifier** | — (il n'y a presque rien à simplifier : tout est à construire) |
-| **Proposition** | Modèle `.px` sérialisable + runtime d'exécution (ADR-0009) |
-| **Risque** | C'est une **construction**, pas une migration. À isoler pour ne pas retarder le reste. |
+| **Legacy** | A working node editor, **with no model, no serialization, no execution** |
+| **Limits** | The graph is the DOM; `updateScript()` is a `console.log`; `compiler.js` is dead code; `.px` treated as JS |
+| **Keep** | The UI (pan, zoom, Bézier, connectors), recently improved; the node palette |
+| **Simplify** | — (there is almost nothing to simplify: it all has to be built) |
+| **Proposal** | A serializable `.px` model + an execution runtime (ADR-0009) |
+| **Risk** | This is **construction**, not migration. Isolate it so it does not delay the rest. |
 
 ### 2.9 Resources
 
 | | |
 |---|---|
-| **Legacy** | `Loader` statique, `File` natif augmenté et rendu réactif |
-| **Limites** | `Resource` inutilisée ; `id = path + name` (renommer casse les références) ; images en base64 dans l'état ; Blob URL jamais révoquées ; IndexedDB non câblé |
-| **À conserver** | La réactivité des ressources ; le hot reload par `import()` |
-| **À simplifier** | Id stable, `Resource` réelle, cache IndexedDB |
-| **Proposition** | `core/resources/` |
-| **Risque** | Changer la forme des id invalide les projets existants. |
+| **Legacy** | A static `Loader`, a native `File` augmented and made reactive |
+| **Limits** | `Resource` unused; `id = path + name` (renaming breaks references); images as base64 in the state; Blob URLs never revoked; IndexedDB not wired up |
+| **Keep** | Resource reactivity; hot reload through `import()` |
+| **Simplify** | A stable id, a real `Resource`, an IndexedDB cache |
+| **Proposal** | `core/resources/` |
+| **Risk** | Changing the shape of ids invalidates existing projects. |
 
 ---
 
-## 3. Registre des risques
+## 3. Risk register
 
-| # | Risque | Gravité | Détection | Mitigation |
+| # | Risk | Severity | Detection | Mitigation |
 |---|---|---|---|---|
-| R1 | **Rupture du Property System** : une propriété cesse d'être propagée | Critique | Aucune erreur, symptôme visuel tardif | Tests d'abord ; harnais comparant les événements émis Legacy vs v2 |
-| R2 | **Désynchronisation Editor/Runtime** : Shadow DOM casse le binding par classe | Critique | Le champ ne se met plus à jour pendant la frappe | Migrer le binding avant l'encapsulation ; test d'édition lettre par lettre |
-| R3 | **Divergence client/serveur** : le serveur ne peut plus importer le Core | Élevé | Le serveur ne démarre plus | Test d'import Core en Node/Deno, sans DOM, dans la CI |
-| R4 | **Régression Network** : protocole modifié d'un seul côté | Élevé | Objets figés, désync | Versionner le protocole ; le serveur privé migre en même temps |
-| R5 | **Deux sources de vérité `Object.x` / `Transform.x`** | Élevé | Valeurs qui divergent après un aller-retour réseau | Test d'identité : `object.x === transform.x` après chaque chemin d'écriture |
-| R6 | **Incompatibilité des composants** | ~~Élevé~~ **Faible** | — | **Déclassé** : il n'existe aucun projet v1 à préserver. `schema` reste optionnel et `self` en argument conservé pour l'ergonomie, plus pour la compatibilité |
-| R14 | **`setProperty()` porte le même nom qu'en Legacy avec un autre sens** | Élevé | Un développeur lit `legacy/`, en déduit le mauvais comportement, et écrit du code qui ne produit pas d'Operation | Signalé dans ADR-0003, `CONVENTIONS.md` et le JSDoc ; mapping explicite dans le harnais de parité |
-| R15 | **Écriture `=` là où `setProperty()` était requis** | Élevé | La modification ne se réplique ni ne s'annule — **silencieusement** | Garde en mode développement : avertir sur une écriture directe dans un contexte `editor` (ADR-0003) |
-| R7 | **Perte de comportements historiques non documentés** | Élevé | Détecté par l'utilisateur, tard | `LEGACY_ANALYSIS.md` §15 (liste explicite) ; `legacy/` reste exécutable pour comparaison |
-| R8 | **Perte de performance** (façade Transform, Proxy) | Moyen | Chute de FPS | Benchmark déjà établi (§2.4 de l'analyse) ; le rebâtir en CI |
-| R9 | **Architecture trop abstraite** | Moyen | Le code devient plus dur à lire qu'avant | Règle : toute abstraction doit supprimer plus de lignes qu'elle n'en ajoute |
-| R10 | **Dette UI déplacée, pas résolue** | Moyen | 700 lignes de HTML deviennent 30 composants tout aussi couplés | Chaque Web Component doit être ouvrable isolément dans une page de test |
-| R11 | **Le visual scripting bloque la migration** | Moyen | Le chantier s'éternise | Le sortir du chemin critique |
-| R12 | **Dépendances excessives** | Faible | `package.json` qui grossit | Zéro dépendance runtime ; outillage de dev uniquement |
-| R13 | **Régression déjà présente prise pour une régression v2** | Faible | Confusion en test | Bugs Legacy connus consignés (§4) |
+| R1 | **Property System breakage**: a property stops being propagated | Critical | No error, a visual symptom noticed late | Tests first; a harness comparing the events emitted by Legacy vs v2 |
+| R2 | **Editor/Runtime desynchronization**: the Shadow DOM breaks class-based binding | Critical | The field stops updating while typing | Migrate the binding before encapsulation; a letter-by-letter editing test |
+| R3 | **Client/server divergence**: the server can no longer import the Core | High | The server stops starting | A Core import test in Node/Deno, with no DOM, in CI |
+| R4 | **Network regression**: the protocol changed on one side only | High | Frozen objects, desync | Version the protocol; the private server migrates at the same time |
+| R5 | **Two sources of truth, `Object.x` / `Transform.x`** | High | Values that diverge after a network round trip | An identity test: `object.x === transform.x` after every write path |
+| R6 | **Component incompatibility** | ~~High~~ **Low** | — | **Downgraded**: there is no v1 project to preserve. `schema` stays optional and `self` stays an argument for ergonomics, no longer for compatibility |
+| R14 | **`setProperty()` carries the same name as in Legacy with another meaning** | High | A developer reads `legacy/`, infers the wrong behaviour, and writes code that produces no Operation | Flagged in ADR-0003, `CONVENTIONS.md` and the JSDoc; an explicit mapping in the parity harness |
+| R15 | **Writing `=` where `setProperty()` was required** | High | The change neither replicates nor undoes — **silently** | A development-mode guard: warn on a direct write in an `editor` context (ADR-0003) |
+| R7 | **Loss of undocumented historical behaviour** | High | Found by the user, late | `LEGACY_ANALYSIS.md` §15 (an explicit list); `legacy/` stays runnable for comparison |
+| R8 | **Performance loss** (Transform façade, Proxy) | Medium | FPS drop | The benchmark already exists (§2.4 of the analysis); rebuild it in CI |
+| R9 | **Over-abstract architecture** | Medium | The code becomes harder to read than before | Rule: any abstraction must delete more lines than it adds |
+| R10 | **UI debt moved, not resolved** | Medium | 700 lines of HTML become 30 equally coupled components | Every Web Component must be openable on its own in a test page |
+| R11 | **Visual scripting blocks the migration** | Medium | The effort drags on | Keep it off the critical path |
+| R12 | **Excessive dependencies** | Low | A growing `package.json` | Zero runtime dependencies; dev tooling only |
+| R13 | **A pre-existing regression mistaken for a v2 regression** | Low | Confusion during testing | Known Legacy bugs are recorded (§4) |
 
 ---
 
-## 4. Bugs Legacy connus — présents *avant* toute migration
+## 4. Known Legacy bugs — present *before* any migration
 
-À consigner pour ne pas les attribuer à la v2 :
+Recorded so that they are not attributed to v2:
 
-1. **Le solo hors ligne ne fonctionne pas** — `Keyboard.keys()` lève une `TypeError` à
-   chaque frame, absorbée par le `try/catch`. (vérifié)
-2. **`Collider.update()`** référence `Scene.main` sans import → `ReferenceError` masquée.
-3. **`plugins/test.js`** appelle `Manager.addComponent()` en statique alors que c'est une
-   méthode d'instance → plugin d'exemple cassé.
-4. **`Compiler.compile()`** appelle `lex`/`parse`/`transpile`/`evaluate` sans préfixe et
-   `evaluate` n'existe pas → toujours `ReferenceError`.
-5. **`Interpreter.update()`** référence `Properties` sans l'importer.
-6. **`Network.addChild/removeChild`** logguent `data.component.name` alors que le message
-   ne transporte pas de `component` → `TypeError` à la réception.
-7. **`Loader.load()`** déstructure `blob.type` sans vérifier que le `fetch` a réussi.
-8. **`tools/dev-server.sh`** sert `engine/` alors que l'application a besoin de `legacy/`.
-9. **Les décimales sont tronquées** dans l'Inspector (`parseInt` sur des `number`).
-10. **`Light.update()`** écrase `self.width`/`self.height` chaque frame, annulant toute
-    saisie utilisateur.
-11. **`Tilemap.draw(ctx, camera)`** a une signature incompatible avec `Object.draw()` :
-    attaché à un objet, il lève une `TypeError` masquée. `Lighting` et `LightSource`
-    violent également le contrat de composant tout en étant exportés par `mod.js`.
-12. **`Object.copy()` détruit `components`, `childs` et `image`** quand la source est un
-    `Object` vivant : il lit les accesseurs `$prop` en écriture seule et les réassigne.
-    Conséquence : **`Scene.instantiate()` lève dès que la source porte un composant** —
-    ce qui casse la création de prefab et le chemin `Network.add`. Le heartbeat survit
-    parce qu'il copie depuis du JSON plat, sans accesseurs `$`.
-    *(découvert par le harnais de parité, non par lecture)*
-13. **`gamepad.js`** teste `typeof window !== 'undefined'` là où les autres modules
-    testent `window.document` — il s'exécute donc dans un environnement sans DOM.
+1. **Offline single-player does not work** — `Keyboard.keys()` throws a `TypeError` every
+   frame, swallowed by the `try/catch`. (verified)
+2. **`Collider.update()`** references `Scene.main` without importing it → a masked
+   `ReferenceError`.
+3. **`plugins/test.js`** calls `Manager.addComponent()` statically when it is an instance
+   method → the example plugin is broken.
+4. **`Compiler.compile()`** calls `lex`/`parse`/`transpile`/`evaluate` without a prefix and
+   `evaluate` does not exist → always a `ReferenceError`.
+5. **`Interpreter.update()`** references `Properties` without importing it.
+6. **`Network.addChild/removeChild`** log `data.component.name` while the message carries no
+   `component` → a `TypeError` on receipt.
+7. **`Loader.load()`** destructures `blob.type` without checking that the `fetch` succeeded.
+8. **`tools/dev-server.sh`** serves `engine/` when the application needs `legacy/`.
+9. **Decimals are truncated** in the Inspector (`parseInt` on `number` values).
+10. **`Light.update()`** overwrites `self.width`/`self.height` every frame, cancelling any user
+    input.
+11. **`Tilemap.draw(ctx, camera)`** has a signature incompatible with `Object.draw()`: attached
+    to an object, it throws a masked `TypeError`. `Lighting` and `LightSource` also violate the
+    component contract while being exported by `mod.js`.
+12. **`Object.copy()` destroys `components`, `childs` and `image`** when the source is a live
+    `Object`: it reads the write-only `$prop` accessors and reassigns them. Consequence:
+    **`Scene.instantiate()` throws as soon as the source carries a component** — which breaks
+    prefab creation and the `Network.add` path. The heartbeat survives because it copies from
+    flat JSON, with no `$` accessors.
+    *(found by the parity harness, not by reading)*
+13. **`gamepad.js`** tests `typeof window !== 'undefined'` where the other modules test
+    `window.document` — so it runs in an environment with no DOM.
 
-Les points 12 et 13 ont été découverts en **exécutant** Legacy via `tools/parity/`.
-C'est précisément ce que l'étape 1 devait produire.
+Points 12 and 13 were found by **running** Legacy through `tools/parity/`. That is exactly
+what step 1 was meant to produce.
 
 ---
 
-## 5. Séquence proposée
+## 5. Proposed sequence
 
-Ordre dicté par les dépendances et par le risque, pas par la facilité.
+The order is dictated by dependencies and by risk, not by ease.
 
-| Étape | Contenu | Critère de sortie |
+| Step | Contents | Exit criterion |
 |---|---|---|
-| **0** | *(fait)* Analyse, proposition, décisions | §10 tranché — **fait le 2026-08-12** |
-| **1** | **Outillage + harnais de parité** : capture du comportement Legacy | ✅ **fait** — `tools/parity/`, 39 scénarios, `node tools/parity/run.js` |
-| **1 bis** | Serveur de dev corrigé, test de règle de dépendance des couches | à faire |
-| **2** | `core/` : events, logger, Property System (Proxy + Operations), Object, Component, Scene, serialize | Parité prouvée par le harnais de l'étape 1 |
-| **3** | `Transform` + façade | `object.x === transform.x` sur tous les chemins |
-| **4** | `runtime/` : boucle, rendering, input découplé de network | Une scène s'exécute ; **le solo hors ligne marche** |
-| **5** | `network/` + `authority` : Operations, delta, batching — **client et serveur ensemble** | Deux clients synchronisés, pas d'écho, toute Operation traverse `authority.check()` |
-| **6** | `editor/` : primitives `px-*`, binding scopé, Inspector à schéma | **Édition lettre par lettre préservée** |
-| **7** | Viewport en outils | Parité fonctionnelle avec `Handler` |
-| **8** | Ressources : `Resource`, ids stables, IndexedDB | Projet rechargeable |
-| **9** | Visual scripting : modèle `.px`, exécution (Q7) | Un graphe pilote un objet |
+| **0** | *(done)* Analysis, proposal, decisions | §10 settled — **done on 2026-08-12** |
+| **1** | **Tooling + parity harness**: capture Legacy's behaviour | ✅ **done** — `tools/parity/`, 39 scenarios, `node tools/parity/run.js` |
+| **1 bis** | A fixed dev server, a layer dependency rule test | to do |
+| **2** | `core/`: events, logger, Property System (Proxy + Operations), Object, Component, Scene, serialize | Parity proven by the step 1 harness |
+| **3** | `Transform` + façade | `object.x === transform.x` on every path |
+| **4** | `runtime/`: loop, rendering, input decoupled from network | A scene runs; **offline single-player works** |
+| **5** | `network/` + `authority`: Operations, deltas, batching — **client and server together** | Two synchronized clients, no echo, every Operation goes through `authority.check()` |
+| **6** | `editor/`: `px-*` primitives, scoped binding, schema-driven Inspector | **Letter-by-letter editing preserved** |
+| **7** | A viewport made of tools | Functional parity with `Handler` |
+| **8** | Resources: `Resource`, stable ids, IndexedDB | A project can be reloaded |
+| **9** | Visual scripting: the `.px` model, execution (Q7) | A graph drives an object |
 
-Étapes 2 et 3 sont indissociables. L'étape 5 exige une fenêtre de migration coordonnée
-avec le serveur privé. L'étape 9 est hors chemin critique.
+Steps 2 and 3 are inseparable. Step 5 requires a migration window coordinated with the private
+server. Step 9 is off the critical path.
 
-**Ce qui a disparu de la séquence :** aucune étape de migration de données. Il n'existe
-pas de projets v1 (Q6), donc pas de convertisseur, pas de format de transition, pas de
-double lecture dans `deserialize()`.
+**What disappeared from the sequence:** any data migration step. There are no v1 projects (Q6),
+so no converter, no transition format, no dual reading in `deserialize()`.
 
 ---
 
-## 6. Critère de réussite
+## 6. Success criterion
 
-À tout moment, il doit être possible de répondre par un pointeur vers ce dossier :
+At any moment, it must be possible to answer with a pointer into this folder:
 
-1. Comment Pixel Creator fonctionne réellement → `migration/LEGACY_ANALYSIS.md`
-2. Quels comportements sont importants → `LEGACY_ANALYSIS.md` §15
-3. Ce qui doit être conservé / refondu / supprimé / reporté → §2 de ce document
-4. Comment client et serveur partagent le Core → `architecture/NETWORK.md`
-5. Comment fonctionne la synchronisation → `LEGACY_ANALYSIS.md` §7.1
-6. Comment rendre l'Editor modulaire sans framework → `decisions/ADR-0006`
-7. Comment préserver l'ergonomie de l'API → `decisions/ADR-0003`
-8. Comment intégrer `.px` et `.js` → `decisions/ADR-0009`
-9. Comment Network évolue vers Operations → `decisions/ADR-0008`
-10. Quels sont les risques → §3 de ce document
+1. How Pixel Creator really works → `migration/LEGACY_ANALYSIS.md`
+2. Which behaviours matter → `LEGACY_ANALYSIS.md` §15
+3. What must be kept / rebuilt / removed / deferred → §2 of this document
+4. How client and server share the Core → `architecture/NETWORK.md`
+5. How synchronization works → `LEGACY_ANALYSIS.md` §7.1
+6. How to make the Editor modular without a framework → `decisions/ADR-0006`
+7. How to preserve the API's ergonomics → `decisions/ADR-0003`
+8. How to integrate `.px` and `.js` → `decisions/ADR-0009`
+9. How Network evolves toward Operations → `decisions/ADR-0008`
+10. What the risks are → §3 of this document

@@ -1,218 +1,214 @@
-# ADR-0036 — La frontière `objectref` ↔ `object` traduit la valeur, pas seulement le type
+# ADR-0036 — The `objectref` ↔ `object` boundary translates the value, not just the type
 
-- **Statut :** **accepté** (2026-08-22)
-- **Décide :** ce qui traverse la frontière entre une référence d'Object **persistée** et une référence d'Object **qui circule dans un graphe**, dans les deux sens
-- **Dépend de :** ADR-0003 (écriture simple contre intention), ADR-0007 (schéma déclaré), ADR-0010 (identité par ID), ADR-0023 (`PropertyType`), ADR-0027 (modèle de graphe), ADR-0034 (références d'Object dans le graphe)
-- **Amende :** ADR-0034 §3.6 — « aucun nœud ne résout une chaîne contre la Scene » gagne le critère de **provenance** qui la rend applicable
-- **Complète :** ADR-0034 §3.5 — le contrat y est énoncé et n'était appliqué qu'au type ; sa décision ne change pas, elle est tenue
-- **Ne décide pas :** le glisser-déposer vers la toile, les futurs nœuds de référence, un type de port `component` ou `property`
-
----
-
-## Pourquoi c'est un ADR
-
-ADR-0034 §3.5 énonce un contrat en toutes lettres :
-
-> Une propriété `objectref` se lit comme un Object et s'écrit avec un Object. L'identité est
-> ce qui est stocké, et elle n'apparaît jamais dans le graphe.
-
-ADR-0034 §3.6 énonce, tout aussi catégoriquement :
-
-> **Aucun nœud ne résout une chaîne contre la Scene.** `scene.get()` n'est atteignable que
-> depuis l'`evaluate` ou l'`execute` d'un nœud, donc depuis le catalogue. Un nœud qui
-> convertirait une chaîne en Object rouvrirait à lui seul toutes les portes que cet ADR ferme.
-
-**Les deux ne peuvent pas être vraies telles quelles.** Une propriété `objectref` est stockée
-comme une chaîne ; la lire « comme un Object » est exactement l'opération que §3.6 interdit.
-Le dépôt a tranché en n'implémentant ni l'une ni l'autre : `portTypeOf()` traduisait le
-**type**, la traduction de la **valeur** n'a jamais été écrite, et le défaut ci-dessous en
-découle directement.
-
-Ce n'est donc pas la documentation d'une implémentation : c'est le critère manquant qui rend
-les deux sections compatibles. Sans lui, la correction se lit comme une violation d'ADR-0034,
-et un lecteur futur aurait raison de la défaire.
+- **Status:** **accepted** (2026-08-22)
+- **Decides:** what crosses the boundary between a **persisted** Object reference and an Object reference **flowing through a graph**, in both directions
+- **Depends on:** ADR-0003 (a plain write versus an intent), ADR-0007 (a declared schema), ADR-0010 (identity by ID), ADR-0023 (`PropertyType`), ADR-0027 (the graph model), ADR-0034 (Object references in the graph)
+- **Amends:** ADR-0034 §3.6 — "no node resolves a string against the Scene" gains the **provenance** criterion that makes it applicable
+- **Completes:** ADR-0034 §3.5 — the contract is stated there and was applied only to the type; its decision does not change, it is honoured
+- **Does not decide:** dragging onto the canvas, future reference nodes, a `component` or `property` port type
 
 ---
 
-## Le défaut mesuré
+## Why this is an ADR
 
-Mesuré sur un `.px` déclarant `target: objectref`, entièrement constructible depuis l'Editor —
-`objectref` figure dans `authorableTypes()` et le sélecteur de propriété l'offre. Aucune
-édition manuelle de payload n'est nécessaire.
+ADR-0034 §3.5 states a contract in so many words:
 
-**Sens lecture.** `property.get` rendait `io.component[name]`, c'est-à-dire l'`ObjectId`, sur
-un port que `portTypeOf()` avait typé `object`. `canConnect()` autorisait le fil et
-`validateGraph()` restait muet : le système de types disait *handle*, la valeur était une
-chaîne.
+> An `objectref` property is read as an Object and written with an Object. The identity is what is
+> stored, and it never appears in the graph.
 
-| État de la référence | `Is Valid` | `Parent` | Attendu |
+ADR-0034 §3.6 states, just as categorically:
+
+> **No node resolves a string against the Scene.** `scene.get()` is reachable only from a node's
+> `evaluate` or `execute`, and therefore from the catalogue. A node that converted a string into an
+> Object would single-handedly reopen every door this ADR closes.
+
+**Both cannot be true as they stand.** An `objectref` property is stored as a string; reading it "as
+an Object" is exactly the operation §3.6 forbids. The repository settled it by implementing neither:
+`portTypeOf()` translated the **type**, the translation of the **value** was never written, and the
+defect below follows directly from that.
+
+So this is not documentation of an implementation: it is the missing criterion that makes the two
+sections compatible. Without it, the fix reads as a violation of ADR-0034, and a future reader would
+be right to undo it.
+
+---
+
+## The measured defect
+
+Measured on a `.px` declaring `target: objectref`, entirely constructible from the Editor —
+`objectref` appears in `authorableTypes()` and the property picker offers it. No manual payload
+editing is needed.
+
+**The read direction.** `property.get` returned `io.component[name]`, that is, the `ObjectId`, on a
+port `portTypeOf()` had typed `object`. `canConnect()` allowed the wire and `validateGraph()` stayed
+silent: the type system said *handle*, the value was a string.
+
+| Reference state | `Is Valid` | `Parent` | Expected |
 |---|---|---|---|
-| vivante | `true` | **`null`** | l'Object parent |
-| morte (cible supprimée) | **`true`** | `null` | `false` |
-| vide | `false` | `null` | conforme |
+| live | `true` | **`null`** | the parent Object |
+| dead (target deleted) | **`true`** | `null` | `false` |
+| empty | `false` | `null` | conformant |
 
-`Is Valid` est ce qu'ADR-0034 §3.3 nomme « ce que le créateur a pour se défendre d'une cible
-absente ». Il répondait `true` sur une référence morte, parce qu'une chaîne non vide n'est pas
-`null` — le seul nœud dont c'est la raison d'être était le seul à mentir.
+`Is Valid` is what ADR-0034 §3.3 calls "what the creator has to defend against a missing target". It
+answered `true` on a dead reference, because a non-empty string is not `null` — the one node whose
+whole purpose that is was the one that lied.
 
-**Sens écriture.** `Self.object → Set Property.value` sur cette même propriété écrivait le
-Proxy réactif dans la valeur d'instance. `serializeScene()` écrivait alors l'enregistrement
-d'Object entier dans le payload de scène :
+**The write direction.** `Self.object → Set Property.value` on that same property wrote the reactive
+Proxy into the instance value. `serializeScene()` then wrote the whole Object record into the scene
+payload:
 
 ```json
 { "target": { "id": "…", "name": "Hero", "tag": "", "layer": 0,
               "active": true, "lock": false, "owner": null } }
 ```
 
-C'est l'invariant 3 d'ADR-0034 — « un handle n'est jamais persisté, ni sérialisé » — rompu
-par un fil que le système de types autorisait, parce que le port et la propriété
-s'accordaient sur le type et divergeaient sur la forme.
+That is ADR-0034's invariant 3 — "a handle is never persisted, never serialized" — broken by a wire
+the type system allowed, because the port and the property agreed on the type and diverged on the
+shape.
 
 ---
 
-## Décision
+## Decision
 
-### 1. La traduction de la valeur est une paire, au même endroit que celle du type
+### 1. The value translation is a pair, in the same place as the type translation
 
-Deux fonctions, dans `core/graph/standard.js` — le catalogue de nœuds, qui tient déjà
-`io.ctx.scene` et qui est le seul endroit où un graphe lit ou écrit une valeur de Component :
+Two functions, in `core/graph/standard.js` — the node catalogue, which already holds `io.ctx.scene`
+and is the only place where a graph reads or writes a Component value:
 
 ```
-portValueOf(property, value, scene)    valeur stockée  → valeur de port
-storedValueOf(property, value)         valeur de port  → valeur stockée
+portValueOf(property, value, scene)    stored value  → port value
+storedValueOf(property, value)         port value    → stored value
 ```
 
-Elles sont le **jumeau de `portTypeOf()`**, et le raisonnement est le sien : quatre nœuds
-construisent un port depuis le type déclaré d'une propriété, donc l'expression est une
-fonction partagée et non répétée. Les quatre mêmes nœuds — `property.get`, `property.set`,
-`property.getOn`, `property.setOn` — franchissent désormais la frontière par ces deux-là.
+They are **`portTypeOf()`'s twin**, and the reasoning is its own: four nodes build a port from a
+property's declared type, so the expression is a shared function and not a repeated one. Those same
+four nodes — `property.get`, `property.set`, `property.getOn`, `property.setOn` — now cross the
+boundary through these two.
 
-**Une propriété qui n'est pas `objectref` traverse inchangée.** Pas de repli nullish : `0`,
-`false` et `''` sont des valeurs.
+**A property that is not `objectref` crosses unchanged.** No nullish fallback: `0`, `false` and `''`
+are values.
 
-**Ce qui ne se résout pas devient `null`, jamais soi-même.** Cible supprimée, référence vide,
-absence de Scene, valeur d'une forme inattendue : toutes répondent `null`, ce qu'un port typé
-`object` promet et ce qui redonne son sens à `Is Valid`.
+**What does not resolve becomes `null`, never itself.** A deleted target, an empty reference, no
+Scene, a value of an unexpected shape: all answer `null`, which is what a port typed `object`
+promises and what gives `Is Valid` its meaning back.
 
-**`storedValueOf` lit `value?.id`.** Une chaîne rend `undefined`, donc `null` : rien ici ne
-promeut une chaîne arbitraire en référence stockée.
+**`storedValueOf` reads `value?.id`.** A string returns `undefined`, and therefore `null`: nothing
+here promotes an arbitrary string into a stored reference.
 
-### 2. Ce que §3.6 interdit est la **provenance**, pas l'opération
+### 2. What §3.6 forbids is the **provenance**, not the operation
 
-> **Un nœud ne résout jamais une valeur de graphe. Il résout une valeur d'instance dont le
-> schéma déclare le type `objectref`, et rien d'autre.**
+> **A node never resolves a graph value. It resolves an instance value whose schema declares the type
+> `objectref`, and nothing else.**
 
-C'est le critère qui manquait, et il est vérifiable plutôt qu'affirmé :
+That is the criterion that was missing, and it is checkable rather than asserted:
 
-| | valeur de graphe (`node.inputs`) | valeur d'instance déclarée `objectref` |
+| | a graph value (`node.inputs`) | an instance value declared `objectref` |
 |---|---|---|
-| Portée | **projet** — un `.px` sert plusieurs scènes | **scène** — l'identité y est déjà légale |
-| Qui peut l'écrire | n'importe quel payload, y compris forgé à la main | le schéma du Component, et lui seul |
-| Forgeable | oui — un enregistrement `{ id, name }` est indiscernable d'un handle | non — le type est déclaré, pas deviné |
-| Traitement | **refusée sans inspection** (`defaultOf`, ADR-0034 §3.6) | **résolue**, par `scene.get()` |
+| Scope | **project** — a `.px` serves several scenes | **scene** — an identity is already legal there |
+| Who can write it | any payload, including one forged by hand | the Component's schema, and it alone |
+| Forgeable | yes — an `{ id, name }` record is indistinguishable from a handle | no — the type is declared, not guessed |
+| Treatment | **refused without inspection** (`defaultOf`, ADR-0034 §3.6) | **resolved**, by `scene.get()` |
 
-Les deux règles sont la même règle vue des deux côtés d'une frontière : `defaultOf()` refuse
-qu'une identité entre dans le graphe par le payload, `portValueOf()` autorise qu'une identité
-déclarée devienne un handle par le modèle. Ce que §3.6 protégeait — qu'un `.px` ne transporte
-aucune identité de scène — est intact : rien de ce qui est résolu ici n'a jamais été écrit
-dans un `.px`.
+The two rules are the same rule seen from both sides of a boundary: `defaultOf()` refuses to let an
+identity enter the graph through the payload, `portValueOf()` allows a declared identity to become a
+handle through the model. What §3.6 protected — that a `.px` carries no scene identity — is intact:
+nothing resolved here was ever written into a `.px`.
 
-**Aucun nœud générique `Resolve(string) → Object` n'est introduit, et cet ADR n'en autorise
-aucun.** La déclaration est l'autorisation ; sans déclaration, il n'y a pas de résolution.
+**No generic `Resolve(string) → Object` node is introduced, and this ADR authorizes none.** The
+declaration is the authorization; without a declaration, there is no resolution.
 
-### 3. Aucune compatibilité rétroactive pour les valeurs corrompues
+### 3. No backward compatibility for corrupted values
 
-Une exécution du défaut a pu écrire un enregistrement d'Object là où une chaîne est attendue.
-Le dépôt **n'ajoute aucune lecture tolérante**, et le refus est motivé :
+A run of the defect may have written an Object record where a string is expected. The repository
+**adds no tolerant read**, and the refusal is reasoned:
 
-- **La donnée n'existe pas ici.** Aucun `.px`, aucune scène, aucune fixture JSON du dépôt ne
-  déclare une propriété `objectref` ; le projet de départ n'en contient pas.
-- **Le chemin est étroit.** Il faut déclarer la propriété, câbler un port `object` vers un
-  `Set Property`, lancer Play — le Runtime tourne sur la scène vivante (ADR-0029 §1) — et
-  sauvegarder avant Stop, puisque Stop restaure l'instantané pris au départ.
-- **La dégradation est déjà correcte et visible.** `scene.get(enregistrement)` répond
-  `undefined`, donc `null` : la référence se lit comme vide dans le graphe et s'affiche en
-  rouge dans l'Inspector, où `ui/object-field.js` montre une référence morte plutôt qu'un
-  vide. Le fait est montré là où un humain le voit, ce qu'ADR-0034 §3.4 exige.
-- **Un repli masquerait la corruption suivante.** Lire `value.id` quand la valeur est un
-  enregistrement rendrait définitivement indétectable la classe de défaut que cet ADR ferme.
-  C'est le raisonnement qu'ADR-0034 §3.1 tient sur un autre repli — celui qu'il refuse pour
-  un objet non atteignable, parce qu'il masquerait un défaut d'ajout au lieu de le révéler.
+- **The data does not exist here.** No `.px`, no scene and no JSON fixture in the repository declares
+  an `objectref` property; the starter project contains none.
+- **The path is narrow.** You have to declare the property, wire an `object` port into a
+  `Set Property`, press Play — the Runtime runs on the live scene (ADR-0029 §1) — and save before
+  Stop, since Stop restores the snapshot taken at the start.
+- **The degradation is already correct and visible.** `scene.get(record)` answers `undefined`, and
+  therefore `null`: the reference reads as empty in the graph and shows red in the Inspector, where
+  `ui/object-field.js` shows a dead reference rather than an empty one. The fact is shown where a
+  human can see it, which ADR-0034 §3.4 requires.
+- **A fallback would hide the next corruption.** Reading `value.id` when the value is a record would
+  make the class of defect this ADR closes permanently undetectable. That is the reasoning ADR-0034
+  §3.1 makes about another fallback — the one it refuses for an unreachable object, because it would
+  hide a defect in adding instead of revealing it.
 
 ---
 
-## Contrats observables
+## Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| Une référence vivante circule comme un handle | `Parent` rend le parent réel de la cible — une chaîne ne peut pas le simuler |
-| Une référence morte ne circule pas | `Is Valid` rend `false` après suppression de la cible, la valeur stockée étant conservée |
-| Une écriture stocke l'identité | `typeof` de la valeur d'instance après un `Set Property` alimenté par `Self` |
-| Aucun handle n'est sérialisé | aucune valeur de composant du payload n'est un enregistrement |
-| L'aller-retour préserve la référence | sérialiser, désérialiser, relire : la cible se résout encore |
-| Une valeur de graphe ne devient jamais un Object | un enregistrement forgé dans `node.inputs` rend toujours `null` |
-| Une propriété non-`objectref` est inchangée | `0`, `false`, `''` traversent les quatre nœuds tels quels |
+| A live reference flows as a handle | `Parent` returns the target's real parent — a string cannot fake that |
+| A dead reference does not flow | `Is Valid` returns `false` after the target is deleted, the stored value being kept |
+| A write stores the identity | `typeof` of the instance value after a `Set Property` fed by `Self` |
+| No handle is serialized | no component value in the payload is a record |
+| The round trip preserves the reference | serialize, deserialize, read back: the target still resolves |
+| A graph value never becomes an Object | a forged record in `node.inputs` still returns `null` |
+| A non-`objectref` property is unchanged | `0`, `false`, `''` cross all four nodes as they are |
 
 ---
 
 ## Tests
 
-Écrits dans `core/graph/nodes.test.js` (la paire, pure) et
-`runtime/scripting/interpreter.test.js` (la frontière, à travers un graphe qui tourne).
+Written in `core/graph/nodes.test.js` (the pair, pure) and `runtime/scripting/interpreter.test.js`
+(the boundary, through a running graph).
 
-| # | Test | Protège |
+| # | Test | Protects |
 |---|---|---|
-| B1 | Une référence stockée devient le handle que la Scene détient | §1 |
-| B2 | Cible absente, référence vide, absence de Scene : `null`, jamais l'identité | §1 |
-| B3 | Un handle devient l'identité ; une chaîne ne devient rien | §1, §2 |
-| B4 | Une propriété non-`objectref` traverse inchangée, valeurs falsy comprises | §1 |
-| B5 | `Get Property` : référence vivante → `Is Valid` vrai **et** `Parent` rend le vrai parent | le défaut principal |
-| B6 | `Get Property On` : même comportement sur le Component d'un autre Object | §1 sur les quatre nœuds |
-| B7 | Référence morte : `Is Valid` faux, `Parent` nul, valeur stockée conservée | le mensonge d'`Is Valid` |
-| B8 | Référence vide : `Is Valid` faux | non-régression |
-| B9 | `Set Property` / `Set Property On` alimentés par `Self` stockent une chaîne | invariant 3 |
-| B10 | `serializeScene()` n'écrit aucun enregistrement dans une valeur de composant | invariant 3, énoncé comme invariant |
-| B11 | Aller-retour : la référence revient et se résout encore | §3.5 dans le temps |
-| B12 | Cible supprimée puis aller-retour : valeur conservée, résolution nulle | §3.4 après rechargement |
-| B13 | Un enregistrement forgé dans `node.inputs` ne devient toujours pas un Object | **non-régression §3.6** |
+| B1 | A stored reference becomes the handle the Scene holds | §1 |
+| B2 | An absent target, an empty reference, no Scene: `null`, never the identity | §1 |
+| B3 | A handle becomes the identity; a string becomes nothing | §1, §2 |
+| B4 | A non-`objectref` property crosses unchanged, falsy values included | §1 |
+| B5 | `Get Property`: a live reference → `Is Valid` true **and** `Parent` returns the real parent | the main defect |
+| B6 | `Get Property On`: the same behaviour on another Object's Component | §1 across all four nodes |
+| B7 | A dead reference: `Is Valid` false, `Parent` null, the stored value kept | `Is Valid`'s lie |
+| B8 | An empty reference: `Is Valid` false | no regression |
+| B9 | `Set Property` / `Set Property On` fed by `Self` store a string | invariant 3 |
+| B10 | `serializeScene()` writes no record into a component value | invariant 3, stated as an invariant |
+| B11 | Round trip: the reference comes back and still resolves | §3.5 over time |
+| B12 | A deleted target then a round trip: the value kept, the resolution null | §3.4 after reload |
+| B13 | A forged record in `node.inputs` still does not become an Object | **no regression of §3.6** |
 
-Seize tests couvrent ces treize lignes. **Dix des treize échouent** contre l'implémentation
-précédente, ce qui est la seule preuve qui vaille qu'elles gardent quelque chose. Les trois
-autres — B4, B8, B13 — passaient déjà, et gardent contre une régression future : que la
-traduction touche une valeur ordinaire, qu'une référence vide cesse d'être vide, ou que la
-résolution ajoutée ici s'étende aux valeurs de graphe.
-
----
-
-## Conséquences
-
-### Positives
-
-- `Is Valid` cesse de mentir, donc le seul moyen de défense qu'ADR-0034 donne au créateur
-  fonctionne.
-- `Parent`, `Get Property On` et `Set Property On` opèrent sur une référence persistée comme
-  ils opèrent sur `Self` : une seule sémantique d'Object dans le graphe.
-- Une scène cesse de pouvoir contenir un handle sérialisé.
-- Le chemin complet « propriété `objectref` → graphe » devient utilisable : c'est la seule
-  manière légale de désigner un Object précis depuis un `.px`, la portée projet interdisant
-  d'y écrire une identité de scène.
-
-### Négatives
-
-- `property.get` sur une propriété `objectref` a besoin de `io.ctx.scene`. Un appelant qui
-  n'en fournit pas lit `null` là où il lisait une chaîne. C'est la dégradation honnête — le
-  port promet un handle — mais c'est un comportement qui change.
-- Une valeur corrompue par le défaut se lit désormais comme une référence morte plutôt que
-  comme une chaîne. Aucune donnée du dépôt n'est concernée.
+Sixteen tests cover those thirteen lines. **Ten of the thirteen fail** against the previous
+implementation, which is the only proof worth having that they guard something. The other three — B4,
+B8, B13 — already passed, and guard against a future regression: that the translation touches an
+ordinary value, that an empty reference stops being empty, or that the resolution added here extends
+to graph values.
 
 ---
 
-## Alternatives écartées
+## Consequences
 
-| Alternative | Pourquoi non |
+### Positive
+
+- `Is Valid` stops lying, so the one means of defence ADR-0034 gives the creator works.
+- `Parent`, `Get Property On` and `Set Property On` operate on a persisted reference exactly as they
+  operate on `Self`: one Object semantics in the graph.
+- A scene can no longer hold a serialized handle.
+- The complete "`objectref` property → graph" path becomes usable: it is the only legal way to
+  designate a specific Object from a `.px`, since project scope forbids writing a scene identity
+  into one.
+
+### Negative
+
+- `property.get` on an `objectref` property needs `io.ctx.scene`. A caller that does not supply one
+  reads `null` where it read a string. That is the honest degradation — the port promises a handle —
+  but it is a behaviour that changes.
+- A value corrupted by the defect now reads as a dead reference rather than as a string. No data in
+  the repository is affected.
+
+---
+
+## Rejected alternatives
+
+| Alternative | Why not |
 |---|---|
-| Typer le port `objectref` plutôt que `object` | `typesCompatible()` compare des noms : le port ne serait plus compatible avec ce que produit `Self`. ADR-0034 §3.5 l'écrit déjà — « aucun port n'est jamais typé `objectref` » |
-| Résoudre dans l'interprète plutôt que dans le catalogue | l'interprète ne connaît pas le schéma d'une propriété ; il aurait fallu lui donner ce que le catalogue tient déjà, et une seconde autorité sur ce qu'est une propriété |
-| Un nœud `Resolve` explicite, à la charge du créateur | expose la mécanique interne au lieu de la fermer, et rouvre §3.6 pour de bon : le nœud accepterait n'importe quelle chaîne |
-| Valider à l'écriture plutôt que traduire | `isValidValue()` n'est pas consultée par une écriture simple, et ADR-0003 exige que le graphe écrive simplement. Valider aurait exigé un second chemin d'écriture |
-| Lire tolérante pour les valeurs corrompues | masquerait la classe de défaut que cet ADR ferme, pour une donnée dont l'existence n'a pas pu être constatée |
+| Typing the port `objectref` rather than `object` | `typesCompatible()` compares names: the port would no longer be compatible with what `Self` produces. ADR-0034 §3.5 already writes it — "no port is ever typed `objectref`" |
+| Resolving in the interpreter rather than in the catalogue | the interpreter does not know a property's schema; it would have had to be given what the catalogue already holds, plus a second authority on what a property is |
+| An explicit `Resolve` node, left to the creator | it exposes the internal mechanics instead of closing them, and reopens §3.6 for good: the node would accept any string |
+| Validating on write rather than translating | `isValidValue()` is not consulted by a plain write, and ADR-0003 requires a graph to write plainly. Validating would have required a second write path |
+| A tolerant read for corrupted values | it would hide the class of defect this ADR closes, for data whose existence could not be established |

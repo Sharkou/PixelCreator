@@ -1,322 +1,315 @@
-# ADR-0039 — Une cible qu'on désigne est un paramètre ; une catégorie dit ce qu'un nœud EST ; une identité entre selon sa PORTÉE
+# ADR-0039 — A target you designate is a parameter; a category says what a node IS; an identity enters according to its SCOPE
 
-- **Statut :** **accepté** (2026-08-27)
-- **Amendé par :** ADR-0040 (2026-08-28) — §5 devient absolu : le mécanisme de titre dynamique disparaît du contrat au lieu d'être seulement inutilisé
-- **Décide :** comment un nœud de propriété désigne l'Object sur lequel il agit ; la taxonomie des nœuds et ce qu'elle alimente ; quelles identités un `.px` peut contenir ; où un nœud configuré se lit
-- **Dépend de :** ADR-0020 (Resources), ADR-0023 (`PropertyType`), ADR-0027 (modèle de graphe), ADR-0030 (§4, la palette), ADR-0033 (rangées), ADR-0034 (références d'Object), ADR-0037 (un dépôt déclare)
-- **Amende :** ADR-0034 §7 (le « mode de ciblage en paramètre » est réhabilité sous condition) ; ADR-0037 §2.4 (un dépôt produit un nœud fini) et §6 (la poignée de propriété est tranchée) ; ADR-0030 §4 (six teintes deviennent sept) ; ADR-0034 §3.7 et ADR-0037 §2.3 (le refus du dépôt d'une **Resource** est levé)
-- **Ne décide pas :** un type de port `component` ou `property`, qui restent refusés — voir §4
+- **Status:** **accepted** (2026-08-27)
+- **Amended by:** ADR-0040 (2026-08-28) — §5 becomes absolute: the dynamic-title mechanism disappears from the contract instead of merely going unused
+- **Decides:** how a property node designates the Object it acts on; the node taxonomy and what it feeds; which identities a `.px` may hold; where a configured node is read
+- **Depends on:** ADR-0020 (Resources), ADR-0023 (`PropertyType`), ADR-0027 (the graph model), ADR-0030 (§4, the palette), ADR-0033 (rows), ADR-0034 (Object references), ADR-0037 (a drop declares)
+- **Amends:** ADR-0034 §7 (the "targeting mode as a parameter" is conditionally rehabilitated); ADR-0037 §2.4 (a drop produces a finished node) and §6 (the property handle is settled); ADR-0030 §4 (six hues become seven); ADR-0034 §3.7 and ADR-0037 §2.3 (the refusal to drop a **Resource** is lifted)
+- **Does not decide:** a `component` or `property` port type, which stay refused — see §4
 
 ---
 
-## 0. Le défaut principal : le créateur devait redire ce que l'Editor savait déjà
+## 0. The main defect: the creator had to restate what the Editor already knew
 
-Pour écrire « fais tourner le joueur », il fallait :
+To write "make the player rotate", you had to:
 
-1. glisser `Player` depuis la Hierarchy ;
-2. glisser `Transform.rotation` depuis l'Inspector ;
-3. tirer un fil du premier nœud vers le port `Target` du second.
+1. drag `Player` from the Hierarchy;
+2. drag `Transform.rotation` from the Inspector;
+3. pull a wire from the first node to the second's `Target` port.
 
-Or à l'étape 2 l'Inspector **affichait Player**. L'Object, le Component et la propriété
-étaient tous les trois connus au moment du geste, et le modèle en demandait deux de plus.
+Yet at step 2 the Inspector **was displaying Player**. The Object, the Component and the property
+were all three known at the moment of the gesture, and the model asked for two more.
 
-### 0.1 Décision — le mode n'existe pas ; il n'y a qu'une question posée deux fois
+### 0.1 Decision — the mode does not exist; there is one question asked twice
 
-> **Un nœud ne demande jamais à un créateur si sa cible est « statique » ou « venue d'un
-> fil ». Ce sont des mots sur l'implémentation, pas sur le jeu. Il a une prise Object,
-> toujours visible, et un sélecteur sur la même ligne : connectez quelque chose et la
-> connexion est la cible, laissez vide et le sélecteur l'est.**
+> **A node never asks a creator whether its target is "static" or "from a wire". Those are words
+> about the implementation, not about the game. It has an Object socket, always visible, and a
+> picker on the same row: connect something and the connection is the target, leave it empty and the
+> picker is.**
 
-Une première version exposait ce choix — un menu `Target : [ Player | From Wire ]` — et
-c'était une faute d'UX : un débutant ne sait pas ce que « From Wire » veut dire, et n'a pas à
-connaître le modèle interne d'un nœud pour s'en servir. **Le mode est déduit du geste.**
+A first version exposed that choice — a `Target: [ Player | From Wire ]` menu — and it was a UX
+mistake: a beginner does not know what "From Wire" means, and should not have to know a node's
+internal model to use it. **The mode is inferred from the gesture.**
 
-| Ce que le créateur fait | Ce que le nœud fait |
+| What the creator does | What the node does |
 |---|---|
-| il choisit un Object dans le sélecteur | le nœud agit dessus |
-| il connecte quelque chose sur la prise | la connexion l'emporte, le sélecteur se grise et dit pourquoi |
-| il retire le fil | le sélecteur répond de nouveau, avec ce qu'il nommait déjà |
+| picks an Object in the picker | the node acts on it |
+| connects something to the socket | the connection wins, the picker greys out and says why |
+| removes the wire | the picker answers again, with what it was already naming |
 
-**La prise ne disparaît jamais.** Une prise qu'on ne voit pas est une prise qu'on ne peut pas
-connecter — et connecter est précisément la moitié du geste que le param ne couvre pas. Les
-deux partagent une ligne parce qu'ils répondent à une seule question.
+**The socket never disappears.** A socket you cannot see is a socket you cannot connect — and
+connecting is precisely the half of the gesture the param does not cover. The two share a row
+because they answer one question.
 
-**Une connexion l'emporte en EXISTANT, pas en produisant un Object.** Un `Find By Tag` qui ne
-trouve personne doit écrire sur personne, et non retomber sur ce que le sélecteur nomme :
-`io.wired(port)` répond à la question structurelle, donc le repli est une règle et non une
-devinette.
+**A connection wins by EXISTING, not by producing an Object.** A `Find By Tag` that finds nobody must
+write on nobody, and not fall back on what the picker names: `io.wired(port)` answers the structural
+question, so the fallback is a rule and not a guess.
 
-`property.getOn` et `property.setOn` gagnent donc un param `target` — l'id d'une prise
-`objectref` du `.px`, ou rien. Absent, la prise répond : c'est exactement ce que fait tout
-graphe écrit avant ce param, donc **aucune migration**.
+`property.getOn` and `property.setOn` therefore gain a `target` param — the id of one of the `.px`'s
+`objectref` sockets, or nothing. Absent, the socket answers: which is exactly what every graph
+written before this param does, so **no migration**.
 
-**Le param ne nomme jamais un Object.** Il nomme une **prise** — une propriété que ce `.px`
-déclare — donc une identité de portée projet (ADR-0027 §4). L'`ObjectId` reste là où
-ADR-0034 §3.5 le met : dans la valeur que chaque Object attaché porte. Un `.px` visé
-statiquement reste réutilisable dans cinquante scènes et le dit dans l'Inspector.
+**The param never names an Object.** It names a **socket** — a property this `.px` declares — and
+therefore a project-scoped identity (ADR-0027 §4). The `ObjectId` stays where ADR-0034 §3.5 puts it:
+in the value each attached Object carries. A statically targeted `.px` stays reusable across fifty
+scenes and says so in the Inspector.
 
-**La résolution n'ouvre aucune porte.** Une prise est une valeur d'instance dont le schéma
-déclare `objectref` : c'est exactement la provenance qu'ADR-0036 §2 autorise, résolue par le
-`portValueOf()` que `property.get` emploie déjà. Aucun nœud ne convertit une chaîne
-arbitraire en Object.
+**The resolution opens no door.** A socket is an instance value whose schema declares `objectref`:
+that is exactly the provenance ADR-0036 §2 authorizes, resolved by the `portValueOf()` that
+`property.get` already uses. No node converts an arbitrary string into an Object.
 
-**Le typage ne bouge pas.** Le type de `value` vient de `(component, property)`, lus dans le
-nœud seul — donc exact que la cible soit désignée ou calculée. C'est la raison pour laquelle
-la cible est un param et non une « Property Reference » circulant sur un fil : ce modèle-là
-rendrait le type fonction de ce qui est branché, et le premier producteur dynamique le ferait
-retomber sur `any`. Voir §4.
+**Typing does not move.** `value`'s type comes from `(component, property)`, read in the node alone —
+and therefore exact whether the target is designated or computed. That is why the target is a param
+and not a "Property Reference" travelling on a wire: that model would make the type a function of
+what is plugged in, and the first dynamic producer would drop it back to `any`. See §4.
 
-### 0.2 Décision — un dépôt produit un nœud FINI
+### 0.2 Decision — a drop produces a FINISHED node
 
-Le dépôt d'une propriété déclare (ou **réutilise**) la prise de l'Object que l'Inspector
-montrait, et vise le nœud dessus — sous un seul batch, donc un seul `Ctrl Z`.
+A property drop declares (or **reuses**) the socket of the Object the Inspector was showing, and
+points the node at it — under one batch, and therefore one `Ctrl Z`.
 
-Réutiliser, et non uniquifier : déposer l'Object lui-même EST le geste « déclare une entrée »
-et deux dépôts en déclarent deux (ADR-0037) ; déposer une propriété est le geste « vise cette
-propriété », où la prise est un moyen. Demander trois propriétés de Player ne doit pas laisser
-trois prises à remplir trois fois.
+Reusing, not uniquifying: dropping the Object itself IS the "declare an input" gesture and two drops
+declare two (ADR-0037); dropping a property is the "target this property" gesture, where the socket
+is a means. Asking for three of Player's properties must not leave three sockets to fill in three
+times.
 
-| Geste | Ce que le créateur voit | Ce que le `.px` gagne |
+| Gesture | What the creator sees | What the `.px` gains |
 |---|---|---|
-| Hierarchy `Player` → toile | un nœud **`Get Object`** avec `Object: Player` | une propriété `objectref` nommée `Player` |
-| Inspector `Transform` (poignée) → toile | menu Get/Set, puis un nœud **visé** | la prise + `{ target, component }` |
-| Hierarchy `Player` → **sur un nœud** | ce nœud est pointé sur Player | la prise, et un param |
-| Inspector `Transform.rotation` (poignée) → toile | menu Get/Set, puis un **`Set Property On`** déjà rempli | la prise + `{ target, component, property }` |
-| Project `hero.png` → toile | un nœud `Resource` | `{ value: ResourceId }` |
+| Hierarchy `Player` → canvas | a **`Get Object`** node with `Object: Player` | an `objectref` property named `Player` |
+| Inspector `Transform` (handle) → canvas | a Get/Set menu, then a **targeted** node | the socket + `{ target, component }` |
+| Hierarchy `Player` → **onto a node** | that node is pointed at Player | the socket, and a param |
+| Inspector `Transform.rotation` (handle) → canvas | a Get/Set menu, then an already-filled **`Set Property On`** | the socket + `{ target, component, property }` |
+| Project `hero.png` → canvas | a `Resource` node | `{ value: ResourceId }` |
 
-**Aucun `ObjectId` dans aucun de ces payloads.** L'identité voyage avec le glissement pour que
-la règle puisse nommer la prise ; elle s'arrête là.
+**No `ObjectId` in any of those payloads.** The identity travels with the drag so that the rule can
+name the socket; it stops there.
 
 ---
 
-## 1. Trois défauts, et ils venaient de deux confusions
+## 1. Three defects, and they came from two confusions
 
-| Constat | Cause réelle |
+| Finding | The real cause |
 |---|---|
-| `Key` et `Pointer` se lisaient comme `Branch` | `Input` n'avait **aucune ligne** dans la table des teintes et retombait sur le gris d'`any`, à un cheveu de l'acier de `Flow` |
-| `Self` et `Get Property On` portaient le même violet | Tout ce qui sortait du Component s'appelait `Scene` : **rendre une référence** et **accéder à une propriété** étaient une seule catégorie |
-| Déposer une image sur la toile était refusé | La règle d'ADR-0034 — « aucune identité dans un `.px` » — était appliquée à une `ResourceId` alors qu'elle parle d'une `ObjectId` |
+| `Key` and `Pointer` read like `Branch` | `Input` had **no row** in the hue table and fell back on `any`'s grey, a hair away from `Flow`'s steel |
+| `Self` and `Get Property On` carried the same purple | Everything leaving the Component was called `Scene`: **returning a reference** and **reaching a property** were one category |
+| Dropping an image on the canvas was refused | ADR-0034's rule — "no identity in a `.px`" — was applied to a `ResourceId` when it speaks of an `ObjectId` |
 
-Les deux premières sont la même confusion : **la catégorie d'un nœud n'était pas une réponse à
-« qu'est-ce que c'est ? »**, mais à « d'où ça vient ? ». La troisième est une confusion entre
-**genre d'identité** et **portée d'identité**.
+The first two are the same confusion: **a node's category was not an answer to "what is it?"**, but
+to "where does it come from?". The third is a confusion between the **kind** of an identity and its
+**scope**.
 
 ---
 
-## 2. Décision : une catégorie répond à « qu'est-ce que ce nœud EST »
+## 2. Decision: a category answers "what this node IS"
 
-`NODE_CATEGORIES` devient :
+`NODE_CATEGORIES` becomes:
 
 ```
 Events · Input · References · Properties · Flow · Values · Math · Compare · Logic · Debug
 ```
 
-`Scene` disparaît, et ce qu'il contenait se range selon ce que les nœuds **font** :
+`Scene` disappears, and what it held is filed by what the nodes **do**:
 
-| Nœud | Avant | Après | Pourquoi |
+| Node | Before | After | Why |
 |---|---|---|---|
-| `Self`, `Parent`, `Find By Tag`, `Is Valid` | Scene | **References** | ils rendent un handle et ne participent à aucune exécution |
-| `Get Property On`, `Set Property On` | Scene | **Properties** | ce sont `Get`/`Set Property` **visés ailleurs** : même sémantique, même écriture simple, même référencement par identité (ADR-0034 §3.3) |
+| `Self`, `Parent`, `Find By Tag`, `Is Valid` | Scene | **References** | they return a handle and take part in no execution |
+| `Get Property On`, `Set Property On` | Scene | **Properties** | they are `Get`/`Set Property` **targeted elsewhere**: same semantics, same plain write, same referencing by identity (ADR-0034 §3.3) |
 
-**Une catégorie est de la présentation et n'est jamais sérialisée.** Un nœud porte son `type`,
-ses params et sa position ; la famille est lue dans le catalogue au chargement. Renommer une
-catégorie ne coûte donc **aucune migration**, et aucun graphe écrit avant cette ligne ne change
-de sens.
+**A category is presentation and is never serialized.** A node carries its `type`, its params and its
+position; the family is read from the catalogue at load time. Renaming a category therefore costs
+**no migration**, and no graph written before this line changes meaning.
 
-### 2.1 La palette gagne une septième teinte — amende ADR-0030 §4
+### 2.1 The palette gains a seventh hue — amends ADR-0030 §4
 
-ADR-0030 §4 plaidait pour six teintes contre « une par catégorie, qui n'apprend rien ». L'argument
-tenait contre vingt ; il ne tient pas contre **sept**, et six ne pouvaient pas dire la différence
-que §1 vient d'établir :
+ADR-0030 §4 argued for six hues against "one per category, which teaches nothing". The argument held
+against twenty; it does not hold against **seven**, and six could not express the difference §1 has
+just established:
 
-| Famille | Teinte |
+| Family | Hue |
 |---|---|
-| Events **et** Input | `--px-accent` — le monde extérieur qui arrive : un instant et un état qui dure sont une famille pour l'œil, deux groupes dans le menu |
-| References | `--px-hue-reference` — **le violet du port `object` lui-même**, donc un `Self` et la prise qu'il alimente sont visiblement la même chose |
-| Properties | `--px-hue-property` — **nouveau** |
+| Events **and** Input | `--px-accent` — the outside world arriving: an instant and a lasting state are one family to the eye, two groups in the menu |
+| References | `--px-hue-reference` — **the purple of the `object` port itself**, so a `Self` and the socket it feeds are visibly the same thing |
+| Properties | `--px-hue-property` — **new** |
 | Flow | `--px-hue-flow` |
-| Values | *aucune* — un littéral porte la teinte de ce qu'il contient (ADR-0033 §4) |
+| Values | *none* — a literal carries the hue of what it holds (ADR-0033 §4) |
 
-> **C'est la dernière.** Toute catégorie suivante prend une teinte qui existe déjà.
+> **This is the last one.** Any further category takes a hue that already exists.
 
-### 2.2 Un oubli de table devient un test
+### 2.2 A missing table row becomes a test
 
-Le défaut de `Input` était **silencieux** : la table vivait dans `windows/graph.js`, qui définit un
-Custom Element et ne peut pas être chargé sans DOM — donc rien ne pouvait la vérifier. Elle est
-extraite dans `editor/graph/palette.js`, sans DOM, et `palette.test.js` exige que **toute catégorie
-déclarée par le catalogue ait une teinte et un glyphe**.
+`Input`'s defect was **silent**: the table lived in `windows/graph.js`, which defines a Custom Element
+and cannot be loaded without a DOM — so nothing could check it. It is extracted into
+`editor/graph/palette.js`, DOM-free, and `palette.test.js` requires that **every category declared by
+the catalogue has a hue and a glyph**.
 
 ---
 
-## 3. Décision : une identité entre dans un `.px` selon sa PORTÉE
+## 3. Decision: an identity enters a `.px` according to its SCOPE
 
-> **Ce qu'ADR-0034 interdit n'est pas « une identité », c'est une identité de portée SCÈNE.**
+> **What ADR-0034 forbids is not "an identity", it is a SCENE-scoped identity.**
 
-Un `.px` est de portée **projet**. Une `ObjectId` nomme quelque chose dans **une** scène, alors
-qu'un `.px` en sert plusieurs : c'est cette **inadéquation de portée** que l'invariant 1 protège,
-et rien d'autre. Une `ResourceId` nomme quelque chose dans le **projet** — exactement la portée du
-`.px` qui la contiendrait (ADR-0020).
+A `.px` is **project**-scoped. An `ObjectId` names something in **one** scene, while a `.px` serves
+several: it is that **scope mismatch** invariant 1 protects, and nothing else. A `ResourceId` names
+something in the **project** — exactly the scope of the `.px` that would hold it (ADR-0020).
 
-Appliquer à la seconde le raisonnement écrit pour la première était une erreur de lecture, et son
-prix était concret : **échanger le sprite d'un objet depuis un graphe était impossible sans
-JavaScript**, alors qu'un nœud `Text` portant une chaîne arbitraire n'a jamais posé de question.
+Applying to the second the reasoning written for the first was a misreading, and its price was
+concrete: **swapping an object's sprite from a graph was impossible without JavaScript**, while a
+`Text` node carrying an arbitrary string has never raised a question.
 
 ### 3.1 `value.resource`
 
-Un littéral de plus, à côté de `Number`, `Boolean` et `Text` :
+One more literal, beside `Number`, `Boolean` and `Text`:
 
 ```
 value.resource   params { value: ResourceId | null }   →  data('value', 'resource')
 ```
 
-- il **ne résout rien** : le Core n'atteint jamais le stockage (ADR-0020), il fait circuler l'identité ;
-- son port sort en `resource`, donc `typesCompatible('resource','resource')` le relie à
-  `Sprite.source` **sans une seule règle nouvelle** — `portTypeOf()` typait déjà ce port depuis la
-  déclaration de la propriété ;
-- il porte la teinte de son type (règle des littéraux, ADR-0033 §4), c'est-à-dire le violet des
-  pointeurs : une ressource EST un pointeur.
+- it **resolves nothing**: the Core never reaches storage (ADR-0020), it carries the identity;
+- its port outputs `resource`, so `typesCompatible('resource','resource')` links it to
+  `Sprite.source` **without a single new rule** — `portTypeOf()` already typed that port from the
+  property's declaration;
+- it carries the hue of its type (the literal rule, ADR-0033 §4), that is, the purple of pointers: a
+  resource IS a pointer.
 
-### 3.2 Le dépôt — amende ADR-0034 §3.7 et ADR-0037 §2.3
+### 3.2 The drop — amends ADR-0034 §3.7 and ADR-0037 §2.3
 
-| Déposé | Sur toile nue | Sur un nœud |
+| Dropped | On bare canvas | On a node |
 |---|---|---|
-| **Resource** (non-dossier) | crée `value.resource` déjà configuré | configure le param `value` d'un nœud qui en déclare un |
+| **Resource** (non-folder) | creates an already-configured `value.resource` | configures the `value` param of a node that declares one |
 
-**Aucun menu**, contrairement au dépôt d'une propriété : `Get` ou `Set` sont deux intentions
-(ADR-0037 §2.4), une ressource n'en a qu'une — *cette valeur*. Un **dossier** reste refusé : ce
-n'est pas une valeur.
+**No menu**, unlike a property drop: `Get` or `Set` are two intentions (ADR-0037 §2.4), a resource has
+only one — *this value*. A **folder** stays refused: it is not a value.
 
-Le tableau d'ADR-0037 §2.3 gagne donc une ligne, et elle est de portée projet comme les trois
-autres :
+ADR-0037 §2.3's table therefore gains a row, and it is project-scoped like the other three:
 
-| Ce qui est déposé | Ce qui entre dans le `.px` | Portée |
+| What is dropped | What enters the `.px` | Scope |
 |---|---|---|
-| Resource | sa `ResourceId`, dans un param | projet |
+| Resource | its `ResourceId`, in a param | project |
 
 ---
 
-## 4. Ce qui reste refusé, et pourquoi ce n'est pas du conservatisme
+## 4. What stays refused, and why that is not conservatism
 
-Un port `property` — donc `Property Reference → Set Property` par un fil — a été réexaminé et
-**reste refusé**, pour une raison mesurable et non par respect de l'ADR précédent.
+A `property` port — and therefore `Property Reference → Set Property` over a wire — was re-examined
+and **stays refused**, for a measurable reason and not out of respect for the previous ADR.
 
-> **Correction d'un argument antérieur.** Il avait été écrit que ce modèle rendrait le type
-> « fonction de la topologie ». C'est inexact : la dépendance serait d'**un seul saut**, par
-> une variable de type déclarée, ce qu'un `array<X>` fait déjà dans cette grammaire. Ce qui
-> le condamne est ailleurs, et c'est plus fort.
+> **Correcting an earlier argument.** It had been written that this model would make the type "a
+> function of the topology". That is inaccurate: the dependency would be **one hop**, through a
+> declared type variable, which an `array<X>` already does in this grammar. What condemns it is
+> elsewhere, and it is stronger.
 
-`Set Property On` type son port `value` depuis `(component, property)`, lus **dans le nœud seul**.
-Sur un fil, ce type deviendrait fonction de la **topologie** : il faudrait remonter la connexion,
-lire les params du nœud source, et recommencer à chaque changement de fil ou de param — dans le
-Core, le validateur et le renderer. Et la première fois qu'une source serait elle-même dynamique,
-le type retomberait sur `any` : **on échangerait un port typé, coloré et refusé au geste contre un
-port sans forme.** C'est exactement ce que le modèle actuel achète.
+`Set Property On` types its `value` port from `(component, property)`, read **in the node alone**. On
+a wire, that type would become a function of the **topology**: you would have to walk back up the
+connection, read the source node's params, and start again on every wire or param change — in the
+Core, the validator and the renderer. And the first time a source were itself dynamic, the type would
+fall back to `any`: **you would trade a typed, coloured port, refused at gesture time, for a port
+with no shape.** That is exactly what the current model buys.
 
-### Les quatre modèles, comparés
+### The four models, compared
 
-| | A — tout en dropdowns | B — références sur fils | C — DnD crée des nœuds de référence | **E + D+ — retenu** |
+| | A — all dropdowns | B — references on wires | C — DnD creates reference nodes | **E + D+ — adopted** |
 |---|---|---|---|---|
-| Nœuds pour lire `Player.Transform.rotation` | 2 + 1 fil | 2 + 1 fil | 3-4 + fils | **1, aucun fil** |
-| Typage de `value` | exact | 1 saut, **dégrade en `any`** dès une source dynamique | exact | exact |
-| Refus au moment du geste | oui | non | oui | oui |
-| Dropdowns à remplir à la main | **trois** | aucun | aucun | **aucun, si l'on dépose** |
-| Cible calculée (`Find By Tag`) | oui | oui | oui | **oui — la prise est toujours là** |
-| Complexité ajoutée au Core | nulle | **forte** (`portsOf` a besoin du graphe) | nulle | nulle |
-| Concept nouveau pour un débutant | non | **oui : un pointeur** | oui | non |
+| Nodes to read `Player.Transform.rotation` | 2 + 1 wire | 2 + 1 wire | 3-4 + wires | **1, no wire** |
+| Typing of `value` | exact | 1 hop, **degrades to `any`** as soon as a source is dynamic | exact | exact |
+| Refusal at gesture time | yes | no | yes | yes |
+| Dropdowns to fill by hand | **three** | none | none | **none, if you drop** |
+| A computed target (`Find By Tag`) | yes | yes | yes | **yes — the socket is always there** |
+| Complexity added to the Core | none | **high** (`portsOf` needs the graph) | none | none |
+| A new concept for a beginner | no | **yes: a pointer** | yes | no |
 
-**Ce qui condamne B n'est pas le typage, c'est le concept.** « Une référence à une propriété
-est elle-même une valeur qui circule sur un fil » est un pointeur — l'idée la plus difficile
-du modèle, dans un langage visuel destiné à des gens qui ne programment pas. Unreal Blueprints
-et Unity Visual Scripting l'évitent tous les deux : un pin `Target`, et la propriété cuite
-dans l'identité du nœud. E fait la même chose sans même le pin, quand la cible se désigne.
+**What condemns B is not the typing, it is the concept.** "A reference to a property is itself a
+value travelling on a wire" is a pointer — the hardest idea in the model, in a visual language aimed
+at people who do not program. Unreal Blueprints and Unity Visual Scripting both avoid it: a `Target`
+pin, and the property baked into the node's identity. E does the same thing without even the pin,
+when the target can be designated.
 
-**D = les params portent le TYPAGE, le glisser-déposer porte l'AUTORAT.** Le créateur ne remplit
-plus les dropdowns : il dépose un Object, un Component ou une propriété, et le nœud arrive
-configuré (ADR-0037). Les dropdowns restent pour le clavier, la relecture et la correction — ils
-ne sont plus le chemin principal.
+**D = the params carry the TYPING, drag and drop carries the AUTHORING.** The creator no longer fills
+the dropdowns: they drop an Object, a Component or a property, and the node arrives configured
+(ADR-0037). The dropdowns remain for the keyboard, for rereading and for correcting — they are no
+longer the main path.
 
-C'est le modèle que le dépôt avait déjà ; ce qui manquait était **le geste**, et il manquait pour
-une raison qui n'avait rien d'architectural : la résolution de cible du shell interrogeait une
-fenêtre **cachée**, qui revendiquait tous les dépôts. Aucune règle n'était jamais consultée.
-
----
-
-## 5. Décision : le titre d'un nœud est son type, toujours
-
-Un `Pointer Button` réglé sur Middle s'appelait `Middle Button` — un nœud introuvable dans une
-documentation, un tutoriel ou une recherche, et dont le nom ne disait plus ce qu'il faisait.
-
-> **L'en-tête d'un nœud est le nom de son TYPE, et rien d'autre. Ce avec quoi il est
-> configuré se lit à l'intérieur, sur les lignes où cela se change.**
-
-Une version intermédiaire autorisait un titre configuré tant que « les mots qui nomment le
-nœud survivent » — `Set Player.Transform.rotation`. C'était encore faux, pour deux raisons
-qui se voient à l'usage :
-
-- **une valeur occupait la place d'un type.** `Get Ground`, `Set Sprite.height`,
-  `Middle Button` : le même nœud portait un nom différent dans chaque graphe, et un tutoriel
-  ne pouvait plus le nommer. « Ajoutez un Set Property » doit désigner le même nœud une heure
-  plus tard, et un créateur doit pouvoir relier l'en-tête qu'il lit à l'entrée du menu ;
-- **la syntaxe à points est du code.** `Sprite.height` est une expression de programmation
-  dans un outil qui n'en est pas un. Deux champs — `Component: Sprite`, `Property: Height` —
-  disent la même chose sans rien demander à personne.
-
-Le catalogue ne déclare donc **plus aucun `title()`**, et un test y tient toutes ses
-définitions. `NodeDefinition.identity`, qui existait pour encadrer l'exception, disparaît avec
-elle : une règle sans exception n'a pas besoin d'être bornée.
-
-> **Amendé par ADR-0040 §5 (2026-08-28).** `title` restait déclarable au contrat
-> `NodeDefinition`, pour alimenter le `<title>` du nœud. Une règle absolue tenue par la
-> discipline finit par être négociée : le mécanisme a été retiré du contrat, de
-> `shapeDependsOnNode()` et de `describeNode()`. Un type de nœud a un `label` et aucun autre
-> moyen de dire comment il s'appelle, et un test parcourt le catalogue pour le tenir.
+That is the model the repository already had; what was missing was **the gesture**, and it was
+missing for a reason that had nothing architectural about it: the shell's target resolution queried a
+**hidden** window, which claimed every drop. No rule was ever consulted.
 
 ---
 
-## 6. Contrats observables
+## 5. Decision: a node's title is its type, always
 
-| Contrat | Vérifiable par |
+A `Pointer Button` set to Middle was called `Middle Button` — a node you cannot find in
+documentation, in a tutorial or in a search, and whose name no longer said what it did.
+
+> **A node's header is the name of its TYPE, and nothing else. What it is configured with is read
+> inside, on the rows where it is changed.**
+
+An intermediate version allowed a configured title as long as "the words that name the node survive"
+— `Set Player.Transform.rotation`. That was still wrong, for two reasons you see in use:
+
+- **a value took the place of a type.** `Get Ground`, `Set Sprite.height`, `Middle Button`: the same
+  node carried a different name in every graph, and a tutorial could no longer name it. "Add a Set
+  Property" has to designate the same node an hour later, and a creator must be able to connect the
+  header they read to the menu entry;
+- **dotted syntax is code.** `Sprite.height` is a programming expression in a tool that is not one.
+  Two fields — `Component: Sprite`, `Property: Height` — say the same thing without asking anything of
+  anyone.
+
+The catalogue therefore declares **no `title()` at all**, and a test holds all of its definitions.
+`NodeDefinition.identity`, which existed to bound the exception, disappears with it: a rule with no
+exception does not need bounding.
+
+> **Amended by ADR-0040 §5 (2026-08-28).** `title` remained declarable in the `NodeDefinition`
+> contract, to feed the node's `<title>`. An absolute rule held by discipline ends up being
+> negotiated: the mechanism was removed from the contract, from `shapeDependsOnNode()` and from
+> `describeNode()`. A node type has a `label` and no other way of saying what it is called, and a test
+> walks the catalogue to hold that.
+
+---
+
+## 6. Observable contracts
+
+| Contract | Verifiable by |
 |---|---|
-| Toute catégorie déclarée a une teinte et un glyphe | `palette.test.js`, sur le catalogue réel |
-| `Self` et `Get Property On` ne portent pas la même couleur | `categoryHue('References') !== categoryHue('Properties')` |
-| `Input` ne porte pas la couleur de `Flow` | idem, et `Input === Events` |
-| Un littéral porte la teinte de son type, pas de sa famille | `Values` est absent de la table des catégories |
-| Un `.px` ne contient aucune `ObjectId` | le payload sérialisé, après un dépôt d'Object réel |
-| Un `.px` **peut** contenir une `ResourceId` | le param de `value.resource` après un dépôt |
-| Une ressource se relie à `Sprite.source` | `typesCompatible(sortie, portTypeOf(Sprite.schema.source))` |
-| Aucun type de nœud ne peut se renommer | tout le catalogue, `nodes.test.js` |
-| Un import nommé désigne un export réel | `tools/check-exports.js`, sur `src/` et `tools/` |
+| Every declared category has a hue and a glyph | `palette.test.js`, on the real catalogue |
+| `Self` and `Get Property On` do not carry the same colour | `categoryHue('References') !== categoryHue('Properties')` |
+| `Input` does not carry `Flow`'s colour | the same, and `Input === Events` |
+| A literal carries the hue of its type, not of its family | `Values` is absent from the category table |
+| A `.px` contains no `ObjectId` | the serialized payload, after a real Object drop |
+| A `.px` **may** contain a `ResourceId` | `value.resource`'s param after a drop |
+| A resource connects to `Sprite.source` | `typesCompatible(output, portTypeOf(Sprite.schema.source))` |
+| No node type can rename itself | the whole catalogue, `nodes.test.js` |
+| A named import designates a real export | `tools/check-exports.js`, over `src/` and `tools/` |
 
 ---
 
-## 7. Conséquences
+## 7. Consequences
 
-### Positives
+### Positive
 
-- La couleur répond à « qu'est-ce que ce nœud ? » avant que le titre soit lu.
-- Un oubli de palette ne peut plus être silencieux.
-- Échanger un sprite depuis un graphe devient possible sans JavaScript.
-- Le glisser-déposer devient le chemin principal ; les dropdowns deviennent le recours.
-- Un nœud garde son nom, donc il peut être documenté et cherché.
+- Colour answers "what is this node?" before the title is read.
+- A missing palette row can no longer be silent.
+- Swapping a sprite from a graph becomes possible without JavaScript.
+- Drag and drop becomes the main path; the dropdowns become the fallback.
+- A node keeps its name, so it can be documented and searched for.
 
-### Négatives
+### Negative
 
-- Sept teintes au lieu de six : une de plus à apprendre, et c'est le prix d'une distinction que
-  six ne pouvaient pas exprimer.
-- `value.resource` fait entrer une `ResourceId` dans un `.px`. Un projet qui supprime la ressource
-  laisse un nœud pointant sur rien — montré en **rouge** par le contrôle, jamais réécrit, ce qui
-  est le traitement qu'ADR-0034 §3.4 donne déjà à une référence morte.
-- La catégorie `Scene` disparaît du vocabulaire ; les ADRs qui la nomment se lisent avec §2.
+- Seven hues instead of six: one more to learn, and that is the price of a distinction six could not
+  express.
+- `value.resource` brings a `ResourceId` into a `.px`. A project that deletes the resource leaves a
+  node pointing at nothing — shown in **red** by the control, never rewritten, which is the treatment
+  ADR-0034 §3.4 already gives a dead reference.
+- The `Scene` category disappears from the vocabulary; the ADRs that name it read with §2 beside
+  them.
 
 ---
 
-## 8. Alternatives écartées
+## 8. Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| Garder `Input` sans teinte | Le défaut d'origine : gris, indiscernable de `Flow` |
-| Donner à `Properties` une teinte existante | Le vert est celui de `Text`, l'ambre celui de `boolean` : deux idées, une couleur |
-| Un port `property` (modèle B) | Typage fonction de la topologie, dégradant en `any` — §4 |
-| Un nœud `Object Reference` distinct | `property.get` sur une prise `objectref` EST cette lecture ; un second nœud serait deux mécanismes pour une idée |
-| Refuser la Resource « puisque rien ne la consomme » | On ne conçoit pas une architecture d'après ce qui existe déjà ; c'est le nœud qui manquait |
-| Un menu Get/Set au dépôt d'une ressource | Une ressource n'a qu'une intention ; demander serait de la cérémonie |
+| Keeping `Input` with no hue | The original defect: grey, indistinguishable from `Flow` |
+| Giving `Properties` an existing hue | Green is `Text`'s, amber is `boolean`'s: two ideas, one colour |
+| A `property` port (model B) | Typing as a function of the topology, degrading to `any` — §4 |
+| A separate `Object Reference` node | `property.get` on an `objectref` socket IS that read; a second node would be two mechanisms for one idea |
+| Refusing the Resource "since nothing consumes it" | You do not design an architecture from what already exists; the node was what was missing |
+| A Get/Set menu when dropping a resource | A resource has one intention; asking would be ceremony |

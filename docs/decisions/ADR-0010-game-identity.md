@@ -1,24 +1,24 @@
-# ADR-0010 — L'identité d'un jeu est un ID, pas son nom
+# ADR-0010 — A game's identity is an ID, not its name
 
-- **Statut :** **accepté** (2026-08-12)
+- **Status:** **accepted** (2026-08-12)
 
-## Contexte observé
+## Observed context
 
-Legacy n'a **aucune notion de `Project`**. Le serveur instancie un singleton :
+Legacy has **no notion of a `Project`**. The server instantiates a singleton:
 
 ```js
-let scene = new Scene();   // pas de nom, pas d'id, pas de projet
+let scene = new Scene();   // no name, no id, no project
 ```
 
-Le client envoie `send('init', scene.name)` — le serveur **ignore** ce paramètre et
-renvoie l'unique scène qu'il détient. Un serveur = un jeu.
+The client sends `send('init', scene.name)` — the server **ignores** that parameter and returns
+the one scene it holds. One server = one game.
 
-Les ressources sont identifiées par `id = path + name` (`Loader`), donc **renommer un
-fichier change son identité** et casse toutes les références qui pointaient dessus.
+Resources are identified by `id = path + name` (`Loader`), so **renaming a file changes its
+identity** and breaks every reference pointing at it.
 
-Tout est donc à construire, sans contrainte de compatibilité.
+Everything is therefore still to be built, with no compatibility constraint.
 
-## Décision
+## Decision
 
 ```
 play.pixelcreator.io/7f3a91c2
@@ -32,46 +32,44 @@ play.pixelcreator.io/7f3a91c2
 }
 ```
 
-- **`id`** — opaque, stable, généré, jamais réutilisé. C'est **la** identité.
-- **`name`** — libre, modifiable, **non unique**. Deux jeux peuvent s'appeler
-  « Medieval Arena ».
-- **`slug`** — optionnel, esthétique, ajouté plus tard, résolu comme **alias** vers l'id.
-  Jamais comme identité.
+- **`id`** — opaque, stable, generated, never reused. It is **the** identity.
+- **`name`** — free, editable, **non-unique**. Two games may be called "Medieval Arena".
+- **`slug`** — optional, cosmetic, added later, resolved as an **alias** to the id. Never as an
+  identity.
 
-La même règle s'applique en interne : `Object.id`, `Component`, `Resource.id`.
-**Aucune identité ne dérive d'un nom modifiable par l'utilisateur.**
+The same rule applies internally: `Object.id`, `Component`, `Resource.id`. **No identity derives
+from a name the user can change.**
 
-### Application aux ressources
+### Applying it to resources
 
-`Resource.id` cesse d'être `path + name`. Renommer ou déplacer un fichier conserve son
-id, donc toutes les références (une `Texture` qui pointe vers une image, un `Animator`
-qui pointe vers un graphe) survivent au renommage.
+`Resource.id` stops being `path + name`. Renaming or moving a file keeps its id, so every
+reference (a `Texture` pointing at an image, an `Animator` pointing at a graph) survives the
+rename.
 
-## Justification
+## Rationale
 
-- Un nom est un attribut d'affichage. En faire une clé crée des collisions et casse le
-  renommage.
-- Les URLs partagées doivent rester valides quand le créateur renomme son jeu.
-- Le partage (`SHARE`) exige une URL stable, courte et non devinable.
+- A name is a display attribute. Making it a key creates collisions and breaks renaming.
+- Shared URLs must stay valid when the creator renames their game.
+- Sharing (`SHARE`) requires a stable, short, non-guessable URL.
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Renommer un jeu, une scène ou un fichier ne casse rien.
-- Les collisions de noms disparaissent structurellement.
-- Un slug peut être ajouté plus tard sans migration de données.
+- Renaming a game, a scene or a file breaks nothing.
+- Name collisions disappear structurally.
+- A slug can be added later with no data migration.
 
-### Négatives
+### Negative
 
-- Les URLs sont moins lisibles tant qu'il n'y a pas de slug.
-- L'Editor doit afficher des noms tout en manipulant des ids partout : toute vue qui
-  montre une ressource doit résoudre `id → name`.
-- Un id court (8 caractères) doit être vérifié comme non déjà attribué. Legacy génère
-  9 caractères via `Math.random().toString(36)` — insuffisant pour des identifiants
-  publics et non devinables. Longueur et source d'aléa à revoir.
+- URLs are less readable until there is a slug.
+- The Editor has to display names while handling ids everywhere: any view showing a resource must
+  resolve `id → name`.
+- A short id (8 characters) has to be checked for collisions. Legacy generates 9 characters
+  through `Math.random().toString(36)` — not enough for public, non-guessable identifiers. The
+  length and the source of randomness need revisiting.
 
-## Question ouverte
+## Open question
 
-Portée des ids : globale à la plateforme, ou par utilisateur ? Détermine la longueur
-requise et la stratégie anti-collision.
+The scope of ids: global to the platform, or per user? It determines the required length and the
+anti-collision strategy.

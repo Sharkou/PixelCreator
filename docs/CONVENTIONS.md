@@ -1,39 +1,39 @@
 # Conventions
 
-## Langue
+## Language
 
-- **Code, identifiants, commentaires, JSDoc : anglais.**
-- **Mémoire de projet — `PROJECT.md`, `ARCHITECTURE.md`, ce fichier, `architecture/`,
-  `decisions/`, `development/`, `migration/`, `audit/`, `archive/` : français.** Les
-  identifiants techniques y restent en anglais (`Object`, `Component`, `setProperty`).
-- **Documentation publique : anglais.** `README.md`, `CONTRIBUTING.md`, `SECURITY.md`,
-  `CHANGELOG.md`, `.github/`, `docs/user/` et `docs/developer/` s'adressent aux utilisateurs
-  et aux contributeurs d'un dépôt public international, et l'étaient déjà pour les quatre
-  premiers. Le guide utilisateur et la documentation développeur sont la porte d'entrée du
-  dépôt (`docs/README.md`) : les écrire en français aurait rendu le projet inaccessible à la
-  majorité de ses lecteurs, et un dépôt dont le README est anglais et le guide français est
-  incohérent pour tout le monde.
-- **`docs/developer/` ne double pas la mémoire de projet.** Il l'oriente : quand un sujet est
-  spécifié dans `ARCHITECTURE.md` ou dans un ADR, la page anglaise y renvoie au lieu de le
-  réécrire. C'est ce qui empêche deux versions d'une même règle de diverger dans deux langues.
+- **Code, identifiers, comments, JSDoc: English.**
+- **Repository documentation: English.** Every maintained Markdown document in this
+  repository — user guide, developer guide, project memory, architecture specification,
+  ADRs, migration and audit history, archive — is written so that an English-speaking
+  contributor can read it without knowing any other language.
+- **Commit messages: English.**
+- **Technical identifiers are never translated.** `Object`, `Component`, `Transform`,
+  `setProperty()`, `ResourceId` and the rest keep their exact spelling wherever they appear,
+  including inside prose.
 
-**OBSERVÉ :** Legacy mélange les deux dans les commentaires (« Si l'objet est
-sélectionné », « annule l'interdiction de drop »). En v2, le code est en anglais sans
-exception.
+A literal string quoted *because it exists verbatim* in Legacy source or in recorded
+behaviour is evidence, not prose: it stays exactly as it is, and the explanation around it
+is in English.
+
+**OBSERVED:** Legacy mixes two languages in its comments (« Si l'objet est sélectionné »,
+« annule l'interdiction de drop »). In v2 the code is English without exception.
+
+**`docs/developer/` does not duplicate the project memory.** It points into it: when a
+subject is specified in `ARCHITECTURE.md` or in an ADR, the developer page links there
+instead of restating it. That is what stops two copies of the same rule from drifting apart.
 
 ## Style
 
-- JavaScript, modules ES. Pas de TypeScript, pas de transpilation.
-- `camelCase` pour variables et fonctions, `PascalCase` pour les classes,
-  noms de fichiers en minuscules.
-- Un fichier = une classe = une responsabilité.
-- Hiérarchies de dossiers peu profondes.
-- Guillemets simples, indentation 4 espaces, point-virgule — comme Legacy.
+- JavaScript, ES modules. No TypeScript, no transpilation.
+- `camelCase` for variables and functions, `PascalCase` for classes, lowercase filenames.
+- One file = one class = one responsibility.
+- Shallow directory hierarchies.
+- Single quotes, 4-space indentation, semicolons — as in Legacy.
 
 ## JSDoc
 
-Documenter les constructeurs et les méthodes publiques. Pas de JSDoc au niveau de la
-classe. Rester factuel.
+Document constructors and public methods. No class-level JSDoc. Stay factual.
 
 ```js
 /**
@@ -43,134 +43,131 @@ classe. Rester factuel.
  */
 ```
 
-## Règles spécifiques à Pixel Creator
+## Rules specific to Pixel Creator
 
-### `Object` masque le global
+### `Object` shadows the global
 
-Un module qui importe `Object` n'utilise **jamais** les statiques du global :
+A module that imports `Object` **never** uses the statics of the global one:
 `Object.keys`, `Object.values`, `Object.assign`, `Object.entries`.
 
-**OBSERVÉ :** `legacy/src/core/renderer.js` fait `Object.values(scene.objects)` sans
-importer notre `Object` — cela fonctionne par chance. Le même code dans `scene.js`,
-qui l'importe, serait un bug silencieux.
+**OBSERVED:** `legacy/src/core/renderer.js` calls `Object.values(scene.objects)` without
+importing our `Object` — it works by luck. The same code in `scene.js`, which does import
+it, would be a silent bug.
 
-Utiliser des helpers explicites (`keysOf`, `valuesOf`) dans les modules concernés.
+Use explicit helpers (`keysOf`, `valuesOf`) in the modules concerned.
 
-### Écriture de propriété : choisir le bon canal
+### Writing a property: pick the right channel
 
 ```js
-object.x = 100;                  // mutation directe de l'état — aucune Operation
-object.setProperty('x', 100);    // mutation contrôlée — Change + Operation
+object.x = 100;                  // direct state mutation — no Operation
+object.setProperty('x', 100);    // controlled mutation — Change + Operation
 ```
 
-**`object.$x` n'existe pas en v2.** Le sigil de Legacy est supprimé.
+**`object.$x` does not exist in v2.** The Legacy sigil is gone.
 
-`setProperty()` n'est pas « la méthode réseau » : c'est le chemin contrôlé du modèle.
-L'Operation produite peut être validée, répliquée, historisée, annulée, partagée — selon
-le contexte.
+`setProperty()` is not "the network method": it is the model's controlled path. The
+Operation it produces can be validated, replicated, recorded in history, undone or shared —
+depending on the context.
 
-La distinction n'est pas « répliqué / non répliqué » mais **« sortie de simulation »
-contre « intention »** :
+The distinction is not "replicated / not replicated" but **"simulation output" versus
+"intent"**:
 
-> **Un Component n'appelle jamais `setProperty()`. L'Editor n'écrit jamais sans.**
+> **A Component never calls `setProperty()`. The Editor never writes without it.**
 
-`self.x += vx` dans un `update()` est un résultat de calcul, pas une décision : le
-serveur fait autorité sur sa propre simulation.
+`self.x += vx` inside an `update()` is the result of a computation, not a decision: the
+server is authoritative over its own simulation.
 
-#### ⚠ `setProperty()` porte le même nom dans Legacy, avec un autre sens
+#### ⚠ `setProperty()` carries the same name in Legacy, with another meaning
 
 | | Legacy | v2 |
 |---|---|---|
-| `object.x = v` | écrit l'état, émet `setProperty` | écrit l'état, émet un `Change` |
-| `setProperty('x', v)` | écrit `_x` directement, **ne réplique pas** | **chemin contrôlé** — `Change` + Operation |
-| `$x` / `syncProperty('x', v)` | répliquent | **n'existent pas** — remplacés par `setProperty()` |
-| Appliquer un changement entrant | écriture simple à la réception | Operation `origin: 'network'` |
+| `object.x = v` | writes the state, emits `setProperty` | writes the state, emits a `Change` |
+| `setProperty('x', v)` | writes `_x` directly, **does not replicate** | **controlled path** — `Change` + Operation |
+| `$x` / `syncProperty('x', v)` | replicate | **do not exist** — replaced by `setProperty()` |
+| Applying an incoming change | plain write on receipt | Operation with `origin: 'network'` |
 
-Ne jamais raisonner par analogie avec `legacy/` sur ce point.
+Never reason by analogy with `legacy/` on this point.
 
-#### Les couches internes ne sont pas une API
+#### The internal layers are not an API
 
-Legacy empile `object.x` → `_x` → `__x`. Ces niveaux restent de simples possibilités
-d'implémentation : **aucun code utilisateur, aucun composant et aucune API publique v2
-ne doit les manipuler ni en dépendre.**
+Legacy stacks `object.x` → `_x` → `__x`. Those levels remain mere implementation
+possibilities: **no user code, no component and no public v2 API may touch them or depend
+on them.**
 
-#### Le mode d'échec à surveiller
+#### The failure mode to watch for
 
-Appeler `setProperty()` là où `=` suffisait coûte du trafic et une entrée d'historique.
-Écrire `=` là où `setProperty()` était requis produit une modification qui **ne se
-réplique pas et ne s'annule pas** — sans erreur, sans trace. C'est le second cas qui
-fait perdre du temps.
+Calling `setProperty()` where `=` would have done costs traffic and one history entry.
+Writing `=` where `setProperty()` was required produces a change that **neither replicates
+nor undoes** — no error, no trace. The second case is the one that wastes time.
 
-### Lire une transform en boucle chaude
+### Reading a transform in a hot loop
 
-La façade `object.x` traverse deux indirections (ADR-0002). Dans le rendu et la
-physique, lire le `Transform` une fois plutôt que la façade à chaque accès :
+The `object.x` façade goes through two indirections (ADR-0002). In rendering and physics,
+read the `Transform` once instead of the façade on every access:
 
 ```js
-// non
+// no
 self.x + other.x
 
-// oui
+// yes
 const transform = self.getComponent('Transform');
 transform.x + transform.y;
 ```
 
-Il n'existe pas d'accesseur `object.transform` : `getComponent('Transform')` est la seule
-forme, comme pour tout autre composant.
+There is no `object.transform` accessor: `getComponent('Transform')` is the only form, as
+for any other component.
 
-### Nommage dans `editor/`
+### Naming in `editor/`
 
-Les classes de l'Editor **ne portent pas de préfixe** : `Element`, `Window`, `Field`,
-`Viewport`, `Hierarchy`, `Inspector`. Les custom elements gardent leur préfixe obligatoire
-`px-` (`<px-field>`, `<px-window>`). C'est du nommage de classe, rien d'autre.
+Editor classes **carry no prefix**: `Element`, `Window`, `Field`, `Viewport`, `Hierarchy`,
+`Inspector`. Custom elements keep their mandatory `px-` prefix (`<px-field>`, `<px-window>`).
+This is class naming, nothing more.
 
-Trois de ces noms en masquent un autre — `Element` et `Window` masquent des globaux DOM,
-`Viewport` entre en collision avec l'export du runtime. **La règle d'`Object` s'applique
-telle quelle :**
+Three of those names shadow something else — `Element` and `Window` shadow DOM globals,
+`Viewport` collides with the runtime export. **The `Object` rule applies verbatim:**
 
 ```js
-globalThis.Object.keys(components)                      // jamais Object.keys
-import { Viewport as Surface } from '../runtime/mod.js' // alias à l'import
+globalThis.Object.keys(components)                      // never Object.keys
+import { Viewport as Surface } from '../runtime/mod.js' // alias at import
 ```
 
-**Ne jamais poser d'état sur une propriété publique d'un élément.** `Element.prototype`
-possède déjà `prefix`, `slot`, `id`, `title`, `part`… et certaines sont en lecture seule :
-`this.prefix = 'X'` lève une `TypeError`. L'état d'un élément va dans un champ `#privé`.
+**Never store state on a public property of an element.** `Element.prototype` already owns
+`prefix`, `slot`, `id`, `title`, `part`… and some of them are read-only: `this.prefix = 'X'`
+throws a `TypeError`. An element's state goes in a `#private` field.
 
-### Champs privés `#`
+### `#` private fields
 
-À réserver à l'état **réellement interne**, jamais à une donnée que l'utilisateur doit
-voir ou qui doit être répliquée.
+Reserved for state that is **genuinely internal**, never for data the user has to see or
+that has to be replicated.
 
-**OBSERVÉ :** `Texture` déclare `#scaleX`, `#scaleY`, `#scaleFromBox` ; ces propriétés
-sont devenues invisibles au Property System, à l'Inspector et à la sérialisation, sans
-que le commit qui les a introduites ne le signale. Voir `migration/LEGACY_ANALYSIS.md`
-§2.3.
+**OBSERVED:** `Texture` declares `#scaleX`, `#scaleY`, `#scaleFromBox`; those properties
+became invisible to the Property System, the Inspector and serialization, and the commit
+that introduced them said nothing about it. See `migration/LEGACY_ANALYSIS.md` §2.3.
 
-### Rendu
+### Rendering
 
-- Canvas : visuel de jeu uniquement.
-- DOM : interface uniquement.
-- Ne jamais mélanger les deux responsabilités dans un même module.
+- Canvas: game visuals only.
+- DOM: interface only.
+- Never mix the two responsibilities in one module.
 
-### Dépendances de couches
+### Layer dependencies
 
 ```
 editor/  ──►  runtime/  ──►  core/
 network/ ──►  core/
-core/    ──►  (rien)
+core/    ──►  (nothing)
 ```
 
-Le Core n'importe jamais le DOM (`window`, `document`), ni `runtime/`, `editor/`,
-`network/`. Un test automatisé le vérifie.
+The Core never imports the DOM (`window`, `document`), nor `runtime/`, `editor/` or
+`network/`. An automated test checks it.
 
-## Composants
+## Components
 
 ```js
 export class MyComponent {
-    static schema = { speed: { type: 'number', default: 2, min: 0 } };  // optionnel
-    static icon = 'fas fa-gamepad';                                     // optionnel
-    static category = 'physics';                                        // optionnel
+    static schema = { speed: { type: 'number', default: 2, min: 0 } };  // optional
+    static icon = 'fas fa-gamepad';                                     // optional
+    static category = 'physics';                                        // optional
 
     constructor(speed = 2) { this.speed = speed; }
 
@@ -179,31 +176,30 @@ export class MyComponent {
 }
 ```
 
-- `self` est **passé en argument, jamais stocké** — sinon cycle, et la sérialisation
-  ainsi que la réplication cassent.
-- Les composants sont sérialisables en JSON : pas de fonctions, pas de références DOM,
-  pas de références vers d'autres objets (utiliser des ids).
-- Un composant ne lit jamais un singleton d'entrée ou de rendu : il reçoit `ctx` et
-  `renderer`.
+- `self` is **passed as an argument, never stored** — otherwise it creates a cycle, and both
+  serialization and replication break.
+- Components are JSON-serializable: no functions, no DOM references, no references to other
+  objects (use ids).
+- A component never reads an input or rendering singleton: it receives `ctx` and `renderer`.
 
 ## Documentation
 
-Toujours étiqueter la nature d'une affirmation :
+Always label the nature of a claim:
 
-- **OBSERVÉ DANS LEGACY** — vérifié dans le code
-- **DÉCISION HISTORIQUE** — choix délibéré du passé
-- **PROPOSITION V2** — non implémenté
-- **QUESTION À VALIDER** — décision en attente
+- **OBSERVED IN LEGACY** — verified in the code
+- **HISTORICAL DECISION** — a deliberate choice made in the past
+- **V2 PROPOSAL** — not implemented
+- **OPEN QUESTION** — decision pending
 
-Ne jamais présenter une proposition comme un comportement existant.
+Never present a proposal as existing behaviour.
 
-**OBSERVÉ :** les documents `docs/architecture.md` et `docs/documentation.md`
-antérieurs décrivent des intentions contredites par le code (« The editor never mutates
-engine state directly » — l'Editor écrit `scene.current.$x = …` en direct). C'est
-précisément l'erreur que cette convention doit empêcher.
+**OBSERVED:** the earlier `docs/architecture.md` and `docs/documentation.md` describe
+intentions the code contradicts ("The editor never mutates engine state directly" — the
+Editor writes `scene.current.$x = …` directly). That is exactly the mistake this convention
+exists to prevent.
 
 ## Git
 
-- Messages en anglais, préfixés : `feat:`, `fix:`, `refactor:`, `docs:`, `test:`.
-- Ne jamais committer dans `legacy/` : c'est une archive en lecture seule.
-- Ne jamais committer le serveur privé dans le dépôt public.
+- Messages in English, prefixed: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`.
+- Never commit inside `legacy/`: it is a read-only archive.
+- Never commit the private server into the public repository.

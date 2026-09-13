@@ -1,186 +1,186 @@
-# ADR-0063 — Un pas demande, l'application répond
+# ADR-0063 — A step asks, the application answers
 
-- **Statut :** **accepté** (2026-09-12)
-- **Décide :** ce que fait `Load Scene` ; qui lit la Scene et quand ; ce que devient l'ancien monde ; ce qui traverse une transition ; ce qui survit à une transition et sous quelle forme
-- **Dépend de :** ADR-0011 (le serveur fait autorité), ADR-0014 (l'entrée est passée), ADR-0020 §4 (le store est asynchrone), ADR-0029 (Play/Pause/Stop), ADR-0042 (Preview est un client de runtime), ADR-0057 §3 (les identités viennent de la simulation), ADR-0058 (une exécution peut survivre à un pas), ADR-0060 §6 (`AudioSource` est un réconciliateur), ADR-0061 §4 (résoudre avant la simulation)
-- **Ne décide pas :** une transition animée ; charger une scène **à côté** d'une autre (additive) ; une sauvegarde de partie ; le changement de scène dans le mode Play de l'Editor — voir §6
-
----
-
-## 1. Problème
-
-Un jeu Pixel Creator était structurellement **mono-écran**. Pas de menu, pas de niveau 2, pas
-d'écran de fin : une seule Scene était jouée, et rien dans le catalogue ne pouvait en demander
-une autre.
-
-Et la raison était la même que pour les prefabs : **une Scene est une Resource**, une Resource
-se lit à travers un store **asynchrone**, et `Runtime.step()` ne peut pas attendre. Le prefab a
-répondu en résolvant **tout avant** la simulation (ADR-0061 §4). Une scène ne peut pas : la
-charger **jette la simulation**.
+- **Status:** **accepted** (2026-09-12)
+- **Decides:** what `Load Scene` does; who reads the Scene and when; what becomes of the old world; what crosses a transition; what survives a transition and in what form
+- **Depends on:** ADR-0011 (the server is the authority), ADR-0014 (input is passed in), ADR-0020 §4 (the store is asynchronous), ADR-0029 (Play/Pause/Stop), ADR-0042 (Preview is a runtime client), ADR-0057 §3 (identities come from the simulation), ADR-0058 (an execution may outlive a step), ADR-0060 §6 (`AudioSource` is a reconciler), ADR-0061 §4 (resolve before the simulation)
+- **Does not decide:** an animated transition; loading a scene **alongside** another (additive); a saved game; scene changes in the Editor's Play mode — see §6
 
 ---
 
-## 2. Le nœud demande, il ne charge pas
+## 1. Problem
 
-> **`Load Scene` enregistre une demande. Le pas se termine là où il était.**
+A Pixel Creator game was structurally **single-screen**. No menu, no level 2, no end screen: a
+single Scene was played, and nothing in the catalogue could ask for another.
+
+And the reason was the same as for prefabs: **a Scene is a Resource**, a Resource is read through
+an **asynchronous** store, and `Runtime.step()` cannot wait. The prefab answered by resolving
+**everything before** the simulation (ADR-0061 §4). A scene cannot: loading it **throws the
+simulation away**.
+
+---
+
+## 2. The node asks, it does not load
+
+> **`Load Scene` records a request. The step finishes where it was.**
 
 ```
-step()                    le nœud appelle ctx.requestScene(id) et rend la main
-   …                      les nœuds suivants tournent sur la scène encore là
-advance() finit           ← ici, et seulement ici, l'application est prévenue
-   ↓  asynchrone, entre deux frames
+step()                    the node calls ctx.requestScene(id) and returns
+   …                      the following nodes run on the scene that is still there
+advance() finishes        ← here, and only here, the application is told
+   ↓  asynchronous, between two frames
 read → deserialize → dispose → new Runtime
 ```
 
-**Trois propriétés en découlent, et ce sont exactement celles qui étaient exigées :**
+**Three properties follow, and they are exactly the ones required:**
 
-- l'interprète reste **synchrone** — rien n'a été rendu `async`, pas un nœud, pas un pas ;
-- aucun stockage n'est touché **pendant** un pas ;
-- il n'existe jamais de Runtime à moitié remplacé : l'ancien est disposé, puis le nouveau est
-  construit sur un monde complet.
+- the interpreter stays **synchronous** — nothing was made `async`, not a node, not a step;
+- no storage is touched **during** a step;
+- there is never a half-replaced Runtime: the old one is disposed, then the new one is built on
+  a complete world.
 
-**La dernière demande d'un pas gagne.** Deux `Load Scene` atteints dans un pas, c'est un graphe
-qui dit deux choses ; charger les deux jouerait une scène zéro frame, et refuser ferait de
-l'ordre de deux flux une erreur qu'un créateur ne peut pas voir.
+**A step's last request wins.** Two `Load Scene`s reached in one step is a graph saying two
+things; loading both would play a scene for zero frames, and refusing would turn the order of
+two flows into an error a creator cannot see.
 
-**Il n'y a ni port `Then` ni sortie `Scene Loaded`.** Il n'existe pas d'« après » où ce flux
-pourrait continuer : quand la scène est lue, le graphe qui a demandé, le Component qui le
-portait et l'Object qui le portait ont disparu.
+**There is no `Then` port and no `Scene Loaded` output.** There is no "afterwards" for that flow
+to continue into: by the time the scene is read, the graph that asked, the Component that
+carried it and the Object that carried that have all gone.
 
-**Un Runtime que personne n'écoute enregistre la demande et continue.** C'est ce que fait un
-appel headless, et c'est ce que fait aujourd'hui le mode Play de l'Editor (§6).
+**A Runtime nobody is listening to records the request and carries on.** That is what a headless
+call does, and what the Editor's Play mode does today (§6).
 
 ---
 
-## 3. Le cycle de vie : un nouveau Runtime, et ce qui traverse
+## 3. The lifecycle: a new Runtime, and what crosses
 
-> **Changer de scène, c'est jeter un Runtime et en construire un autre.**
+> **Changing scene means throwing a Runtime away and building another.**
 
-C'est plus simple que de vider un Runtime en place *et* plus sûr : il n'existe aucun état
-résiduel à oublier, parce qu'il n'existe aucun objet survivant à nettoyer.
+That is simpler than emptying a Runtime in place *and* safer: there is no residual state to
+forget, because there is no surviving object to clean up.
 
-| | Ce qui se passe | Pourquoi |
+| | What happens | Why |
 |---|---|---|
-| l'ancienne Scene | **vidée**, racine par racine | chaque départ est annoncé, donc chaque `onRemoved` tourne |
-| les musiques | **arrêtées** | un niveau ne doit pas garder la musique du menu (ADR-0060 §6) |
-| `Delay` / `Tween` / `Every` suspendus | **injoignables** | ils vivent dans des closures que seule la WeakMap de `Behaviors` atteint, indexée par Component ; le Component part, elles partent. Il n'y a rien à annuler (ADR-0058) |
-| collisions | neuves | un instantané de paires est un fait sur un monde |
-| horloge | neuve | le temps d'un niveau commence au niveau |
-| **Input** | **le même** | un joueur qui tient une touche la tient encore ; un `Input` neuf perdrait un `keyup` — une touche coincée, et le dernier bug que quiconque relierait à un changement de scène |
-| **sortie audio** | **la même** | déjà déverrouillée ; en reconstruire une couperait le son et redemanderait un geste |
-| **images décodées** | **les mêmes** | elles appartiennent au PROJET ; les redécoder serait un écran noir à chaque porte |
-| **définitions résolues** | **les mêmes** | idem |
-| **Behaviors** | **les mêmes** | un `.px` est de portée projet |
-| **session** | **la même** | §5 |
-| seed | **dérivée** : `session:scène` | une partie reste reproductible d'un bout à l'autre (ADR-0057) |
-| caméra, `ScreenSpace` | ceux de la nouvelle scène | ce sont des Objects |
+| the old Scene | **emptied**, root by root | every departure is announced, so every `onRemoved` runs |
+| music | **stopped** | a level must not keep the menu's music (ADR-0060 §6) |
+| suspended `Delay` / `Tween` / `Every` | **unreachable** | they live in closures only `Behaviors`' WeakMap reaches, keyed by Component; the Component goes, they go. There is nothing to cancel (ADR-0058) |
+| collisions | new | a snapshot of pairs is a fact about a world |
+| clock | new | a level's time starts at the level |
+| **Input** | **the same** | a player holding a key is still holding it; a fresh `Input` would lose a `keyup` — a stuck key, and the last bug anyone would connect to a scene change |
+| **audio output** | **the same** | already unlocked; rebuilding one would cut the sound and ask for another gesture |
+| **decoded images** | **the same** | they belong to the PROJECT; re-decoding them would be a black screen at every door |
+| **resolved definitions** | **the same** | likewise |
+| **Behaviors** | **the same** | a `.px` is project-scoped |
+| **session** | **the same** | §5 |
+| seed | **derived**: `session:scene` | a run stays reproducible from end to end (ADR-0057) |
+| camera, `ScreenSpace` | the new scene's | they are Objects |
 
-`Runtime.dispose()` **n'est pas un `stop()`** : il ne touche ni la boucle, ni le renderer, ni la
-sortie audio. Ceux-là appartiennent à l'application, et le Runtime suivant reçoit les mêmes.
-
----
-
-## 4. La forme : un rappel, pas un sondage
-
-Le Runtime reçoit `onSceneRequest`. `advance()` l'appelle **après** la dernière étape de la
-frame, une fois, avec l'identifiant — puis oublie la demande.
-
-**Un rappel plutôt qu'un drapeau lu en boucle** : une application qui interroge
-`runtime.requestedScene` à chaque frame doit se souvenir de le faire et de l'effacer, et celle
-qui oublie accumule une demande jamais honorée. Le rappel est délivré exactement une fois, au
-seul endroit où attendre est permis.
-
-`requestedScene` existe quand même, en lecture, parce qu'un test doit pouvoir constater qu'un
-pas a **enregistré** sans que rien n'ait été chargé.
+`Runtime.dispose()` **is not a `stop()`**: it touches neither the loop, nor the renderer, nor the
+audio output. Those belong to the application, and the next Runtime receives the same ones.
 
 ---
 
-## 5. Ce qui traverse : `SessionState`, et pas un second Property System
+## 4. The shape: a callback, not a poll
 
-Une transition jette le monde. Un score porté de `Level` à `GameOver` n'a donc **nulle part où
-vivre** : tout ce qui pourrait le tenir meurt en route.
+The Runtime receives `onSceneRequest`. `advance()` calls it **after** the frame's last stage,
+once, with the identifier — then forgets the request.
+
+**A callback rather than a flag read in a loop**: an application polling
+`runtime.requestedScene` every frame has to remember to do it and to clear it, and one that
+forgets accumulates a request that is never honoured. The callback is delivered exactly once, at
+the only place where waiting is allowed.
+
+`requestedScene` exists all the same, readable, because a test has to be able to observe that a
+step **recorded** something without anything having been loaded.
+
+---
+
+## 5. What crosses: `SessionState`, and not a second Property System
+
+A transition throws the world away. A score carried from `Level` to `GameOver` therefore has
+**nowhere to live**: everything that could hold it dies on the way.
 
 ```
 Get Session Value   Key = score   → Value
 Set Session Value   Key = score   ← Value
 ```
 
-Ce n'est **pas** un second Property System, et les différences sont le sujet :
+This is **not** a second Property System, and the differences are the point:
 
-| Ce que le Property System a | `SessionState` |
+| What the Property System has | `SessionState` |
 |---|---|
-| réactivité, `Change`, observateurs | rien |
-| Operations : répliqué, arbitré, annulable | rien |
-| schéma, types déclarés, valeurs par défaut | trois types primitifs, déclarés nulle part |
-| sérialisation dans une scène / un projet | **jamais** |
-| identité opaque (`ResourceId`, `ObjectId`) | un nom qu'un créateur tape |
+| reactivity, `Change`, observers | none |
+| Operations: replicated, arbitrated, undoable | none |
+| schema, declared types, default values | three primitive types, declared nowhere |
+| serialisation into a scene / a project | **never** |
+| opaque identity (`ResourceId`, `ObjectId`) | a name a creator types |
 
-Une propriété de Component **décrit un Object** ; ceci est une poignée de nombres qu'une partie
-transporte. Faire le premier avec le second, ce serait une sauvegarde faite d'un brouillon ;
-faire le second avec le premier demanderait un Object qui survive à la scène — la chose même
-qu'une transition existe pour détruire.
+A Component property **describes an Object**; this is a handful of numbers a run carries. Doing
+the first with the second would be a saved game made of scratch paper; doing the second with the
+first would need an Object that outlives the scene — the very thing a transition exists to
+destroy.
 
-**Trois types : nombre, booléen, texte.** Une poignée d'Object nommerait une scène qu'on vient
-de jeter ; un tableau ou un enregistrement serait un format que personne n'a décidé, et le jour
-où il l'est, c'est une **sauvegarde de partie**, pas ceci. Ce qui n'est pas l'un des trois
-**efface la clé** au lieu d'être stocké : relire une valeur transformée après une transition
-serait pire qu'une clé vide (ADR-0054).
+**Three types: number, boolean, text.** An Object handle would name a scene that has just been
+thrown away; an array or a record would be a format nobody has decided on, and the day someone
+does, that is a **saved game**, not this. Anything that is not one of the three **deletes the
+key** instead of being stored: reading back a transformed value after a transition would be
+worse than an empty key (ADR-0054).
 
-**Elle appartient à l'application.** Un Runtime est construit par scène et ceci survit à
-plusieurs : c'est donc l'application qui la crée et la passe à chaque Runtime — la forme que la
-sortie audio et le registre de ressources ont déjà. « Nouvelle partie » est `clear()`, et c'est
-l'application qui décide quand.
+**It belongs to the application.** A Runtime is built per scene and this outlives several of
+them: so the application creates it and passes it to every Runtime — the shape the audio output
+and the resource registry already have. "New game" is `clear()`, and it is the application that
+decides when.
 
 ---
 
-## 6. Ce que cet ADR ne décide pas
+## 6. What this ADR does not decide
 
-| Point ouvert | Pourquoi |
+| Open point | Why |
 |---|---|
-| **Une transition animée** (fondu, volet) | Demande de dessiner pendant qu'aucune scène n'est vivante, donc une couche de présentation au-dessus des deux ; c'est un produit |
-| **Le chargement additif** | « Deux scènes à la fois » demande de décider ce qu'est une caméra active, un ordre de dessin et un espace de noms entre elles |
-| **Une sauvegarde de partie** | §5. Un instantané de brouillon reste un brouillon ; ce qu'est une partie sauvegardée n'est pas décidé |
-| **Le changement de scène dans le mode Play de l'Editor** | Le Runtime de l'Editor est lié à la Hierarchy, à l'Inspector et à l'historique d'une Scene ouverte ; le remplacer, c'est réouvrir un document. La demande est enregistrée et n'est pas honorée. **BLOCKED: Load Scene en mode Play de l'Editor — Reason: remplacer la Scene ouverte est un `Workspace.open()`, qui referme la première et rebind toutes les fenêtres ; ce n'est pas un changement de Runtime mais un changement de document, et l'échange de documents est la fenêtre qu'ADR-0020 §3 laisse ouverte.** Le Preview le fait, et c'est là qu'un jeu se joue |
+| **An animated transition** (fade, wipe) | Requires drawing while no scene is alive, so a presentation layer above both; that is a product |
+| **Additive loading** | "Two scenes at once" requires deciding what an active camera is, a draw order, and a namespace between them |
+| **A saved game** | §5. A snapshot of scratch paper is still scratch paper; what a saved game is has not been decided |
+| **Scene changes in the Editor's Play mode** | The Editor's Runtime is bound to the Hierarchy, the Inspector and the history of an open Scene; replacing it means reopening a document. The request is recorded and is not honoured. **BLOCKED: Load Scene in the Editor's Play mode — Reason: replacing the open Scene is a `Workspace.open()`, which closes the first one and rebinds every window; that is not a change of Runtime but a change of document, and swapping documents is the window ADR-0020 §3 leaves open.** The Preview does it, and that is where a game is played |
 
 ---
 
-## 7. Contre-épreuves
+## 7. Counter-tests
 
-| Vérifié | Où |
+| Verified | Where |
 |---|---|
-| `Load Scene` enregistre, et le pas finit sur la scène de départ | `preview/scene-transition.test.js` |
-| L'application est prévenue **entre** deux frames | idem |
-| La dernière demande d'un pas gagne ; une demande est remise une fois | idem |
-| Un Runtime sans écouteur enregistre et continue | idem |
-| Un sélecteur vide ne demande rien | idem |
-| La scène quittée est vidée, donc sa musique s'arrête | idem |
-| Un `Delay` suspendu dans l'ancienne scène ne revient jamais | idem |
-| La nouvelle scène est ce qui est simulé, avec ses Objects | idem |
-| Audio, Input et définitions sont **les mêmes objets** après la transition | idem |
-| Deux parties d'une même seed atteignent les mêmes identités | idem |
-| Une valeur de session écrite avant est lisible après | idem |
-| Les trois types passent ; une poignée d'Object et un `NaN` effacent la clé | idem |
-| « Nouvelle partie » est un `clear()` | idem |
-| Un Runtime sans session ne lit rien et n'écrit nulle part | idem |
-| **Contre-épreuve** : une transition sans `dispose()` laisse la musique du menu jouer | idem |
+| `Load Scene` records, and the step finishes on the starting scene | `preview/scene-transition.test.js` |
+| The application is told **between** two frames | the same |
+| A step's last request wins; a request is delivered once | the same |
+| A Runtime with no listener records and carries on | the same |
+| An empty selector asks for nothing | the same |
+| The scene being left is emptied, so its music stops | the same |
+| A `Delay` suspended in the old scene never comes back | the same |
+| The new scene is what gets simulated, with its Objects | the same |
+| Audio, Input and definitions are **the same objects** after the transition | the same |
+| Two runs of the same seed reach the same identities | the same |
+| A session value written before is readable after | the same |
+| The three types pass; an Object handle and a `NaN` delete the key | the same |
+| "New game" is a `clear()` | the same |
+| A Runtime with no session reads nothing and writes nowhere | the same |
+| **Counter-test**: a transition with no `dispose()` leaves the menu's music playing | the same |
 
 ---
 
-## 8. Conséquences
+## 8. Consequences
 
-### Positives
+### Positive
 
-- Un jeu a un menu, des niveaux et un écran de fin.
-- La contrainte asynchrone est respectée sans être contournée : l'interprète est inchangé.
-- Le cycle de vie est dit, testé, et sans état résiduel à oublier.
-- Rien de coûteux n'est refait à une porte : images, sons et définitions traversent.
-- Une partie reste reproductible d'une scène à l'autre.
+- A game has a menu, levels and an end screen.
+- The asynchronous constraint is respected without being worked around: the interpreter is
+  unchanged.
+- The lifecycle is stated, tested, and has no residual state to forget.
+- Nothing expensive is redone at a door: images, sounds and definitions cross over.
+- A run stays reproducible from one scene to the next.
 
-### Négatives
+### Negative
 
-- `Runtime` gagne trois membres (`requestScene`, `requestedScene`, `dispose`) et une option.
-- Le mode Play de l'Editor ne change pas de scène (§6), et un créateur qui essaie là plutôt que
-  dans le Preview ne voit rien se passer.
-- `SessionState` est un endroit de plus où une valeur peut vivre ; c'est le prix d'un monde qui
-  est jeté, et ses limites (trois types, pas de sérialisation) sont faites pour qu'il ne
-  devienne pas un second modèle.
+- `Runtime` gains three members (`requestScene`, `requestedScene`, `dispose`) and one option.
+- The Editor's Play mode does not change scene (§6), and a creator who tries it there rather
+  than in the Preview sees nothing happen.
+- `SessionState` is one more place where a value can live; that is the price of a world that
+  gets thrown away, and its limits (three types, no serialisation) exist so that it does not
+  become a second model.

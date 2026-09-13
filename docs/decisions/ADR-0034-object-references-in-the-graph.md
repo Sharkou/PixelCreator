@@ -1,379 +1,370 @@
-# ADR-0034 — Un graphe atteint d'autres Objects par un handle, jamais par une identité de scène
+# ADR-0034 — A graph reaches other Objects through a handle, never through a scene identity
 
-- **Statut :** **accepté** (2026-08-21)
-- **Amendé par :** ADR-0039 (2026-08-27) — §7 (une cible désignée redevient un paramètre), §3.7 (le dépôt d'une Resource est autorisé)
-- **Précisé par :** ADR-0056 (2026-09-07) — invariant 3 : un handle peut vivre le temps d'un **flux**, et non seulement d'un pas de flux, à condition d'être redemandé à la Scene à chaque lecture ; invariant 5 : `Spawn` et `Destroy` changent la forme de la Scene par ses propres primitives, sans produire d'Operation ni frapper d'identité
-- **Amendé par :** ADR-0040 (2026-08-28) — §3.3 : `Get`/`Set Property On` fusionnent avec `Get`/`Set Property` ; §3.2 : l'avertissement « prise Object vide » ne vaut que pour un port qu'aucun paramètre ne peut remplir, et le dépôt d'un **Component** dans un graphe est retiré
-- **Décide :** ce qu'un graphe `.px` peut atteindre en dehors de son propre Component
-- **Dépend de :** ADR-0010 (identité par ID), ADR-0015 (un graphe est le comportement d'un type), ADR-0018 (ordre structurel), ADR-0021 (identité de Component), ADR-0023 (`PropertyType`), ADR-0026 (`.px` = une ressource, drag & drop), ADR-0027 (modèle de graphe), ADR-0030 (références), ADR-0031 (valeurs autorisées), ADR-0033 (rangées et gestes)
-- **Amende :** ADR-0023 §2, ADR-0027 §2 et §11, ADR-0031 §1
-- **Ferme :** le point ouvert d'ADR-0033 (« les références à un Object ou à un Component dans le graphe »)
-- **Ne décide pas :** l'ordre d'exécution de `Runtime.step()` — voir ADR-0035
+- **Status:** **accepted** (2026-08-21)
+- **Amended by:** ADR-0039 (2026-08-27) — §7 (a designated target becomes a parameter again), §3.7 (dropping a Resource is allowed)
+- **Clarified by:** ADR-0056 (2026-09-07) — invariant 3: a handle may live for the duration of a **flow**, and not only of a flow step, provided it is asked of the Scene again on every read; invariant 5: `Spawn` and `Destroy` change the Scene's shape through its own primitives, producing no Operation and minting no identity
+- **Amended by:** ADR-0040 (2026-08-28) — §3.3: `Get`/`Set Property On` merge with `Get`/`Set Property`; §3.2: the "empty Object socket" warning applies only to a port no parameter can fill, and dropping a **Component** into a graph is withdrawn
+- **Decides:** what a `.px` graph can reach outside its own Component
+- **Depends on:** ADR-0010 (identity by ID), ADR-0015 (a graph is a type's behaviour), ADR-0018 (structural order), ADR-0021 (Component identity), ADR-0023 (`PropertyType`), ADR-0026 (`.px` = one resource, drag and drop), ADR-0027 (the graph model), ADR-0030 (references), ADR-0031 (authored values), ADR-0033 (rows and gestures)
+- **Amends:** ADR-0023 §2, ADR-0027 §2 and §11, ADR-0031 §1
+- **Closes:** ADR-0033's open point ("references to an Object or a Component in the graph")
+- **Does not decide:** the execution order of `Runtime.step()` — see ADR-0035
 
 ---
 
-## 1. Problème
+## 1. Problem
 
-Un `.px` ne peut lire et écrire que **son propre** Component. Un créateur ne peut donc pas
-écrire « la porte s'ouvre quand le joueur la touche » sans passer par du JavaScript.
+A `.px` can only read and write **its own** Component. A creator therefore cannot write "the door
+opens when the player touches it" without dropping into JavaScript.
 
-Deux faits mesurés dans le dépôt cadrent la solution, et aucun des deux n'était écrit.
+Two facts measured in the repository frame the solution, and neither of them was written down.
 
-**L'interprète tient déjà l'accès.** `io` porte `self` et `ctx.scene`
-(`runtime/scripting/interpreter.js:255`, `runtime/runtime.js:127`). Il ne manque pas un
-accès : il manque un **type** capable de faire circuler un Object entre deux nœuds.
+**The interpreter already holds the access.** `io` carries `self` and `ctx.scene`
+(`runtime/scripting/interpreter.js:255`, `runtime/runtime.js:127`). What is missing is not access:
+what is missing is a **type** able to carry an Object between two nodes.
 
-**L'ordre de `Scene.objects()` est fonction de l'historique, pas de l'état.** Mesuré sur la
-vraie pipeline d'Operations : trois objets taggés `enemy`, suppression du premier par
-`deleteObject()` puis application de l'Operation inverse. L'état est identique — ordre
-hiérarchique `A,B,C` avant comme après — et `findByTag` répond `A` puis `B`. La
-sérialisation normalise par ailleurs l'ordre d'insertion vers l'ordre hiérarchique
-(`core/serialize.js:110`), donc un client démarré depuis un instantané n'a pas le même
-`objects()` qu'un client qui a rejoué les opérations.
+**`Scene.objects()`'s order is a function of history, not of state.** Measured on the real Operations
+pipeline: three objects tagged `enemy`, deleting the first through `deleteObject()` then applying the
+inverse Operation. The state is identical — hierarchical order `A,B,C` before and after — and
+`findByTag` answers `A` and then `B`. Serialization also normalizes insertion order into hierarchical
+order (`core/serialize.js:110`), so a client started from a snapshot does not have the same
+`objects()` as a client that replayed the operations.
 
 ---
 
 ## 2. Invariants
 
-1. Un `.px` est de portée **projet** : aucune identité de scène n'entre dans son payload.
-2. Aucun **champ sémantique** du format de graphe ne peut représenter ou résoudre une
-   identité d'Object de scène. Une chaîne arbitraire reste une chaîne : ce qui est interdit
-   est la **sémantique**, portée par le catalogue de nœuds, jamais par le payload.
-3. Un handle n'est jamais persisté, ni sérialisé, ni mémoïsé au-delà d'un pas de flux.
-4. Une référence persistante vers un Object est une **valeur d'instance** — une valeur
-   portée par un Component attaché.
-5. Un nœud ne produit aucune Operation et ne frappe aucune identité.
-6. Tout parcours de scène observable par le graphe utilise un ordre **canonique**, fonction
-   de l'état répliqué et non de l'historique de construction.
-7. Tout objet d'une Scene est atteignable depuis ses roots.
+1. A `.px` is **project**-scoped: no scene identity enters its payload.
+2. No **semantic field** of the graph format can represent or resolve a scene Object identity. An
+   arbitrary string stays a string: what is forbidden is the **semantics**, carried by the node
+   catalogue, never by the payload.
+3. A handle is never persisted, never serialized, and never memoized beyond a flow step.
+4. A persistent reference to an Object is an **instance value** — a value carried by an attached
+   Component.
+5. A node produces no Operation and mints no identity.
+6. Every scene traversal observable by the graph uses a **canonical** order, a function of the
+   replicated state and not of the construction history.
+7. Every object of a Scene is reachable from its roots.
 
-### Vocabulaire
+### Vocabulary
 
-Le mot « instance » désignait deux choses. Il en désigne désormais **une**.
+The word "instance" designated two things. It now designates **one**.
 
-| Terme | Définition | Portée | Persisté |
+| Term | Definition | Scope | Persisted |
 |---|---|---|---|
-| **type de Component** | ce que `defineComponent()` produit ; identité = `componentType`, une `ResourceId` pour un `.px` | projet | oui, dans le `.px` |
-| **valeur de graphe** | `node.params` et `node.inputs` | projet | oui, dans le `.px` |
-| **Component attaché** | l'exemplaire d'un type sur un Object, adressé par `(ObjectId, componentType)` | scène | oui, dans la scène |
-| **valeur d'instance** | une valeur portée par un Component attaché | scène | oui, dans la scène |
-| **handle** | référence vivante vers un Object ou un Component attaché — toujours le Proxy réactif | aucune | **jamais** |
+| **Component type** | what `defineComponent()` produces; identity = `componentType`, a `ResourceId` for a `.px` | project | yes, in the `.px` |
+| **graph value** | `node.params` and `node.inputs` | project | yes, in the `.px` |
+| **attached Component** | the copy of a type on an Object, addressed by `(ObjectId, componentType)` | scene | yes, in the scene |
+| **instance value** | a value carried by an attached Component | scene | yes, in the scene |
+| **handle** | a live reference to an Object or an attached Component — always the reactive Proxy | none | **never** |
 
-> **Amende ADR-0031 §1**, qui nommait `node.inputs` « valeur d'instance ». C'est une
-> **valeur de graphe** : elle appartient au type, pas à un Component attaché.
+> **Amends ADR-0031 §1**, which called `node.inputs` an "instance value". It is a **graph value**: it
+> belongs to the type, not to an attached Component.
 
 ---
 
-## 3. Décision
+## 3. Decision
 
-### 3.1 L'ordre canonique d'une Scene est l'ordre hiérarchique
+### 3.1 A Scene's canonical order is the hierarchical order
 
-Il est déjà le contrat de sérialisation (`core/serialize.js:130`) et c'est le seul ordre qui
-soit une fonction de l'**état répliqué** : il ne dépend que de `roots` et de `children`, deux
-listes ordonnées maintenues par le seul `REPARENT` et toutes deux sérialisées. Mesuré stable
-aux cinq étapes du cycle de vie : création, reparent, sérialisation, rechargement,
-`restoreScene`, et suppression suivie de son inverse.
+It is already the serialization contract (`core/serialize.js:130`) and it is the only order that is a
+function of the **replicated state**: it depends only on `roots` and `children`, two ordered lists
+maintained by `REPARENT` alone and both serialized. Measured stable across five lifecycle steps:
+creation, reparent, serialization, reload, `restoreScene`, and deletion followed by its inverse.
 
-Le parcours **existe** et n'est pas atteignable : `hierarchyOrder()` est une fonction privée
-de `serialize.js`. Elle devient une fonction exportée du Core, et la sérialisation continue
-de l'utiliser — **une** définition de l'ordre, jamais deux. C'est l'argument que
-`serialize.js` fait déjà pour les passes du format : « l'ordre des passes est le contrat du
-format, et l'écrire deux fois, c'est deux lecteurs qui finiront par diverger ».
+The traversal **exists** and is not reachable: `hierarchyOrder()` is a private function of
+`serialize.js`. It becomes an exported Core function, and serialization keeps using it — **one**
+definition of the order, never two. That is the argument `serialize.js` already makes about the
+format's passes: "the order of the passes is the format's contract, and writing it twice means two
+readers that will eventually diverge".
 
-`findByTag`, `findByName` et `findByComponent` rendent leurs résultats dans cet ordre.
+`findByTag`, `findByName` and `findByComponent` return their results in that order.
 
-**Ne changent pas :** `Scene.objects()`, qui reste le stockage et l'ordre d'insertion ;
-l'ordre d'exécution de `Runtime.step()` (ADR-0035) ; l'ordre de dessin à `layer` égal.
+**What does not change:** `Scene.objects()`, which stays the storage and the insertion order;
+`Runtime.step()`'s execution order (ADR-0035); the draw order at equal `layer`.
 
-L'invariant 7 n'est aujourd'hui garanti nulle part — `Scene.add()` ne place un objet dans les
-roots que s'il n'a pas de parent. Il devient un test. **Aucun repli** n'est ajouté pour un
-objet non atteignable : un repli masquerait un défaut d'ajout au lieu de le révéler.
+Invariant 7 is guaranteed nowhere today — `Scene.add()` only puts an object in the roots if it has no
+parent. It becomes a test. **No fallback** is added for an unreachable object: a fallback would hide
+a defect in adding instead of revealing it.
 
-### 3.2 Un port `object` transporte un handle, jamais une identité
+### 3.2 An `object` port carries a handle, never an identity
 
-Un nouveau type de valeur de port, `object`. Ce qui circule est le **Proxy réactif** que la
-Scene détient, dont l'identité est stable (`makeReactive` est idempotent,
-`core/properties/reactive.js:85`), ce qui rend `===` fiable entre deux handles.
+A new port value type, `object`. What flows is the **reactive Proxy** the Scene holds, whose identity
+is stable (`makeReactive` is idempotent, `core/properties/reactive.js:85`), which makes `===`
+reliable between two handles.
 
 | | |
 |---|---|
-| `typesCompatible` | `object <-> object`. Rien d'autre, en particulier **pas `string`** |
-| `ANY_TYPE` | reste universel : aucun port `any` du catalogue n'écrit vers du persisté |
-| **Valeur de graphe** | **inerte, toujours.** Voir §3.6 |
-| `accepts` | non : « cet objet porte un Transform » n'est pas vérifiable au moment du geste, et une contrainte invérifiable est un mensonge (ADR-0030 §1) |
-| Port non connecté | rend `null`, et le validateur émet un **avertissement** — le traitement qu'ADR-0027 donne déjà à « aucune propriété sélectionnée » |
+| `typesCompatible` | `object <-> object`. Nothing else, in particular **not `string`** |
+| `ANY_TYPE` | stays universal: no `any` port in the catalogue writes to anything persisted |
+| **A graph value** | **inert, always.** See §3.6 |
+| `accepts` | no: "this object carries a Transform" is not checkable at gesture time, and an uncheckable constraint is a lie (ADR-0030 §1) |
+| An unconnected port | returns `null`, and the validator emits a **warning** — the treatment ADR-0027 already gives "no property selected" |
 
-**Il n'y a pas de type de port `component`,** et c'est une décision : avec les nœuds fusionnés
-de §3.3, rien ne consommerait un tel handle. Un Component se nomme par son **type**, identité
-de portée projet, dans un paramètre. Le jour où quelque chose devra en faire circuler un, ce
-sera additif et cet ADR ne l'interdit pas.
+**There is no `component` port type,** and that is a decision: with §3.3's merged nodes, nothing would
+consume such a handle. A Component is named by its **type**, a project-scoped identity, in a
+parameter. The day something has to carry one, it will be additive and this ADR does not forbid it.
 
-**Pourquoi un handle et non une identité, alors qu'une `resource` voyage par identité.** Une
-`Resource` se résout par du stockage asynchrone que ni le Core ni le Runtime n'atteignent
-(ADR-0020) : son identité doit donc rester sur le fil. Un Object est déjà dans la Scene que
-le Runtime tient — la résolution est un `Map.get`. Encoder puis redécoder serait de la
-cérémonie, et rendrait `Parent` incapable de parler d'un objet détaché.
+**Why a handle and not an identity, when a `resource` travels by identity.** A `Resource` is resolved
+through asynchronous storage that neither the Core nor the Runtime reaches (ADR-0020): its identity
+must therefore stay on the wire. An Object is already inside the Scene the Runtime holds — resolution
+is a `Map.get`. Encoding and then decoding again would be ceremony, and it would make `Parent` unable
+to talk about a detached object.
 
-### 3.3 Les nœuds
+### 3.3 The nodes
 
-Catégorie `Scene`.
+Category `Scene`.
 
-| Type | Entrées | Sorties | Comportement |
+| Type | Inputs | Outputs | Behaviour |
 |---|---|---|---|
-| `scene.self` | — | `object` | l'Object porteur ; ne peut pas être nul |
-| `scene.parent` | `object` | `object` | `null` sur une racine, `null` si l'entrée est nulle |
-| `scene.findByTag` | `tag: string` | `object` | le **premier en ordre canonique** ; `null` si le tag est vide |
-| `object.isValid` | `object` | `boolean` | ce que le créateur a pour se défendre d'une cible absente |
-| `property.getOn` | `object` | selon la propriété | params `{ component, property }` |
+| `scene.self` | — | `object` | the carrying Object; cannot be null |
+| `scene.parent` | `object` | `object` | `null` on a root, `null` if the input is null |
+| `scene.findByTag` | `tag: string` | `object` | the **first in canonical order**; `null` if the tag is empty |
+| `object.isValid` | `object` | `boolean` | what the creator has to defend against a missing target |
+| `property.getOn` | `object` | depends on the property | params `{ component, property }` |
 | `property.setOn` | `flow`, `object`, `value` | `flow` | params `{ component, property }` |
 
-`scene.findByTag` rend `null` sur un tag vide, et ce n'est pas une politesse : `Object.tag`
-vaut `''` par défaut, donc un tag vide matcherait **tout objet de la scène**.
+`scene.findByTag` returns `null` on an empty tag, and that is not politeness: `Object.tag` is `''` by
+default, so an empty tag would match **every object in the scene**.
 
-**Les nœuds de propriété étrangère sont fusionnés, pas scindés.** Un `Get Component` rendant
-un handle, suivi d'un `Get Property` le consommant, ne saurait **pas de quel type** il tient
-un composant : son port de sortie retomberait sur `ANY_TYPE` et son sélecteur de propriété
-n'aurait rien à proposer. Un nœud portant les deux paramètres résout son schéma localement,
-donc son port est typé exactement et le refus arrive au moment du geste — l'acquis d'ADR-0027
-§3, et non un raffinement.
+**The foreign-property nodes are merged, not split.** A `Get Component` returning a handle, followed
+by a `Get Property` consuming it, would **not know which type** of component it holds: its output
+port would fall back to `ANY_TYPE` and its property picker would have nothing to offer. A node
+carrying both parameters resolves its schema locally, so its port is typed exactly and the refusal
+arrives at gesture time — ADR-0027 §3's gain, not a refinement.
 
-**Ils n'introduisent aucune seconde sémantique.** La propriété est référencée par **identité**,
-comme dans `property.get`. L'écriture est une **écriture simple** sur le Proxy : un `Change`,
-aucune Operation (ADR-0003, ADR-0027 §6). `property.get` et `property.set` restent inchangés
-et réservés au Component porteur — les étendre d'un port d'Object aurait fait qu'un fil change
-silencieusement **quel objet est muté** sur un nœud qui se lit « écris ma propriété ».
+**They introduce no second semantics.** The property is referenced by **identity**, as in
+`property.get`. The write is a **plain write** on the Proxy: a `Change`, no Operation (ADR-0003,
+ADR-0027 §6). `property.get` and `property.set` stay unchanged and reserved for the carrying
+Component — extending them with an Object port would have meant a wire silently changing **which
+object is mutated** on a node that reads "write my property".
 
-**Un port `object` non connecté rend `null`, jamais « Self ».** L'argument d'ADR-0031 §1 —
-« trois nœuds littéraux pour additionner deux constantes » — ne transfère pas : un littéral a
-une valeur qui peut vivre dans le nœud, un Object n'en a aucune, et c'est précisément
-l'invariant 2.
+**An unconnected `object` port returns `null`, never "Self".** ADR-0031 §1's argument — "three literal
+nodes to add two constants" — does not transfer: a literal has a value that can live in the node, an
+Object has none, and that is precisely invariant 2.
 
-### 3.4 Deux familles d'échec
+### 3.4 Two families of failure
 
-La règle existait dans le dépôt sans avoir jamais été écrite. Elle l'est ici :
+The rule existed in the repository without ever having been written. It is written here:
 
-> **Ce qu'une vérification de conception peut résoudre et ne résout pas est une ERREUR. Ce
-> que seule la scène en cours peut résoudre et ne résout pas n'est pas une erreur : la valeur
-> est conservée, rien ne s'exécute, rien n'est levé, et le fait est montré là où un humain le
-> voit.**
+> **What a design-time check can resolve and does not is an ERROR. What only the current scene can
+> resolve and does not is not an error: the value is kept, nothing runs, nothing is thrown, and the
+> fact is shown where a human can see it.**
 
-| Cas | Famille | Traitement |
+| Case | Family | Treatment |
 |---|---|---|
-| Type de Component inconnu du registre | conception | validateur ERREUR, nœud cerné en rouge, `GraphError` au runtime |
-| Propriété absente du schéma nommé | conception | `MISSING_PROPERTY`, graphe **non réécrit** (ADR-0027 §8) |
-| Port `object` non connecté | conception | avertissement |
-| L'Object n'existe plus | **exécution** | `null` ; lecture = défaut déclaré ; écriture = no-op ; **rien n'est levé** |
-| Le Component n'est pas attaché à cet Object | **exécution** | idem |
+| A Component type unknown to the registry | design | validator ERROR, node ringed in red, `GraphError` at runtime |
+| A property absent from the named schema | design | `MISSING_PROPERTY`, the graph **not rewritten** (ADR-0027 §8) |
+| An unconnected `object` port | design | a warning |
+| The Object no longer exists | **runtime** | `null`; a read = the declared default; a write = a no-op; **nothing is thrown** |
+| The Component is not attached to that Object | **runtime** | the same |
 
-La seconde famille est celle de `Sprite` : une `source` cassée ne dessine pas, ne lève pas et
-garde sa valeur (`runtime/rendering/components/sprite.js:48`). Une cible disparue est un état
-de jeu normal — l'ennemi est mort — et non une faute d'auteur. La rapporter à chaque pas
-ferait du silence de Legacy son contraire exact : du bruit permanent.
+The second family is `Sprite`'s: a broken `source` does not draw, does not throw and keeps its value
+(`runtime/rendering/components/sprite.js:48`). A vanished target is a normal game state — the enemy
+is dead — not an authoring mistake. Reporting it on every step would turn Legacy's silence into its
+exact opposite: permanent noise.
 
-### 3.5 Une référence persistante est une propriété de Component — amende ADR-0023 §2
+### 3.5 A persistent reference is a Component property — amends ADR-0023 §2
 
-Un nouveau `PropertyType`, valeur `ObjectId | null`.
+A new `PropertyType`, whose value is `ObjectId | null`.
 
 ```json
-// dans le .px — LE TYPE, portée projet
+// in the .px — THE TYPE, project scope
 "properties": { "target": { "id": "p_9", "type": "objectref", "default": null } }
 
-// dans la scène — L'INSTANCE, portée scène
+// in the scene — THE INSTANCE, scene scope
 { "type": "res_c3", "values": { "target": "obj_7f3a" } }
 ```
 
-ADR-0023 §2 retirait `object` parce que le Core n'avait de réponse à aucune de ses trois
-questions. Il les a toutes pour celle-ci : défaut `null`, valide si `null` ou chaîne,
-sérialise en chaîne. Le raisonnement n'est pas renversé, il est **payé**, exactement comme
-ADR-0030 §1 l'a fait pour `resource`. Le nom n'est pas `object` : ADR-0023 a retiré ce mot
-pour désigner *une structure à champs*, et le réutiliser rendrait cet ADR-là illisible.
+ADR-0023 §2 removed `object` because the Core had an answer to none of its three questions. It has
+all of them for this one: default `null`, valid if `null` or a string, serializes as a string. The
+reasoning is not reversed, it is **paid for**, exactly as ADR-0030 §1 did for `resource`. The name is
+not `object`: ADR-0023 removed that word to designate *a structure with fields*, and reusing it would
+make that ADR unreadable.
 
-> **Une propriété `objectref` se lit comme un Object et s'écrit avec un Object. L'identité
-> est ce qui est stocké, et elle n'apparaît jamais dans le graphe.**
+> **An `objectref` property is read as an Object and written with an Object. The identity is what is
+> stored, and it never appears in the graph.**
 
-**`objectref` est un type PERSISTANT et rien d'autre. Aucun port n'est jamais typé
-`objectref`.** Le type déclaré d'une propriété est traduit en type de port au moment où le
-port est construit. Vérifié exhaustivement : **exactement deux endroits** du dépôt
-construisent un port depuis le type déclaré d'une propriété — `core/graph/standard.js:134`
-(`property.get`) et `:149` (`property.set`) — et tous deux emploient l'expression identique
-`property?.type ?? ANY_TYPE`. `property.getOn` et `property.setOn` en feront un troisième et
-un quatrième, donc la traduction est **une fonction partagée** et non une expression répétée.
-`typesCompatible()` n'est pas touché, aucun cas particulier n'existe, et `objectref` reste
-confiné à ce qui est persisté.
+**`objectref` is a PERSISTENT type and nothing else. No port is ever typed `objectref`.** A
+property's declared type is translated into a port type at the moment the port is built. Verified
+exhaustively: **exactly two places** in the repository build a port from a property's declared type —
+`core/graph/standard.js:134` (`property.get`) and `:149` (`property.set`) — and both use the identical
+expression `property?.type ?? ANY_TYPE`. `property.getOn` and `property.setOn` will make a third and
+a fourth, so the translation is **a shared function** and not a repeated expression.
+`typesCompatible()` is untouched, no special case exists, and `objectref` stays confined to what is
+persisted.
 
-Le membre n'est enregistré dans `PropertyType` que lorsque son contrôle d'Inspector existe :
-un type sans contrôle est une impasse silencieuse, et le dépôt s'y est refusé deux fois
-(ADR-0023 §3, ADR-0030 §1).
+The member is only registered in `PropertyType` once its Inspector control exists: a type with no
+control is a silent dead end, and the repository has refused that twice (ADR-0023 §3, ADR-0030 §1).
 
-**Ce que le reste du modèle a à faire : rien, et c'est vérifié plutôt que supposé.**
-`editor/project/reconcile.js` ne mentionne aucun `PropertyType`, n'importe rien de
-`properties/types.js` et ne branche sur aucun type ; le cycle complet a été exécuté sur une
-propriété de forme identique (`string | null`) et les trois cas — renommage suivant
-l'identité, ajout prenant son défaut, suppression retirant la valeur — sont corrects. La
-sérialisation, la reconstruction et `Scene.remove()` sont tout aussi agnostiques.
+**What the rest of the model has to do: nothing, and that is verified rather than assumed.**
+`editor/project/reconcile.js` mentions no `PropertyType`, imports nothing from `properties/types.js`
+and branches on no type; the complete cycle was run on a property of identical shape
+(`string | null`) and all three cases — a rename following the identity, an addition taking its
+default, a removal dropping the value — are correct. Serialization, reconstruction and
+`Scene.remove()` are just as agnostic.
 
-Ce qui doit changer se réduit à : le membre de `PropertyType` ; un `case` dans `isValidValue`
-(sans lui, la branche `default: return true` accepterait `42` comme référence d'Object) ; la
-table `KIND_BY_PROPERTY_TYPE` de l'Editor et le contrôle qui va avec. `defaultForProperty`
-rend déjà `null` par sa branche par défaut.
+What has to change comes down to: the `PropertyType` member; a `case` in `isValidValue` (without it,
+the `default: return true` branch would accept `42` as an Object reference); the Editor's
+`KIND_BY_PROPERTY_TYPE` table and the control that goes with it. `defaultForProperty` already returns
+`null` through its default branch.
 
-### 3.6 La porte que le format laissait ouverte, et ce qui la ferme
+### 3.6 The door the format left open, and what closes it
 
-Mesuré dans le **chemin d'évaluation du runtime**, pas dans l'Editor, avec un catalogue
-déclarant un port de type `object` :
+Measured in the **runtime's evaluation path**, not in the Editor, with a catalogue declaring a port of
+type `object`:
 
-| Cas | Ce que le nœud reçoit aujourd'hui |
+| Case | What the node receives today |
 |---|---|
-| Port `object` réellement non connecté | `null` — correct |
-| `node.inputs["target"] = "obj_7f3a91c2"` | **la chaîne brute** |
-| Port `object` relié à un port `object` | le handle — correct |
+| A genuinely unconnected `object` port | `null` — correct |
+| `node.inputs["target"] = "obj_7f3a91c2"` | **the raw string** |
+| An `object` port wired to an `object` port | the handle — correct |
 | `node.inputs["target"] = 42` | **`42`** |
-| `node.inputs["target"] = { id: 'obj_fake', name: 'Fake' }` | **un objet forgé**, indiscernable d'un handle pour un nœud canard-typé |
+| `node.inputs["target"] = { id: 'obj_fake', name: 'Fake' }` | **a forged object**, indistinguishable from a handle to a duck-typed node |
 
-Et la valeur est **écrite dans le payload `.px`** : `"inputs":{"target":"obj_7f3a91c2"}` —
-donc l'invariant 1 tombe par la même porte.
+And the value is **written into the `.px` payload**: `"inputs":{"target":"obj_7f3a91c2"}` — so
+invariant 1 falls through the same door.
 
-La cause est que `defaultOf()` rend la valeur de graphe **avant même de regarder le port**
-(`runtime/scripting/interpreter.js:335`), et que `Graph.setInput()` ne vérifie aucun port.
+The cause is that `defaultOf()` returns the graph value **before even looking at the port**
+(`runtime/scripting/interpreter.js:335`), and that `Graph.setInput()` checks no port.
 
-> **Un port de type `object` ignore toute valeur de graphe et rend `null`.**
+> **A port of type `object` ignores any graph value and returns `null`.**
 
-Une ligne, dans `defaultOf()` — la fonction qu'ADR-0031 §1 désigne déjà comme *le* seul
-endroit où la priorité d'un port est résolue. Aucune garde nouvelle dans `setInput()`, aucun
-second chemin, et l'Editor n'est pas l'autorité : le contrat est tenu par le Runtime.
+One line, in `defaultOf()` — the function ADR-0031 §1 already names as *the* one place where a port's
+priority is resolved. No new guard in `setInput()`, no second path, and the Editor is not the
+authority: the contract is held by the Runtime.
 
-Le cas de l'objet forgé est ce qui décide de la forme de la protection : elle ne peut pas
-être « refuser ce qui n'est pas un Object », elle doit être « ignorer la valeur de graphe ».
+The forged-object case is what decides the shape of the protection: it cannot be "refuse what is not
+an Object", it has to be "ignore the graph value".
 
-**Les autres portes sont déjà fermées, et il faut dire par quoi.** Une connexion
-`string -> object` est refusée au geste par `canConnect()` (`TYPE_MISMATCH`, mesuré). Une
-connexion mal typée écrite à la main est rapportée par `validateGraph()` en ERREUR et rend
-`runnable()` faux ; l'interprète ne la bloque pas — choix d'ADR-0027 §7, général à tous les
-types et non propre à `object` — mais la chaîne qui arrive est **inoffensive**, parce que
-rien ne peut la transformer en Object.
+**The other doors are already closed, and it must be said by what.** A `string -> object` connection
+is refused at gesture time by `canConnect()` (`TYPE_MISMATCH`, measured). A mistyped connection
+written by hand is reported by `validateGraph()` as an ERROR and makes `runnable()` false; the
+interpreter does not block it — ADR-0027 §7's choice, general to every type and not specific to
+`object` — but the string that arrives is **harmless**, because nothing can turn it into an Object.
 
-C'est ce qui rend l'absence de `scene.resolve(string -> object)` porteuse et non stylistique :
+That is what makes the absence of a `scene.resolve(string -> object)` load-bearing rather than
+stylistic:
 
-> **Aucun nœud ne résout une chaîne contre la Scene.** `scene.get()` n'est atteignable que
-> depuis l'`evaluate` ou l'`execute` d'un nœud, donc depuis le catalogue. Un nœud qui
-> convertirait une chaîne en Object rouvrirait à lui seul toutes les portes que cet ADR ferme.
+> **No node resolves a string against the Scene.** `scene.get()` is reachable only from a node's
+> `evaluate` or `execute`, and therefore from the catalogue. A node that converted a string into an
+> Object would single-handedly reopen every door this ADR closes.
 
-### 3.7 Le glisser-déposer sur la toile est refusé, avec sa raison
+### 3.7 Dropping onto the canvas is refused, with its reason
 
-Object, Component, Property, Resource, Scene et `.px` : tous refusés, chacun avec sa phrase.
-ADR-0027 §11 a refusé le dépôt d'une propriété parce que `Get` ou `Set` est un choix qu'on ne
-prend pas à la place du créateur ; le même argument tient pour les autres.
+Object, Component, Property, Resource, Scene and `.px`: all refused, each with its sentence.
+ADR-0027 §11 refused a property drop because `Get` or `Set` is a choice you do not make on the
+creator's behalf; the same argument holds for the others.
 
-Pour un **Object**, deux raisons de plus, chacune suffisante :
+For an **Object**, two more reasons, each sufficient on its own:
 
-- un repli sur le nom écrirait un **nom d'affichage librement modifiable** dans un type de
-  portée projet, ce qu'ADR-0010 interdit à la racine ;
-- un objet sans tag exigerait qu'on lui en pose un, donc qu'**un geste écrive dans deux
-  ressources ayant deux piles d'undo** (ADR-0024) — le point ouvert qu'ADR-0024 et ADR-0027
-  signalent tous les deux comme non traité.
+- falling back on the name would write a **freely editable display name** into a project-scoped type,
+  which ADR-0010 forbids at the root;
+- an object with no tag would require giving it one, and therefore **one gesture writing into two
+  resources with two undo stacks** (ADR-0024) — the open point that both ADR-0024 and ADR-0027 flag
+  as untreated.
 
-Ce n'est pas un « non » permanent : c'est « pas avant qu'un geste non ambigu soit conçu ».
-Rien ne régresse en attendant — il n'existe aujourd'hui aucune zone de dépôt sur la toile.
+It is not a permanent "no": it is "not until an unambiguous gesture is designed". Nothing regresses
+meanwhile — there is no drop zone on the canvas today.
 
-> **Amendé par ADR-0037 (2026-08-22) — le dépôt d'un Object est autorisé.** Le raisonnement
-> ci-dessus supposait que la référence s'encoderait comme un **tag**, donc par une écriture
-> dans la Scene ; la seconde raison en découlait entièrement. ADR-0037 encode le geste
-> autrement : le dépôt déclare sur le `.px` une **propriété `objectref`** nommée d'après
-> l'Object, et un nœud qui la lit. **Une seule ressource est écrite**, sous un seul batch de
-> sa propre pile — la question inter-ressources ne se pose plus, et la première raison est
-> respectée telle quelle : le nom nomme une propriété, dont le lien reste porté par son `id`.
-> Aucune identité de scène n'entre dans le `.px` : l'invariant 1 est tenu à la lettre.
+> **Amended by ADR-0037 (2026-08-22) — dropping an Object is allowed.** The reasoning above assumed
+> the reference would be encoded as a **tag**, and therefore through a write into the Scene; the
+> second reason followed entirely from that. ADR-0037 encodes the gesture differently: the drop
+> declares on the `.px` an **`objectref` property** named after the Object, and a node that reads it.
+> **A single resource is written**, under a single batch of its own stack — the cross-resource
+> question no longer arises, and the first reason is honoured as it stands: the name names a
+> property, whose link is still carried by its `id`. No scene identity enters the `.px`: invariant 1
+> is kept to the letter.
 >
-> Les refus de Component, Property, Resource, Scene et `.px` **sur toile nue** deviennent des
-> gestes explicites au point du dépôt (ADR-0037 §2.4) ou restent refusés avec leur phrase.
+> The refusals for Component, Property, Resource, Scene and `.px` **on bare canvas** become explicit
+> gestures at the drop point (ADR-0037 §2.4) or stay refused with their sentence.
 >
-> **Amendé par ADR-0039 (2026-08-27) — le dépôt d'une Resource est autorisé.** Le refus
-> ci-dessus rangeait la `ResourceId` avec l'`ObjectId`, alors que l'invariant 1 ne parle pas
-> d'identités en général : il parle d'identités de portée **scène**, parce qu'un `.px` sert
-> plusieurs scènes. Une `ResourceId` est de portée **projet** — la portée du `.px` lui-même
-> (ADR-0020) — donc rien de ce raisonnement ne l'atteint. Un nœud `value.resource` la porte
-> comme un littéral, et l'invariant 1 est intact : aucune identité de scène n'entre nulle part.
+> **Amended by ADR-0039 (2026-08-27) — dropping a Resource is allowed.** The refusal above filed the
+> `ResourceId` with the `ObjectId`, whereas invariant 1 does not speak of identities in general: it
+> speaks of **scene**-scoped identities, because a `.px` serves several scenes. A `ResourceId` is
+> **project**-scoped — the `.px`'s own scope (ADR-0020) — so none of that reasoning reaches it. A
+> `value.resource` node carries it as a literal, and invariant 1 is intact: no scene identity enters
+> anywhere.
 
 ---
 
-## 4. Contrats observables
+## 4. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| `findByTag` / `findByName` / `findByComponent` rendent l'ordre canonique | sauvegarde puis rechargement, et suppression puis undo, donnent le même premier résultat |
-| Un port `object` ignore toute valeur de graphe | après `setInput()` sur un port `object`, le nœud reçoit `null` — vérifié à travers l'interprète |
-| Une écriture depuis un graphe ne produit aucune Operation | compteur sur la pipeline de la Scene après N pas |
-| Une cible disparue ne produit aucun rapport d'erreur | `onError` n'est pas appelé |
-| Une valeur `objectref` traverse la sérialisation à l'octet | aller-retour `serializeScene` / `deserializeScene`, cible supprimée comprise |
-| Le même `.px` dans deux Scenes n'y transporte aucune identité commune | comparaison des deux payloads |
+| `findByTag` / `findByName` / `findByComponent` return canonical order | saving then reloading, and deleting then undoing, give the same first result |
+| An `object` port ignores any graph value | after a `setInput()` on an `object` port, the node receives `null` — checked through the interpreter |
+| A write from a graph produces no Operation | a counter on the Scene's pipeline after N steps |
+| A vanished target produces no error report | `onError` is not called |
+| An `objectref` value survives serialization byte for byte | a `serializeScene` / `deserializeScene` round trip, deleted target included |
+| The same `.px` in two Scenes carries no shared identity | comparing the two payloads |
 
 ---
 
-## 5. Tests nécessaires
+## 5. Required tests
 
-| # | Test | Protège |
+| # | Test | Protects |
 |---|---|---|
-| T1 | Même scène sauvegardée puis rechargée, puis supprimée puis rétablie : `findByTag` rend le même premier résultat | invariant 6 |
-| T2 | Tout objet d'une Scene est atteignable depuis ses roots, quel que soit le chemin d'ajout | invariant 7 |
-| T3 | Aucun `definition.params[*].reference` du catalogue n'appartient à un genre de référence résolu contre une Scene | invariant 2 |
-| T4 | Aucun `evaluate` / `execute` livré ne nomme `.id` ni `createId` — extension du test de pureté de `core/graph/nodes.test.js` | invariants 2 et 5 |
-| T5 | Un port `object` reste à `null` après `setInput()`, y compris avec une chaîne, un nombre et un objet forgé — **testé à travers l'interprète** | §3.6 |
-| T6 | Après N pas avec les nœuds de scène, la pipeline de la Scene n'a émis aucune Operation | invariant 5 |
-| T7 | Un Object disparu : lecture = défaut, écriture = no-op, `onError` non appelé | §3.4 |
-| T8 | Une valeur `objectref` survit à l'aller-retour de sérialisation, cible supprimée comprise | §3.5 |
-| T9 | Le même `.px` chargé dans deux Scenes n'y transporte aucune identité commune | invariant 1 |
-| T10 | Cent Components du même type avec des valeurs d'instance différentes ne partagent aucun état | invariant 3 |
+| T1 | The same scene saved then reloaded, then deleted then restored: `findByTag` gives the same first result | invariant 6 |
+| T2 | Every object of a Scene is reachable from its roots, whatever the path by which it was added | invariant 7 |
+| T3 | No `definition.params[*].reference` in the catalogue belongs to a kind of reference resolved against a Scene | invariant 2 |
+| T4 | No shipped `evaluate` / `execute` names `.id` or `createId` — an extension of the purity test in `core/graph/nodes.test.js` | invariants 2 and 5 |
+| T5 | An `object` port stays `null` after `setInput()`, including with a string, a number and a forged object — **tested through the interpreter** | §3.6 |
+| T6 | After N steps with the scene nodes, the Scene's pipeline has emitted no Operation | invariant 5 |
+| T7 | A vanished Object: a read = the default, a write = a no-op, `onError` not called | §3.4 |
+| T8 | An `objectref` value survives the serialization round trip, deleted target included | §3.5 |
+| T9 | The same `.px` loaded into two Scenes carries no shared identity | invariant 1 |
+| T10 | A hundred Components of the same type with different instance values share no state | invariant 3 |
 
 ---
 
-## 6. Conséquences
+## 6. Consequences
 
-### Positives
+### Positive
 
-- Un créateur peut écrire un jeu où deux objets se parlent, sans JavaScript.
-- L'ordre observable d'une scène cesse d'être une propriété de son historique.
-- Aucune Operation nouvelle, aucun inverse, aucun gestionnaire : les invariants sont des
-  tests, pas du code.
-- `reconcile.js` n'a rien à faire, et c'est vérifié plutôt que supposé.
+- A creator can write a game where two objects talk to each other, without JavaScript.
+- A scene's observable order stops being a property of its history.
+- No new Operation, no inverse, no handler: the invariants are tests, not code.
+- `reconcile.js` has nothing to do, and that is verified rather than assumed.
 
-### Négatives
+### Negative
 
-- Le parcours canonique alloue à chaque appel. Le dépôt assume déjà ce coût plutôt qu'un
-  cache, pour la raison que `scene-renderer.js` énonce : un cache invalidé à chaque écriture
-  est une optimisation spéculative et un état de plus à tenir juste.
-- Le validateur ne peut rien dire d'une référence morte, parce qu'il ne voit pas la scène.
-  Limite structurelle, pas manque à combler.
-- Un port `object` non connecté coûte un nœud `Self` de plus sur la toile.
+- The canonical traversal allocates on every call. The repository already accepts that cost rather
+  than a cache, for the reason `scene-renderer.js` states: a cache invalidated on every write is a
+  speculative optimization and one more piece of state to keep right.
+- The validator can say nothing about a dead reference, because it does not see the scene. A
+  structural limit, not a gap to fill.
+- An unconnected `object` port costs one more `Self` node on the canvas.
 
 ---
 
-## 7. Alternatives écartées
+## 7. Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| Un mode de ciblage en paramètre sur chaque nœud de propriété | Incomposable — « le parent de mon parent » est inexprimable — et le vocabulaire de ciblage dupliqué sur chaque nœud. **Réhabilité sous condition par ADR-0039 §0.1 :** l'objection portait sur un param qui REMPLACE le port, donc sur un MODE. Le param retenu n'en est pas un — la prise reste toujours là, le sélecteur est à côté, et une connexion l'emporte simplement en existant. « Le parent de mon parent » reste donc exprimable exactement comme avant, et le fil disparaît du seul cas qui n'a rien à calculer : une cible que le créateur peut désigner |
-| Un type de port `component` | Rien ne le consommerait ; additif plus tard sans rien casser |
-| `Get Component` puis `Get Property` scindés | Le second nœud ignore de quel type il tient un composant : plus de typage, plus de sélecteur |
-| Inférer le type d'un port à travers les connexions | Les ports deviendraient fonction de la topologie du graphe et non du seul nœud |
-| Étendre `property.get` / `property.set` d'un port d'Object | Un fil changerait silencieusement quel objet est muté |
-| Une ObjectId sur le fil, résolue par un nœud `scene.resolve` | Elle deviendrait atteignable depuis un nœud `Text`, et rouvrirait toutes les portes de §3.6 |
-| Un port `object` non connecté valant Self | La magie implicite que le reste de cet ADR interdit |
-| Lever quand une cible a disparu | Contredit `Sprite` et `MissingComponent`, et transforme un état de jeu normal en erreur par frame |
-| Ordonner `findByTag` par `id` | Déterministe et inexplicable : le créateur ne peut pas prévoir le résultat |
-| Un repli pour les objets non atteignables depuis les roots | Masquerait un défaut d'ajout au lieu de le révéler |
-| Rendre `Scene.objects()` canonique | Une refonte : le stockage, le renderer, l'Editor et leurs tests en dépendent |
-| Garder `objectref` comme type de port | `typesCompatible('objectref','object')` serait faux : un nœud `Self` ne pourrait pas alimenter un `Set Property On` |
+| A targeting mode as a parameter on every property node | Non-composable — "my parent's parent" is inexpressible — and the targeting vocabulary duplicated on every node. **Conditionally rehabilitated by ADR-0039 §0.1:** the objection was about a param that REPLACES the port, and therefore about a MODE. The param adopted is not one — the socket is always there, the picker is next to it, and a connection simply wins by existing. "My parent's parent" therefore stays expressible exactly as before, and the wire disappears from the one case that has nothing to compute: a target the creator can designate |
+| A `component` port type | Nothing would consume it; additive later without breaking anything |
+| `Get Component` then `Get Property`, split | The second node does not know which type of component it holds: no typing, no picker |
+| Inferring a port's type through the connections | Ports would become a function of the graph's topology and not of the node alone |
+| Extending `property.get` / `property.set` with an Object port | A wire would silently change which object is mutated |
+| An ObjectId on the wire, resolved by a `scene.resolve` node | It would become reachable from a `Text` node, and would reopen every door in §3.6 |
+| An unconnected `object` port meaning Self | The implicit magic the rest of this ADR forbids |
+| Throwing when a target has vanished | It contradicts `Sprite` and `MissingComponent`, and turns a normal game state into a per-frame error |
+| Ordering `findByTag` by `id` | Deterministic and inexplicable: the creator cannot predict the result |
+| A fallback for objects unreachable from the roots | It would hide a defect in adding instead of revealing it |
+| Making `Scene.objects()` canonical | A rewrite: the storage, the renderer, the Editor and their tests depend on it |
+| Keeping `objectref` as a port type | `typesCompatible('objectref','object')` would be false: a `Self` node could not feed a `Set Property On` |
 
 ---
 
-## 8. Ce que cet ADR ne décide pas
+## 8. What this ADR does not decide
 
-| Point ouvert | Pourquoi |
+| Open point | Why |
 |---|---|
-| **L'ordre d'exécution de `Runtime.step()`** | Décision moteur indépendante : **ADR-0035** |
-| Un type de port `component` | Additif le jour où quelque chose en consomme un |
-| `Find All By Tag`, un tableau d'Objects | Aucun nœud de boucle n'existe, et un tableau de handles n'est pas persistable |
-| ~~Le dépôt d'un Object préremplissant un nœud~~ | **Décidé par ADR-0037** : le dépôt déclare une propriété `objectref`, n'écrit qu'une ressource, et n'attend donc plus ADR-0024 |
-| L'ordre de dessin à `layer` égal | Même cause que §3.1, autre consommateur : ADR-0035 |
-| La divergence de « premier pas » d'un client qui rejoint | Préexistant, assumé par ADR-0029 §3 |
-| Le prefab | Reste reporté (ADR-0026 §7) ; les refus de §3.7 ne le préjugent pas |
+| **`Runtime.step()`'s execution order** | An independent engine decision: **ADR-0035** |
+| A `component` port type | Additive the day something consumes one |
+| `Find All By Tag`, an array of Objects | No loop node exists, and an array of handles is not persistable |
+| ~~An Object drop pre-filling a node~~ | **Decided by ADR-0037**: the drop declares an `objectref` property, writes one resource only, and therefore no longer waits on ADR-0024 |
+| The draw order at equal `layer` | Same cause as §3.1, another consumer: ADR-0035 |
+| The "first step" divergence of a client joining | Pre-existing, accepted by ADR-0029 §3 |
+| The prefab | Still deferred (ADR-0026 §7); §3.7's refusals do not prejudge it |

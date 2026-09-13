@@ -1,21 +1,20 @@
-# ADR-0015 — Un Component peut avoir un graphe `.px` qui définit son comportement
+# ADR-0015 — A Component may have a `.px` graph that defines its behaviour
 
-- **Statut :** **accepté** (2026-08-12) · **révisé** (2026-08-12)
-- **Décide :** par où un graphe `.px` entre dans la simulation
-- **Lié à :** ADR-0004 (Components), ADR-0005 (pas de « Systems »), ADR-0007 (Inspector),
-  ADR-0009 (`.px` et `.js`), ADR-0012 (erreurs)
+- **Status:** **accepted** (2026-08-12) · **revised** (2026-08-12)
+- **Decides:** where a `.px` graph enters the simulation
+- **Related to:** ADR-0004 (Components), ADR-0005 (no "Systems"), ADR-0007 (Inspector),
+  ADR-0009 (`.px` and `.js`), ADR-0012 (errors)
 
 ---
 
-## Ce que cette révision corrige
+## What this revision fixes
 
-La première version de cet ADR introduisait un Component générique `Script`, portant
-`kind` + `source`, et un registre de « kinds de script ». C'est un modèle emprunté à
-d'autres moteurs, **pas celui de Pixel Creator** : il fait apparaître une notion de
-« script » dans l'UX, là où l'utilisateur ne manipule que des Components, et il faisait
-du `.px` un type de composant au lieu d'un comportement.
+The first version of this ADR introduced a generic `Script` Component carrying `kind` + `source`,
+and a registry of "script kinds". That model is borrowed from other engines, **not Pixel
+Creator's**: it makes a notion of "script" appear in the UX, where the user only handles
+Components, and it made `.px` a component type instead of a behaviour.
 
-Le modèle retenu est celui de Pixel Creator depuis l'origine :
+The model adopted is Pixel Creator's from the beginning:
 
 ```
 Object
@@ -26,152 +25,146 @@ Object
 └── Collider
 ```
 
-`Controller.px` **n'est pas un composant et n'en devient jamais un**. C'est le
-*comportement* du type de Component `Controller` : le graphe qui dit ce que fait un
-Controller. Un `Health` a son `Health.px`, un `Weapon` son `Weapon.px`.
+`Controller.px` **is not a component and never becomes one**. It is the *behaviour* of the
+`Controller` Component type: the graph that says what a Controller does. A `Health` has its
+`Health.px`, a `Weapon` its `Weapon.px`.
 
-**Il n'existe pas de Component `Script`**, pas de « scripting » exposé à l'utilisateur, et
-aucun type de Component n'est généré dynamiquement par un `.px`.
+**There is no `Script` Component**, no "scripting" exposed to the user, and no Component type is
+generated dynamically by a `.px`.
 
 ---
 
-## Décision
+## Decision
 
-### 1. Un graphe est lié à un **type** de Component
+### 1. A graph is bound to a Component **type**
 
-L'association est `type de Component → graphe`, tenue par un hôte `Behaviors`
-(`runtime/scripting/behaviors.js`) :
+The association is `Component type → graph`, held by a `Behaviors` host
+(`runtime/scripting/behaviors.js`):
 
 ```js
-behaviors.bind('Controller', graph);      // ou bind(Controller, graph)
+behaviors.bind('Controller', graph);      // or bind(Controller, graph)
 ```
 
-Elle est portée par le type, pas par l'instance : c'est ce qui garantit que **rien du
-graphe n'entre dans les données sérialisées d'un composant**. Ce qui sérialise d'un
-`Controller`, ce sont ses propriétés (`speed`, …) et rien d'autre.
+It is carried by the type, not by the instance: that is what guarantees that **nothing from the
+graph enters a component's serialized data**. What serializes from a `Controller` is its
+properties (`speed`, …) and nothing else.
 
-`.js` n'a besoin de rien ici : un module dont l'export par défaut est une classe de
-composant **est** un type de Component, résolu par `import()` et enregistré comme les
-autres (ADR-0009). Un graphe est l'autre moitié de la phrase : le comportement d'un type,
-pas un type.
+`.js` needs nothing here: a module whose default export is a component class **is** a Component
+type, resolved by `import()` and registered like the others (ADR-0009). A graph is the other half
+of the sentence: the behaviour of a type, not a type.
 
-### 2. La couture
+### 2. The seam
 
 ```
 graph ──(interpret)──► create(component) ──► behavior.update(self, ctx)
-        une fois par graphe   une fois par instance      à chaque pas
+        once per graph        once per instance         every step
 ```
 
-`interpret` est l'interprète de graphe. **Il n'est pas construit ici** — ni langage, ni
-modèle de graphe, ni VM, ni bac à sable (ADR-0009). Ce qui est fixé, c'est l'endroit où il
-se branche, pour qu'il arrive sans rien changer au runtime.
+`interpret` is the graph interpreter. **It is not built here** — no language, no graph model, no
+VM, no sandbox (ADR-0009). What is fixed is where it plugs in, so that it can arrive without
+changing anything in the runtime.
 
-### 3. Deux niveaux, parce que deux choses différentes sont partagées
+### 3. Two levels, because two different things are shared
 
-| | Dépend de | Fait |
+| | Depends on | Done |
 |---|---|---|
-| **Interprétation** | du graphe seul | **une fois par graphe**, partagée par tous les composants de ce type |
-| **Instanciation** | de l'instance | **une fois par composant**, jamais partagée |
+| **Interpretation** | the graph alone | **once per graph**, shared by every component of that type |
+| **Instantiation** | the instance | **once per component**, never shared |
 
-Un graphe a des variables, des minuteurs, une position dans sa propre exécution. Cent
-`Controller` dans une scène partagent une interprétation et **n'ont jamais un état
-d'exécution commun**. C'est toute la raison pour laquelle la couture est une fabrique et
-non un objet unique.
+A graph has variables, timers, a position within its own execution. A hundred `Controller`s in a
+scene share one interpretation and **never have a common execution state**. That is the whole
+reason the seam is a factory and not a single object.
 
-### 4. Le comportement interprété n'est pas de l'état
+### 4. An interpreted behaviour is not state
 
-Les propriétés propres énumérables d'un composant **sont** son état sérialisé. Un behavior
-est un objet vivant, porteur de méthodes, dérivé du graphe. L'écrire sur le composant
-mettrait des fonctions dans chaque instantané et chaque charge répliquée.
+A component's own enumerable properties **are** its serialized state. A behavior is a live object
+carrying methods, derived from the graph. Writing it onto the component would put functions into
+every snapshot and every replicated payload.
 
-Il vit donc dans une `WeakMap` indexée par le composant.
+It therefore lives in a `WeakMap` keyed by the component.
 
-### 5. Le graphe écrit par le chemin réactif normal
+### 5. The graph writes through the normal reactive path
 
-La fabrique reçoit le composant **tel que l'Object le détient**, c'est-à-dire le `Proxy`
-réactif. Une écriture depuis un graphe est donc une écriture ordinaire : même `Change`,
-même réplication, même mise à jour de l'Inspector qu'une écriture de code écrit à la main.
-Il n'y a pas un chemin d'écriture « graphe » et un chemin « code » (ADR-0009).
+The factory receives the component **exactly as the Object holds it**, that is, the reactive
+`Proxy`. A write from a graph is therefore an ordinary write: the same `Change`, the same
+replication, the same Inspector update as a write from hand-written code. There is no "graph" write
+path and no "code" write path (ADR-0009).
 
-### 6. Relier de nouveau un type édite son comportement à chaud
+### 6. Rebinding a type edits its behaviour live
 
-`bind()` sur un type déjà lié remplace le graphe ; le behavior en cours est remplacé au pas
-suivant, sur toutes les instances. Éditer `Controller.px` dans l'éditeur prend effet sans
-rien recharger.
+`bind()` on an already-bound type replaces the graph; the current behavior is replaced on the next
+step, on every instance. Editing `Controller.px` in the editor takes effect with nothing to
+reload.
 
-### 7. Les erreurs suivent ADR-0012, sans exception
+### 7. Errors follow ADR-0012, with no exception
 
-Interprétation impossible, fabrique invalide, exception du graphe : tout remonte comme un
-`throw` pendant `update()`. Le runtime le **rapporte** et ne touche à rien — aucune
-désactivation automatique, aucune écriture implicite d'`active`, aucun `Change` produit par
-le traitement de l'erreur, le reste de la scène continue.
+An impossible interpretation, an invalid factory, an exception from the graph: everything surfaces
+as a `throw` during `update()`. The runtime **reports** it and touches nothing — no automatic
+disabling, no implicit write of `active`, no `Change` produced by handling the error, and the rest
+of the scene continues.
 
-Le rapport est attribué **au Component** (`type: 'Controller'`), puisque c'est lui qui
-s'exécute. Un graphe systématiquement cassé est signalé à chaque pas : le silence de Legacy
-est ce qu'on refuse.
+The report is attributed **to the Component** (`type: 'Controller'`), since it is what runs. A
+systematically broken graph is reported on every step: Legacy's silence is what we refuse.
 
-### 8. Un Component est l'unité d'exécution et d'isolation
+### 8. A Component is the unit of execution and of isolation
 
-Le runtime exécute, pour chaque composant actif et dans l'ordre de la scène : son `update`
-s'il en a un, **puis** le graphe lié à son type. Un composant, une place dans l'ordre, un
-`try`/`catch`.
+The runtime runs, for each active component and in scene order: its `update` if it has one, **and
+then** the graph bound to its type. One component, one place in the order, one `try`/`catch`.
 
-**Il n'y a pas de `ScriptSystem`** (ADR-0005). Un graphe s'exécute parce que le Component
-qui le porte s'exécute : il hérite gratuitement de l'isolation des erreurs, du pas fixe, de
-la séparation update/draw, de l'ordre déterministe et de l'exécution headless — **sans
-second chemin d'exécution à maintenir cohérent entre client et serveur.** Le même runtime
-interprète le même graphe des deux côtés, parce qu'il n'y en a qu'un.
+**There is no `ScriptSystem`** (ADR-0005). A graph runs because the Component carrying it runs: it
+inherits error isolation, the fixed step, the update/draw separation, the deterministic order and
+headless execution for free — **with no second execution path to keep consistent between client
+and server.** The same runtime interprets the same graph on both sides, because there is only one.
 
-### 9. La couture ne couvre que `update`
+### 9. The seam covers `update` only
 
-Dessiner appartient au **type de Component** : c'est lui qui déclare `draw`, et le
-`SceneRenderer` sait déjà l'exécuter. Un `Controller` de pure logique ne paie donc aucun
-`save`/`setTransform`/`restore` par frame et n'est pas compté comme dessiné. Un graphe qui
-produit des pixels viendra avec le modèle de graphe, pas avant.
+Drawing belongs to the **Component type**: it is what declares `draw`, and the `SceneRenderer`
+already knows how to run it. A purely logical `Controller` therefore pays no
+`save`/`setTransform`/`restore` per frame and is not counted as drawn. A graph that produces pixels
+will come with the graph model, not before.
 
 ---
 
-## Ce que cet ADR ne décide pas
+## What this ADR does not decide
 
-| Point ouvert | Où il sera tranché |
+| Open point | Where it will be settled |
 |---|---|
-| ~~Comment un type de Component purement graphe est déclaré~~ | **tranché** : ADR-0016 (définition = type + propriétés + graphe) |
-| Ce que deviennent les `variables` d'un graphe vis-à-vis du schéma et de l'Inspector | ADR-0007 + modèle de graphe |
-| Le modèle de graphe et l'interprète eux-mêmes | ADR-0009 |
-| ~~Qui appelle `bind()` (chargement du projet, éditeur, serveur)~~ | **tranché : ADR-0020** — la couche `src/project/`. Elle lit la `GraphResource` désignée par `definition.graph` et passe le graphe **résolu** à `behaviors.bind(type, graph)`. `bind()` refuse un `ResourceId` : le Runtime ne lit jamais le stockage, et `runtime → project` est un import interdit |
+| ~~How a purely graph-based Component type is declared~~ | **settled**: ADR-0016 (a definition = type + properties + graph) |
+| What becomes of a graph's `variables` with respect to the schema and the Inspector | ADR-0007 + the graph model |
+| The graph model and the interpreter themselves | ADR-0009 |
+| ~~Who calls `bind()` (project loading, editor, server)~~ | **settled: ADR-0020** — the `src/project/` layer. It reads the `GraphResource` designated by `definition.graph` and passes the **resolved** graph to `behaviors.bind(type, graph)`. `bind()` refuses a `ResourceId`: the Runtime never reads storage, and `runtime → project` is a forbidden import |
 
 ---
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- L'UX de l'éditeur et le modèle d'exécution disent la même chose : un Component, son `.px`.
-- Zéro nouveau chemin d'exécution dans le runtime.
-- Plusieurs comportements sur un objet sont naturels : ce sont plusieurs Components, chacun
-  avec son graphe. La limite « un script par Object » de la version précédente disparaît
-  sans assouplir « un composant par type » (ADR-0004).
-- Identique client et serveur, par construction.
-- Rien du langage `.px` n'est figé prématurément.
+- The editor's UX and the execution model say the same thing: a Component, its `.px`.
+- Zero new execution paths in the runtime.
+- Several behaviours on one object are natural: they are several Components, each with its graph.
+  The previous version's "one script per Object" limit disappears without loosening "one component
+  per type" (ADR-0004).
+- Identical on client and server, by construction.
+- Nothing of the `.px` language is frozen prematurely.
 
-### Négatives
+### Negative
 
-- Un type de Component doit exister avant qu'un graphe puisse lui être lié — c'est
-  volontaire (aucun type généré par un `.px`). La brique qui déclare un type est
-  ADR-0016.
-- L'interprétation est paresseuse : le premier pas d'un composant paie la lecture du graphe.
+- A Component type must exist before a graph can be bound to it — that is deliberate (no type is
+  generated by a `.px`). The brick that declares a type is ADR-0016.
+- Interpretation is lazy: a component's first step pays for reading the graph.
 
 ---
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **Un Component générique `Script` (`kind` + `source`)** — version précédente de cet ADR | Invente une notion de « script » dans l'UX ; met la source dans les données du composant ; fait du `.px` un type au lieu d'un comportement. |
-| **Un `.px` génère son type de Component** | Le type deviendrait une conséquence d'un fichier de comportement, et l'Inspector dépendrait d'un graphe pour savoir ce qu'est un `Controller`. |
-| **Graphe lié à l'instance et sérialisé avec elle** | Duplique le comportement dans chaque objet et mélange comportement et données. |
-| **`ScriptSystem` orchestrant les graphes** | Second chemin d'exécution à maintenir, et contredit ADR-0005. |
-| **Un behavior unique partagé par toutes les instances** | Deux `Controller` partageraient minuteurs et variables : bug garanti, et non déterministe en réseau. |
-| **`eval` / `new Function`** | Sécurité, et contredit ADR-0009 (`.px` est interprété). |
-| **Behavior stocké sur le composant** | Met des fonctions dans la sérialisation et la réplication. |
-| **Compilation explicite via un `load()`** | Une phase de plus qu'on peut oublier d'appeler, et un état « pas encore chargé » à gérer partout. |
+| **A generic `Script` Component (`kind` + `source`)** — the previous version of this ADR | It invents a notion of "script" in the UX; it puts the source into the component's data; it makes `.px` a type instead of a behaviour. |
+| **A `.px` generates its Component type** | The type would become a consequence of a behaviour file, and the Inspector would depend on a graph to know what a `Controller` is. |
+| **A graph bound to the instance and serialized with it** | It duplicates the behaviour into every object and mixes behaviour with data. |
+| **A `ScriptSystem` orchestrating the graphs** | A second execution path to maintain, and it contradicts ADR-0005. |
+| **A single behavior shared by every instance** | Two `Controller`s would share timers and variables: a guaranteed bug, and non-deterministic over the network. |
+| **`eval` / `new Function`** | Security, and it contradicts ADR-0009 (`.px` is interpreted). |
+| **A behavior stored on the component** | It puts functions into serialization and replication. |
+| **Explicit compilation through a `load()`** | One more phase you can forget to call, and a "not loaded yet" state to handle everywhere. |

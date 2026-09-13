@@ -1,112 +1,108 @@
-# ADR-0046 — Un geste, un modèle, et deux largeurs
+# ADR-0046 — One gesture, one model, and two widths
 
-- **Statut :** **accepté** (2026-08-29)
-- **Amendé par :** ADR-0055 (2026-09-07) — §7 : « un mot et une option choisie » ne sont plus courts ; ce qu'un créateur tape ou choisit prend les deux cellules. La règle de §7 elle-même est confirmée et redevient la seule.
-- **Amendé par :** ADR-0047 (2026-08-29) — §3 : le geste Component → nœud est retiré une dernière fois, le champ qu'il remplissait n'existant plus. §7 : un contrôle seul sur sa ligne mesure environ 70 % et non toute la colonne.
-- **Décide :** ce qui porte une propriété de l'Object ; combien de poignées porte une propriété ; ce que voit l'Inspector après la création d'un `.px` ; ce qu'un Component sans fichier s'appelle ; combien de nœuds décrivent une touche ; ce que mesure un contrôle ; ce qu'un identifiant peut contenir ; combien de modèles une ressource a
-- **Dépend de :** ADR-0006 (une fenêtre annonce, le shell route), ADR-0011 (autorité), ADR-0014 (l'input est passé), ADR-0021 (une identité n'est pas un nom), ADR-0028 (réordonner), ADR-0041 (un événement est un moment), ADR-0043 (l'Object répond de lui-même), ADR-0044 (canal vivant), ADR-0045 (deux questions, deux lignes)
-- **Amende :** ADR-0041 §3.2 (réglée autrement, voir §6) ; ADR-0045 §4 (trois nœuds deviennent trois ports), §9 (une couleur redevient courte), §10 (la poignée de la propriété est celle du réordonnancement)
-- **Ne décide pas :** le transport du Preview (voir §1, qui explique pourquoi il ne change pas) ; l'unité d'un port ; `Rotation X/Y` ; le devenir d'une instance dont le fichier est supprimé (§5) ; le modèle Object/Component/Property des nœuds ; `Random`, `Delay`, `Destroy`, `Spawn`
+- **Status:** **accepted** (2026-08-29)
+- **Amended by:** ADR-0055 (2026-09-07) — §7: "a word and a chosen option" are no longer short; what a creator types or picks takes both cells. §7's rule itself is confirmed and becomes the only one again.
+- **Amended by:** ADR-0047 (2026-08-29) — §3: the Component → node gesture is withdrawn one last time, the field it filled no longer existing. §7: a control alone on its row measures about 70 % and not the whole column.
+- **Decides:** what carries a property of the Object; how many handles a property carries; what the Inspector shows after a `.px` is created; what a Component with no file is called; how many nodes describe a key; what a control measures; what an identifier may contain; how many models a resource has
+- **Depends on:** ADR-0006 (a window announces, the shell routes), ADR-0011 (authority), ADR-0014 (input is passed), ADR-0021 (an identity is not a name), ADR-0028 (reordering), ADR-0041 (an event is a moment), ADR-0043 (the Object answers for itself), ADR-0044 (a live channel), ADR-0045 (two questions, two rows)
+- **Amends:** ADR-0041 §3.2 (settled differently, see §6); ADR-0045 §4 (three nodes become three ports), §9 (a colour becomes short again), §10 (a property's handle is the reordering one)
+- **Does not decide:** the Preview's transport (see §1, which explains why it does not change); a port's unit; `Rotation X/Y`; the fate of an instance whose file is deleted (§5); the nodes' Object/Component/Property model; `Random`, `Delay`, `Destroy`, `Spawn`
 
 ---
 
-## 1. Le transport du Preview ne change pas, et le legacy dit pourquoi
+## 1. The Preview's transport does not change, and the legacy says why
 
-Le mécanisme legacy a été retrouvé et lu (`legacy/editor/misc/play.js`, `legacy/build/index.html`) :
+The legacy mechanism was found and read (`legacy/editor/misc/play.js`, `legacy/build/index.html`):
 
 ```js
 const app = window.open('/build/', '_blank', '…');
-app.data = { host, port, online, objects: scene.objects };   // ← la scène de l'éditeur
+app.data = { host, port, online, objects: scene.objects };   // ← the editor's scene
 ```
 
 ```js
 const editorObjects = window.data?.objects;
-objects = editorObjects;         // les MÊMES objets
-scene.init(objects, camera);     // que la fenêtre de jeu rend chaque frame
+objects = editorObjects;         // the SAME objects
+scene.init(objects, camera);     // that the game window renders every frame
 ```
 
-**Il n'y a pas de synchronisation : il y a de l'aliasing.** Aucun `postMessage`, aucun
-`window.opener`, aucun événement `message` dans tout le chemin Editor ↔ Preview du legacy —
-la recherche ne trouve `onmessage` que dans les WebSockets du réseau. Le Preview affichait
-les objets vivants de l'éditeur parce que c'étaient littéralement les mêmes objets.
+**There is no synchronization: there is aliasing.** No `postMessage`, no `window.opener`, no `message`
+event anywhere in the legacy's Editor ↔ Preview path — a search finds `onmessage` only inside the
+network's WebSockets. The Preview displayed the editor's live objects because they were literally the
+same objects.
 
-Le coût, mesuré et non supposé :
+The cost, measured and not assumed:
 
-| Ce que l'aliasing donne | Ce qu'il coûte |
+| What aliasing gives | What it costs |
 |---|---|
-| Zéro ligne de synchronisation | Le Preview ne survit pas à `F5` : `window.data` disparaît |
-| Fidélité parfaite — pas « synchronisé », **identique** | Le Preview n'est pas une URL, donc jamais un jeu publié |
-| Aucune latence | **Jouer, c'est éditer** : le runtime du Preview mute la scène de l'éditeur |
-| — | Deux Previews muteraient les mêmes objets et se battraient |
-| — | Rien ne traverse, donc rien de ce chemin ne prépare un réseau |
+| Zero lines of synchronization | The Preview does not survive `F5`: `window.data` is gone |
+| Perfect fidelity — not "synchronized", **identical** | The Preview is not a URL, and therefore never a published game |
+| No latency | **Playing is editing**: the Preview's runtime mutates the editor's scene |
+| — | Two Previews would mutate the same objects and fight each other |
+| — | Nothing crosses, so nothing on that path prepares a network |
 
-Le legacy avait d'ailleurs **deux mécanismes disjoints** : l'aliasing ci-dessus, et 355
-lignes de `network.js` — un message par sorte de mutation (`update`, `add`, `remove`,
-`addComponent`, …) plus des `heartbeat` d'état complet. Le chemin local n'était pas un
-transport dégradé du chemin réseau ; il le contournait entièrement.
+The legacy in fact had **two disjoint mechanisms**: the aliasing above, and 355 lines of `network.js`
+— one message per kind of mutation (`update`, `add`, `remove`, `addComponent`, …) plus full-state
+`heartbeat`s. The local path was not a degraded version of the network path; it bypassed it entirely.
 
-### Comparaison
+### Comparison
 
-| Solution | Complexité | Sync temps réel | Plusieurs previews | Futur WebSocket | Futur WebRTC | Limites |
+| Solution | Complexity | Real-time sync | Several previews | A future WebSocket | A future WebRTC | Limits |
 |---|---|---|---|---|---|---|
-| Legacy / `window.open` + référence partagée | 24 lignes | totale, par construction | non — ils se battraient | **aucun apport** | aucun apport | pas de `F5`, pas d'URL, pas d'isolation, même processus |
-| `postMessage` | ~60 lignes | oui | oui, mais il faut tenir la liste des fenêtres | proche | proche | il faut `noopener` en moins, un handshake de démarrage, une détection de fermeture, et un Preview ouvert par URL n'a pas d'`opener` |
-| `BroadcastChannel` (actuel) | **29 + 40 lignes** | oui | **gratuit** | `openLiveChannel()` change, rien d'autre | idem | un seul navigateur |
-| Abstraction de transport | + une couche | oui | oui | oui | oui | **prématurée** : la couture est déjà `openLiveChannel()` |
+| Legacy / `window.open` + a shared reference | 24 lines | total, by construction | no — they would fight | **contributes nothing** | contributes nothing | no `F5`, no URL, no isolation, same process |
+| `postMessage` | ~60 lines | yes | yes, but you have to keep the window list | close | close | you need to drop `noopener`, add a startup handshake and close detection, and a Preview opened by URL has no `opener` |
+| `BroadcastChannel` (current) | **29 + 40 lines** | yes | **free** | `openLiveChannel()` changes, nothing else | the same | one browser only |
+| A transport abstraction | + one layer | yes | yes | yes | yes | **premature**: the seam is already `openLiveChannel()` |
 
-`noopener` est déjà passé à `window.open` (`editor/preview.js`), ce qui **rend le modèle
-`postMessage` impossible sans le retirer** — et le retirer rouvre au Preview l'accès à
-`window.opener.*`, c'est-à-dire exactement la porte que l'aliasing legacy était.
+`noopener` is already passed to `window.open` (`editor/preview.js`), which **makes the `postMessage`
+model impossible without removing it** — and removing it reopens the Preview's access to
+`window.opener.*`, that is, exactly the door the legacy aliasing was.
 
-> **Décision : le canal reste celui d'ADR-0044.** Il est plus court que l'alternative,
-> il n'a pas d'état à tenir, il marche pour un Preview ouvert par URL, et la seule fonction
-> à changer le jour d'une WebSocket est déjà isolée. Aucune abstraction n'est ajoutée : il
-> n'y a rien à abstraire tant qu'il y a une implémentation.
-
----
-
-## 2. Les quatre propriétés de l'Object sont des propriétés comme les autres
-
-`Name`, `Tag`, `Layer` et `Active` n'avaient pas de poignée. La cause tenait en un argument
-manquant : le panneau dessinait leurs lignes sans nommer de Component, donc sans rien à
-mettre dans la charge du glisser.
-
-ADR-0043 avait déjà fait le travail — l'Object répond de lui-même sous son propre namespace,
-et le catalogue l'expose comme un type. Les quatre lignes qu'un débutant rencontre **en
-premier** étaient les quatre qu'un graphe ne pouvait pas atteindre, et aucune exception n'a
-été créée pour les réparer : elles passent par le mécanisme qui existait.
+> **Decision: the channel stays ADR-0044's.** It is shorter than the alternative, it has no state to
+> keep, it works for a Preview opened by URL, and the only function to change on WebSocket day is
+> already isolated. No abstraction is added: there is nothing to abstract while there is one
+> implementation.
 
 ---
 
-## 3. Une propriété a une poignée, pas deux
+## 2. The Object's four properties are properties like the others
 
-Une propriété d'un `.px` portait deux poignées : une pour réordonner, une pour emporter.
-C'était le coût honnête de deux gestes — et c'était la mauvaise affaire. Un créateur a **une**
-intention, « prendre cette propriété » ; ce qui la distingue est l'endroit où il lâche.
+`Name`, `Tag`, `Layer` and `Active` had no handle. The cause was one missing argument: the panel drew
+their rows without naming a Component, and therefore with nothing to put in the drag payload.
 
-La primitive le disait déjà : *« a gesture with no payload never leaves »*. Une section de
-Component avait sa charge depuis toujours ; une propriété n'en avait pas. C'est la charge qui
-arrive, pas un second mécanisme — et l'infobulle nomme désormais les deux destinations, sans
-quoi la moitié du geste reste invisible.
+ADR-0043 had already done the work — the Object answers for itself under its own namespace, and the
+catalogue exposes it as a type. The four rows a beginner meets **first** were the four a graph could
+not reach, and no exception was created to fix them: they go through the mechanism that existed.
 
 ---
 
-## 4. Créer un Custom Component, c'est l'ouvrir ET s'y placer
+## 3. A property has one handle, not two
 
-Le canevas s'ouvrait, l'Inspector restait sur l'Object. Or un `.px` vide ne fait rien : la
-chose suivante dont on a besoin est **une propriété**, et `Add property` vit dans l'Inspector.
+A `.px`'s property carried two handles: one to reorder, one to carry away. That was the honest cost of
+two gestures — and it was the wrong bargain. A creator has **one** intention, "take this property";
+what distinguishes them is where they release.
 
-Le panneau **annonce** l'ouverture (`px-open-resource`, ADR-0006) et **passe par l'arbitre**
-pour la sélection : un Object et une Resource sont deux sujets mutuellement exclusifs, et
-`Subject` est le seul endroit qui les tient ainsi. Écrire dans le Workspace directement
-laisserait l'Object sélectionné dessous et les deux détenteurs en désaccord.
+The primitive already said it: *"a gesture with no payload never leaves"*. A Component section has had
+its payload all along; a property had none. It is the payload that arrives, not a second mechanism —
+and the tooltip now names both destinations, without which half the gesture stays invisible.
 
 ---
 
-## 5. Une identité n'est pas un nom, même quand le fichier a disparu
+## 4. Creating a Custom Component means opening it AND going to it
 
-Supprimer un `.px` encore attaché à un Object laissait un Component intitulé
-`ffs2qex9nw0v` — reproduit exactement, au niveau du modèle :
+The canvas opened, the Inspector stayed on the Object. But an empty `.px` does nothing: the next thing
+you need is **a property**, and `Add property` lives in the Inspector.
+
+The panel **announces** the opening (`px-open-resource`, ADR-0006) and **goes through the router** for
+the selection: an Object and a Resource are two mutually exclusive subjects, and `Subject` is the only
+place that keeps them so. Writing to the Workspace directly would leave the Object selected underneath
+and the two holders in disagreement.
+
+---
+
+## 5. An identity is not a name, even when the file is gone
+
+Deleting a `.px` still attached to an Object left a Component titled `ffs2qex9nw0v` — reproduced
+exactly, at the model level:
 
 ```
 BEFORE delete: label = "New Component"
@@ -114,129 +110,119 @@ AFTER  delete: still registered = true
 AFTER  delete: label = "ffs2qex9nw0v"
 ```
 
-Deux défauts distincts, et un seul est réglé ici.
+Two distinct defects, and only one is fixed here.
 
-**Réglé : le nom.** La chaîne de repli finissait sur le type, qui pour un `.px` **est** sa
-ResourceId — précisément ce qu'ADR-0021 existe pour garder hors de vue. Un type que rien ne
-peut nommer se lit désormais `Missing Component`. La condition est exacte et non heuristique :
-`static definition` est ce que `defineComponent()` estampille sur une classe construite à
-partir d'un payload de projet, tandis qu'un Component livré déclare `static schema`. Un type
-qui vient d'un fichier et dont le projet n'a plus le fichier est un fichier disparu.
+**Fixed: the name.** The fallback chain ended on the type, which for a `.px` **is** its ResourceId —
+precisely what ADR-0021 exists to keep out of sight. A type nothing can name now reads
+`Missing Component`. The condition is exact rather than heuristic: `static definition` is what
+`defineComponent()` stamps on a class built from a project payload, while a shipped Component declares
+`static schema`. A type that comes from a file whose project no longer has the file is a missing file.
 
-**Non réglé, et volontairement : l'instance.** Rien ne désenregistre le type, donc le
-Component reste attaché et continue de tourner. Le convertir en `MissingComponent` — le
-placeholder d'ADR-0021, qui conserve les valeurs et ne tourne jamais — est la suite évidente,
-mais elle demande une décision : est-ce une Operation, se défait-elle avec le `Ctrl Z` de la
-suppression, que voit un collaborateur ? Voir le rapport, §C.
+**Not fixed, deliberately: the instance.** Nothing unregisters the type, so the Component stays
+attached and keeps running. Turning it into a `MissingComponent` — ADR-0021's placeholder, which keeps
+the values and never runs — is the obvious next step, but it needs a decision: is it an Operation, does
+it undo with the deletion's `Ctrl Z`, what does a collaborator see? See the report, §C.
 
-À noter : **l'Editor n'offre aujourd'hui aucun geste de suppression de ressource.** Le défaut
-est donc latent, pas atteignable par un créateur — ce qui est aussi la raison pour laquelle
-il n'a pas été vu plus tôt.
+Worth noting: **the Editor offers no resource deletion gesture today.** The defect is therefore latent,
+not reachable by a creator — which is also why it was not seen earlier.
 
 ---
 
-## 6. Une touche est un nœud et trois ports
+## 6. A key is one node and three ports
 
-Il y en avait trois — `On Key`, `Key Down`, `Key Is Down` — et les deux premiers posaient la
-même question à la même touche. Un créateur devait donc **connaître la différence avant** de
-pouvoir choisir la carte qui la lui aurait apprise.
+There were three — `On Key`, `Key Down`, `Key Is Down` — and the first two asked the same question of
+the same key. A creator therefore had to **know the difference before** being able to choose the card
+that would have taught it to them.
 
-> **`On Key` a trois sorties : `Pressed`, `Released`, `Down`. `On Pointer Button` a les
-> mêmes, dans les mêmes mots.**
+> **`On Key` has three outputs: `Pressed`, `Released`, `Down`. `On Pointer Button` has the same, in
+> the same words.**
 
-Cela règle ADR-0041 §3.2 mieux que ne le faisait ADR-0045 §4. Cette section refusait un
-événement continu parce qu'il *ressemblerait* au coup unique ; deux cartes qui se ressemblent
-est un problème qu'une seule carte n'a pas.
+That settles ADR-0041 §3.2 better than ADR-0045 §4 did. That section refused a continuous event
+because it *would look like* the one-shot; two cards that look alike is a problem one card does not
+have.
 
-**La sémantique est celle du runtime, pas celle du nœud.** `InputState` répond déjà aux trois
-questions, et `commit()` borne les deux transitions à exactement un pas quelle que soit la
-fréquence — donc un serveur rejouant des entrées calcule les mêmes trois réponses (ADR-0011,
-ADR-0014 §5). Rien ici n'est un booléen portant le nom d'un événement.
+**The semantics are the runtime's, not the node's.** `InputState` already answers all three questions,
+and `commit()` bounds both transitions to exactly one step whatever the frame rate — so a server
+replaying inputs computes the same three answers (ADR-0011, ADR-0014 §5). Nothing here is a boolean
+wearing an event's name.
 
-| Port | Vrai quand |
+| Port | True when |
 |---|---|
-| `Pressed` | la transition vers le bas a eu lieu **ce pas-ci** |
-| `Released` | la transition vers le haut a eu lieu **ce pas-ci** |
-| `Down` | la touche est tenue, **maintenant** |
+| `Pressed` | the downward transition happened **this step** |
+| `Released` | the upward transition happened **this step** |
+| `Down` | the key is held, **now** |
 
-Le pas où une touche descend est `Pressed` **et** `Down`, et les deux partent : « à l'appui,
-puis à chaque pas » est ce que tenir une touche *est*.
+The step where a key goes down is `Pressed` **and** `Down`, and both leave: "on press, then on every
+step" is what holding a key *is*.
 
-**`Events` contre `Input`, et la ligne est celle du modèle :** ce qui **démarre un flux** est
-un Event ; ce qui **répond à une question** est un Input. `Key Is Down`, `Pointer` et
-`Pointer Button Is Down` restent donc dans `Input`, où ils sont ce qu'on demande à l'intérieur
-d'une condition.
+**`Events` versus `Input`, and the line is the model's:** what **starts a flow** is an Event; what
+**answers a question** is an Input. `Key Is Down`, `Pointer` and `Pointer Button Is Down` therefore
+stay in `Input`, where they are what you ask inside a condition.
 
-`input.keyDown` et `input.pointerButtonDown` sont **retirés**, sans alias : une seconde façon
-de dire une chose est la duplication que cette recomposition supprime.
-
----
-
-## 7. Deux largeurs, déclarées une fois
-
-> **Un contrôle court prend une cellule ; un contrôle large prend les deux.**
-
-Ce qui décide n'est pas le goût mais ce que le contrôle doit **montrer** : un nom de fichier,
-le nom d'un Object, la course d'un curseur et une liste de lignes débordent d'une demi-colonne
-— un nombre, un interrupteur, une pastille, un mot et une option choisie non.
-
-`Color` était large « parce qu'une couleur est une valeur comme une autre », ce qui en faisait
-la seule ligne dont le bord droit dépassait tous les nombres au-dessus. Corrigé : court.
-`Alpha` reste large, parce qu'un curseur a une course.
-
-**Dans un node, la règle ne peut pas être la même, et il faut le dire.** Une ligne d'Inspector
-a une colonne de libellé et une colonne de valeur ; une ligne de node a 176 px et des ports
-des deux côtés. Y appliquer « 50 % » laisserait à un nombre moins de place que n'en occupe sa
-propre mécanique. Ce que les deux surfaces partagent est le **contrôle** et son descripteur,
-pas la colonne.
-
-Ce qui manquait au node était plus simple et bien réel : chaque ligne se mesurait seule, donc
-`Get Property` — dont la première ligne porte une prise Object et pas les deux suivantes —
-dessinait trois contrôles à deux abscisses différentes. **Un seul bord gauche par carte**, au
-plus 8 px, et la colonne se lit. Le bord droit reste celui de chaque ligne : un port qui
-**imprime** son libellé occupe vraiment cette place.
+`input.keyDown` and `input.pointerButtonDown` are **removed**, with no alias: a second way of saying
+one thing is the duplication this recomposition removes.
 
 ---
 
-## 8. Un identifiant contient des chiffres, et c'est normal
+## 7. Two widths, declared once
 
-`createId()` tire dans un base32 de Crockford — dix chiffres et vingt-deux lettres. Rien dans
-ce moteur ne restreint un identifiant aux lettres : ni la génération, ni le stockage, ni
-`idFromHash()` (qui prend tout ce qui suit `#p/`), ni les clés du magasin. Le seul sélecteur
-CSS construit à partir d'un identifiant passe par une valeur d'attribut entre guillemets, où
-un chiffre initial est sans effet.
+> **A short control takes one cell; a wide control takes both.**
 
-La contrainte supposée n'existe pas. Une régression la fixe désormais, parce qu'une contrainte
-absente est plus facile à réintroduire par accident qu'une contrainte écrite.
+What decides is not taste but what the control has to **show**: a file name, an Object's name, a
+slider's travel and a list of rows overflow half a column — a number, a switch, a swatch, a word and a
+chosen option do not.
 
----
+`Color` was wide "because a colour is a value like any other", which made it the one row whose right
+edge went past every number above it. Fixed: short. `Alpha` stays wide, because a slider has travel.
 
-## 9. Une ressource, un modèle, même quand deux appelants la demandent en même temps
+**Inside a node the rule cannot be the same, and that has to be said.** An Inspector row has a label
+column and a value column; a node row has 176 px and ports on both sides. Applying "50 %" there would
+leave a number less room than its own mechanics occupy. What the two surfaces share is the **control**
+and its descriptor, not the column.
 
-`#attach()` attend un chargement. Deux appelants arrivés dans le même tick voyaient donc tous
-les deux « pas encore de modèle » et en construisaient chacun un : deux `ComponentDefinition`
-sur un payload, deux historiques, et le second remplaçant silencieusement le premier dans la
-table — **après** que le premier appelant l'eut capturé. `open()` basculait alors `open` sur
-un enregistrement que plus personne ne détenait, l'annonçait, et aucune fenêtre ne dessinait
-le document.
-
-Ce n'est pas théorique : §4 ci-dessus atteint ce chemin depuis **un seul geste** — créer un
-Custom Component l'OUVRE et le SÉLECTIONNE, et sélectionner attache. La promesse en vol est
-partagée ; c'est ce qui fait de ces deux demandes un seul modèle.
+What the node was missing was simpler and quite real: every row measured itself alone, so
+`Get Property` — whose first row carries an Object socket and whose next two do not — drew three
+controls at two different x positions. **One left edge per card**, at most 8 px, and the column reads.
+The right edge stays each row's: a port that **prints** its label really does occupy that space.
 
 ---
 
-## 10. Contrats observables
+## 8. An identifier contains digits, and that is normal
 
-| Contrat | Vérifiable par |
+`createId()` draws from Crockford base32 — ten digits and twenty-two letters. Nothing in this engine
+restricts an identifier to letters: not the generation, not the storage, not `idFromHash()` (which
+takes everything after `#p/`), not the store's keys. The one CSS selector built from an identifier goes
+through a quoted attribute value, where a leading digit has no effect.
+
+The assumed constraint does not exist. A regression test now pins that down, because an absent
+constraint is easier to reintroduce by accident than a written one.
+
+---
+
+## 9. One resource, one model, even when two callers ask at the same time
+
+`#attach()` awaits a load. Two callers arriving in the same tick therefore both saw "no model yet" and
+each built one: two `ComponentDefinition`s on one payload, two histories, and the second silently
+replacing the first in the table — **after** the first caller had captured it. `open()` then flipped
+`open` on a record nobody held any more, announced it, and no window drew the document.
+
+That is not theoretical: §4 above reaches that path from **a single gesture** — creating a Custom
+Component OPENS it and SELECTS it, and selecting attaches. The in-flight promise is shared; that is
+what makes those two requests one model.
+
+---
+
+## 10. Observable contracts
+
+| Contract | Verifiable by |
 |---|---|
-| `Name`, `Tag`, `Layer`, `Active` portent une poignée | l'Inspector, à l'œil et au `getBoundingClientRect()` |
-| Une propriété de `.px` a exactement une poignée | idem |
-| Créer un Custom Component ouvre le canevas **et** place l'Inspector | à l'œil |
-| Un `.px` supprimé ne se lit jamais comme son identifiant | `describeType`, en test |
-| `On Key` a trois ports, et le pas de l'appui en allume deux | `nodes.test.js`, `pipeline.test.js` |
-| `input.keyDown` n'existe plus, même en alias | `nodes.test.js` |
-| Tout contrôle court mesure une cellule, tout large en mesure deux | mesuré dans Chrome |
-| Une carte de node dessine ses contrôles depuis un seul bord gauche | `view.test.js` |
-| Un identifiant à chiffres traverse URL, magasin et analyse | `store.test.js` |
-| Deux `attach()` simultanés donnent un modèle | le workflow de §4, dans Chrome |
+| `Name`, `Tag`, `Layer`, `Active` carry a handle | the Inspector, by eye and by `getBoundingClientRect()` |
+| A `.px` property has exactly one handle | the same |
+| Creating a Custom Component opens the canvas **and** moves the Inspector | by eye |
+| A deleted `.px` never reads as its identifier | `describeType`, in a test |
+| `On Key` has three ports, and the press step lights two | `nodes.test.js`, `pipeline.test.js` |
+| `input.keyDown` no longer exists, not even as an alias | `nodes.test.js` |
+| Every short control measures one cell, every wide one measures two | measured in Chrome |
+| A node card draws its controls from a single left edge | `view.test.js` |
+| An identifier with digits survives the URL, the store and the parsing | `store.test.js` |
+| Two simultaneous `attach()` calls give one model | §4's workflow, in Chrome |

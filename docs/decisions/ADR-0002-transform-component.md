@@ -1,13 +1,13 @@
-# ADR-0002 — Transform devient un Component, `object.x` reste une façade
+# ADR-0002 — Transform becomes a Component, `object.x` stays a façade
 
-- **Statut :** **accepté** (2026-08-12), précisé le 2026-08-13
-- **Décide :** où vivent `x`, `y`, `rotation`, `scaleX`, `scaleY`
+- **Status:** **accepted** (2026-08-12), clarified on 2026-08-13
+- **Decides:** where `x`, `y`, `rotation`, `scaleX`, `scaleY` live
 
 ---
 
-## Contexte observé
+## Observed context
 
-Dans Legacy, la transformation est **codée en dur dans `Object`** :
+In Legacy, the transform is **hard-coded into `Object`**:
 
 ```js
 this.x = x; this.y = y;
@@ -15,43 +15,43 @@ this.width = width; this.height = height;
 this.rotation = 0.0; this.scale = 1.0;
 ```
 
-`x` et `y` passent par une chaîne à trois niveaux (`legacy/src/core/object.js:56-96`) :
+`x` and `y` go through a three-level chain (`legacy/src/core/object.js:56-96`):
 
 ```
-obj.x     accesseur d'instance posé par System.sync  → émet setProperty
-  → obj._x   accesseur de prototype                  → propage le delta aux enfants
-    → obj.__x  stockage réel
+obj.x     an instance accessor installed by System.sync  → emits setProperty
+  → obj._x   a prototype accessor                        → propagates the delta to the children
+    → obj.__x  the real storage
 ```
 
-Le niveau intermédiaire `_x` n'existe que pour offrir un point d'accroche à la
-propagation hiérarchique. `width`, `height`, `rotation`, `scale` n'en ont pas et ne se
-propagent donc **pas** aux enfants — asymétrie non documentée.
+The intermediate `_x` level exists only to offer a hook for hierarchical propagation. `width`,
+`height`, `rotation` and `scale` have none, and therefore do **not** propagate to the children —
+an undocumented asymmetry.
 
-Conséquences observées :
+Observed consequences:
 
-- tout `Object` porte une position, même un objet purement logique (gestionnaire de
-  score, minuteur, spawner) ;
-- la logique de hiérarchie est dans `Object` et ne peut pas être remplacée ;
-- l'Inspector liste `x`/`y`/`width`/`height`/`rotation` comme propriétés d'objet et
-  masque `scale` par une liste noire codée en dur ;
-- la sérialisation expose `__x`, `__y` (visibles dans le heartbeat).
+- every `Object` carries a position, even a purely logical one (a score manager, a timer, a
+  spawner);
+- the hierarchy logic lives in `Object` and cannot be replaced;
+- the Inspector lists `x`/`y`/`width`/`height`/`rotation` as object properties and hides
+  `scale` with a hard-coded blacklist;
+- serialization exposes `__x`, `__y` (visible in the heartbeat).
 
 ---
 
-## Décision
+## Decision
 
-`Transform` devient un composant. Il détient les valeurs. `Object` expose une **façade**.
+`Transform` becomes a component. It holds the values. `Object` exposes a **façade**.
 
 ```js
-// Source de vérité unique
+// The single source of truth
 object.components.get('Transform').x
 
-// Façade sur Object — lecture ET écriture délèguent, aucune copie
+// The façade on Object — reads AND writes delegate, no copy
 get x()  { return this.components.get('Transform').x; }
 set x(v) {        this.components.get('Transform').x = v; }
 ```
 
-Les trois écritures suivantes sont le même chemin :
+The three writes below are the same path:
 
 ```js
 object.x = 100;
@@ -59,92 +59,89 @@ object.getComponent('Transform').x = 100;
 object.components.Transform.x = 100;
 ```
 
-**Il n'existe jamais `Object._x` et `Transform.x` comme deux valeurs.** La façade ne
-stocke rien.
+**There is never an `Object._x` and a `Transform.x` as two values.** The façade stores nothing.
 
-### Contenu exact de Transform — précisé le 2026-08-13
+### The exact contents of Transform — clarified on 2026-08-13
 
-`Transform` porte **uniquement la transformation spatiale locale** :
+`Transform` carries **only the local spatial transform**:
 
-| Propriété | Sens |
+| Property | Meaning |
 |---|---|
-| `x`, `y` | position, relative au parent |
-| `rotation` | rotation en radians, relative au parent |
-| `scaleX`, `scaleY` | facteurs d'échelle, relatifs au parent |
+| `x`, `y` | position, relative to the parent |
+| `rotation` | rotation in radians, relative to the parent |
+| `scaleX`, `scaleY` | scale factors, relative to the parent |
 
-**`width` et `height` n'appartiennent pas à `Transform`.** Une taille ne décrit pas
-*où* se trouve un objet mais *ce qui* est dessiné ou entre en collision : elle vit donc
-dans les composants qui en ont réellement besoin (`Sprite`, `RectangleRenderer`,
-`Tilemap`, colliders). Elles ne reviennent pas non plus sur `Object`.
+**`width` and `height` do not belong to `Transform`.** A size does not describe *where* an
+object is but *what* is drawn or collides: it therefore lives in the components that actually
+need it (`Sprite`, `RectangleRenderer`, `Tilemap`, colliders). Nor do they come back onto
+`Object`.
 
-`scale` uniforme est remplacé par `scaleX` / `scaleY` : l'échelle non uniforme est un
-besoin courant, et un scalaire unique aurait dû être élargi plus tard.
+A uniform `scale` is replaced by `scaleX` / `scaleY`: non-uniform scaling is a common need, and
+a single scalar would have had to be widened later anyway.
 
-### Hiérarchie : composition, pas propagation
+### Hierarchy: composition, not propagation
 
-**Les valeurs stockées sont toujours locales.** Un parent ne réécrit jamais les valeurs
-d'un enfant — c'est exactement ce que faisait Legacy, en poussant un delta dans chaque
-enfant à chaque déplacement, ce qui rendait la position stockée d'un enfant dépendante
-de l'historique de son parent, et laissait `width` et `rotation` incohérents faute
-d'être propagés du tout.
+**The stored values are always local.** A parent never rewrites a child's values — which is
+exactly what Legacy did, pushing a delta into every child on every move, which made a child's
+stored position depend on its parent's history, and left `width` and `rotation` inconsistent for
+want of being propagated at all.
 
-La transformation **monde** est **dérivée** : le moteur compose la transformation locale
-d'un objet avec celles de ses parents quand il en a besoin (rendu, physique, picking).
+The **world** transform is **derived**: the engine composes an object's local transform with
+those of its parents when it needs to (rendering, physics, picking).
 
-Elle n'est donc jamais :
+It is therefore never:
 
-- une seconde source de vérité ;
-- sérialisée comme une propriété de l'`Object` ;
-- exposée comme une position que l'utilisateur devrait maintenir.
+- a second source of truth;
+- serialized as a property of the `Object`;
+- exposed as a position the user has to maintain.
 
-L'API de mutation reste `object.x`, `object.y`, `object.rotation`, `object.scaleX`,
-`object.scaleY` — un seul système de coordonnées côté utilisateur, **jamais** de couple
-`localX` / `worldX` à démêler. La lecture de la transformation monde est une API
-**dérivée et séparée**, destinée au moteur (`worldMatrix(object)`).
-
----
-
-## Conséquences
-
-### Positives
-
-- Un objet sans `Transform` est légitime (logique pure, sans position).
-- La hiérarchie de transformation devient remplaçable (pivot, transform locale/globale,
-  matrices) sans toucher à `Object`.
-- L'Inspector affiche `Transform` comme n'importe quel composant : plus de liste noire.
-- La chaîne `x → _x → __x` disparaît.
-
-### Négatives
-
-- **Deux indirections par lecture de `x`** : façade → composant → trap Proxy. Sur
-  `Renderer.render()`, `self.x` est lu plusieurs fois par objet et par frame.
-  Mitigation : le rendu et la physique lisent `const t = self.transform` une fois, puis
-  `t.x`, `t.y`. C'est une contrainte de style à inscrire dans `CONVENTIONS.md`.
-- **Tout code Legacy suppose que `Transform` existe.** `object.x` doit lever une erreur
-  claire (« Object has no Transform component ») plutôt que `undefined`, sinon les bugs
-  deviennent silencieux.
-- Le format de sérialisation change : `x` passe de propriété d'objet à propriété de
-  composant. Impacte le protocole réseau — mais **pas** les projets existants : il n'y a
-  aucun projet v1 à migrer (Q6 tranchée).
+The mutation API stays `object.x`, `object.y`, `object.rotation`, `object.scaleX`,
+`object.scaleY` — one coordinate system on the user's side, **never** a `localX` / `worldX` pair
+to untangle. Reading the world transform is a **derived and separate** API, intended for the
+engine (`worldMatrix(object)`).
 
 ---
 
-## Alternatives écartées
+## Consequences
 
-| Alternative | Pourquoi non |
+### Positive
+
+- An object without a `Transform` is legitimate (pure logic, no position).
+- The transform hierarchy becomes replaceable (pivot, local/global transform, matrices) without
+  touching `Object`.
+- The Inspector shows `Transform` like any other component: no more blacklist.
+- The `x → _x → __x` chain disappears.
+
+### Negative
+
+- **Two indirections per read of `x`**: façade → component → Proxy trap. In
+  `Renderer.render()`, `self.x` is read several times per object per frame. Mitigation:
+  rendering and physics read `const t = self.transform` once, then `t.x`, `t.y`. It is a style
+  constraint to write down in `CONVENTIONS.md`.
+- **All Legacy code assumes `Transform` exists.** `object.x` must throw a clear error ("Object
+  has no Transform component") rather than return `undefined`, otherwise the bugs go silent.
+- The serialization format changes: `x` goes from an object property to a component property.
+  It affects the network protocol — but **not** existing projects: there is no v1 project to
+  migrate (Q6 settled).
+
+---
+
+## Rejected alternatives
+
+| Alternative | Why not |
 |---|---|
-| **Garder la transform dans `Object`** | Statu quo. Conserve la chaîne à 3 niveaux, l'asymétrie de propagation et l'impossibilité d'un objet sans position. |
-| **`Transform` composant, sans façade** | Casse `object.x`, qui est dans toute la documentation, tous les scripts utilisateurs et l'esprit du produit. Exclu par la vision. |
-| **Façade avec cache** (`Object.x` copie `Transform.x`) | Recrée exactement les deux sources de vérité que l'on veut éviter. |
-| **`Transform` implicite, ajouté à la construction** | Envisageable, mais annule le bénéfice « objet sans position ». À reconsidérer si le coût ergonomique s'avère trop élevé. |
+| **Keep the transform in `Object`** | The status quo. It keeps the 3-level chain, the propagation asymmetry and the impossibility of an object with no position. |
+| **`Transform` as a component, with no façade** | Breaks `object.x`, which is in all the documentation, all user scripts and the spirit of the product. Ruled out by the vision. |
+| **A cached façade** (`Object.x` copies `Transform.x`) | Recreates exactly the two sources of truth we are trying to avoid. |
+| **An implicit `Transform`, added at construction** | Conceivable, but it cancels the "object without a position" benefit. To reconsider if the ergonomic cost proves too high. |
 
 ---
 
-## Validation requise
+## Required validation
 
-1. Test d'identité sur **tous** les chemins d'écriture :
-   `object.x === object.getComponent('Transform').x` après écriture via la façade,
-   via le composant, via le réseau, via l'Inspector.
-2. Benchmark de rendu avant/après sur une scène ≥ 500 objets.
-3. Décider si `Transform` est ajouté par défaut à la construction (point mineur, non
-   bloquant — tranchable à l'implémentation).
+1. An identity test on **every** write path:
+   `object.x === object.getComponent('Transform').x` after a write through the façade, through
+   the component, through the network, through the Inspector.
+2. A before/after rendering benchmark on a scene of ≥ 500 objects.
+3. Decide whether `Transform` is added by default at construction (a minor, non-blocking point —
+   settleable at implementation time).

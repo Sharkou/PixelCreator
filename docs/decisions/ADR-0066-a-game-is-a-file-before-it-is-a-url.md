@@ -1,111 +1,107 @@
-# ADR-0066 — Un jeu est un fichier avant d'être une URL
+# ADR-0066 — A game is a file before it is a URL
 
-- **Statut :** **accepté** (2026-09-12)
-- **Décide :** ce que « publier » veut dire aujourd'hui ; ce que le client de jeu accepte comme adresse ; ce qui manque exactement pour une URL Pixel Creator
-- **Dépend de :** ADR-0042 (Preview est un client de runtime adressé par identifiant), ADR-0044 §2 (un Preview est nommé par son projet), ADR-0065 (un projet persiste)
-- **Ne décide pas :** les comptes, les permissions, le stockage distant, un slug public, la mise à jour d'un jeu publié — voir §3
+- **Status:** **accepted** (2026-09-12)
+- **Decides:** what "publish" means today; what the game client accepts as an address; exactly what is missing for a Pixel Creator URL
+- **Depends on:** ADR-0042 (Preview is a runtime client addressed by identifier), ADR-0044 §2 (a Preview is named by its project), ADR-0065 (a project persists)
+- **Does not decide:** accounts, permissions, remote storage, a public slug, updating a published game — see §3
 
 ---
 
-## 1. L'audit
+## 1. The audit
 
-Ce qui existait déjà, et qui est plus que ce que le mot « rien » laissait croire :
+What already existed, and it is more than the word "nothing" suggested:
 
-| Pièce | État |
+| Piece | State |
 |---|---|
-| `bundleProject()` / `openBundle()` | **fait.** Un bundle est le manifeste, tous les payloads et la scène d'ouverture — une valeur JSON, pure, sans DOM (ADR-0042 §2) |
-| le client de jeu (`preview/index.html`) | **fait.** Une page, un canvas, un Runtime, et rien de l'Editor : `tools/layers` tient la ligne |
-| la frontière d'adressage | **faite.** `resolvePreview(id)` était déjà le seul endroit qui sache qu'un preview est local (ADR-0042 §3) |
-| l'hébergement statique | **fait, et déjà en ligne.** `firebase.json` sert `public/engine/src` ; `/preview/index.html` est donc une URL publique aujourd'hui |
-| un endroit pour POSER un bundle qui ne soit pas ce navigateur | **manquant** |
-| une identité publiée distincte du projet, et qui a le droit de l'écrire | **manquant** |
+| `bundleProject()` / `openBundle()` | **done.** A bundle is the manifest, every payload and the opening scene — a JSON value, pure, with no DOM (ADR-0042 §2) |
+| the game client (`preview/index.html`) | **done.** One page, one canvas, one Runtime, and nothing of the Editor: `tools/layers` holds the line |
+| the addressing boundary | **done.** `resolvePreview(id)` was already the only place that knew a preview is local (ADR-0042 §3) |
+| static hosting | **done, and already online.** `firebase.json` serves `public/engine/src`; `/preview/index.html` is therefore a public URL today |
+| somewhere to PUT a bundle that is not this browser | **missing** |
+| a published identity distinct from the project, allowed to write it | **missing** |
 
-Autrement dit : tout était là **sauf** l'endroit où poser le fichier, et la question de savoir
-qui a le droit de le poser.
-
----
-
-## 2. Ce qui est livré : le fichier, et l'adresse qui le joue
-
-> **Export game… écrit le bundle. `#u/<url>` le joue.**
-
-```
-Editor ▸ Share ▸ Export game…      →  MonJeu.pxgame.json
-                                       (le bundle même qu'un Preview lit)
-posé sur n'importe quel hébergeur statique
-                                   →  …/preview/index.html#u/<url encodée>
-```
-
-C'est un jeu jouable, sur la machine de quelqu'un d'autre, sans Editor nulle part — et sans
-backend. Le navigateur remet un fichier à une personne sans demander la permission de
-personne ; tout ce qui vient après — une URL, un nom, une visibilité, une mise à jour —
-demande un serveur qui sache qui demande.
-
-**Deux formes d'adresse, une seule frontière.** `requestFromHash()` reconnaît `#p/<id>` (un
-preview de CE navigateur) et `#u/<url>` (un bundle que quiconque peut lire) ;
-`resolveRequest()` répond aux deux. Le client n'apprend ni l'un ni l'autre. Le jour où un
-bundle vient d'un serveur Pixel Creator, c'est une troisième branche **là**, et `client.js` ne
-bouge pas — ce que la frontière d'ADR-0042 §3 promettait.
-
-**Deux refus différents, parce que deux choses différentes ont mal tourné.** « Ce preview n'est
-pas ici » parle d'un lien ouvert sur la mauvaise machine ; « ce jeu n'a pas pu être récupéré »
-parle d'un fichier absent ou d'une politique de lecture. Une seule phrase pour les deux serait
-fausse la moitié du temps (ADR-0054).
-
-**Un fragment, pas une requête.** Un fragment n'atteint jamais un serveur, donc l'URL d'un
-bundle ne finit pas dans un journal d'accès — la raison qu'ADR-0042 donnait déjà pour `#p/`.
+In other words: everything was there **except** the place to put the file, and the question of who
+is allowed to put it there.
 
 ---
 
-## 3. Ce qui reste, nommé précisément
+## 2. What ships: the file, and the address that plays it
+
+> **Export game… writes the bundle. `#u/<url>` plays it.**
 
 ```
-BLOCKED: publier vers une URL Pixel Creator
-Reason: il manque trois décisions, et aucune n'est technique.
+Editor ▸ Share ▸ Export game…      →  MyGame.pxgame.json
+                                       (the very bundle a Preview reads)
+dropped on any static host
+                                   →  …/preview/index.html#u/<encoded url>
+```
 
-  1. QUI publie.        Il n'existe ni compte, ni identité de créateur, ni session
-                        authentifiée. `functions/` est vide et `/api/**` ne route vers
-                        rien.
-  2. OÙ le bundle vit.  Firebase Storage ou Firestore sont tous deux plausibles ; ce qui
-                        décide est la taille (un bundle porte les images en data URL), le
-                        coût de lecture et la politique de cache — un arbitrage produit.
-  3. CE QU'UNE URL NOMME. `play.pixelcreator.io/<quoi>` : le ResourceId du projet est
-                        opaque et laid ; un slug est un nom, donc unique, donc réservable,
-                        donc un registre et un conflit à trancher (ADR-0010 interdit de
-                        dériver une identité d'un nom, pas d'avoir un alias — mais qui
-                        possède l'alias est la question).
+That is a playable game, on someone else's machine, with no Editor anywhere — and no backend. The
+browser hands a file to a person without asking anyone's permission; everything that comes
+afterwards — a URL, a name, a visibility, an update — needs a server that knows who is asking.
 
-Sans ces trois-là, un « bouton Publier » serait un bouton qui ment. Ce qui est livré est la
-moitié qui ne ment pas.
+**Two forms of address, one boundary.** `requestFromHash()` recognises `#p/<id>` (a preview from
+THIS browser) and `#u/<url>` (a bundle anyone can read); `resolveRequest()` answers both. The
+client learns neither. The day a bundle comes from a Pixel Creator server, that is a third branch
+**there**, and `client.js` does not move — which is what ADR-0042 §3's boundary promised.
+
+**Two different refusals, because two different things went wrong.** "This preview is not here"
+talks about a link opened on the wrong machine; "this game could not be fetched" talks about a
+missing file or a read policy. One sentence for both would be wrong half the time (ADR-0054).
+
+**A fragment, not a request.** A fragment never reaches a server, so a bundle's URL does not end up
+in an access log — the reason ADR-0042 already gave for `#p/`.
+
+---
+
+## 3. What remains, named precisely
+
+```
+BLOCKED: publishing to a Pixel Creator URL
+Reason: three decisions are missing, and none of them is technical.
+
+  1. WHO publishes.     There is no account, no creator identity, no authenticated
+                        session. `functions/` is empty and `/api/**` routes to nothing.
+  2. WHERE the bundle lives. Firebase Storage and Firestore are both plausible; what
+                        decides is size (a bundle carries its images as data URLs), read
+                        cost and cache policy — a product trade-off.
+  3. WHAT A URL NAMES.  `play.pixelcreator.io/<what>`: the project's ResourceId is opaque
+                        and ugly; a slug is a name, therefore unique, therefore
+                        reservable, therefore a registry and a conflict to settle
+                        (ADR-0010 forbids deriving an identity from a name, not having an
+                        alias — but who owns the alias is the question).
+
+Without those three, a "Publish button" would be a button that lies. What ships is the half
+that does not lie.
 ```
 
 ---
 
-## 4. Contre-épreuves
+## 4. Counter-tests
 
-| Vérifié | Où |
+| Verified | Where |
 |---|---|
-| `#p/<id>` et `#u/<url>` sont reconnus, et rien d'autre | `preview/publish.test.js` |
-| Une URL malformée n'est pas une adresse | idem |
-| Un bundle est récupéré et joué ; un `fetch` en échec répond « rien », jamais une exception | idem |
-| L'export est le bundle même qu'un Preview lit | idem |
-| Le nom du fichier vient du projet et ne contient rien d'illégal | idem |
-| Un projet vide s'exporte quand même, ce qui est ce qu'il est | idem |
+| `#p/<id>` and `#u/<url>` are recognised, and nothing else | `preview/publish.test.js` |
+| A malformed URL is not an address | the same |
+| A bundle is fetched and played; a failed `fetch` answers "nothing", never an exception | the same |
+| The export is the very bundle a Preview reads | the same |
+| The file name comes from the project and contains nothing illegal | the same |
+| An empty project exports all the same, which is what it is | the same |
 
 ---
 
-## 5. Conséquences
+## 5. Consequences
 
-### Positives
+### Positive
 
-- Un créateur peut faire jouer son jeu à quelqu'un d'autre, aujourd'hui, sans compte.
-- La frontière d'ADR-0042 §3 est utilisée pour de vrai plutôt que décrite.
-- Ce qui manque est nommé en trois lignes plutôt qu'en « pas encore fait ».
+- A creator can let someone else play their game, today, with no account.
+- ADR-0042 §3's boundary is used for real rather than described.
+- What is missing is named in three lines rather than as "not done yet".
 
-### Négatives
+### Negative
 
-- Le créateur doit trouver un hébergeur lui-même, ce qui exclut de fait les débutants.
-- Un bundle porte ses images en data URL : un jeu de quelques mégaoctets fait un fichier de
-  quelques mégaoctets, et rien ne le compresse.
-- Une mise à jour est un nouveau fichier posé au même endroit ; il n'existe aucune version, et
-  personne ne peut dire à un joueur que le jeu a changé.
+- The creator has to find a host themselves, which in practice rules out beginners.
+- A bundle carries its images as data URLs: a game of a few megabytes makes a file of a few
+  megabytes, and nothing compresses it.
+- An update is a new file dropped in the same place; there is no version, and nobody can tell a
+  player that the game has changed.

@@ -1,114 +1,112 @@
-# ADR-0011 — Le serveur est l'autorité, l'Editor émet des opérations autorisées
+# ADR-0011 — The server is the authority, the Editor emits authorized operations
 
-- **Statut :** **accepté** (2026-08-12)
-- **Décide :** qui fait autorité sur l'état, et comment l'Editor peut modifier un jeu en cours
-- **Lié à :** ADR-0003 (Property System), ADR-0008 (Operations)
-
----
-
-## Contexte observé
-
-Legacy n'a **aucune notion d'autorité**.
-
-```
-client → 'update' {id, prop, value} → serveur applique → rediffuse aux autres
-```
-
-Le serveur ne vérifie rien. Conséquences :
-
-- n'importe quel client peut modifier n'importe quel objet ;
-- l'Editor est **de fait** le client autoritaire, uniquement parce que `Network.sync()`
-  n'est activé que si `inspector === true` — une convention, pas une garantie ;
-- le serveur simule pourtant réellement (`obj.update()` à 60 Hz) et diffuse un heartbeat,
-  ce qui crée deux prétendants à la vérité sans arbitrage.
-
-C'est acceptable pour un prototype coopératif, **bloquant pour la cible affichée** du
-produit : jeux .io, MOBA, MMO compétitifs.
+- **Status:** **accepted** (2026-08-12)
+- **Decides:** who is authoritative over the state, and how the Editor can modify a running game
+- **Related to:** ADR-0003 (Property System), ADR-0008 (Operations)
 
 ---
 
-## Décision
+## Observed context
 
-**Le serveur est l'autorité de simulation en multijoueur compétitif.**
+Legacy has **no notion of authority**.
 
-Le créateur doit néanmoins pouvoir observer, modifier et synchroniser l'état du jeu en
-temps réel depuis l'Editor, **lorsqu'il en a les permissions**.
+```
+client → 'update' {id, prop, value} → the server applies → rebroadcasts to the others
+```
 
-### Deux natures de mutation
+The server checks nothing. Consequences:
 
-| Nature | Émetteur | Traitement |
+- any client can modify any object;
+- the Editor is **in practice** the authoritative client, only because `Network.sync()` is
+  enabled when `inspector === true` — a convention, not a guarantee;
+- the server nevertheless really simulates (`obj.update()` at 60 Hz) and broadcasts a heartbeat,
+  which creates two claimants to the truth with no arbitration.
+
+That is acceptable for a cooperative prototype, **blocking for the product's stated target**:
+competitive .io games, MOBAs, MMOs.
+
+---
+
+## Decision
+
+**The server is the simulation authority in competitive multiplayer.**
+
+The creator must nevertheless be able to observe, modify and synchronize the game's state in real
+time from the Editor, **when they have the permissions**.
+
+### Two natures of mutation
+
+| Nature | Emitter | Handling |
 |---|---|---|
-| **Mutation joueur / client** | un joueur en jeu | intention soumise au serveur ; le client peut prédire, le serveur tranche |
-| **Mutation éditeur autorisée** | le créateur, avec permissions | Operation autorisée → **validée côté serveur** → appliquée à l'état autoritaire → propagée à tous les clients |
+| **Player / client mutation** | a player in game | an intent submitted to the server; the client may predict, the server decides |
+| **Authorized editor mutation** | the creator, with permissions | an authorized Operation → **validated server-side** → applied to the authoritative state → propagated to every client |
 
-Le chemin est identique dans les deux cas. Seules la **source** et la **vérification**
-changent :
+The path is identical in both cases. Only the **source** and the **check** differ:
 
 ```
 Operation
    │
    ▼
-authority.check(op, actor)      ← accepté | rejeté | transformé
+authority.check(op, actor)      ← accepted | rejected | transformed
    │
    ▼
-état autoritaire (serveur)
+authoritative state (server)
    │
    ▼
-propagation aux clients
+propagation to the clients
 ```
 
-### Ce qui est implémenté maintenant
+### What is implemented now
 
-**Le point d'insertion, pas la politique.**
+**The insertion point, not the policy.**
 
-- Chaque Operation transporte un `actor` (qui) et un `origin` (`player` | `editor`).
-- Le serveur possède un `authority` qui reçoit **toute** Operation avant application.
-- L'implémentation initiale de `authority.check()` peut être permissive — mais elle
-  **existe et est traversée**, sans exception.
+- Every Operation carries an `actor` (who) and an `origin` (`player` | `editor`).
+- The server owns an `authority` that receives **every** Operation before application.
+- The initial implementation of `authority.check()` may be permissive — but it **exists and is
+  traversed**, with no exception.
 
-### Ce qui n'est pas implémenté maintenant
+### What is not implemented now
 
-Le système de permissions complet : rôles, propriété de projet, granularité par scène
-ou par objet, invitations, révocation. L'architecture ne doit pas l'empêcher ; elle n'a
-pas à l'anticiper en détail.
-
----
-
-## Conséquences
-
-### Positives
-
-- Les jeux compétitifs deviennent possibles — ils ne l'étaient pas.
-- Le rôle privilégié de l'Editor devient **explicite et vérifiable**, au lieu de reposer
-  sur un booléen `inspector` côté client.
-- Un point unique de journalisation, d'audit et, plus tard, de modération.
-- Une IA agissant sur le projet passe par le même contrôle qu'un humain — elle n'a pas
-  de chemin privilégié.
-
-### Négatives
-
-- **Latence sur l'édition en direct.** Aujourd'hui l'Editor applique localement puis
-  informe. Avec validation serveur, une modification peut être rejetée après coup.
-  → L'Editor applique en optimiste et **réconcilie** si le serveur refuse. La
-  synchronisation lettre par lettre reste locale et immédiate ; seule la confirmation
-  est asynchrone.
-- **Le serveur devient un point de passage obligé**, donc un goulot et un point de
-  panne. Le mode solo / hors ligne doit court-circuiter l'autorité par une
-  implémentation locale qui accepte tout.
-- Le serveur privé doit évoluer en même temps que le client (risque R4).
-
-### Point d'attention
-
-`authority.check()` ne doit pas devenir un second endroit où la logique métier se
-duplique. Il **valide** (droit, cohérence, bornes), il ne **calcule** pas.
+The full permission system: roles, project ownership, granularity per scene or per object,
+invitations, revocation. The architecture must not prevent it; it does not have to anticipate it
+in detail.
 
 ---
 
-## Alternatives écartées
+## Consequences
 
-| Alternative | Pourquoi non |
+### Positive
+
+- Competitive games become possible — they were not.
+- The Editor's privileged role becomes **explicit and checkable**, instead of resting on a
+  client-side `inspector` boolean.
+- A single point for logging, auditing and, later, moderation.
+- An AI acting on the project goes through the same check as a human — it has no privileged path.
+
+### Negative
+
+- **Latency on live editing.** Today the Editor applies locally and then informs. With
+  server-side validation, a change can be rejected after the fact.
+  → The Editor applies optimistically and **reconciles** if the server refuses.
+  Letter-by-letter synchronization stays local and immediate; only the confirmation is
+  asynchronous.
+- **The server becomes a mandatory checkpoint**, therefore a bottleneck and a point of failure.
+  Single-player / offline mode must short-circuit the authority with a local implementation that
+  accepts everything.
+- The private server has to evolve at the same time as the client (risk R4).
+
+### A point to watch
+
+`authority.check()` must not become a second place where business logic is duplicated. It
+**validates** (rights, coherence, bounds); it does not **compute**.
+
+---
+
+## Rejected alternatives
+
+| Alternative | Why not |
 |---|---|
-| **Statu quo — pas d'autorité** | Rend impossible la cible produit (jeux compétitifs), et laisse n'importe quel client modifier n'importe quoi. |
-| **Autorité client (l'Editor décide seul)** | C'est le comportement actuel de fait ; non défendable dès qu'un joueur non fiable est présent. |
-| **Autorité stricte sans mode optimiste** | Détruirait l'édition lettre par lettre, qui est un acquis explicitement conservé. |
-| **Permissions complètes dès maintenant** | Hors périmètre v2 ; coûteux et prématuré tant que le modèle de compte n'existe pas. |
+| **The status quo — no authority** | It makes the product target (competitive games) impossible, and lets any client modify anything. |
+| **Client authority (the Editor decides alone)** | It is the current de facto behaviour; indefensible as soon as an untrusted player is present. |
+| **Strict authority with no optimistic mode** | It would destroy letter-by-letter editing, which is an explicitly preserved asset. |
+| **Full permissions right now** | Out of v2 scope; costly and premature while no account model exists. |

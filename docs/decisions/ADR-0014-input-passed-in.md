@@ -1,127 +1,123 @@
-# ADR-0014 — L'input est abstrait, indexé par owner, et passé au runtime
+# ADR-0014 — Input is abstract, indexed by owner, and passed into the runtime
 
-- **Statut :** **accepté** (2026-08-12)
-- **Amendé par :** ADR-0041 (2026-08-28) — §5 : les trois questions d'une touche ne sont plus un seul nœud. Un moment (`On Key`) et un état (`Key Is Down`) sont deux nœuds, parce que ce sont deux choses
-- **Décide :** où vit l'input, quelle forme il a, et comment la simulation y accède
-- **Lié à :** ADR-0001 (`uid` → `owner`), ADR-0004 (contexte d'`update`), ADR-0011 (autorité)
+- **Status:** **accepted** (2026-08-12)
+- **Amended by:** ADR-0041 (2026-08-28) — §5: a key's three questions are no longer one node. A moment (`On Key`) and a state (`Key Is Down`) are two nodes, because they are two things
+- **Decides:** where input lives, what shape it has, and how the simulation reaches it
+- **Related to:** ADR-0001 (`uid` → `owner`), ADR-0004 (the `update` context), ADR-0011 (authority)
 
 ---
 
-## Contexte observé
+## Observed context
 
-**Le mode solo hors ligne ne fonctionne pas dans Legacy**, et rien ne le signale :
+**Offline single-player does not work in Legacy**, and nothing says so:
 
 ```
 Controller.update()  →  Keyboard  →  Network.users  →  undefined  →  TypeError
 ```
 
-Une exception par frame, absorbée par le `try/catch` muet d'`Object.update()`. Le
-couplage est une inversion de couche complète : les entrées d'un joueur local passent par
-le réseau.
+One exception per frame, swallowed by the silent `try/catch` in `Object.update()`. The coupling is
+a complete layer inversion: a local player's input goes through the network.
 
-L'input y est par ailleurs un **singleton global** lu depuis les composants. Un serveur ne
-peut donc pas simuler plusieurs joueurs, et deux exécutions de la même scène ne sont pas
-reproductibles puisque l'état des touches peut changer entre deux lectures.
+Input there is also a **global singleton** read from inside components. A server therefore cannot
+simulate several players, and two runs of the same scene are not reproducible since the key state
+can change between two reads.
 
 ---
 
-## Décision
+## Decision
 
-### 1. `runtime/input/`, pas `core/input/`
+### 1. `runtime/input/`, not `core/input/`
 
-Le Core ne connaît aucun input. Un `Object` n'a pas d'entrées ; une simulation en a.
+The Core knows about no input. An `Object` has no input; a simulation does.
 
-> **Correction.** `ARCHITECTURE.md` §4.5 plaçait initialement l'input dans `core/`, alors
-> que `architecture/RUNTIME.md` le plaçait sous `runtime/`. C'est `runtime/` qui est
-> retenu : le Core reste le modèle pur, sans notion de temps ni d'entrée.
+> **A correction.** `ARCHITECTURE.md` §4.5 originally placed input in `core/`, while
+> `architecture/RUNTIME.md` placed it under `runtime/`. `runtime/` is what was adopted: the Core
+> stays the pure model, with no notion of time or input.
 
-### 2. Un état abstrait, aucun événement navigateur
+### 2. An abstract state, no browser events
 
-`InputState` connaît des touches, des boutons, une position de pointeur et des axes
-nommés. Il ne connaît ni `KeyboardEvent`, ni `MouseEvent`, ni `window`, ni `document`.
+`InputState` knows about keys, buttons, a pointer position and named axes. It knows about neither
+`KeyboardEvent`, nor `MouseEvent`, nor `window`, nor `document`.
 
 ```
-adaptateur navigateur ─┐
-                       ├─►  InputState  ──►  simulation
-couche réseau ─────────┘
+browser adapter ───┐
+                   ├─►  InputState  ──►  simulation
+network layer ─────┘
 ```
 
-Les noms de touches sont des chaînes opaques. Un adaptateur navigateur y met des valeurs
-de `KeyboardEvent.code` ; **rien dans le runtime n'en dépend**, et un serveur qui rejoue
-des noms reçus du réseau n'a jamais à fabriquer d'événement.
+Key names are opaque strings. A browser adapter puts `KeyboardEvent.code` values in them;
+**nothing in the runtime depends on that**, and a server replaying names received from the network
+never has to fabricate an event.
 
-**L'adaptateur navigateur n'est pas construit ici.** Il appartient à la couche qui possède
-le DOM, et le runtime n'en définit que le contrat.
+**The browser adapter is not built here.** It belongs to the layer that owns the DOM, and the
+runtime only defines its contract.
 
-La position du pointeur est **en espace écran**. La convertir en coordonnées monde est le
-rôle de la caméra (`screenToWorld`, ADR-0013), parce que seuls la caméra et le viewport
-connaissent ce mapping ; le figer dans l'état d'entrée le rendrait dépendant de la façon
-dont on regarde la scène.
+The pointer position is **in screen space**. Converting it to world coordinates is the camera's
+job (`screenToWorld`, ADR-0013), because only the camera and the viewport know that mapping;
+freezing it into the input state would make it depend on how you are looking at the scene.
 
-### 3. Indexé par owner, le local existe toujours
+### 3. Indexed by owner, and the local one always exists
 
-`Object.owner` désigne le joueur propriétaire (ADR-0001). L'input est donc un état **par
-owner**, pas un clavier global :
+`Object.owner` designates the owning player (ADR-0001). Input is therefore state **per owner**, not
+a global keyboard:
 
 ```js
 const input = ctx.input.of(self.owner);
 ```
 
-Un serveur fait avancer une simulation contenant l'input de tous les joueurs ; un client
-remplit le sien. L'owner `local` **existe toujours** : `of(null)` renvoie l'état local,
-donc un objet sans propriétaire est jouable — c'est ce qui répare le mode solo, sans cas
-particulier.
+A server advances a simulation containing every player's input; a client fills its own. The `local`
+owner **always exists**: `of(null)` returns the local state, so an object with no owner is
+playable — that is what repairs single-player mode, with no special case.
 
-`set(owner, state)` remplace un état d'un bloc : c'est le chemin de la couche réseau,
-qui reçoit un instantané plutôt qu'une suite de touches.
+`set(owner, state)` replaces a state wholesale: it is the network layer's path, which receives a
+snapshot rather than a sequence of keys.
 
-### 4. Passé au pas de simulation, jamais cherché dans un global
+### 4. Passed into the simulation step, never fetched from a global
 
 ```js
 runtime.step(input);
 runtime.advance(elapsed, input);
 ```
 
-**C'est ce qui rend la simulation déterministe.** Mêmes scène initiale et mêmes entrées ⇒
-même résultat, dans un navigateur comme sur un serveur qui rejoue ce que les joueurs ont
-envoyé. C'est la propriété sur laquelle repose toute réconciliation (ADR-0011).
+**That is what makes the simulation deterministic.** The same initial scene and the same inputs ⇒
+the same result, in a browser as on a server replaying what the players sent. It is the property
+every reconciliation rests on (ADR-0011).
 
-Un runtime construit sans input **tourne sur un input vide** plutôt que d'échouer. Il ne
-va jamais chercher un global : c'est précisément ce que faisait Legacy.
+A runtime built with no input **runs on empty input** rather than failing. It never reaches for a
+global: that is precisely what Legacy did.
 
-### 5. Fronts montants sur exactement un pas
+### 5. Rising edges on exactly one step
 
-`pressed()` et `released()` répondent vrai sur le seul pas qui observe la transition. Le
-runtime appelle `input.commit()` à la fin de chaque pas, donc une pression est observée
-une fois, **quel que soit le nombre de pas qu'une frame doit** — un jeu à 30 Hz et un jeu
-à 144 Hz comptent le même saut.
-
----
-
-## Conséquences
-
-### Positives
-
-- Le mode solo hors ligne fonctionne, sans réseau.
-- Un serveur simule plusieurs joueurs avec un seul runtime.
-- La simulation est rejouable, donc testable et réconciliable.
-- Aucun DOM dans le runtime ; l'adaptateur navigateur est remplaçable.
-
-### Négatives
-
-- `ctx.input.of(self.owner)` est plus verbeux que `Keyboard.isDown(...)`. C'est le prix du
-  multijoueur, et la seule forme qui reste correcte à plusieurs joueurs.
-- `of()` crée l'état d'un owner inconnu à la première lecture. La carte grandit donc avec
-  les owners réellement consultés ; `remove(owner)` la nettoie à la déconnexion.
+`pressed()` and `released()` answer true on the single step that observes the transition. The
+runtime calls `input.commit()` at the end of each step, so a press is observed once, **no matter
+how many steps a frame owes** — a 30 Hz game and a 144 Hz game count the same jump.
 
 ---
 
-## Alternatives écartées
+## Consequences
 
-| Alternative | Pourquoi non |
+### Positive
+
+- Offline single-player works, with no network.
+- A server simulates several players with one runtime.
+- The simulation is replayable, and therefore testable and reconcilable.
+- No DOM in the runtime; the browser adapter is replaceable.
+
+### Negative
+
+- `ctx.input.of(self.owner)` is more verbose than `Keyboard.isDown(...)`. That is the price of
+  multiplayer, and the only form that stays correct with several players.
+- `of()` creates an unknown owner's state on the first read. The map therefore grows with the
+  owners actually consulted; `remove(owner)` cleans it up on disconnection.
+
+---
+
+## Rejected alternatives
+
+| Alternative | Why not |
 |---|---|
-| **Singleton `Input` global** | Ni multijoueur, ni déterministe, ni testable. C'est le défaut Legacy. |
-| **Input dans `core/`** | Le Core est le modèle ; il n'a ni temps ni entrées. |
-| **Adaptateur DOM dans le runtime** | Rendrait le runtime inutilisable côté serveur. |
-| **Position du pointeur en coordonnées monde** | Rendrait l'état d'entrée dépendant de la caméra. |
-| **Input lu depuis `runtime.input` sans argument de `step()`** | L'état pourrait changer entre deux pas d'une même frame : le déterminisme disparaît. |
+| **A global `Input` singleton** | Neither multiplayer, nor deterministic, nor testable. It is the Legacy defect. |
+| **Input in `core/`** | The Core is the model; it has neither time nor input. |
+| **A DOM adapter inside the runtime** | It would make the runtime unusable server-side. |
+| **The pointer position in world coordinates** | It would make the input state depend on the camera. |
+| **Input read from `runtime.input` with no `step()` argument** | The state could change between two steps of the same frame: determinism disappears. |

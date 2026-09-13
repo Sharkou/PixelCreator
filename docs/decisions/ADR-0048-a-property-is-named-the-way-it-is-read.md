@@ -1,58 +1,54 @@
-# ADR-0048 — Une propriété se nomme comme elle se lit
+# ADR-0048 — A property is named the way it is read
 
-- **Statut :** **accepté** (2026-08-31)
-- **Amendé par :** ADR-0052 (2026-08-31) — §3 : le refus définitif du geste Component → graphe ne vaut plus que pour le canvas nu ; sur un nœud qui demande une propriété, le lâcher ouvre son picker.
-- **Décide :** comment une requête de recherche est comparée à une entrée ; comment une propriété s'appelle dans une liste ; ce qu'un Component lâché sur un graphe veut dire, définitivement ; quels nœuds de calcul manquaient au catalogue
-- **Dépend de :** ADR-0026 §10 (menus groupés), ADR-0039 (taxonomie), ADR-0043 (l'Object répond de lui-même), ADR-0047 (une seule question)
-- **Amende :** ADR-0047 §2 (le refus du geste Component → graphe est confirmé, avec une mesure à l'appui plutôt qu'un raisonnement)
-- **Ne décide pas :** `On Collision` et la physique ; l'identité d'un projet et son slug ; `Random`, `Delay`, `Timer`, `Destroy`, `Spawn` ; l'unité d'un port
+- **Status:** **accepted** (2026-08-31)
+- **Amended by:** ADR-0052 (2026-08-31) — §3: the final refusal of the Component → graph gesture now applies to bare canvas only; on a node that asks for a property, the release opens its picker.
+- **Decides:** how a search query is compared against an entry; what a property is called in a list; what a Component released on a graph means, definitively; which computation nodes the catalogue was missing
+- **Depends on:** ADR-0026 §10 (grouped menus), ADR-0039 (taxonomy), ADR-0043 (the Object answers for itself), ADR-0047 (one question)
+- **Amends:** ADR-0047 §2 (the refusal of the Component → graph gesture is confirmed, with a measurement behind it rather than an argument)
+- **Does not decide:** `On Collision` and physics; a project's identity and its slug; `Random`, `Delay`, `Timer`, `Destroy`, `Spawn`; a port's unit
 
 ---
 
-## 1. Une requête peut nommer le groupe et la ligne
+## 1. A query may name the group and the row
 
-Retirer le champ `Component` (ADR-0047 §1) a fait du GROUPE la moitié du nom d'une propriété.
-Le moteur de recherche, lui, comparait la requête **entière** à **un champ à la fois** — donc
-`Transform Position X`, la requête qu'un créateur écrit quand il sait exactement ce qu'il
-veut, ne pouvait correspondre à rien : `Transform` est la catégorie, `Position X` est le
-libellé, et aucun champ ne contient les deux.
+Removing the `Component` field (ADR-0047 §1) made the GROUP half of a property's name. The search
+engine, however, compared the **whole** query against **one field at a time** — so
+`Transform Position X`, the query a creator writes when they know exactly what they want, could match
+nothing: `Transform` is the category, `Position X` is the label, and no field holds both.
 
-> **Chaque mot de la requête doit être répondu, par le champ qui le répond.**
+> **Every word of the query must be answered, by the field that answers it.**
 
-La requête entière contre un seul champ reste essayée **en premier**, donc toute recherche
-d'un seul mot se classe exactement comme avant. Le découpage n'intervient que lorsque rien
-ne répond en bloc.
+The whole query against a single field is still tried **first**, so any single-word search ranks
+exactly as before. The split only kicks in when nothing answers as a block.
 
-C'est un **ET** : la liste rétrécit à mesure qu'on tape, ce qu'un filtre est censé faire. Un
-mot que rien ne répond exclut l'entrée.
+It is an **AND**: the list narrows as you type, which is what a filter is supposed to do. A word
+nothing answers excludes the entry.
 
-| Requête | Avant | Après |
+| Query | Before | After |
 |---|---|---|
-| `Transform Position X` | rien | `Transform ▸ Position X` |
-| `Health Value` | rien | `Health ▸ Value` |
-| `Object Name` | rien | `Object ▸ Name` |
-| `add` | `Add`, `Add Component` | inchangé |
+| `Transform Position X` | nothing | `Transform ▸ Position X` |
+| `Health Value` | nothing | `Health ▸ Value` |
+| `Object Name` | nothing | `Object ▸ Name` |
+| `add` | `Add`, `Add Component` | unchanged |
 
 ---
 
-## 2. `X` n'est pas un nom, c'est une moitié de nom
+## 2. `X` is not a name, it is half a name
 
-L'Inspector dessine `x` et `y` sur **une ligne** sous le mot `Position` : la ligne dit la
-paire, donc la propriété n'a pas à la dire. Un picker n'a pas cette ligne — `X` s'y retrouve
-sous `Transform`, à côté de `Scale X`, et un créateur qui cherche les mots qu'il voit dans le
-panneau ne trouvait rien.
+The Inspector draws `x` and `y` on **one row** under the word `Position`: the row says the pair, so the
+property does not have to. A picker has no such row — `X` ends up there under `Transform`, beside
+`Scale X`, and a creator searching for the words they see in the panel found nothing.
 
-> **Dans une liste, une propriété qui est la moitié d'une paire dit de quelle paire.**
+> **In a list, a property that is half a pair says which pair.**
 
-Seules les moitiés qui ne peuvent pas parler d'elles-mêmes : `scaleX` s'humanise déjà en
-`Scale X` et `width` en `Width`, et les préfixer produirait `Scale Scale X` et `Size Width`.
-Un libellé d'un ou deux caractères est exactement le cas que le nom de la paire doit
-rattraper.
+Only the halves that cannot speak for themselves: `scaleX` already humanizes to `Scale X` and `width`
+to `Width`, and prefixing them would produce `Scale Scale X` and `Size Width`. A one- or two-character
+label is exactly the case the pair's name has to catch.
 
 ```
   Transform
-    Position X   ← était « X »
-    Position Y   ← était « Y »
+    Position X   ← was "X"
+    Position Y   ← was "Y"
     Rotation
     Scale X
     Scale Y
@@ -60,64 +56,62 @@ rattraper.
     Rotation Y
 ```
 
-C'est aussi ce qui rend la requête de §1 utile : un créateur cherche les mots qu'il lit.
+It is also what makes §1's query useful: a creator searches for the words they read.
 
 ---
 
-## 3. Un Component ne se lâche toujours pas sur un graphe — et cette fois c'est mesuré
+## 3. A Component still is not released on a graph — and this time it is measured
 
-ADR-0047 §2 l'a refusé parce que le geste écrirait une valeur morte. Le modèle a changé
-depuis (le picker est hiérarchique), donc la question a été reposée honnêtement : **un lâcher
-de Component pourrait-il ouvrir le picker positionné sur ce Component ?**
+ADR-0047 §2 refused it because the gesture would write a dead value. The model has changed since (the
+picker is hierarchical), so the question was asked again honestly: **could a Component release open
+the picker positioned on that Component?**
 
-Techniquement oui. Mais le geste qui existe déjà est plus court, et il a été **exécuté dans
-Chrome** :
+Technically yes. But the gesture that already exists is shorter, and it was **run in Chrome**:
 
 ```
-  glisser LA PROPRIÉTÉ  →  menu Get / Set  →  un nœud FINI
-                            (Object et Property remplis)
+  drag THE PROPERTY   →  a Get / Set menu  →  a FINISHED node
+                          (Object and Property filled)
 
-  glisser LE COMPONENT  →  picker ouvert sur un groupe  →  il reste à choisir
+  drag THE COMPONENT  →  the picker open on a group  →  a choice still to make
 ```
 
-Le premier finit le nœud ; le second ouvre une question. Un geste qui économise un clic sur
-un chemin déjà plus long que l'autre chemin n'est pas une affordance, c'est une seconde
-manière de faire moins bien. **Le refus est définitif** et son message nomme les deux routes
-qui marchent — glisser la propriété, ou ouvrir le picker où ce Component est un groupe.
+The first finishes the node; the second opens a question. A gesture that saves a click on a path
+already longer than the other path is not an affordance, it is a second way of doing worse. **The
+refusal is final** and its message names the two routes that work — drag the property, or open the
+picker where that Component is a group.
 
 ---
 
-## 4. Un catalogue sans trous
+## 4. A catalogue with no gaps
 
-Huit nœuds manquaient, tous d'une ligne, aucun ne touchant au runtime, à la réplication ou à
-la scène — donc aucun ne demandant de décision :
+Eight nodes were missing, all one-liners, none touching the runtime, replication or the scene — and
+therefore none requiring a decision:
 
-| Catégorie | Ajoutés |
+| Category | Added |
 |---|---|
 | `Math` | `Modulo`, `Min`, `Max`, `Absolute`, `Round` |
 | `Compare` | `Greater Or Equal`, `Less Or Equal`, `Not Equal` |
 
-`Modulo` prend la décision que `Divide` avait déjà prise, pour la même raison : `x % 0` est
-NaN, et un NaN entrant dans un Transform se propage silencieusement à chaque frame suivante.
-Il répond `0`.
+`Modulo` takes the decision `Divide` had already taken, for the same reason: `x % 0` is NaN, and a NaN
+entering a Transform propagates silently into every following frame. It answers `0`.
 
-`Absolute` et `Round` prennent **un** nombre là où `arithmetic()` en prend deux : c'est la
-même forme avec un port de moins (`unary()`), pas une seconde idée.
+`Absolute` and `Round` take **one** number where `arithmetic()` takes two: it is the same shape with
+one port fewer (`unary()`), not a second idea.
 
-`Not Equal` lit **la même comparaison** que `Equal`, à travers une fonction que les deux
-appellent. L'écrire en `!==` à côté d'un `Equal` écrit en `===` est la façon dont deux règles
-qui n'en faisaient qu'une commencent à diverger le jour où l'une apprend un type nouveau.
+`Not Equal` reads **the same comparison** as `Equal`, through a function both call. Writing it as `!==`
+beside an `Equal` written as `===` is how two rules that were one begin to diverge the day one of them
+learns a new type.
 
 ---
 
-## 5. Contrats observables
+## 5. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| Une requête à plusieurs mots trouve ce que ses mots nomment ensemble | `relevance.test.js`, et à l'écran |
-| Une recherche d'un seul mot se classe comme avant | idem |
-| `x` se lit `Position X` dans une liste, `scaleX` reste `Scale X` | `schema.test.js` |
-| Le groupe `Transform` du picker lit comme le panneau | à l'œil, dans Chrome |
-| Un Component lâché sur un graphe est refusé, avec les deux routes nommées | `dnd.test.js` |
-| Glisser une propriété d'Object produit un nœud fini | **exécuté dans Chrome** |
-| Les huit nœuds ajoutés répondent | `nodes.test.js` |
+| A multi-word query finds what its words name together | `relevance.test.js`, and on screen |
+| A single-word search ranks as before | the same |
+| `x` reads `Position X` in a list, `scaleX` stays `Scale X` | `schema.test.js` |
+| The picker's `Transform` group reads like the panel | by eye, in Chrome |
+| A Component released on a graph is refused, with both routes named | `dnd.test.js` |
+| Dragging an Object property produces a finished node | **run in Chrome** |
+| The eight added nodes answer | `nodes.test.js` |

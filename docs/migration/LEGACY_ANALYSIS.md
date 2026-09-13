@@ -1,46 +1,45 @@
-# Analyse de Legacy
+# Legacy analysis
 
-> **Statut : OBSERVÉ.** Ce document décrit ce que le code fait réellement, vérifié par
-> lecture du source et, pour les points marqués ✅, par exécution dans le navigateur
-> (serveur statique sur `legacy/`, console).
+> **Status: OBSERVED.** This document describes what the code actually does, verified by
+> reading the source and, for the points marked ✅, by running it in the browser (a static
+> server on `legacy/`, plus the console).
 >
-> Il ne contient aucune proposition. Les propositions sont dans `../architecture/*.md`
-> et `../decisions/ADR-*.md`.
+> It contains no proposals. The proposals live in `../architecture/*.md` and
+> `../decisions/ADR-*.md`.
 
 ---
 
-## 1. Inventaire
+## 1. Inventory
 
-~13 000 lignes de JavaScript, sans dépendance runtime, sans build, sans tests.
+~13,000 lines of JavaScript, with no runtime dependency, no build and no tests.
 
-| Zone | Fichiers | Lignes (ordre) | Rôle |
+| Area | Files | Lines (order of) | Role |
 |---|---|---|---|
-| `src/core/` | object, scene, system, renderer, camera, loader, resource, player, mod | ~2 400 | Modèle + boucle de rendu |
-| `src/graphics/` | graphics, texture, sprite, circle, rectangle, text, light, lighting, map, particle, color | ~1 100 | Rendu Canvas 2D |
-| `src/physics/` | collider, controller, body, tilemap, rotator, spatialhash | ~1 100 | Collisions et déplacement |
-| `src/network/` | network, socket, room, client, spawner | ~800 | WebSocket + réplication |
-| `src/math/`, `time/`, `input/`, `audio/`, `anim/`, `storage/`, `ui/`, `runtime/` | — | ~2 000 | Utilitaires et services |
-| `editor/` | windows, system, graph, misc, scripting, lib | ~4 500 | IDE |
-| `css/` | 30 feuilles | — | UI |
-| `index.html` | 1 fichier | 700 | Structure complète de l'IDE |
+| `src/core/` | object, scene, system, renderer, camera, loader, resource, player, mod | ~2,400 | The model + the render loop |
+| `src/graphics/` | graphics, texture, sprite, circle, rectangle, text, light, lighting, map, particle, color | ~1,100 | Canvas 2D rendering |
+| `src/physics/` | collider, controller, body, tilemap, rotator, spatialhash | ~1,100 | Collisions and movement |
+| `src/network/` | network, socket, room, client, spawner | ~800 | WebSocket + replication |
+| `src/math/`, `time/`, `input/`, `audio/`, `anim/`, `storage/`, `ui/`, `runtime/` | — | ~2,000 | Utilities and services |
+| `editor/` | windows, system, graph, misc, scripting, lib | ~4,500 | The IDE |
+| `css/` | 30 stylesheets | — | UI |
+| `index.html` | 1 file | 700 | The IDE's entire structure |
 
-Fichiers vides (intentions non réalisées) : `math/noise.js`, `math/fractal.js`,
+Empty files (intentions never realized): `math/noise.js`, `math/fractal.js`,
 `math/raytracer.js`, `editor/windows/timeline.js`, `css/picker.css`.
 
-`editor/windows/window.js` contient uniquement `// TODO: Implement base window class`.
-C'est l'aveu exact du problème de modularité de l'Editor.
+`editor/windows/window.js` contains only `// TODO: Implement base window class`. That is the
+exact admission of the Editor's modularity problem.
 
 ---
 
-## 2. Le Property System
+## 2. The Property System
 
-C'est le cœur du projet. Tout le reste en découle.
+It is the heart of the project. Everything else follows from it.
 
-### 2.1 Mécanisme
+### 2.1 Mechanism
 
-`System.sync(object, component?)` (`src/core/system.js:31`) parcourt les propriétés
-énumérables de l'objet **au moment de l'appel** et remplace chacune par un couple
-accesseurs :
+`System.sync(object, component?)` (`src/core/system.js:31`) walks the object's enumerable
+properties **at the moment it is called** and replaces each of them with a pair of accessors:
 
 ```js
 Object.defineProperty(obj, prop, {
@@ -54,165 +53,160 @@ Object.defineProperty(obj, prop, {
 
 Object.defineProperty(obj, '$' + prop, {   // write-only
     set(value) {
-        this[prop] = value;                 // déclenche setProperty
+        this[prop] = value;                 // triggers setProperty
         System.dispatchEvent('syncProperty', { object, component, prop, value });
     },
     configurable: true, enumerable: true
 });
 ```
 
-Il en résulte **trois canaux d'écriture distincts**, tous vérifiés ✅ :
+The result is **three distinct write channels**, all verified ✅:
 
-| Écriture | `setProperty` | `syncProperty` | Usage réel |
+| Write | `setProperty` | `syncProperty` | Actual use |
 |---|---|---|---|
-| `obj.x = 100` | ✅ émis | ✗ | Runtime, simulation, caméra locale |
-| `obj.$x = 100` | ✅ émis | ✅ émis | Editor : drag viewport, saisie Inspector |
-| `obj.setProperty('x', 100)` | ✅ émis (manuel) | ✗ | Réception réseau (pas d'écho) |
+| `obj.x = 100` | ✅ emitted | ✗ | Runtime, simulation, local camera |
+| `obj.$x = 100` | ✅ emitted | ✅ emitted | Editor: viewport drag, Inspector typing |
+| `obj.setProperty('x', 100)` | ✅ emitted (manually) | ✗ | Network receipt (no echo) |
 
-C'est une distinction **intentionnelle et load-bearing**, pas un accident : elle
-empêche la simulation d'inonder le réseau tout en gardant les vues synchronisées.
+This is an **intentional and load-bearing** distinction, not an accident: it stops the
+simulation from flooding the network while keeping the views synchronized.
 
-`obj.syncProperty('x', v)` produit le même effet que `obj.$x = v` : les deux écrivent
-via `this[prop]` puis émettent `syncProperty`.
+`obj.syncProperty('x', v)` produces the same effect as `obj.$x = v`: both write through
+`this[prop]` and then emit `syncProperty`.
 
-> **⚠ Ceci décrit Legacy, pas la cible v2.** En v2, `$x` et `syncProperty()` sont
-> **supprimés** ; leur rôle est repris par `setProperty()`, dont le sens Legacy
-> (écriture directe non répliquée) disparaît. Voir ADR-0003.
+> **⚠ This describes Legacy, not the v2 target.** In v2, `$x` and `syncProperty()` are
+> **removed**; their role is taken over by `setProperty()`, whose Legacy meaning (a direct,
+> non-replicated write) disappears. See ADR-0003.
 
-### 2.2 Chaîne à trois niveaux pour x/y
+### 2.2 A three-level chain for x/y
 
-`Object` définit sur son prototype (`src/core/object.js:56-96`) :
+`Object` defines on its prototype (`src/core/object.js:56-96`):
 
 ```
-obj.x            (accesseur d'instance posé par System.sync)
-  → obj._x       (accesseur de prototype : propage le delta aux enfants)
-    → obj.__x    (stockage réel)
+obj.x            (an instance accessor installed by System.sync)
+  → obj._x       (a prototype accessor: propagates the delta to the children)
+    → obj.__x    (the real storage)
 ```
 
-✅ Vérifié : parent `x` 300 → 350 déplace l'enfant de 100 → 150. La double indirection
-existe uniquement pour offrir un point d'accroche à la propagation hiérarchique.
+✅ Verified: a parent's `x` going 300 → 350 moves the child from 100 → 150. The double
+indirection exists solely to offer a hook for hierarchical propagation.
 
-> **⚠ `_x` et `__x` sont des détails d'implémentation Legacy.** Ils sont documentés ici
-> parce qu'ils expliquent le comportement observable. Ils ne deviennent **pas** une API
-> v2 : aucune API publique v2 ne dépend de ces conventions, et ni les utilisateurs ni les
-> composants ne les manipulent.
+> **⚠ `_x` and `__x` are Legacy implementation details.** They are documented here because they
+> explain observable behaviour. They do **not** become a v2 API: no public v2 API depends on
+> these conventions, and neither users nor components touch them.
 
-### 2.3 Limites mesurées
+### 2.3 Measured limits
 
-**a) Les propriétés ajoutées après construction ne sont pas réactives.** ✅
+**a) Properties added after construction are not reactive.** ✅
 
 ```js
-obj.health = 100;   // simple propriété de données
-obj.health = 50;    // → aucun événement émis
+obj.health = 100;   // an ordinary data property
+obj.health = 50;    // → no event emitted
 ```
 
-Toute propriété non présente lors de l'appel à `System.sync()` est muette :
-pas d'Inspector, pas de réseau, pas de vue mise à jour. Silencieusement.
+Any property not present when `System.sync()` was called stays silent: no Inspector, no
+network, no view updated. Silently.
 
-**b) Les champs privés `#` sont invisibles.** ✅
+**b) `#` private fields are invisible.** ✅
 
-`for...in` ne voit pas les champs `#privés`. `Texture` déclare `#scaleX`, `#scaleY`,
-`#scaleFromBox` : ces propriétés ne sont **ni synchronisées, ni inspectables, ni
-sérialisées**. `Object.keys(texture)` retourne `source, image, flip, name, active`
-uniquement.
+`for...in` does not see `#private` fields. `Texture` declares `#scaleX`, `#scaleY`,
+`#scaleFromBox`: those properties are **neither synchronized, nor inspectable, nor serialized**.
+`Object.keys(texture)` returns only `source, image, flip, name, active`.
 
-> Le commit `38906c2` — *« refactor: use ECMAScript # private fields »* — a donc
-> silencieusement retiré ces propriétés du Property System. C'est l'illustration
-> exacte de ce qu'il ne faut pas refaire : une modernisation appliquée pour elle-même
-> a cassé un mécanisme transversal invisible depuis le fichier modifié.
+> Commit `38906c2` — *"refactor: use ECMAScript # private fields"* — therefore silently removed
+> those properties from the Property System. That is the exact illustration of what must not
+> happen again: a modernization applied for its own sake broke a cross-cutting mechanism that
+> was invisible from the file being changed.
 
-**c) `_prop` et `$prop` sont énumérables et polluent tout.** ✅
+**c) `_prop` and `$prop` are enumerable and pollute everything.** ✅
 
-Chaque propriété logique coûte trois entrées (`x`, `_x`, `$x`). Conséquences mesurées
-sur un objet de test avec un enfant et un composant :
+Every logical property costs three entries (`x`, `_x`, `$x`). Measured consequences on a test
+object with one child and one component:
 
-| Sérialisation | Taille | Clés |
+| Serialization | Size | Keys |
 |---|---|---|
-| `JSON.stringify(obj)` — ce que diffuse le serveur | 1733 o | 38 |
-| `obj.stringify()` — filtre `_`/`$`, utilisé par `add` | 560 o | 19 |
+| `JSON.stringify(obj)` — what the server broadcasts | 1733 B | 38 |
+| `obj.stringify()` — filters `_`/`$`, used by `add` | 560 B | 19 |
 
-**Facteur 3,09.** Le heartbeat serveur (`broadcast('heartbeat', scene.objects)`)
-n'applique aucun filtre : il envoie les doublons `_x`, `_name`, `_components`…
+**A factor of 3.09.** The server heartbeat (`broadcast('heartbeat', scene.objects)`) applies no
+filter at all: it sends the `_x`, `_name`, `_components`… duplicates.
 
-**d) Les enfants sont sérialisés deux fois.** ✅ Un enfant apparaît en entier dans
-`parent.childs` *et* comme objet racine de `scene.objects`.
+**d) Children are serialized twice.** ✅ A child appears in full inside `parent.childs` *and* as
+a root object of `scene.objects`.
 
-**e) `$prop` est en écriture seule.** Aucun getter n'est défini. `obj.$x` retourne
-`undefined`, ce qui est asymétrique et déroutant.
+**e) `$prop` is write-only.** No getter is defined. `obj.$x` returns `undefined`, which is
+asymmetric and confusing.
 
-**f) Aucun `previous`.** L'événement ne transporte que la nouvelle valeur. Impossible
-de construire un undo/redo sans relecture préalable.
+**f) No `previous`.** The event carries only the new value. There is no way to build undo/redo
+without reading the value beforehand.
 
-**g) Le debounce réseau est neutralisé.** `Network.sync()` implémente une logique de
-throttle avec `const delay = 0` (`src/network/network.js:401`). ✅ Vérifié : quatre
-frappes produisent **quatre opérations**, sans aucun regroupement. Le nombre de messages
-réellement émis dépend en revanche de la milliseconde — donc du hasard.
-`syncInputs()` utilise un vrai `delay = 50` pour la souris.
+**g) The network debounce is neutralized.** `Network.sync()` implements throttling logic with
+`const delay = 0` (`src/network/network.js:401`). ✅ Verified: four keystrokes produce **four
+operations**, with no grouping at all. How many messages actually go out, on the other hand,
+depends on the millisecond — so on luck. `syncInputs()` uses a real `delay = 50` for the mouse.
 
-**h) Construire un `Object` émet 19 notifications.** ✅ `System.sync()` réécrit chaque
-propriété via son propre setter pour « restaurer la valeur » (`obj[prop] = value` en fin
-de boucle), et chaque réécriture émet `setProperty` — avant même que l'objet appartienne
-à une scène. Mesuré : **57 clés énumérables pour 19 propriétés publiques**, et
-19 notifications à la construction d'un objet vide.
+**h) Constructing an `Object` emits 19 notifications.** ✅ `System.sync()` rewrites each
+property through its own setter to "restore the value" (`obj[prop] = value` at the end of the
+loop), and every rewrite emits `setProperty` — before the object even belongs to a scene.
+Measured: **57 enumerable keys for 19 public properties**, and 19 notifications when
+constructing an empty object.
 
-**i) Deux gardes différentes pour la même intention.** Quatre modules protègent leur code
-DOM par `if (window.document)` ; `gamepad.js:211` teste `typeof window !== 'undefined'`.
-Le second s'exécute donc dans un environnement sans DOM et appelle
-`window.addEventListener`.
+**i) Two different guards for the same intent.** Four modules protect their DOM code with
+`if (window.document)`; `gamepad.js:211` tests `typeof window !== 'undefined'`. The second one
+therefore runs in an environment with no DOM and calls `window.addEventListener`.
 
-### 2.4 Performance mesurée ✅
+### 2.4 Measured performance ✅
 
-Micro-benchmark, 3 M opérations, Chrome :
+Micro-benchmark, 3 M operations, Chrome:
 
-| Implémentation | Lecture | Écriture |
+| Implementation | Read | Write |
 |---|---|---|
-| Propriété simple | 18,6 ms | 4,8 ms |
-| Accesseurs Legacy (`_prop`) | 81,6 ms | **301,5 ms** |
-| `Proxy` (get/set traps) | 82,0 ms | **76,9 ms** |
+| A plain property | 18.6 ms | 4.8 ms |
+| Legacy accessors (`_prop`) | 81.6 ms | **301.5 ms** |
+| `Proxy` (get/set traps) | 82.0 ms | **76.9 ms** |
 
-Résultat contre-intuitif et déterminant : un `Proxy` lit **aussi vite** que
-l'implémentation actuelle et écrit **~4× plus vite**. Le coût de l'écriture Legacy
-vient de la création dynamique de la seconde propriété (`this['_' + prop] = value`).
+A counter-intuitive and decisive result: a `Proxy` reads **just as fast** as the current
+implementation and writes **~4× faster**. The cost of a Legacy write comes from dynamically
+creating the second property (`this['_' + prop] = value`).
 
-Le surcoût de réactivité en lecture (×4 vs propriété nue) est **déjà payé aujourd'hui**.
+The reactivity overhead on reads (×4 vs a bare property) is **already being paid today**.
 
 ---
 
 ## 3. Object
 
-`src/core/object.js`, 680 lignes.
+`src/core/object.js`, 680 lines.
 
-### 3.1 Ce qu'il contient
+### 3.1 What it holds
 
 ```js
 id, uid, name, layer, tag, type, active, visible, lock, static, image,
 components{}, childs{}, x, y, width, height, rotation, scale
 ```
 
-- `id` : identité de l'objet (`Math.random().toString(36)`, 9 caractères).
-- `uid` : **identifiant du joueur propriétaire**, pas de l'objet. Sert à router les
-  entrées (voir §6.3). Nommage historiquement piégeux.
-- `image` : `HTMLImageElement` de vignette pour la Hierarchy — de l'UI dans le Core.
-- `childs` : anglais incorrect, mais présent dans le protocole réseau et la
-  sérialisation. Le renommer casse la compatibilité des données.
+- `id`: the object's identity (`Math.random().toString(36)`, 9 characters).
+- `uid`: **the owning player's identifier**, not the object's. It is used to route input (see
+  §6.3). A historically misleading name.
+- `image`: the `HTMLImageElement` thumbnail for the Hierarchy — UI inside the Core.
+- `childs`: incorrect English, but present in the network protocol and in serialization.
+  Renaming it breaks data compatibility.
 
-### 3.2 Responsabilités hors périmètre
+### 3.2 Responsibilities that do not belong here
 
-`Object` porte du code purement Editor :
+`Object` carries purely Editor code:
 
-| Méthode | Nature |
+| Method | Nature |
 |---|---|
-| `detectMouse(x, y)` | picking souris, lit `Camera.main` |
-| `detectSide(x, y)` | poignées de redimensionnement |
-| `select(ctx)` | dessine le rectangle de sélection bleu |
-| `createImage(ctx)` | crée un `<img>` DOM, manipule un canvas offscreen |
-| `preview()` | boucle de rendu éditeur |
+| `detectMouse(x, y)` | mouse picking, reads `Camera.main` |
+| `detectSide(x, y)` | resize handles |
+| `select(ctx)` | draws the blue selection rectangle |
+| `createImage(ctx)` | creates a DOM `<img>`, manipulates an offscreen canvas |
+| `preview()` | the editor render loop |
 
-`createImage()` importe `document` : **`Object` ne peut pas être chargé côté serveur
-sans que ces méthodes soient inertes.** Elles ne sont jamais appelées côté serveur,
-donc cela fonctionne par chance, pas par conception.
+`createImage()` reaches for `document`: **`Object` cannot be loaded on the server unless those
+methods are inert.** They are never called on the server, so it works by luck, not by design.
 
-### 3.3 `copy()` : le point le plus fragile
+### 3.3 `copy()`: the most fragile point
 
 ```js
 copy(obj) {
@@ -227,45 +221,43 @@ copy(obj) {
 }
 ```
 
-- Les propriétés objet ne sont **pas** copiées (`TODO` explicite) — donc `childs`
-  n'est pas copié par `copy()` ; `Scene.init()` doit refaire les liens dans une
-  seconde passe.
-- `new components[name]` fait une **recherche par nom dans `mod.js`** : un composant
-  dont la classe n'est pas exportée dans `mod.js` fait échouer la désérialisation.
-- `for (let prop in obj)` inclut `_x`, `$x`… donc `copy()` réassigne aussi les
-  doublons. `this['_x'] = …` court-circuite l'accesseur d'instance mais atteint
-  l'accesseur de prototype `set _x` — la propagation aux enfants se déclenche donc
-  pendant la copie réseau.
-- `copy()` est appelé **par objet et par heartbeat** (`Network.heartbeat`). C'est une
-  recopie complète, pas un patch.
+- Object-valued properties are **not** copied (an explicit `TODO`) — so `childs` is not copied
+  by `copy()`; `Scene.init()` has to rebuild the links in a second pass.
+- `new components[name]` does a **lookup by name in `mod.js`**: a component whose class is not
+  exported from `mod.js` makes deserialization fail.
+- `for (let prop in obj)` includes `_x`, `$x`… so `copy()` also reassigns the duplicates.
+  `this['_x'] = …` bypasses the instance accessor but reaches the prototype accessor `set _x` —
+  so propagation to the children fires during a network copy.
+- `copy()` is called **per object and per heartbeat** (`Network.heartbeat`). It is a full
+  re-copy, not a patch.
 
-#### `copy()` détruit `components`, `childs` et `image` ✅
+#### `copy()` destroys `components`, `childs` and `image` ✅
 
-Vérifié par le harnais de parité (`scene/copy-from-live-object-wipes-containers`).
+Verified by the parity harness (`scene/copy-from-live-object-wipes-containers`).
 
-`for (let prop in obj)` visite aussi les accesseurs `$prop`, qui sont en **écriture
-seule**. Lire `obj.$components` donne donc `undefined`, `typeof undefined !== 'object'`,
-et la branche « primitive » s'exécute : `this.$components = undefined` → le setter `$`
-écrit `this.components = undefined`.
+`for (let prop in obj)` also visits the `$prop` accessors, which are **write-only**. Reading
+`obj.$components` therefore gives `undefined`, `typeof undefined !== 'object'`, and the
+"primitive" branch runs: `this.$components = undefined` → the `$` setter writes
+`this.components = undefined`.
 
-Les primitives survivent parce que `_prop` suit immédiatement `$prop` dans l'ordre des
-clés et restaure la valeur. Les conteneurs, eux, sont des objets : la branche de
-restauration les saute, et la valeur reste `undefined`.
+Primitives survive because `_prop` comes immediately after `$prop` in key order and restores the
+value. The containers, being objects, are skipped by the restoring branch, and their value stays
+`undefined`.
 
-| Source de `copy()` | Résultat |
+| Source of `copy()` | Result |
 |---|---|
-| **Object vivant** (Editor, prefab, `instantiate`) | `components`, `childs`, `image` → `undefined` |
-| **JSON brut** (message réseau, heartbeat) | correct — le JSON n'a pas d'accesseurs `$` |
+| **A live Object** (Editor, prefab, `instantiate`) | `components`, `childs`, `image` → `undefined` |
+| **Raw JSON** (a network message, the heartbeat) | correct — JSON has no `$` accessors |
 
-Conséquence directe, vérifiée : **`Scene.instantiate()` lève une `TypeError` dès que la
-source porte un composant** (`scene/instantiate-throws-with-components`), puisque
-`addComponent()` écrit dans `this.components` devenu `undefined`.
+A direct, verified consequence: **`Scene.instantiate()` throws a `TypeError` as soon as the
+source carries a component** (`scene/instantiate-throws-with-components`), since
+`addComponent()` writes into a `this.components` that has become `undefined`.
 
-Cela casse la création de prefab (`Project` fait `prefab.copy(instance)`) et le chemin
-`Network.add`. Le heartbeat, lui, fonctionne — parce qu'il copie depuis du JSON plat.
-C'est ce qui a permis au défaut de rester invisible.
+This breaks prefab creation (`Project` does `prefab.copy(instance)`) and the `Network.add` path.
+The heartbeat, however, works — because it copies from flat JSON. That is what let the defect
+stay invisible.
 
-### 3.4 `update()` / `draw()` avalent les erreurs
+### 3.4 `update()` / `draw()` swallow errors
 
 ```js
 update() {
@@ -276,152 +268,149 @@ update() {
 }
 ```
 
-Le `try/catch` par composant et par frame est ce qui permet à un script utilisateur
-cassé de ne pas tuer la boucle — **intention légitime**. Mais il masque aussi les
-pannes systématiques (voir §6.3).
+The per-component, per-frame `try/catch` is what stops a broken user script from killing the
+loop — **a legitimate intent**. But it also hides systematic failures (see §6.3).
 
 ---
 
 ## 4. Scene
 
-`src/core/scene.js`, 292 lignes. Volontairement mince.
+`src/core/scene.js`, 292 lines. Deliberately thin.
 
-- `objects{}` indexé par id, plat. La hiérarchie n'existe que par `parent`/`childs`.
-- `current` : objet sélectionné dans l'Editor — **état d'Editor stocké dans le Core**.
-  Son setter émet `setCurrentObject`, ce qui pilote Inspector et Hierarchy.
-- `currentComponent` : idem, pour la manipulation de composant au viewport.
-- `Scene.main` : singleton statique.
-- `instantiate()` crée un `new Object()` puis `copy()` — donc **tout objet reçu du
-  réseau passe par les limites de `copy()`** décrites en §3.3.
-- `refresh()` fait `this.current = this.current` pour forcer un re-render de
-  l'Inspector. Idiome à connaître.
-- `updateName(el)` lit `el.textContent` : **le Core lit le DOM.**
+- `objects{}` is indexed by id and flat. The hierarchy exists only through `parent`/`childs`.
+- `current`: the object selected in the Editor — **Editor state stored in the Core**. Its setter
+  emits `setCurrentObject`, which drives the Inspector and the Hierarchy.
+- `currentComponent`: the same, for component manipulation in the viewport.
+- `Scene.main`: a static singleton.
+- `instantiate()` creates a `new Object()` and then `copy()`s — so **every object received from
+  the network goes through the limits of `copy()`** described in §3.3.
+- `refresh()` does `this.current = this.current` to force an Inspector re-render. An idiom worth
+  knowing.
+- `updateName(el)` reads `el.textContent`: **the Core reads the DOM.**
 
 ---
 
 ## 5. Components
 
-### 5.1 Contrat réel
+### 5.1 The real contract
 
-Il n'existe **aucune classe de base et aucune interface**. Un composant est une classe
-quelconque. Le contrat est purement conventionnel, par duck-typing :
+There is **no base class and no interface**. A component is any class. The contract is purely
+conventional, by duck-typing:
 
-| Hook | Signature | Appelé par |
+| Hook | Signature | Called by |
 |---|---|---|
-| `update(self)` | `self` = l'`Object` porteur | `Object.update()`, chaque frame |
-| `draw(self)` | idem | `Object.draw()`, si `obj.visible` |
-| `preview(self)` | idem | `Object.preview()`, si `renderer.inspector` |
+| `update(self)` | `self` = the carrying `Object` | `Object.update()`, every frame |
+| `draw(self)` | same | `Object.draw()`, if `obj.visible` |
+| `preview(self)` | same | `Object.preview()`, if `renderer.inspector` |
 | `onCollision(self, other)` | | `Object.onCollision()` |
-| `onCollisionStart` / `onCollisionExit` | | idem |
+| `onCollisionStart` / `onCollisionExit` | | same |
 | `constructorAfterLink(self)` | | `Object.addComponent()` |
-| `detectMouse(self, x, y)` / `detectSide(self, x, y)` | | `Renderer.render()` (éditeur) |
+| `detectMouse(self, x, y)` / `detectSide(self, x, y)` | | `Renderer.render()` (editor) |
 
-**Point capital : `self` est passé en argument, jamais stocké.** Un composant n'a pas
-de référence à son `Object`. C'est ce qui rend les composants sérialisables en JSON
-sans cycle, et ce qui permet à `copyComponent()` de fonctionner.
+**The crucial point: `self` is passed as an argument, never stored.** A component holds no
+reference to its `Object`. That is what makes components JSON-serializable without a cycle, and
+what lets `copyComponent()` work.
 
-`component.name` est écrasé par `addComponent()` avec `component.constructor.name`,
-et sert de clé dans `object.components{}`. Un objet ne peut donc porter **qu'une seule
-instance de chaque type de composant**, et la minification du code casserait tout.
+`component.name` is overwritten by `addComponent()` with `component.constructor.name`, and
+serves as the key in `object.components{}`. An object can therefore carry **only one instance of
+each component type**, and minifying the code would break everything.
 
-### 5.2 Répartition client / serveur
+### 5.2 Client / server split
 
-| Composant | `update` | `draw` | `preview` | Serveur ? |
+| Component | `update` | `draw` | `preview` | Server? |
 |---|---|---|---|---|
-| `Camera` | — | — | ✅ | non (données seules) |
-| `Texture` | ✅ | ✅ | — | inutile (résout une image) |
-| `RectangleRenderer`, `CircleRenderer`, `Text` | — | ✅ | — | non |
-| `Light`, `Lighting` | ✅ | ✅ | — | partiel (`Light.update` écrit `self.width`) |
-| `ParticleSystem` | ✅ | ✅ | — | **oui pour `update`, non pour `draw`** |
-| `Collider` / `Rect` / `Circle` | ✅ | — | ✅ | oui |
-| `Controller` | ✅ | — | — | oui (lit les entrées réseau) |
-| `Body`, `Rotator`, `Tilemap` | ✅ | — | — | oui |
-| `Animator`, `Animation` | ✅ | — | — | discutable |
+| `Camera` | — | — | ✅ | no (data only) |
+| `Texture` | ✅ | ✅ | — | pointless (it resolves an image) |
+| `RectangleRenderer`, `CircleRenderer`, `Text` | — | ✅ | — | no |
+| `Light`, `Lighting` | ✅ | ✅ | — | partial (`Light.update` writes `self.width`) |
+| `ParticleSystem` | ✅ | ✅ | — | **yes for `update`, no for `draw`** |
+| `Collider` / `Rect` / `Circle` | ✅ | — | ✅ | yes |
+| `Controller` | ✅ | — | — | yes (it reads network input) |
+| `Body`, `Rotator`, `Tilemap` | ✅ | — | — | yes |
+| `Animator`, `Animation` | ✅ | — | — | debatable |
 
-`ParticleSystem` est exactement le cas décrit dans la vision : simulation dans
-`update()`, rendu dans `draw()`, le serveur n'appelle jamais `draw()`. **Le modèle
-update/draw est justifié par le code, pas seulement par tradition.**
+`ParticleSystem` is exactly the case the vision describes: simulation in `update()`, rendering
+in `draw()`, and the server never calls `draw()`. **The update/draw model is justified by the
+code, not merely by tradition.**
 
-### 5.3 Trois classes exportées comme composants ne le sont pas
+### 5.3 Three classes exported as components are not components
 
-`mod.js` exporte au même niveau des classes dont la signature est incompatible avec
-`Object.update()` / `Object.draw()` :
+`mod.js` exports, at the same level, classes whose signature is incompatible with
+`Object.update()` / `Object.draw()`:
 
-| Classe | Signature réelle | Effet si attachée à un `Object` |
+| Class | Real signature | Effect if attached to an `Object` |
 |---|---|---|
-| `Tilemap` | `draw(ctx, camera)` | `Object.draw()` appelle `draw(this)` → `ctx` reçoit l'Object, `camera` est `undefined` → `TypeError`, **absorbée par le `try/catch`** |
-| `Lighting` | `render(ctx, camera)`, `init()`, `addLight()` | jamais appelée — service de rendu, pas composant |
-| `LightSource` | `update()` **sans `self`** | fonctionne par hasard, mais viole le contrat |
+| `Tilemap` | `draw(ctx, camera)` | `Object.draw()` calls `draw(this)` → `ctx` receives the Object, `camera` is `undefined` → a `TypeError`, **swallowed by the `try/catch`** |
+| `Lighting` | `render(ctx, camera)`, `init()`, `addLight()` | never called — a rendering service, not a component |
+| `LightSource` | `update()` **without `self`** | works by accident, but breaks the contract |
 
-Rien dans le code ne signale qu'une classe n'est pas attachable : le duck-typing
-accepte tout, et le `try/catch` masque l'échec.
+Nothing in the code signals that a class is not attachable: duck-typing accepts anything, and
+the `try/catch` hides the failure.
 
-Par ailleurs, `Manager` n'expose que **7 composants** dans l'UI (`Camera`, `Texture`,
-`CircleRenderer`, `RectangleRenderer`, `Collider`, `Controller`, `Rotator`).
-`Light`, `Map`, `Animation`, `Animator` sont commentés ; `Text`, `ParticleSystem`,
-`Body`, `Tilemap`, `Timer`, `Sound` ne sont pas listés — bien qu'exportés.
+Beyond that, `Manager` exposes only **7 components** in the UI (`Camera`, `Texture`,
+`CircleRenderer`, `RectangleRenderer`, `Collider`, `Controller`, `Rotator`). `Light`, `Map`,
+`Animation` and `Animator` are commented out; `Text`, `ParticleSystem`, `Body`, `Tilemap`,
+`Timer` and `Sound` are not listed — although they are exported.
 
-### 5.4 Couplages problématiques
+### 5.4 Problematic couplings
 
-- `Collider.update()` référence `Scene.main` sans l'importer → `ReferenceError` au
-  premier appel (`src/physics/collider.js:44`). Le `try/catch` de `Object.update()`
-  le masque.
-- `Texture.update()` refait `Loader.files[this.source]?.image` **à chaque frame** pour
-  chaque objet texturé — une recherche de dictionnaire par frame par objet.
-- `Light.update()` écrit `self.width`/`self.height` : un composant redimensionne son
-  porteur à chaque frame, écrasant toute valeur saisie dans l'Inspector.
+- `Collider.update()` references `Scene.main` without importing it → a `ReferenceError` on the
+  first call (`src/physics/collider.js:44`). The `try/catch` in `Object.update()` hides it.
+- `Texture.update()` re-does `Loader.files[this.source]?.image` **every frame** for every
+  textured object — one dictionary lookup per frame per object.
+- `Light.update()` writes `self.width`/`self.height`: a component resizes its host every frame,
+  overwriting anything typed into the Inspector.
 
 ---
 
 ## 6. Runtime
 
-### 6.1 Organisation
+### 6.1 Organization
 
-**Il n'y a pas de dossier `runtime/` fonctionnel.** `src/runtime/` ne contient que
-`environment.js` (détection de plateforme, 411 lignes, aucun rapport avec la boucle).
+**There is no functional `runtime/` directory.** `src/runtime/` contains only `environment.js`
+(platform detection, 411 lines, unrelated to the loop).
 
-Le runtime réel est constitué de :
+The real runtime consists of:
 
-- `Renderer.render(scene, camera)` — la boucle unique,
-- les modules par domaine : `physics/`, `graphics/`, `anim/`, `input/`, `audio/`, `time/`.
+- `Renderer.render(scene, camera)` — the one loop,
+- the per-domain modules: `physics/`, `graphics/`, `anim/`, `input/`, `audio/`, `time/`.
 
-**Il n'existe aucun « System ».** Aucun `PhysicsSystem`, aucun `RenderSystem`.
-La physique est dans `Collider.update()`, l'animation dans `Animator.update()`.
-L'organisation historique est **par module de domaine**, et la logique est **dans les
-composants**.
+**There is no "System" of any kind.** No `PhysicsSystem`, no `RenderSystem`. Physics lives in
+`Collider.update()`, animation in `Animator.update()`. The historical organization is **by
+domain module**, and the logic lives **in the components**.
 
-### 6.2 La boucle
+### 6.2 The loop
 
-`Renderer.render()` (`src/core/renderer.js:164`) fait, dans une seule passe par objet :
+`Renderer.render()` (`src/core/renderer.js:164`) does, in a single pass per object:
 
-1. tri par `layer` (`Object.values().sort()` — **réalloue un tableau chaque frame**),
-2. `obj.update()` si non en pause,
-3. **picking souris et détection des poignées de redimensionnement (code Editor)**,
-4. `ctx.save()`, projection caméra, zoom, rotation objet,
-5. `obj.draw()`, puis `obj.preview()` si `inspector`,
+1. sorts by `layer` (`Object.values().sort()` — **reallocating an array every frame**),
+2. `obj.update()` if not paused,
+3. **mouse picking and resize-handle detection (Editor code)**,
+4. `ctx.save()`, camera projection, zoom, object rotation,
+5. `obj.draw()`, then `obj.preview()` if `inspector`,
 6. `ctx.restore()`,
-7. `obj.select(ctx)` si sélectionné.
+7. `obj.select(ctx)` if selected.
 
-Update et draw sont donc **entrelacés par objet** : l'objet 2 est mis à jour après que
-l'objet 1 a été dessiné. Un composant qui lit la position d'un autre objet lit un état
-mixte — source de non-déterminisme, problématique pour un moteur multijoueur.
+Update and draw are therefore **interleaved per object**: object 2 is updated after object 1 has
+been drawn. A component that reads another object's position reads a mixed state — a source of
+non-determinism, problematic for a multiplayer engine.
 
-Le serveur, lui, sépare proprement : il boucle sur tous les `obj.update()` sans dessin.
+The server, for its part, separates them cleanly: it loops over every `obj.update()` with no
+drawing.
 
-`src/core/renderer.js:6` :
+`src/core/renderer.js:6`:
 
 ```js
 import { Dnd } from '/editor/system/dnd.js';
 ```
 
-**Le Core importe l'Editor.** C'est la violation de couche la plus visible du dépôt :
-le runtime de jeu ne peut pas être chargé sans le module de drag & drop de l'IDE.
+**The Core imports the Editor.** It is the most visible layer violation in the repository: the
+game runtime cannot be loaded without the IDE's drag-and-drop module.
 
-### 6.3 Le runtime est cassé hors ligne ✅
+### 6.3 The runtime is broken offline ✅
 
-`Keyboard.keys(uid)` retourne `Network.getUser(uid)?.keys`, et `Network.users` n'est
-initialisé que dans `Network.init()`. En mode hors ligne (`const online = false` dans
-`app.js`) :
+`Keyboard.keys(uid)` returns `Network.getUser(uid)?.keys`, and `Network.users` is only
+initialized inside `Network.init()`. In offline mode (`const online = false` in `app.js`):
 
 ```
 Controller.update(self)
@@ -431,35 +420,35 @@ Controller.update(self)
         → TypeError
 ```
 
-Vérifié : `o.update()` lève une `TypeError` **à chaque frame et par composant**,
-silencieusement absorbée par le `try/catch` de `Object.update()`. L'objet ne bouge pas.
+Verified: `o.update()` throws a `TypeError` **every frame and per component**, silently swallowed
+by the `try/catch` in `Object.update()`. The object does not move.
 
-**Conséquence : le mode solo hors ligne ne fonctionne pas, et rien ne le signale.**
-`Input` dépend de `Network`, ce qui est un couplage de couche inversé.
+**Consequence: offline single-player mode does not work, and nothing says so.** `Input` depends
+on `Network`, which is an inverted layer coupling.
 
 ---
 
 ## 7. Editor
 
-### 7.1 Comment la synchronisation temps réel fonctionne réellement ✅
+### 7.1 How real-time synchronization actually works ✅
 
-Il n'y a **pas** de framework réactif, **pas** de virtual DOM, **pas** d'état dupliqué.
-Le mécanisme tient en trois lignes :
+There is **no** reactive framework, **no** virtual DOM, **no** duplicated state. The mechanism
+fits in three lines:
 
-1. **Liaison par classe CSS.** Chaque champ éditable porte `class="<objectId>-<prop>"`,
-   ou `class="<objectId>-<Component>.<prop>"` pour un composant.
-2. **Résolution par requête globale.** `document.getElementsByClassName(obj.id + '-' + p)`
-   retourne *toutes* les vues de cette propriété, où qu'elles soient dans le document.
-3. **Garde de focus.** `if (el[i] !== document.activeElement)` — le champ en cours de
-   saisie n'est jamais réécrit.
+1. **Binding by CSS class.** Every editable field carries `class="<objectId>-<prop>"`, or
+   `class="<objectId>-<Component>.<prop>"` for a component.
+2. **Resolution by global query.** `document.getElementsByClassName(obj.id + '-' + p)` returns
+   *every* view of that property, wherever it is in the document.
+3. **A focus guard.** `if (el[i] !== document.activeElement)` — the field being typed into is
+   never rewritten.
 
-Le cycle complet d'une frappe dans l'Inspector :
+The full cycle of one keystroke in the Inspector:
 
 ```
 input "P"
   → Properties.updateCurrentObject(el)
     → object.$name = "P"
-      → setter $name
+      → the $name setter
         → this.name = "P"        → dispatch setProperty ──┐
         → dispatch syncProperty ─────────────────────┐    │
                                                      │    │
@@ -468,50 +457,49 @@ input "P"
                                                            │
    Properties + Hierarchy  ◄────────────────────────────────┘
      → getElementsByClassName('<id>-name')
-     → écrit dans tous les éléments sauf activeElement
+     → writes into every element except activeElement
 ```
 
-✅ Vérifié lettre par lettre (`P`, `Pl`, `Pla`, `Play`) : les deux vues — champ
-Inspector et `contenteditable` de la Hierarchy — reflètent chaque frappe.
+✅ Verified letter by letter (`P`, `Pl`, `Pla`, `Play`): both views — the Inspector field and the
+Hierarchy's `contenteditable` — reflect every keystroke.
 
-**Il existe bien une source de vérité unique : l'`Object` lui-même.** Le DOM n'est
-qu'une projection. C'est simple, direct, et cela marche. C'est aussi la raison pour
-laquelle il ne faut pas introduire de store séparé en v2.
+**There really is a single source of truth: the `Object` itself.** The DOM is only a projection.
+It is simple, direct, and it works. It is also the reason not to introduce a separate store in
+v2.
 
-Coût : `getElementsByClassName` sur `document` entier à chaque changement de propriété,
-et un identifiant global qui casse si deux panneaux affichent le même objet
-différemment.
+Cost: `getElementsByClassName` over the whole `document` on every property change, and a global
+identifier that breaks if two panels display the same object differently.
 
-### 7.2 L'Inspector est déjà générique
+### 7.2 The Inspector is already generic
 
-`editor/windows/properties.js` **ne contient aucun `if (component === "Health")`.**
-Il réfléchit sur l'objet et déduit le widget du type de la valeur :
+`editor/windows/properties.js` **contains no `if (component === "Health")`.** It reflects over
+the object and derives the widget from the value's type:
 
-| Valeur | Widget |
+| Value | Widget |
 |---|---|
 | `number` | `<input type="text">` |
 | `boolean` | `<input type="checkbox">` |
-| `string` commençant par `#` | `<input type="color">` |
-| `string` | `<input type="text">` |
+| a `string` starting with `#` | `<input type="color">` |
+| a `string` | `<input type="text">` |
 | `Color` | `<input type="color">` |
-| autre objet | `<input type="text">` |
+| any other object | `<input type="text">` |
 
-Le « schéma » est donc **implicite et inféré de la valeur à l'instant T**.
+The "schema" is therefore **implicit, inferred from the value at that instant**.
 
-Limites : liste noire codée en dur (`id`, `uid`, `scale`, `static`, `type`, `active`,
-`visible`, `lock`, `image`, `parent`, `components`, `childs`) ; pas de min/max, pas
-d'unité, pas d'énumération, pas d'infobulle ; branches `case 'TODO Range'`,
-`'TODO Array'`, `'TODO Enumeration'`, `'TODO Image'`, `'TODO Button'` jamais atteintes
-(comparées à `value.constructor.name`) ; une propriété `number` initialisée à `0` et
-une couleur initialisée à `''` sont mal typées ; `updateProperty` fait `parseInt` sur
-les nombres, ce qui **tronque les décimales à l'affichage**.
+Limits: a hard-coded blacklist (`id`, `uid`, `scale`, `static`, `type`, `active`, `visible`,
+`lock`, `image`, `parent`, `components`, `childs`); no min/max, no unit, no enumeration, no
+tooltip; the `case 'TODO Range'`, `'TODO Array'`, `'TODO Enumeration'`, `'TODO Image'`,
+`'TODO Button'` branches are never reached (they are compared against
+`value.constructor.name`); a `number` property initialized to `0` and a colour initialized to
+`''` are mistyped; `updateProperty` does a `parseInt` on numbers, which **truncates decimals in
+the display**.
 
-L'icône de composant est en revanche un `switch` sur le nom (`appendName`) — le seul
-endroit réellement spécifique par composant.
+The component icon, on the other hand, is a `switch` on the name (`appendName`) — the only
+genuinely per-component place.
 
-### 7.3 Le couplage DOM
+### 7.3 The DOM coupling
 
-Les modules `editor/misc/*.js` s'exécutent au chargement et attaquent des `id` fixes :
+The `editor/misc/*.js` modules run at load time and reach for fixed `id`s:
 
 ```js
 document.getElementById('play').addEventListener('click', …)   // play.js
@@ -519,248 +507,243 @@ document.getElementById('pause').addEventListener('click', …)  // pause.js
 document.getElementById('sync').addEventListener('click', …)   // sync.js
 ```
 
-`sync.js` référence `#sync`, qui est commenté dans `index.html` — le module lèverait
-une erreur, il n'est simplement pas importé par `app.js`. Les fenêtres (`Hierarchy`,
-`Properties`, `Project`) reçoivent un `id` de conteneur et supposent que tout le
-squelette HTML existe déjà dans `index.html` (700 lignes).
+`sync.js` references `#sync`, which is commented out in `index.html` — the module would throw;
+it simply is not imported by `app.js`. The windows (`Hierarchy`, `Properties`, `Project`)
+receive a container `id` and assume the whole HTML skeleton already exists in `index.html` (700
+lines).
 
-**Conséquence : ajouter une fenêtre exige d'éditer `index.html`, `app.js`, un fichier
-CSS et le module.** C'est le vrai problème de modularité de l'Editor — pas le fait
-d'utiliser le DOM.
+**Consequence: adding a window requires editing `index.html`, `app.js`, a CSS file and the
+module.** That is the Editor's real modularity problem — not the fact that it uses the DOM.
 
-`Handler` (`editor/system/handler.js`, 27 ko) concentre tout le viewport : drop,
-sélection, drag, redimensionnement 8 directions (le `switch` de 8 cas est **dupliqué**
-entre objet et composant), pan, zoom. Aucune notion d'outil ni de commande.
+`Handler` (`editor/system/handler.js`, 27 kB) concentrates the entire viewport: drop, selection,
+drag, 8-direction resize (the 8-case `switch` is **duplicated** between object and component),
+pan, zoom. No notion of a tool or of a command.
 
 ---
 
 ## 8. Network
 
-### 8.1 Topologie
+### 8.1 Topology
 
 ```
-Editor (inspector = true)        Joueur (inspector = false)
+Editor (inspector = true)        Player (inspector = false)
    │  update / add / remove          │  mousemove / keydown / keyup
    │  addComponent / addChild        │
    ▼                                 ▼
         ┌───────────────────────────────┐
-        │  Serveur Deno (privé)         │
-        │  import mod.js du client      │
+        │  Deno server (private)        │
+        │  imports the client's mod.js  │
         │  scene = new Scene()          │
         │  setInterval(loop, 16ms)      │  → obj.update()
         │  setInterval(heartbeat, 4000) │  → broadcast(scene.objects)
         └───────────────────────────────┘
 ```
 
-Le serveur importe **le même `mod.js` que le client**, servi en HTTPS depuis
-`editor.pixelcreator.io`. Confirmation directe que le Core est partageable.
+The server imports **the same `mod.js` as the client**, served over HTTPS from
+`editor.pixelcreator.io`. Direct confirmation that the Core is shareable.
 
-### 8.2 Messages réels et besoin fonctionnel derrière
+### 8.2 The real messages and the need behind each
 
-| Message | Sens | Besoin sous-jacent |
+| Message | Meaning | Underlying need |
 |---|---|---|
-| `init` | le client demande la scène, le serveur renvoie `scene.objects` | **bootstrap d'état** |
-| `getUID`, `getUsers`, `connection`, `disconnection` | présence | **identité et présence** |
-| `heartbeat` / `beat` | scène complète toutes les 4 s | **réconciliation d'état** |
-| `update` | `{id, type, component, prop, value}` | **mutation de propriété** |
-| `add` / `remove` | objet (stringifié) / id | **cycle de vie d'objet** |
+| `init` | the client asks for the scene, the server returns `scene.objects` | **state bootstrap** |
+| `getUID`, `getUsers`, `connection`, `disconnection` | presence | **identity and presence** |
+| `heartbeat` / `beat` | the whole scene every 4 s | **state reconciliation** |
+| `update` | `{id, type, component, prop, value}` | **property mutation** |
+| `add` / `remove` | an object (stringified) / an id | **object lifecycle** |
 | `addComponent` / `removeComponent` | | **composition** |
-| `addChild` / `removeChild` | | **hiérarchie** |
-| `upload_file` / `update_file` / `delete_file` | | **cycle de vie de ressource** |
-| `mousemove` / `mousedown` / `mouseup` / `keydown` / `keyup` | par utilisateur | **entrées joueur** |
-| `pause` | démarre/arrête la boucle serveur | **contrôle du runtime** |
-| `save` | corps vide côté serveur | **persistance (non implémentée)** |
-| `message` | broadcast texte | chat/debug |
+| `addChild` / `removeChild` | | **hierarchy** |
+| `upload_file` / `update_file` / `delete_file` | | **resource lifecycle** |
+| `mousemove` / `mousedown` / `mouseup` / `keydown` / `keyup` | per user | **player input** |
+| `pause` | starts/stops the server loop | **runtime control** |
+| `save` | an empty body server-side | **persistence (not implemented)** |
+| `message` | a text broadcast | chat/debug |
 
-**Le message `update` est déjà une opération.** `{id, component, prop, value}` est
-littéralement un `SET_PROPERTY` sans nom. `addComponent`, `addChild`, `add`, `remove`
-sont déjà `ADD_COMPONENT`, `ADD_CHILD`, `ADD_OBJECT`, `REMOVE_OBJECT`.
+**The `update` message already is an operation.** `{id, component, prop, value}` is literally a
+`SET_PROPERTY` without the name. `addComponent`, `addChild`, `add` and `remove` are already
+`ADD_COMPONENT`, `ADD_CHILD`, `ADD_OBJECT` and `REMOVE_OBJECT`.
 
-Ce qui manque pour en faire des Operations exploitables : la valeur précédente
-(pas d'undo), un horodatage/numéro de séquence (pas d'ordre total), un auteur
-(pas de collaboration), un regroupement transactionnel (un drag = des centaines
-d'opérations indépendantes).
+What is missing to turn them into usable Operations: the previous value (no undo), a
+timestamp/sequence number (no total ordering), an author (no collaboration), and transactional
+grouping (one drag = hundreds of independent operations).
 
-### 8.3 Comportements notables
+### 8.3 Notable behaviours
 
-- **Aucune autorité.** Le serveur applique ce qu'on lui envoie puis rediffuse aux
-  autres (`client.broadcast`). N'importe quel client peut modifier n'importe quel objet.
-- **Pas d'écho à l'émetteur** : `client.broadcast` exclut l'auteur. C'est la prévention
-  de boucle. Combinée à `setProperty()` côté réception (qui n'émet pas `syncProperty`),
-  elle évite les allers-retours infinis.
-- **Le heartbeat écrase.** `Network.heartbeat` fait `obj.copy(data[id])` sur chaque
-  objet, toutes les 4 s, avec les limites de `copy()` (§3.3). Une valeur saisie dans
-  l'Inspector peut être écrasée par un heartbeat en vol.
-- **Aucune interpolation.** `// TODO: Interpolate the movement` dans `Network.update`.
-- **Les entrées sont routées par utilisateur** : `Network.users[uid].keys`. Un objet
-  n'est contrôlable que si son `uid` correspond à un utilisateur connecté (§6.3).
-- **`Network.sync()` n'est activé que si `inspector === true`** : seul l'Editor pousse
-  des mutations ; les joueurs n'envoient que des entrées.
-- Une propriété `Camera` reçue est traitée à part et recentrée (`camera.x -= width/2`).
+- **No authority.** The server applies what it is sent and then rebroadcasts to the others
+  (`client.broadcast`). Any client can modify any object.
+- **No echo to the sender**: `client.broadcast` excludes the author. That is the loop
+  prevention. Combined with `setProperty()` on receipt (which does not emit `syncProperty`), it
+  avoids infinite round trips.
+- **The heartbeat overwrites.** `Network.heartbeat` does `obj.copy(data[id])` on every object,
+  every 4 s, with the limits of `copy()` (§3.3). A value typed into the Inspector can be
+  overwritten by a heartbeat in flight.
+- **No interpolation.** `// TODO: Interpolate the movement` in `Network.update`.
+- **Input is routed per user**: `Network.users[uid].keys`. An object is controllable only if its
+  `uid` matches a connected user (§6.3).
+- **`Network.sync()` is only enabled if `inspector === true`**: only the Editor pushes
+  mutations; players send only input.
+- An incoming `Camera` property is handled separately and re-centred (`camera.x -= width/2`).
 
 ---
 
 ## 9. Visual scripting
 
-### 9.1 État réel
+### 9.1 The real state
 
-`editor/graph/graph.js` + `node.js` : éditeur de nœuds fonctionnel — création par
-drag & drop, connecteurs entrée/sortie/erreur, chemins SVG en Bézier, pan et zoom
-(récemment améliorés, commits `e35e00b`, `8bd26bd`, `a52633b`).
+`editor/graph/graph.js` + `node.js`: a working node editor — creation by drag and drop,
+input/output/error connectors, SVG Bézier paths, pan and zoom (recently improved, commits
+`e35e00b`, `8bd26bd`, `a52633b`).
 
-Palette définie **en HTML** (`index.html`) :
+The palette is defined **in HTML** (`index.html`):
 
-- événements : `init`, `update`, `mouse`, `key`, `collision`, `timer`
-- structures : `if`, `repeat`
-- fonctions : `math`, `move`, `edit`, `create`, `delete`, `draw`, `print`
+- events: `init`, `update`, `mouse`, `key`, `collision`, `timer`
+- structures: `if`, `repeat`
+- functions: `math`, `move`, `edit`, `create`, `delete`, `draw`, `print`
 
-### 9.2 Ce qui n'existe pas
+### 9.2 What does not exist
 
-- **Aucun modèle de données.** Le graphe **est** le DOM : un nœud est un `<div>`, une
-  connexion est un couple de connecteurs liés par des propriétés JS (`connector.other`,
-  `connector.path`) posées sur les éléments DOM.
-- **Aucune sérialisation.** Rien ne convertit le graphe en JSON. Fermer l'onglet perd tout.
-- **Aucune compilation.** `Graph.updateScript()` fait `console.log(this.nodes)` puis
-  `this.code = ''`. Les trois lignes utiles sont commentées.
-- **Aucun lien avec le runtime.** Aucun objet n'exécute jamais un graphe.
-- **Aucune variable, aucune métadonnée.**
+- **No data model.** The graph **is** the DOM: a node is a `<div>`, a connection is a pair of
+  connectors linked by JS properties (`connector.other`, `connector.path`) set on the DOM
+  elements.
+- **No serialization.** Nothing turns the graph into JSON. Closing the tab loses everything.
+- **No compilation.** `Graph.updateScript()` does `console.log(this.nodes)` and then
+  `this.code = ''`. The three useful lines are commented out.
+- **No link to the runtime.** No object ever runs a graph.
+- **No variables, no metadata.**
 
-`editor/graph/compiler.js` (`Compiler`) n'est **pas** un compilateur de graphe : c'est
-un lexer/parser d'un langage textuel à syntaxe Rust (`i32`, `fn`, `let`, `struct`,
-`match`, `mod`). Sa méthode `compile()` appelle `lex()`, `parse()`, `transpile()`,
-`evaluate()` **sans préfixe `Compiler.`** et `evaluate` n'existe pas → toujours
-`ReferenceError`. Code mort.
+`editor/graph/compiler.js` (`Compiler`) is **not** a graph compiler: it is a lexer/parser for a
+textual language with Rust-like syntax (`i32`, `fn`, `let`, `struct`, `match`, `mod`). Its
+`compile()` method calls `lex()`, `parse()`, `transpile()` and `evaluate()` **without the
+`Compiler.` prefix**, and `evaluate` does not exist → always a `ReferenceError`. Dead code.
 
-`editor/graph/component.js` définit une classe `Component` (id/name/type) sans rapport
-avec les composants de jeu — collision de nom à éviter en v2.
+`editor/graph/component.js` defines a `Component` class (id/name/type) unrelated to game
+components — a name collision to avoid in v2.
 
-### 9.3 `.px` aujourd'hui
+### 9.3 `.px` today
 
-**Contrairement à l'intention affichée, `.px` est traité comme du JavaScript.**
-`Loader.allowedScriptsTypes` contient `'application/px'` à côté de
-`'text/javascript'` ; un fichier `.px` suit donc exactement le chemin d'un `.js` :
-lu en texte, transformé en Blob URL, passé à `import()`. Le serveur, lui, connaît
-`application/pixelscript` — deux types MIME divergents pour la même idée.
-
----
-
-## 10. Ressources
-
-`Loader` (statique) est le registre unique : `Loader.files[id]`, `id = path + name`.
-
-- Un fichier est un `File` natif **augmenté** par `System.createFile()` : `name`,
-  `extension`, `path`, `id`, `value`, puis `System.sync()` dessus. Une ressource est
-  donc réactive comme un `Object`, et transite par les mêmes événements.
-- `Resource` (`src/core/resource.js`) existe mais **n'est jamais utilisée** — `Loader`
-  fabrique des `File` augmentés à la place.
-- Images : lues en DataURL (`readAsDataURL`) → `file.value` contient le base64 complet.
-  Ces ressources partent donc **en base64 dans le JSON** vers le serveur.
-- Scripts : lus en texte, puis `createScriptComponent()` → `URL.createObjectURL` →
-  `import()` → `module.default` est la classe de composant.
-- **Hot reload réel** : `Loader.import()` émet `import`, `Scene` l'écoute et réinjecte
-  le composant dans tous les objets qui le portent. Renommer un script réécrit même la
-  déclaration `class` par expression régulière.
-- Persistance : `XMLHttpRequest` POST/PUT/DELETE vers le serveur, qui écrit sur disque.
-  `Store`/`Database` (IndexedDB) existent mais ne sont câblés à rien.
-- Les Blob URL créées ne sont jamais révoquées (fuite mémoire à chaque réimport).
+**Contrary to the stated intent, `.px` is treated as JavaScript.**
+`Loader.allowedScriptsTypes` contains `'application/px'` next to `'text/javascript'`; a `.px`
+file therefore follows exactly the path of a `.js`: read as text, turned into a Blob URL, passed
+to `import()`. The server, for its part, knows `application/pixelscript` — two divergent MIME
+types for the same idea.
 
 ---
 
-## 11. Chargement dynamique de composants
+## 10. Resources
 
-Le mécanisme fonctionne et mérite d'être conservé :
+`Loader` (static) is the single registry: `Loader.files[id]`, with `id = path + name`.
+
+- A file is a native `File` **augmented** by `System.createFile()`: `name`, `extension`, `path`,
+  `id`, `value`, and then `System.sync()` on top. A resource is therefore reactive like an
+  `Object`, and travels through the same events.
+- `Resource` (`src/core/resource.js`) exists but is **never used** — `Loader` builds augmented
+  `File`s instead.
+- Images: read as a DataURL (`readAsDataURL`) → `file.value` holds the full base64. Those
+  resources therefore go **as base64 inside the JSON** to the server.
+- Scripts: read as text, then `createScriptComponent()` → `URL.createObjectURL` → `import()` →
+  `module.default` is the component class.
+- **Real hot reload**: `Loader.import()` emits `import`, `Scene` listens for it and re-injects
+  the component into every object carrying it. Renaming a script even rewrites the `class`
+  declaration with a regular expression.
+- Persistence: `XMLHttpRequest` POST/PUT/DELETE to the server, which writes to disk.
+  `Store`/`Database` (IndexedDB) exist but are wired to nothing.
+- The Blob URLs created are never revoked (a memory leak on every re-import).
+
+---
+
+## 11. Dynamic component loading
+
+The mechanism works and deserves to be kept:
 
 ```
-fichier .js du projet → Blob URL → import() → module.default → new Component()
+a project .js file → Blob URL → import() → module.default → new Component()
                                                   │
                                         dispatch('import') → Scene.update()
                                                   │
-                                        réinjection dans les objets concernés
+                                        re-injection into the objects concerned
 ```
 
-Limite : `plugins/test.js` — le seul exemple de plugin — importe `Manager` depuis
-`/editor/system/manager.js` et appelle `Manager.addComponent(Test, …)` en **statique**,
-alors que `addComponent` est une **méthode d'instance**. Le plugin d'exemple est cassé,
-et il couple un composant de jeu à l'IDE.
+Limit: `plugins/test.js` — the only plugin example — imports `Manager` from
+`/editor/system/manager.js` and calls `Manager.addComponent(Test, …)` **statically**, while
+`addComponent` is an **instance method**. The example plugin is broken, and it couples a game
+component to the IDE.
 
 ---
 
 ## 12. Logging
 
-Aucun logger. Des `console.log` avec styles CSS inline, dispersés :
+No logger. `console.log` calls with inline CSS styles, scattered around:
 
-| Couleur | Motif | Sens |
+| Colour | Pattern | Meaning |
 |---|---|---|
-| `#11AB0D` vert | `[SERVER] …` | trafic réseau |
-| `#3b78ff` bleu | `info: …` | information moteur |
-| `#F9F1A5` jaune | `warn: …` | avertissement |
+| `#11AB0D` green | `[SERVER] …` | network traffic |
+| `#3b78ff` blue | `info: …` | engine information |
+| `#F9F1A5` yellow | `warn: …` | a warning |
 
-Codifié partiellement dans `System.log/debug/warn`, mais **la plupart des appels
-n'utilisent pas ces helpers** et réécrivent le style à la main. `System.getDate()`
-formate un horodatage qui n'est jamais utilisé.
+Partly codified in `System.log/debug/warn`, but **most calls do not use those helpers** and
+rewrite the style by hand. `System.getDate()` formats a timestamp that is never used.
 
-L'identité visuelle (catégories colorées) est un acquis à conserver.
+The visual identity (coloured categories) is an asset worth keeping.
 
 ---
 
-## 13. Tests, outillage, dépendances
+## 13. Tests, tooling, dependencies
 
-- **Aucun test.** Aucun framework, aucun fichier de test. `plugins/test.js` est un
-  exemple de composant, pas un test.
-- **Aucun build, aucun bundler, aucun `package.json`** dans `engine/`.
-- **Zéro dépendance runtime.** Seuls Font Awesome (CSS local) et des polices Google
-  (CDN) sont externes.
-- **Imports absolus** (`/src/core/...`) : l'application doit être servie depuis la
-  racine de `legacy/`.
-- Outillage : `tools/dev-server.sh` (python http.server) — il sert la racine `engine/`,
-  alors que l'application a besoin de la racine `legacy/`. À corriger.
+- **No tests.** No framework, no test file. `plugins/test.js` is an example component, not a
+  test.
+- **No build, no bundler, no `package.json`** in `engine/`.
+- **Zero runtime dependencies.** Only Font Awesome (local CSS) and some Google fonts (CDN) are
+  external.
+- **Absolute imports** (`/src/core/...`): the application must be served from the root of
+  `legacy/`.
+- Tooling: `tools/dev-server.sh` (python http.server) — it serves the `engine/` root, while the
+  application needs the `legacy/` root. To be fixed.
 
-### Documentation existante
+### Existing documentation
 
 - `docs/architecture.md`, `docs/coding-guidelines.md`, `docs/project-vision.md`,
-  `docs/documentation.md` : décrivent des **intentions**, dont plusieurs sont
-  contredites par le code.
-  - « The editor never mutates engine state directly » — faux : `Handler` écrit
-    `scene.current.$x = …` directement.
-  - « Local update: `obj.setProperty('x', 100)` / Network: `obj.syncProperty('x', 100)` » —
-    ces méthodes existent mais l'Editor utilise en réalité l'accesseur `$`.
-  - « No component-to-component coupling » — faux : `Animator` pilote `Animation`,
-    `Controller` appelle `self.translate()` qui appelle `components.collider.update()`.
-- `reference/*.md` : documentation d'API décrivant une **API souhaitée**, pas l'actuelle
-  (ex. `new Object({name, x, y})` en objet d'options, alors que le constructeur réel est
-  positionnel). `reference/editor/collab.md` documente un module `Collab` (Socket.IO)
-  **absent du code**.
+  `docs/documentation.md`: they describe **intentions**, several of which the code contradicts.
+  - "The editor never mutates engine state directly" — false: `Handler` writes
+    `scene.current.$x = …` directly.
+  - "Local update: `obj.setProperty('x', 100)` / Network: `obj.syncProperty('x', 100)`" — those
+    methods exist, but the Editor actually uses the `$` accessor.
+  - "No component-to-component coupling" — false: `Animator` drives `Animation`, and
+    `Controller` calls `self.translate()`, which calls `components.collider.update()`.
+- `reference/*.md`: API documentation describing an **intended** API, not the current one (for
+  example `new Object({name, x, y})` with an options object, while the real constructor is
+  positional). `reference/editor/collab.md` documents a `Collab` module (Socket.IO) **absent from
+  the code**.
 
-Ces documents sont donc à traiter comme des sources d'intention, jamais comme des
-descriptions du comportement.
-
----
-
-## 14. Synthèse des couplages
-
-```
- Core ──────► Editor      renderer.js importe editor/system/dnd.js        ❌ inversion
- Core ──────► DOM         object.createImage(), scene.updateName(el)      ❌ inversion
- Core ──────► Editor      scene.current, scene.currentComponent           ⚠ état d'IDE
- Input ─────► Network     Keyboard.keys(uid) → Network.users              ❌ casse le solo
- Loader ────► Network     URL du serveur codée dans le loader             ⚠
- Component ─► Editor      plugins/test.js importe Manager                 ❌
- Editor ────► index.html  getElementById sur ids fixes, partout           ⚠ modularité
- Serveur ───► HTTPS       import du mod.js du client par URL              ✅ acquis
-```
+These documents are therefore to be treated as sources of intent, never as descriptions of
+behaviour.
 
 ---
 
-## 15. Ce qui marche et qu'il faut protéger
+## 14. Summary of couplings
 
-1. Le triple canal d'écriture `x` / `$x` / `setProperty()` — la distinction est juste.
-2. La synchronisation lettre par lettre par classe CSS + garde `activeElement`.
-3. Le Core partagé client/serveur, prouvé en production.
-4. `update(self)` / `draw(self)` avec `self` en argument — composants sérialisables,
-   serveur sans rendu.
-5. L'Inspector générique par réflexion.
-6. Le hot reload de composants par `import()` dynamique + événement `import`.
-7. Le `try/catch` par composant qui isole les scripts utilisateur.
-8. Les ressources réactives (un fichier se comporte comme un objet).
-9. Les entrées routées par `uid` — le modèle multijoueur est dans le moteur, pas à côté.
-10. Le vocabulaire : `Object`, `Component`, `Scene`, `Resource`.
+```
+ Core ──────► Editor      renderer.js imports editor/system/dnd.js        ❌ inverted
+ Core ──────► DOM         object.createImage(), scene.updateName(el)      ❌ inverted
+ Core ──────► Editor      scene.current, scene.currentComponent           ⚠ IDE state
+ Input ─────► Network     Keyboard.keys(uid) → Network.users              ❌ breaks single-player
+ Loader ────► Network     the server URL hard-coded in the loader         ⚠
+ Component ─► Editor      plugins/test.js imports Manager                 ❌
+ Editor ────► index.html  getElementById on fixed ids, everywhere         ⚠ modularity
+ Server ────► HTTPS       imports the client's mod.js by URL              ✅ an asset
+```
+
+---
+
+## 15. What works and must be protected
+
+1. The triple write channel `x` / `$x` / `setProperty()` — the distinction is right.
+2. Letter-by-letter synchronization by CSS class + the `activeElement` guard.
+3. The Core shared between client and server, proven in production.
+4. `update(self)` / `draw(self)` with `self` as an argument — serializable components, a server
+   without rendering.
+5. The generic Inspector, by reflection.
+6. Component hot reload through dynamic `import()` + the `import` event.
+7. The per-component `try/catch` that isolates user scripts.
+8. Reactive resources (a file behaves like an object).
+9. Input routed by `uid` — the multiplayer model is inside the engine, not beside it.
+10. The vocabulary: `Object`, `Component`, `Scene`, `Resource`.

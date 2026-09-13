@@ -28,8 +28,8 @@ The contribution workflow — branches, commits, pull requests — is in
 ## The authoritative specifications
 
 The pages above are **navigation and how-to**. The architecture itself is specified in the
-project's own documents, and those are authoritative. They are written in **French**; code,
-identifiers and comments are in English.
+project's own documents, and those are authoritative. Like everything else in this
+repository, they are written in English.
 
 | Document | Subject |
 |---|---|

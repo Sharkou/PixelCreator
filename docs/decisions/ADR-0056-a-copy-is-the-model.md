@@ -1,321 +1,292 @@
-# ADR-0056 — Une copie est le modèle, et un pas de simulation décide quand
+# ADR-0056 — A copy is the model, and a simulation step decides when
 
-- **Statut :** **accepté** (2026-09-07), **§6 complétée le 2026-09-07** — la limite qui y était consignée est fermée : une référence interne au sous-arbre copié suit la copie
-- **Décide :** ce que `Spawn` instancie ; ce qu'un nœud a le droit de faire à la forme d'une
-  Scene ; comment un nœud de flux rend une valeur ; ce qu'un `Runtime.step()` fait d'un
-  Object créé ou détruit pendant qu'il tourne
-- **Dépend de :** ADR-0003 (Property System), ADR-0011 (le serveur est l'autorité),
-  ADR-0012 (isolation des erreurs), ADR-0015 (un graphe est le comportement d'un type),
-  ADR-0018 (ordre structurel), ADR-0019 (opérations structurelles), ADR-0020 (Resources),
-  ADR-0026 §7 (le prefab est reporté), ADR-0027 (modèle de graphe), ADR-0034 (les
-  références dans le graphe), ADR-0035 (ordre de `Runtime.step()`), ADR-0040 §3 (une cible
-  désignée), ADR-0045 §11 (ce qui n'est pas codé, et ce qui manque pour l'être)
-- **Précise :** ADR-0034 invariant 3 — un handle peut vivre le temps d'**un flux** et non
-  seulement d'un pas de flux, à condition d'être redemandé à la Scene à chaque lecture
-- **Ferme :** le point ouvert d'ADR-0043 §8 et d'ADR-0045 §11.5 pour `Destroy` et `Spawn`
-- **Complété par :** ADR-0057 (2026-09-11) — le déterminisme des identités de §8 est tranché : un `Spawn` frappe ses identités sur le flux `seed:ids` du Runtime, jamais sur le CSPRNG de la machine
-- **Complété par :** ADR-0058 (2026-09-11) — une exécution suspendue emporte ce qu'elle avait produit, donc §4.1 vaut aussi par-dessus une attente
-- **Ne décide pas :** le prefab (ADR-0026 §7 reste tel quel) ; le
-  déterminisme des identités sous réplication — voir §7
+- **Status:** **accepted** (2026-09-07), **§6 completed on 2026-09-07** — the limit recorded there is closed: a reference internal to the copied subtree follows the copy
+- **Decides:** what `Spawn` instantiates; what a node may do to a Scene's shape; how a flow node returns a value; what a `Runtime.step()` does with an Object created or destroyed while it runs
+- **Depends on:** ADR-0003 (Property System), ADR-0011 (the server is the authority), ADR-0012 (error isolation), ADR-0015 (a graph is a type's behaviour), ADR-0018 (structural order), ADR-0019 (structural operations), ADR-0020 (Resources), ADR-0026 §7 (the prefab is deferred), ADR-0027 (the graph model), ADR-0034 (references in the graph), ADR-0035 (`Runtime.step()`'s order), ADR-0040 §3 (a designated target), ADR-0045 §11 (what is not written, and what is missing for it to be)
+- **Clarifies:** ADR-0034's invariant 3 — a handle may live for the duration of **one flow** and not only of a flow step, provided it is asked of the Scene again on every read
+- **Closes:** ADR-0043 §8's and ADR-0045 §11.5's open point for `Destroy` and `Spawn`
+- **Completed by:** ADR-0057 (2026-09-11) — §8's determinism of identities is settled: a `Spawn` mints its identities on the Runtime's `seed:ids` stream, never on the machine's CSPRNG
+- **Completed by:** ADR-0058 (2026-09-11) — a suspended execution carries away what it had produced, so §4.1 holds across a wait too
+- **Does not decide:** the prefab (ADR-0026 §7 stands as it is); the determinism of identities under replication — see §7
 
 ---
 
-## 1. Problème
+## 1. Problem
 
-Un créateur ne peut pas écrire de boucle de jeu. Un tir n'apparaît pas, un ennemi ne meurt
-pas, une pièce ramassée reste là. `.px` sait lire, écrire, brancher, compter et déplacer ;
-il ne sait pas **faire** ni **défaire** un Object.
+A creator cannot write a game loop. A shot does not appear, an enemy does not die, a coin picked up
+stays there. `.px` can read, write, branch, count and move; it cannot **make** or **unmake** an
+Object.
 
-Les deux nœuds manquants sont recensés depuis trois tranches, et chaque fois pour la même
-raison — ADR-0045 §11.5 l'écrit noir sur blanc :
+The two missing nodes have been listed for three slices, and each time for the same reason —
+ADR-0045 §11.5 writes it in black and white:
 
-| Nœud | Ce qui manquait |
+| Node | What was missing |
 |---|---|
-| `Destroy` | **une décision.** Retirer un objet pendant que le pipeline l'itère ; et est-ce une `Operation` d'auteur ou une sortie de simulation ? |
-| `Spawn` | **un concept.** Il n'y a pas de prefab. Instancier quoi, à partir de quoi ? |
+| `Destroy` | **a decision.** Removing an object while the pipeline is iterating it; and is it an authoring `Operation` or a simulation output? |
+| `Spawn` | **a concept.** There is no prefab. Instantiate what, from what? |
 
-Et ADR-0043 §8 ajoute la contrainte qui les tenait tous les deux : « ADR-0034 invariant 5
-doit être tranché d'abord ».
+And ADR-0043 §8 adds the constraint that held both: "ADR-0034's invariant 5 has to be settled first".
 
 ---
 
-## 2. `Spawn` instancie un Object de la Scene, et c'est toute la décision
+## 2. `Spawn` instantiates an Object of the Scene, and that is the whole decision
 
-**Il n'y a pas de prefab, et il ne peut pas y en avoir dans un pas de simulation.** Une
-`Resource` se résout par du stockage **asynchrone** que ni le Core ni le Runtime n'atteignent
-— c'est l'argument exact d'ADR-0034 §3.2, écrit pour justifier qu'un Object voyage par
-handle et une Resource par identité. Un nœud qui instancierait une `ResourceId` devrait donc
-attendre au milieu d'un `step()`, ce qu'un pas fixe ne permet pas et qu'un serveur
-autoritatif ne peut pas se permettre (ADR-0011).
+**There is no prefab, and there cannot be one inside a simulation step.** A `Resource` is resolved
+through **asynchronous** storage that neither the Core nor the Runtime reaches — that is exactly
+ADR-0034 §3.2's argument, written to justify an Object travelling by handle and a Resource by
+identity. A node that instantiated a `ResourceId` would therefore have to wait in the middle of a
+`step()`, which a fixed step does not allow and which an authoritative server cannot afford
+(ADR-0011).
 
-**Un Object vivant, lui, décrit déjà une instance complètement** : ses Components, leurs
-valeurs, ses enfants, leur ordre. Il est dans la Scene que le Runtime tient, et le résoudre
-est un `Map.get`.
+**A live Object, on the other hand, already describes an instance completely**: its Components, their
+values, its children, their order. It is in the Scene the Runtime holds, and resolving it is a
+`Map.get`.
 
-> **Le modèle d'un `Spawn` est un Object de la Scene, et ce qui est créé en est une copie.**
+> **A `Spawn`'s model is an Object of the Scene, and what is created is a copy of it.**
 
-Le vocabulaire reste celui du créateur : *poser l'objet modèle dans la scène, le pointer
-depuis le nœud, et le graphe en fabrique des copies*. C'est ce que faisait déjà un créateur
-de Legacy avec un objet gardé hors champ, sauf que là c'était une convention et ici c'est le
-modèle.
+The vocabulary stays the creator's: *place the model object in the scene, point the node at it, and
+the graph makes copies of it*. It is what a Legacy creator already did with an object kept off-screen,
+except that there it was a convention and here it is the model.
 
-### 2.1 Ce que cela évite
+### 2.1 What this avoids
 
-| Refusé | Pourquoi |
+| Refused | Why |
 |---|---|
-| Un format de prefab minimal | Un format inventé avant la décision, qu'ADR-0026 §7 a explicitement reporté et qu'ADR-0026 §11 range parmi les « décisions qu'une implémentation hâtive prend à la place de l'architecte » |
-| Instancier une `ResourceId` (`.px`, scène) | Résolution asynchrone, inatteignable depuis `step()` (ADR-0020, ADR-0034 §3.2) |
-| Un « Object vide + Components » construit par nœuds | Trois nœuds et un ordre pour dire une phrase, et une seconde façon de décrire ce qu'est un Object |
+| A minimal prefab format | A format invented before the decision, which ADR-0026 §7 explicitly deferred and which ADR-0026 §11 files among "decisions a hasty implementation takes in the architect's place" |
+| Instantiating a `ResourceId` (`.px`, a scene) | Asynchronous resolution, unreachable from `step()` (ADR-0020, ADR-0034 §3.2) |
+| An "empty Object + Components" built out of nodes | Three nodes and an ordering to say one sentence, and a second way of describing what an Object is |
 
-### 2.2 La primitive est une existante, lue depuis les deux bouts
+### 2.2 The primitive is an existing one, read from both ends
 
-`core/duplicate.js` fait un **aller-retour par le format** : `serializeObject()` sait
-exactement quels champs font un Object, `restoreSubtree()` sait exactement comment le
-remettre — liens et rangs compris, puisque c'est ce qu'applique l'annulation d'une
-suppression (`ADD_OBJECT`). Un parcours écrit à la main serait un **second avis** sur ce
-qu'est un Object, et il divergerait au premier champ ajouté. Legacy avait ce second avis :
-il s'appelait `copy()` et il vidait `components`, `childs` et `image`.
+`core/duplicate.js` does a **round trip through the format**: `serializeObject()` knows exactly which
+fields make an Object, `restoreSubtree()` knows exactly how to put it back — links and ranks included,
+since that is what undoing a deletion applies (`ADD_OBJECT`). A hand-written traversal would be a
+**second opinion** on what an Object is, and it would diverge at the first added field. Legacy had that
+second opinion: it was called `copy()` and it wiped `components`, `childs` and `image`.
 
-Les identités sont **tirées d'abord, pour tout le sous-arbre**, puis les listes `children`
-**et les valeurs déclarées comme références** (§6) sont réécrites à travers la même table :
-remapper au fil du parcours laisserait un parent pointer vers une identité pas encore tirée.
+The identities are **drawn first, for the whole subtree**, then the `children` lists **and the values
+declared as references** (§6) are rewritten through the same table: remapping as you walk would leave a
+parent pointing at an identity not yet drawn.
 
-**La copie atterrit à côté de son modèle, en dernier parmi ses frères.** À côté, parce que
-`Transform` est une position dans l'espace du **parent** (ADR-0002) : une copie envoyée à la
-racine garderait ses nombres et changerait ce qu'ils veulent dire. En dernier, parce que
-c'est le seul rang qui soit fonction de l'état.
+**The copy lands beside its model, last among its siblings.** Beside, because `Transform` is a position
+in the **parent's** space (ADR-0002): a copy sent to the root would keep its numbers and change what
+they mean. Last, because it is the only rank that is a function of the state.
 
-### 2.3 `Destroy` retire ce que `Scene.remove()` retire
+### 2.3 `Destroy` removes what `Scene.remove()` removes
 
-Aucune sémantique nouvelle : `Scene.remove()` supprime en profondeur d'abord, détache du
-parent, retire des roots. Un enfant n'est jamais laissé dans la scène à pointer vers un
-parent parti. Une cible absente rend `false`, et `false` n'est pas une erreur.
+No new semantics: `Scene.remove()` deletes depth-first, detaches from the parent, removes from the
+roots. A child is never left in the scene pointing at a parent that has gone. An absent target returns
+`false`, and `false` is not an error.
 
 ---
 
-## 3. Invariant 5 est tenu : aucun nœud ne produit d'Operation
+## 3. Invariant 5 holds: no node produces an Operation
 
-ADR-0034 invariant 5 dit *« un nœud ne produit aucune Operation et ne frappe aucune
-identité »*. Les deux moitiés tiennent, et pour deux raisons différentes :
+ADR-0034's invariant 5 says *"a node produces no Operation and mints no identity"*. Both halves hold,
+and for two different reasons:
 
-**Aucune Operation.** `duplicateObject()` et `Scene.remove()` écrivent par les primitives de
-la Scene, exactement comme le fait un `parent.addChild(child)` appelé depuis un script. Ce
-sont les primitives que les gestionnaires d'Operations appellent eux-mêmes, et
-`scene.js` dit déjà pourquoi : « Applying a replicated operation therefore submits nothing
-back — the echo is unrepresentable rather than merely prevented » (ADR-0019). Un spawn est
-une **sortie de simulation**, pas une intention d'auteur — la lecture qu'ADR-0003 donne déjà
-à l'écriture de propriété depuis un graphe.
+**No Operation.** `duplicateObject()` and `Scene.remove()` write through the Scene's primitives,
+exactly as a `parent.addChild(child)` called from a script does. They are the primitives the Operation
+handlers call themselves, and `scene.js` already says why: "Applying a replicated operation therefore
+submits nothing back — the echo is unrepresentable rather than merely prevented" (ADR-0019). A spawn is
+a **simulation output**, not an authoring intent — the reading ADR-0003 already gives a property write
+from a graph.
 
-**Aucune identité frappée.** Le nœud reçoit un **handle**, par un fil ou par une prise
-`objectref` que ce `.px` déclare. Rien d'une scène n'entre dans le payload, et l'invariant 1
-n'est pas touché : ce que le `.px` stocke est l'`id` d'une **propriété qu'il déclare
-lui-même**.
+**No identity minted.** The node receives a **handle**, through a wire or through an `objectref` socket
+this `.px` declares. Nothing from a scene enters the payload, and invariant 1 is untouched: what the
+`.px` stores is the `id` of a **property it declares itself**.
 
-### 3.1 Un mot sépare `Spawn` de tous les autres : `unset`
+### 3.1 One word separates `Spawn` from all the others: `unset`
 
-Tous les nœuds à cible du catalogue déclarent `unset: 'Self'` — le picker imprime `Self`,
-et une case vide est un créateur qui dit *cet* Object (ADR-0040 §3). **`Spawn` n'en déclare
-aucun**, exactement comme `Get Object` (ADR-0043 §7) : un nœud de copie sans modèle doit
-copier **rien**. Un repli sur `Self` doublerait son propre Object à chaque pas, chez un
-créateur qui n'avait simplement pas encore choisi.
+Every targeted node in the catalogue declares `unset: 'Self'` — the picker prints `Self`, and an empty
+box is a creator saying *this* Object (ADR-0040 §3). **`Spawn` declares none**, exactly like
+`Get Object` (ADR-0043 §7): a copy node with no model must copy **nothing**. A fallback to `Self` would
+duplicate its own Object on every step, for a creator who simply had not chosen yet.
 
-Ce mot est lu à trois endroits et écrit à un seul :
+That word is read in three places and written in one:
 
-| Lecteur | Ce qu'il en fait |
+| Reader | What it does with it |
 |---|---|
-| `inspector/node.js` | affiche la ligne `Self` seulement là où elle existe |
-| `graph/standard.js` | `targetObject(io, fallback)` — le repli est un paramètre, pas une seconde copie de la règle |
-| `graph/validate.js` | une prise vide **est** un manque là où rien ne répond pour elle |
+| `inspector/node.js` | shows the `Self` row only where it exists |
+| `graph/standard.js` | `targetObject(io, fallback)` — the fallback is a parameter, not a second copy of the rule |
+| `graph/validate.js` | an empty socket **is** a gap where nothing answers for it |
 
 ---
 
-## 4. Un nœud de flux peut rendre une valeur
+## 4. A flow node may return a value
 
-`Spawn` est le premier nœud livré qui **agit** et **produit**. Jusqu'ici la séparation était
-nette : `evaluate` pour ce qui est tiré, `execute` pour ce qui est poussé.
+`Spawn` is the first shipped node that **acts** and **produces**. Until now the separation was clean:
+`evaluate` for what is pulled, `execute` for what is pushed.
 
-**Le tirer serait le trap.** Une sortie de données est *pull* : l'interprète appelle
-`evaluate` chaque fois que quelqu'un en aval lit le port. Un `Spawn` lu deux fois créerait
-deux Objects et donnerait le second au second lecteur ; un `Spawn` lu jamais ne créerait
-rien.
+**Pulling it would be the trap.** A data output is *pull*: the interpreter calls `evaluate` every time
+somebody downstream reads the port. A `Spawn` read twice would create two Objects and give the second
+to the second reader; a `Spawn` never read would create nothing.
 
-> **Un nœud de flux peut répondre `{ next, values }`. Les valeurs sont poussées une fois, au
-> moment où le nœud tourne, et lues ensuite.**
+> **A flow node may answer `{ next, values }`. The values are pushed once, at the moment the node
+> runs, and read afterwards.**
 
-`continuationsOf()` gagne une quatrième forme et `execute` reste ce qu'il était pour tous les
-autres. L'interprète ne ré-exécute jamais un nœud pour répondre à une lecture : un nœud sans
-`evaluate` répond depuis ce qu'il a produit, ou `null`.
+`continuationsOf()` gains a fourth shape and `execute` stays what it was for every other node. The
+interpreter never re-runs a node to answer a read: a node with no `evaluate` answers from what it
+produced, or `null`.
 
-### 4.1 Ce que cela précise d'ADR-0034 invariant 3
+### 4.1 What this clarifies in ADR-0034's invariant 3
 
-L'invariant dit : *« un handle n'est jamais persisté, ni sérialisé, ni mémoïsé au-delà d'un
-pas de flux »*. Le cache de valeurs de l'interprète est **par pas de flux** — c'est
-délibéré : mémoïser plus loin laisserait un `Get Property` servir la valeur d'avant un
-`Set Property`.
+The invariant says: *"a handle is never persisted, never serialized, and never memoized beyond a flow
+step"*. The interpreter's value cache is **per flow step** — deliberately: memoizing further would let
+a `Get Property` serve the value from before a `Set Property`.
 
-Mais `Spawn` crée l'Object et le nœud trois cartes plus loin le positionne : le handle doit
-survivre d'un pas de flux au suivant, ou la sortie ne sert à rien.
+But `Spawn` creates the Object and the node three cards later positions it: the handle has to survive
+from one flow step to the next, or the output is useless.
 
-> **La mémoire des valeurs produites est portée par le FLUX, et toute lecture d'un port
-> `object` est redemandée à la Scene.**
+> **The memory of produced values is carried by the FLOW, and every read of an `object` port is asked
+> of the Scene again.**
 
-Ce que l'invariant protège est tenu à la lettre : un handle n'est jamais rendu si la Scene ne
-répond plus pour lui. Un `Spawn` détruit trois nœuds plus loin se lit `null`, comme une
-`objectref` morte (`portValueOf`, ADR-0034 §3.4) — donc rien ne peut sortir d'une mémoire qui
-survivrait à ce qu'elle mémorise. La mémoire meurt avec le flux, ne touche aucun Component,
-aucun payload, aucune image.
+What the invariant protects is kept to the letter: a handle is never returned if the Scene no longer
+answers for it. A `Spawn` destroyed three nodes later reads `null`, like a dead `objectref`
+(`portValueOf`, ADR-0034 §3.4) — so nothing can come out of a memory that outlives what it remembers.
+The memory dies with the flow, touches no Component, no payload, no frame.
 
-### 4.2 `Spawn` n'a pas de port de position, et c'est un refus argumenté
+### 4.2 `Spawn` has no position port, and that is a reasoned refusal
 
-La forme « X et Y sur le nœud » a été écrite puis retirée, pour deux raisons :
+The "X and Y on the node" form was written and then withdrawn, for two reasons:
 
-1. **Elle serait `Set Position` une seconde fois.** ADR-0045 §11.2 tranche : la forme absolue
-   est `Set Position`, elle existe, elle se lit correctement. Spawner puis positionner dans
-   le même pas est indistinguable de spawner à une position — rien n'est dessiné entre les
-   deux.
-2. **Le défaut d'un port est une VALEUR.** `data('x', NUMBER, 'X', 0)` : un `Spawn` posé et
-   laissé tel quel lirait `X 0  Y 0` et téléporterait chaque copie à l'origine au lieu de la
-   laisser où son modèle se tient. Éviter ça demanderait un port nombre *optionnel*, une
-   notion que le modèle de port n'a pas et qu'un nœud n'a pas à inventer.
+1. **It would be `Set Position` a second time.** ADR-0045 §11.2 settles it: the absolute form is
+   `Set Position`, it exists, it reads correctly. Spawning and then positioning in the same step is
+   indistinguishable from spawning at a position — nothing is drawn in between.
+2. **A port's default is a VALUE.** `data('x', NUMBER, 'X', 0)`: a `Spawn` placed and left alone would
+   read `X 0  Y 0` and teleport every copy to the origin instead of leaving it where its model stands.
+   Avoiding that would require an *optional* number port, a notion the port model does not have and a
+   node has no business inventing.
 
-La sortie `Spawned` dit la même phrase avec des nœuds qui existent déjà et qui se lisent.
+The `Spawned` output says the same sentence with nodes that already exist and that read.
 
 ---
 
-## 5. Ce qu'un pas de simulation fait d'un changement de forme
+## 5. What a simulation step does with a change of shape
 
-L'ordre d'un `step()` est matérialisé **avant** la boucle — il le faut, sinon retirer un
-objet décalerait la marche sous elle-même. Les deux directions sont donc décidées plutôt que
-laissées au hasard :
+A `step()`'s order is materialized **before** the loop — it has to be, otherwise removing an object
+would shift the walk under itself. Both directions are therefore decided rather than left to chance:
 
-| Pendant un `step()` | Décision | Pourquoi |
+| During a `step()` | Decision | Why |
 |---|---|---|
-| Un Object est **créé** | il ne tourne pas ce pas-ci ; il tourne au suivant, `On Start` compris | il n'est pas dans l'ordre matérialisé ; et c'est ce qui empêche un graphe qui spawne à chaque update de spawner sans fin dans une image |
-| Un Object est **détruit** | il est **sauté**, y compris ses Components restants | il est encore dans la liste ; le simuler serait simuler un Object que la Scene ne tient plus |
+| An Object is **created** | it does not run this step; it runs on the next, `On Start` included | it is not in the materialized order; and it is what stops a graph that spawns on every update from spawning endlessly within one frame |
+| An Object is **destroyed** | it is **skipped**, its remaining Components included | it is still in the list; simulating it would be simulating an Object the Scene no longer holds |
 
-La question est posée **avant chaque Component** et non seulement en tête d'objet, parce que
-les deux cas sont la même question : *cet Object est-il encore dans la scène ?* Un Component
-qui détruit son propre Object est donc la dernière chose qui tourne dessus.
+The question is asked **before each Component** and not only at the top of an object, because the two
+cases are the same question: *is this Object still in the scene?* A Component that destroys its own
+Object is therefore the last thing that runs on it.
 
-### 5.1 `Is Valid` demande à la Scene
+### 5.1 `Is Valid` asks the Scene
 
-« Y a-t-il un handle ici » et « cet Object est-il encore dans la scène » étaient la **même
-question** tant que seul l'Editor pouvait retirer un objet, entre deux images. `Destroy` les
-sépare : le flux qui détruit tient encore le handle. `object.isValid` demande donc à la Scene
-— et sans Scene en main, un handle se lit encore valide, ce qui est la réponse honnête plutôt
-qu'une supposition d'absence.
+"Is there a handle here" and "is this Object still in the scene" were the **same question** as long as
+only the Editor could remove an object, between two frames. `Destroy` separates them: the flow that
+destroys still holds the handle. `object.isValid` therefore asks the Scene — and with no Scene in
+hand, a handle still reads as valid, which is the honest answer rather than an assumption of absence.
 
 ---
 
-## 6. Une référence suit la copie quand sa cible a été copiée, et pas autrement
+## 6. A reference follows the copy when its target was copied, and not otherwise
 
-Tout est copié : chaque Component, chaque valeur. Ce que §6 avait laissé ouvert est
-**vers quoi** une `objectref` copiée pointe, et la question a deux réponses parce qu'il y a
-deux cas.
+Everything is copied: every Component, every value. What §6 had left open is **what** a copied
+`objectref` points at, and the question has two answers because there are two cases.
 
-> **Une identité est réécrite exactement quand elle figure dans la table d'identités que
-> cette duplication a tirée.**
+> **An identity is rewritten exactly when it appears in the identity table this duplication drew.**
 
-| Valeur d'une propriété `objectref` de la copie | Devient |
+| The value of a copy's `objectref` property | Becomes |
 |---|---|
-| une identité **du sous-arbre copié** | l'identité de la copie correspondante |
-| une identité **extérieure** | inchangée — la cible n'a pas été copiée |
-| `null`, ou la propriété absente | inchangée |
-| une identité qui ne désigne plus rien | inchangée : une référence morte est un état de la scène et non une chose à réparer (ADR-0034 §3.4) — et elle est indiscernable d'une référence externe ici, ce qui est la lecture honnête : la table sait ce qui a été copié, jamais ce qui existe |
+| an identity **from the copied subtree** | the corresponding copy's identity |
+| an **external** identity | unchanged — the target was not copied |
+| `null`, or the property absent | unchanged |
+| an identity that no longer designates anything | unchanged: a dead reference is a state of the scene and not a thing to repair (ADR-0034 §3.4) — and here it is indistinguishable from an external reference, which is the honest reading: the table knows what was copied, never what exists |
 
-Sans cette règle, dupliquer une tourelle dont le canon nomme sa propre base donnait un canon
-nommant la base de la **première** tourelle : deux tourelles pour une base, et la seconde
-silencieusement câblée sur la première.
+Without that rule, duplicating a turret whose gun names its own base gave a gun naming the **first**
+turret's base: two turrets for one base, and the second silently wired to the first.
 
-### 6.1 La règle est posée au SCHÉMA, jamais à la valeur
+### 6.1 The rule is applied to the SCHEMA, never to the value
 
-Ce qui est réécrit est une propriété dont le type **déclaré** est `objectref`, ou une liste
-dont le type d'élément déclaré l'est. Rien d'autre n'est regardé. Scanner les valeurs à la
-recherche de chaînes ressemblant à un identifiant réécrirait le nom d'un niveau appelé
-`abcdefghjkmnpq` — et ADR-0023 dit déjà que le type est ce qu'une valeur **veut dire**.
+What is rewritten is a property whose **declared** type is `objectref`, or a list whose declared
+element type is. Nothing else is looked at. Scanning values for strings that look like an identifier
+would rewrite the name of a level called `abcdefghjkmnpq` — and ADR-0023 already says that the type is
+what a value **means**.
 
-Le lecteur est `declaredProperties()`, celui que le graphe, le sélecteur de propriété et
-l'Inspector emploient déjà. Il répond pour une classe écrite à la main (`static schema`) et
-pour un `.px` (les `properties` de sa définition) **par le même appel** — c'est pour cela
-qu'un `.px` n'a besoin d'aucun cas particulier, et qu'aucune metadata nouvelle n'est créée.
+The reader is `declaredProperties()`, the one the graph, the property picker and the Inspector already
+use. It answers for a hand-written class (`static schema`) and for a `.px` (its definition's
+`properties`) **through the same call** — which is why a `.px` needs no special case, and why no new
+metadata is created.
 
-### 6.2 Les formes réellement déclarables, et il y en a exactement deux
+### 6.2 The genuinely declarable shapes, and there are exactly two
 
-| Forme | Déclarable ? | Traitée |
+| Shape | Declarable? | Handled |
 |---|---|---|
-| `objectref` | oui | oui |
-| `array` dont `elementOf()` rend `objectref` (`of: 'objectref'` ou `element: { type }`) | oui | oui, élément par élément |
-| `array` d'`array` | **non** — `elementOf()` refuse un élément qui est lui-même une liste (ADR-0031 §3) | sans objet |
-| `enum` | non — ses valeurs sont un jeu d'options fixé, pas des identités | sans objet |
-| une structure à champs | **n'existe pas** — ADR-0023 §2 a retiré `object` | sans objet |
+| `objectref` | yes | yes |
+| an `array` whose `elementOf()` returns `objectref` (`of: 'objectref'` or `element: { type }`) | yes | yes, element by element |
+| an `array` of `array` | **no** — `elementOf()` refuses an element that is itself a list (ADR-0031 §3) | moot |
+| `enum` | no — its values are a fixed set of options, not identities | moot |
+| a structure with fields | **does not exist** — ADR-0023 §2 removed `object` | moot |
 
-Il n'y a donc rien sous `array<objectref>` où descendre, et la récursion s'arrête d'elle-même
-sur le contrat existant. **Aucune généralisation spéculative n'est ajoutée** : le jour où le
-Property System admet une forme composée de plus, `remapReference()` est le seul endroit à
-étendre.
+There is therefore nothing below `array<objectref>` to descend into, and the recursion stops of its own
+accord on the existing contract. **No speculative generalization is added**: the day the Property
+System admits one more composite shape, `remapReference()` is the only place to extend.
 
-### 6.3 Trois passes, jamais une correction après coup
+### 6.3 Three passes, never a correction after the fact
 
-1. **allouer** toutes les identités neuves du sous-arbre ;
-2. **réécrire le payload** — `id`, `parent`, `children`, puis les valeurs déclarées comme
-   références ;
-3. **restaurer** par `restoreSubtree()`.
+1. **allocate** every new identity of the subtree;
+2. **rewrite the payload** — `id`, `parent`, `children`, then the values declared as references;
+3. **restore** through `restoreSubtree()`.
 
-La table est complète **avant** qu'un seul champ ne soit réécrit, donc la réécriture ne
-dépend d'aucun ordre : parent → enfant, enfant → parent, frère → frère, descendant → ancêtre
-et un cycle entre deux Components sont la même recherche dans une table déjà faite. Aucune
-passe ne peut atteindre une référence avant que sa cible ait une identité, puisque aucune
-identité n'est tirée pendant la passe.
+The table is complete **before** a single field is rewritten, so the rewrite depends on no ordering:
+parent → child, child → parent, sibling → sibling, descendant → ancestor and a cycle between two
+Components are the same lookup in a table that is already made. No pass can reach a reference before
+its target has an identity, since no identity is drawn during the pass.
 
-Et c'est réécrit dans le **payload**, jamais sur des Objects vivants : ce qui est restauré est
-déjà juste, donc ce qui est sérialisé l'est aussi, sans seconde passe à tenir en phase.
+And it is rewritten in the **payload**, never on live Objects: what is restored is already right, so
+what is serialized is too, with no second pass to keep in step.
 
-### 6.4 La limite qui reste, et elle est déclarée
+### 6.4 The limit that remains, and it is declared
 
-Un Component d'un type que le registre ne résout pas — un `MissingComponent` — **ne déclare
-rien**, donc ses valeurs sont portées telles quelles, identités internes comprises. C'est la
-réponse que ce placeholder donne partout ailleurs : il garde tout octet pour octet
-précisément parce que rien ne sait l'interpréter (ADR-0021). Deviner lesquelles de ses valeurs
-sont des identités serait exactement l'heuristique que §6.1 refuse.
+A Component of a type the registry does not resolve — a `MissingComponent` — **declares nothing**, so
+its values are carried as they are, internal identities included. That is the answer this placeholder
+gives everywhere else: it keeps every byte precisely because nothing knows how to interpret it
+(ADR-0021). Guessing which of its values are identities would be exactly the heuristic §6.1 refuses.
 
 ---
 
-## 7. Contrats observables
+## 7. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| Une copie est un Object neuf, sous-arbre compris | `core/duplicate.test.js` |
-| Une copie porte les valeurs de son modèle et ne partage aucun état | idem |
-| Une référence interne au sous-arbre suit la copie — parent→enfant, enfant→parent, frère→frère, cycle | idem |
-| Une référence externe, `null` ou morte est laissée telle quelle | idem |
-| Une `array<objectref>` est remappée élément par élément | idem |
-| Une propriété déclarée `string` n'est jamais remappée, même si sa valeur ressemble à un identifiant | idem |
-| Un `.px` déclarant `objectref` est traité comme une classe qui en déclare une | idem |
-| Deux copies d'un modèle pointent chacune uniquement dans son propre sous-arbre | idem |
-| Le modèle sérialise aux mêmes octets avant et après avoir été copié | idem |
-| Les références remappées survivent à la sérialisation et au rechargement | idem |
-| Ce qu'un `Spawn` crée est cohérent en interne, et sa sortie nomme cette copie-là | `runtime/spawn-destroy.test.js` |
-| Une copie atterrit chez le parent de son modèle, en dernier | idem |
-| Une copie est atteignable depuis les roots (invariant 7) | idem |
-| Copier ne produit aucune Operation | idem |
-| `Spawn` sans modèle ne copie rien, et surtout pas `Self` | `runtime/spawn-destroy.test.js` |
-| L'Object produit sort du nœud et le nœud suivant agit dessus | idem |
-| Deux lecteurs d'un `Spawn` obtiennent une copie, pas deux | idem |
-| Lire un `Spawn` qui n'a pas encore tourné rend `null` | idem |
-| Un Object détruit ne tourne plus dans le pas qui l'a détruit | idem |
-| Un Object créé ne tourne pas dans le pas qui l'a créé | idem |
-| Rien n'est réécrit dans le payload du graphe | idem |
-| Une prise `Model` vide est un avertissement, une prise `Object` de `Destroy` non | `core/graph/validate.test.js` |
-| `Spawn`/`Destroy` sont sur l'étagère `Object`, sans teinte ni glyphe nouveaux | `core/graph/nodes.test.js` |
+| A copy is a new Object, subtree included | `core/duplicate.test.js` |
+| A copy carries its model's values and shares no state | the same |
+| A reference internal to the subtree follows the copy — parent→child, child→parent, sibling→sibling, a cycle | the same |
+| An external, `null` or dead reference is left as it is | the same |
+| An `array<objectref>` is remapped element by element | the same |
+| A property declared `string` is never remapped, even if its value looks like an identifier | the same |
+| A `.px` declaring `objectref` is handled like a class that declares one | the same |
+| Two copies of a model each point only inside their own subtree | the same |
+| The model serializes to the same bytes before and after being copied | the same |
+| The remapped references survive serialization and reload | the same |
+| What a `Spawn` creates is internally coherent, and its output names that copy | `runtime/spawn-destroy.test.js` |
+| A copy lands with its model's parent, last | the same |
+| A copy is reachable from the roots (invariant 7) | the same |
+| Copying produces no Operation | the same |
+| `Spawn` with no model copies nothing, and above all not `Self` | `runtime/spawn-destroy.test.js` |
+| The produced Object leaves the node and the next node acts on it | the same |
+| Two readers of a `Spawn` get one copy, not two | the same |
+| Reading a `Spawn` that has not run yet gives `null` | the same |
+| A destroyed Object no longer runs in the step that destroyed it | the same |
+| A created Object does not run in the step that created it | the same |
+| Nothing is rewritten in the graph's payload | the same |
+| An empty `Model` socket is a warning, `Destroy`'s `Object` socket is not | `core/graph/validate.test.js` |
+| `Spawn`/`Destroy` are on the `Object` shelf, with no new hue or glyph | `core/graph/nodes.test.js` |
 
 ---
 
-## 8. Ce que cet ADR ne décide pas
+## 8. What this ADR does not decide
 
-| Point ouvert | Pourquoi |
+| Open point | Why |
 |---|---|
-| **Le prefab** | ADR-0026 §7 reste tel quel. Cet ADR ne le préjuge pas : le jour où un prefab existe, il sera un second **modèle** possible, pas un second mécanisme de création |
-| ~~Le déterminisme des identités sous réplication~~ | **Tranché par ADR-0057** : une identité créée par un pas est tirée du flux `seed:ids`, une identité créée en éditant reste tirée de la machine |
-| **Les valeurs d'un type que le registre ne résout pas** | §6.4 — un `MissingComponent` ne déclare rien, donc rien n'est remappé chez lui |
-| `Random`, `Delay` | Inchangés (ADR-0045 §11.5) |
-| **Une limite de population** | Un graphe qui spawne à chaque update remplit la scène ; le budget de l'interprète borne un ÉVÉNEMENT, pas une partie. C'est une question de produit, pas d'exécution |
+| **The prefab** | ADR-0026 §7 stands as it is. This ADR does not prejudge it: the day a prefab exists, it will be a second possible **model**, not a second creation mechanism |
+| ~~The determinism of identities under replication~~ | **Settled by ADR-0057**: an identity created by a step is drawn from the `seed:ids` stream, an identity created while editing stays drawn from the machine |
+| **The values of a type the registry does not resolve** | §6.4 — a `MissingComponent` declares nothing, so nothing is remapped inside it |
+| `Random`, `Delay` | Unchanged (ADR-0045 §11.5) |
+| **A population limit** | A graph that spawns on every update fills the scene; the interpreter's budget bounds an EVENT, not a match. That is a product question, not an execution one |

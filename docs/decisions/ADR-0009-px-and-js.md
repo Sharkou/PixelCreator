@@ -1,63 +1,60 @@
-# ADR-0009 — `.px` est un graphe, `.js` est du JavaScript
+# ADR-0009 — `.px` is a graph, `.js` is JavaScript
 
-- **Statut :** **accepté** (2026-08-12), y compris le mode d'exécution (Q7 : interprété)
+- **Status:** **accepted** (2026-08-12), including the execution mode (Q7: interpreted)
 
-## Contexte observé
+## Observed context
 
-### État réel du visual scripting
+### The real state of visual scripting
 
-L'éditeur de nœuds **fonctionne** : création par drag & drop, connecteurs
-entrée/sortie/erreur, chemins SVG en Bézier, pan et zoom (améliorés récemment).
-La palette est définie en HTML :
+The node editor **works**: creation by drag and drop, input/output/error connectors, SVG Bézier
+paths, pan and zoom (recently improved). The palette is defined in HTML:
 
-- **événements** : `init`, `update`, `mouse`, `key`, `collision`, `timer`
-- **structures** : `if`, `repeat`
-- **fonctions** : `math`, `move`, `edit`, `create`, `delete`, `draw`, `print`
+- **events**: `init`, `update`, `mouse`, `key`, `collision`, `timer`
+- **structures**: `if`, `repeat`
+- **functions**: `math`, `move`, `edit`, `create`, `delete`, `draw`, `print`
 
-Mais **tout le reste manque** :
+But **everything else is missing**:
 
-- **Le graphe est le DOM.** Un nœud est un `<div>` ; une connexion est un couple de
-  connecteurs liés par des propriétés JS posées sur des éléments DOM
-  (`connector.other`, `connector.path`).
-- **Aucune sérialisation.** Fermer l'onglet perd le travail.
-- **Aucune compilation.** `Graph.updateScript()` fait `console.log(this.nodes)` puis
-  `this.code = ''` ; les lignes utiles sont commentées.
-- **Aucun lien avec le runtime.** Aucun objet n'exécute jamais un graphe.
-- **Aucune variable, aucune métadonnée.**
+- **The graph is the DOM.** A node is a `<div>`; a connection is a pair of connectors linked by
+  JS properties set on DOM elements (`connector.other`, `connector.path`).
+- **No serialization.** Closing the tab loses the work.
+- **No compilation.** `Graph.updateScript()` does `console.log(this.nodes)` and then
+  `this.code = ''`; the useful lines are commented out.
+- **No link to the runtime.** No object ever runs a graph.
+- **No variables, no metadata.**
 
-`editor/graph/compiler.js` n'est pas un compilateur de graphe : c'est le lexer/parser
-d'un langage textuel à syntaxe Rust (`i32`, `fn`, `let`, `struct`, `match`, `mod`).
-Sa méthode `compile()` appelle `lex`/`parse`/`transpile`/`evaluate` **sans préfixe
-`Compiler.`**, et `evaluate` n'existe nulle part → `ReferenceError` systématique.
-Code mort.
+`editor/graph/compiler.js` is not a graph compiler: it is the lexer/parser of a textual language
+with Rust-like syntax (`i32`, `fn`, `let`, `struct`, `match`, `mod`). Its `compile()` method calls
+`lex`/`parse`/`transpile`/`evaluate` **without the `Compiler.` prefix**, and `evaluate` exists
+nowhere → a systematic `ReferenceError`. Dead code.
 
-### `.px` est aujourd'hui du JavaScript déguisé
+### `.px` is JavaScript in disguise today
 
-C'est le point le plus important, et il contredit l'intention affichée :
+This is the most important point, and it contradicts the stated intent:
 
 ```js
 // legacy/src/core/loader.js
 static allowedScriptsTypes = ['text/javascript', 'application/javascript', 'application/px'];
 ```
 
-Un fichier `.px` suit **exactement** le chemin d'un `.js` : lu en texte → Blob URL →
-`import()` → `module.default` traité comme une classe de composant.
+A `.px` file follows **exactly** the path of a `.js`: read as text → a Blob URL → `import()` →
+`module.default` treated as a component class.
 
-De plus, le serveur privé connaît un type différent : `application/pixelscript`.
-**Deux types MIME divergents pour la même idée.**
+On top of that, the private server knows a different type: `application/pixelscript`. **Two
+divergent MIME types for the same idea.**
 
-## Décision
+## Decision
 
-Deux formats, deux natures, **un seul modèle objet**.
+Two formats, two natures, **one object model**.
 
-| Extension | Nature | MIME | Exécution |
+| Extension | Nature | MIME | Execution |
 |---|---|---|---|
-| `.px` | **graphe** — ressource structurée JSON | `application/px` (unifié) | interprété par le runtime |
-| `.js` | module JavaScript ES | `text/javascript` | `import()` dynamique |
+| `.px` | a **graph** — a structured JSON resource | `application/px` (unified) | interpreted by the runtime |
+| `.js` | a JavaScript ES module | `text/javascript` | dynamic `import()` |
 
-`.px` **cesse** d'être routé vers `import()`.
+`.px` **stops** being routed to `import()`.
 
-### Modèle de données `.px`
+### The `.px` data model
 
 ```json
 {
@@ -76,105 +73,102 @@ Deux formats, deux natures, **un seul modèle objet**.
 }
 ```
 
-L'éditeur de nœuds actuel est conservé et **pilote ce modèle** au lieu d'être le modèle.
+The current node editor is kept and **drives this model** instead of being the model.
 
-### Une seule API pour les deux
+### One API for both
 
-`.px` et `.js` manipulent les mêmes concepts : `Object`, `Component`, `Property`,
-`Scene`, `Resource`, `Event`, `Runtime`.
+`.px` and `.js` manipulate the same concepts: `Object`, `Component`, `Property`, `Scene`,
+`Resource`, `Event`, `Runtime`.
 
 ```
-        API du moteur
-       ┌──────┴──────┐
-   graphe .px      script .js
+        The engine's API
+       ┌───────┴───────┐
+   a .px graph      a .js script
 ```
 
-Un nœud `move` et un `self.x += speed` en JavaScript passent par le même chemin
-d'écriture, donc par le même Property System, donc par la même réplication réseau.
-**Ce ne sont pas deux moteurs.** Un nœud ne peut rien faire qu'un script ne puisse
-faire, et réciproquement.
+A `move` node and a `self.x += speed` in JavaScript go through the same write path, therefore
+through the same Property System, therefore through the same network replication. **They are not
+two engines.** A node can do nothing a script cannot do, and vice versa.
 
-### Deux rôles distincts, et non deux façons d'obtenir un composant
+### Two distinct roles, not two ways of getting a component
 
-| Format | Ce qu'il produit |
+| Format | What it produces |
 |---|---|
-| `.js` | un **type de Component** — la classe exportée par défaut, enregistrée comme les autres |
-| `.px` | le **comportement** d'un type de Component qui existe déjà — `Controller.px` pour `Controller` |
+| `.js` | a **Component type** — the default-exported class, registered like the others |
+| `.px` | the **behaviour** of a Component type that already exists — `Controller.px` for `Controller` |
 
-Un `.px` **ne génère aucun type de composant** et n'apparaît pas comme un composant : il
-est le comportement de celui sous lequel l'éditeur l'affiche (ADR-0015). Ce qui est
-inspecté reste donc le **Component** et ses propriétés (ADR-0007), pas le graphe.
+A `.px` **generates no component type** and does not appear as a component: it is the behaviour of
+the one under which the editor displays it (ADR-0015). What is inspected therefore stays the
+**Component** and its properties (ADR-0007), not the graph.
 
-> **Point ouvert.** Le devenir des `variables` d'un graphe — pur état d'exécution, ou
-> déclaration reprise dans le schéma du Component — est tranché avec le modèle de graphe.
-> Rien n'en dépend aujourd'hui : l'état d'exécution d'un graphe est déjà, par
-> construction, distinct des données sérialisées du composant.
+> **An open point.** What becomes of a graph's `variables` — pure execution state, or a
+> declaration carried into the Component's schema — is settled together with the graph model.
+> Nothing depends on it today: a graph's execution state is already, by construction, distinct
+> from the component's serialized data.
 
-## Mode d'exécution — VALIDÉ : interprété
+## Execution mode — SETTLED: interpreted
 
-**Q7 tranchée : `.px` est interprété, pour le débogage et la sécurité.**
+**Q7 settled: `.px` is interpreted, for debuggability and safety.**
 
-| | Interprétation ✅ | Compilation en JS |
+| | Interpretation ✅ | Compilation to JS |
 |---|---|---|
-| Débogage | pas à pas, points d'arrêt visuels | difficile (source générée) |
-| Sécurité | **pas d'`eval`** | dépend de la génération |
-| Performance | plus lente | proche du natif |
-| Complexité | moyenne | élevée (générateur + source maps) |
+| Debugging | step by step, visual breakpoints | hard (generated source) |
+| Safety | **no `eval`** | depends on the generation |
+| Performance | slower | close to native |
+| Complexity | moderate | high (a generator + source maps) |
 
-Un graphe de gameplay exécute quelques dizaines de nœuds par frame : la lisibilité du
-pas-à-pas et l'absence d'`eval` valent davantage que la vitesse brute.
+A gameplay graph runs a few dozen nodes per frame: the readability of stepping and the absence of
+`eval` are worth more than raw speed.
 
-Conséquence pratique : `runtime/scripting/` contient un **interpréteur de graphe** —
-il parcourt les nœuds et appelle l'API du moteur. Aucune génération de code, aucun
-`eval`, aucune `Function()`. Il est branché sur l'hôte `Behaviors`, qui lie un graphe à un
-type de Component et donne à chaque instance son propre état d'exécution (ADR-0015).
+The practical consequence: `runtime/scripting/` contains a **graph interpreter** — it walks the
+nodes and calls the engine's API. No code generation, no `eval`, no `Function()`. It is wired
+into the `Behaviors` host, which binds a graph to a Component type and gives each instance its own
+execution state (ADR-0015).
 
-Le format `.px` reste inchangé si une compilation s'avérait un jour nécessaire :
-c'est une décision d'exécution, pas de format.
+The `.px` format stays unchanged if compilation should one day become necessary: it is an
+execution decision, not a format decision.
 
-> **Note de sécurité.** `.js` continue de passer par `import()` dynamique, ce qui exécute
-> du code arbitraire — c'est assumé pour les scripts que le créateur écrit lui-même.
-> `.px`, lui, est interprété et n'exécute jamais de code arbitraire : c'est ce qui en
-> fait le format sûr pour du contenu partagé.
+> **A security note.** `.js` keeps going through dynamic `import()`, which runs arbitrary code —
+> accepted for scripts the creator writes themselves. `.px`, by contrast, is interpreted and never
+> runs arbitrary code: that is what makes it the safe format for shared content.
 
-## Complément — où vit un graphe (ADR-0020, 2026-08-14)
+## Addition — where a graph lives (ADR-0020, 2026-08-14)
 
-Un graphe `.px` est une **`Resource` de `kind: 'graph'`** : identité opaque, payload JSON,
-stockée par le `ResourceStore`, ouvrable seule dans la fenêtre **`Graph`**. Une définition
-de Component la référence par `ResourceId`, jamais en ligne (ADR-0016 amendé).
+A `.px` graph is a **`Resource` of `kind: 'graph'`**: an opaque identity, a JSON payload, stored
+by the `ResourceStore`, openable on its own in the **`Graph`** window. A Component definition
+references it by `ResourceId`, never inline (ADR-0016 amended).
 
-La couche `src/project/` résout cette référence et passe le graphe résolu à
-`behaviors.bind()` — c'est la réponse au point « qui charge et qui lie », laissé ouvert ici
-comme dans ADR-0015 et ADR-0016.
+The `src/project/` layer resolves that reference and passes the resolved graph to
+`behaviors.bind()` — that is the answer to the "who loads and who binds" point, left open here as
+in ADR-0015 and ADR-0016.
 
-**Terminologie :** la fenêtre qui édite un graphe s'appelle **`Graph`**. `Composer` est
-réservé à une éventuelle future fenêtre de composition musicale et ne désigne jamais ceci
-(`PROJECT.md` §2).
+**Terminology:** the window that edits a graph is called **`Graph`**. `Composer` is reserved for a
+possible future music composition window and never designates this (`PROJECT.md` §2).
 
-Rien de ceci ne touche au mode d'exécution : pas d'`eval`, pas de `new Function`, le graphe
-reste interprété.
+None of this touches the execution mode: no `eval`, no `new Function`, the graph stays
+interpreted.
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Un graphe devient une vraie ressource : sauvegardée, versionnée, répliquée, diffable.
-- `.px` cesse d'être un `.js` déguisé, conformément à la vision.
-- Le format JSON est lisible par un humain et par une IA.
+- A graph becomes a real resource: saved, versioned, replicated, diffable.
+- `.px` stops being a `.js` in disguise, as the vision requires.
+- The JSON format is readable by a human and by an AI.
 
-### Négatives
+### Negative
 
-- **C'est une construction, pas une migration.** À sortir du chemin critique
-  (risque R11) pour ne pas retarder Core/Runtime/Editor.
-- Il faut un exécuteur de graphe, qui n'existe pas du tout aujourd'hui.
-- La collision de nom avec `editor/graph/component.js` (classe `Component` sans rapport
-  avec les composants de jeu) doit être levée par renommage.
+- **This is construction, not migration.** To be kept off the critical path (risk R11) so that it
+  does not delay Core/Runtime/Editor.
+- A graph executor is needed, and there is none at all today.
+- The name collision with `editor/graph/component.js` (a `Component` class unrelated to game
+  components) must be resolved by renaming.
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **`.px` = JavaScript** (statu quo) | Explicitement refusé par la vision ; prive le graphe de tout modèle. |
-| **Reprendre `compiler.js`** | C'est un langage textuel type Rust, sans rapport avec le graphe, et non fonctionnel. |
-| **Un seul format `.js`, graphe comme vue** | Un graphe n'est pas exprimable proprement comme JavaScript sans perte de disposition et de métadonnées. |
-| **Format binaire** | Illisible, non diffable, sans bénéfice à cette échelle. |
+| **`.px` = JavaScript** (the status quo) | Explicitly refused by the vision; it deprives the graph of any model. |
+| **Reviving `compiler.js`** | It is a Rust-like textual language, unrelated to the graph, and it does not work. |
+| **A single `.js` format, with the graph as a view** | A graph cannot be expressed cleanly as JavaScript without losing layout and metadata. |
+| **A binary format** | Unreadable, not diffable, no benefit at this scale. |

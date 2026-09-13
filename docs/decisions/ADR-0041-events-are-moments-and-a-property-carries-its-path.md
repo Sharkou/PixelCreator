@@ -1,19 +1,19 @@
-# ADR-0041 — Un événement est un moment, un état est une question, et une propriété porte son chemin
+# ADR-0041 — An event is a moment, a state is a question, and a property carries its path
 
-- **Statut :** **accepté** (2026-08-28)
-- **Décide :** ce qu'est un nœud d'entrée clavier/souris ; comment un nœud d'entrée dit quels flux il déclenche ; comment une propriété choisie se lit une fois choisie
-- **Dépend de :** ADR-0011 (déterminisme), ADR-0014 (l'input est passé, jamais lu), ADR-0027 (modèle de graphe), ADR-0033 (rangées), ADR-0040 (un nœud par intention)
-- **Amendé par :** ADR-0045 (2026-08-29) — §3.2 : un événement d'entrée continu existe, sous un nom qui le distingue (`Key Down`, `Pointer Button Down`), ce que l'objection de lisibilité demandait sans le dire. §6.1 : un Component peut de nouveau être lâché sur un nœud qui en nomme un. §2 : le chemin fusionné redevient deux lignes, `Component` puis `Property`.
-- **Amende :** ADR-0014 §5 (les trois questions ne sont plus un seul nœud) ; ADR-0040 §2 (le Component redevient visible — comme contexte, pas comme question)
-- **Ne décide pas :** la mise en mémoire tampon des transitions d'input — voir §3.4
+- **Status:** **accepted** (2026-08-28)
+- **Decides:** what a keyboard/mouse input node is; how an input node says which flows it triggers; how a chosen property reads once it is chosen
+- **Depends on:** ADR-0011 (determinism), ADR-0014 (input is passed, never read), ADR-0027 (the graph model), ADR-0033 (rows), ADR-0040 (one node per intention)
+- **Amended by:** ADR-0045 (2026-08-29) — §3.2: a continuous input event exists, under a name that sets it apart (`Key Down`, `Pointer Button Down`), which the readability objection was asking for without saying so. §6.1: a Component can be dropped on a node that names one again. §2: the merged path becomes two rows again, `Component` and then `Property`.
+- **Amends:** ADR-0014 §5 (the three questions are no longer one node); ADR-0040 §2 (the Component becomes visible again — as context, not as a question)
+- **Does not decide:** buffering input transitions — see §3.4
 
 ---
 
-## 1. Le défaut : la phrase la plus courante d'un débutant était inécrivable
+## 1. The defect: a beginner's most common sentence was unwritable
 
-> « Quand j'appuie sur Espace, saute. »
+> "When I press Space, jump."
 
-Le catalogue n'avait aucun moyen de dire cela. `Key` rendait trois booléens, donc il fallait :
+The catalogue had no way of saying that. `Key` returned three booleans, so you had to write:
 
 ```
 On Update ──▶ Branch ──▶ Jump
@@ -21,209 +21,203 @@ On Update ──▶ Branch ──▶ Jump
       Key.Just Pressed
 ```
 
-Trois nœuds et deux fils pour une phrase de cinq mots. Et le coût réel n'est pas le nombre
-de nœuds : c'est que le créateur doit d'abord comprendre qu'**un appui n'est pas un moment
-mais une valeur qu'on teste à chaque image**. C'est un concept de boucle de jeu, imposé
-avant la première réussite.
+Three nodes and two wires for a five-word sentence. And the real cost is not the node count: it is
+that the creator first has to understand that **a press is not a moment but a value you test on every
+frame**. That is a game-loop concept, imposed before the first success.
 
-Le nœud était par ailleurs rangé dans une catégorie `Input` portant la teinte des `Events` :
-l'interface disait « ceci est un événement » et le modèle disait « ceci est un booléen ».
-
----
-
-## 2. Décision : une propriété choisie se lit avec son Component
-
-| | |
-|---|---|
-| **Ancienne décision** | ADR-0040 §2 : `component` est caché, et le sélecteur affiche le seul nom de la propriété. |
-| **Problème** | Le nom seul est ambigu dès que deux Components déclarent `speed`, `position`, `enabled` ou `height` — ce qui est le cas normal et non un cas limite. Dans la LISTE une en-tête répond ; sur le nœud, fermé, il n'y a pas d'en-tête. |
-| **Nouvelle décision** | **Un seul sélecteur, hiérarchique, comme avant.** Ce qui change est la lecture de la RÉPONSE : fermé, le contrôle affiche `Transform ▸ Rotation` ; ouvert, la liste garde les noms courts sous leurs en-têtes. Les propriétés du `.px` lui-même n'ont pas de préfixe : il n'y a qu'un Component possible. |
-| **Justification UX** | Le Component redevient **visible comme contexte** sans redevenir une **question**. Le créateur ne le choisit jamais séparément ; il le lit. Deux sélections indépendantes restent refusées — c'était la faute d'ADR-0040 §1, et elle n'est pas réintroduite. |
-| **Impact Core** | Aucun. Le stockage est inchangé : `component` + `property`, deux identités de portée projet. |
-| **Impact runtime** | Aucun : c'est de la présentation. |
-| **Sérialisation** | Aucune. |
-| **Migration** | Aucune. |
-
-### 2.1 Un glyphe, jamais un point
-
-`Transform.rotation` est une expression de langage de programmation. `Transform ▸ Rotation`
-est une direction : la propriété est **dans** le Component, et la forme le dit sans mot. Le
-titre du nœud, lui, ne bouge toujours pas — `Get Property` reste `Get Property` (ADR-0040 §5).
+The node was moreover filed in an `Input` category carrying `Events`' hue: the interface said "this
+is an event" and the model said "this is a boolean".
 
 ---
 
-## 3. Décision : un événement et un état sont deux nœuds
-
-> **Un nœud qui a une sortie de FLUX déclenche quelque chose. Un nœud qui a une sortie de
-> DONNÉE répond à une question. Aucun nœud ne fait les deux.**
+## 2. Decision: a chosen property reads with its Component
 
 | | |
 |---|---|
-| **Ancienne décision** | ADR-0014 §5 : un nœud `Key` répond aux trois questions — tenue, enfoncée à ce pas, relâchée à ce pas — en trois sorties booléennes. |
-| **Problème** | Les trois ne sont pas la même sorte de chose. « Tenue » est un ÉTAT, vrai tant qu'on tient ; « enfoncée » est un MOMENT, vrai une fois. Les réunir en booléens force tout moment à passer par `On Update → Branch`, et fait porter au créateur une notion de boucle de jeu avant sa première réussite. |
-| **Nouvelle décision** | **`On Key`** — nœud d'entrée, paramètre `Key`, deux sorties de flux `Pressed` et `Released`, aucune sortie de donnée. **`Key Is Down`** — nœud de donnée, paramètre `Key`, une sortie booléenne `Is Down`. Idem pour le pointeur : `On Pointer Button` et `Pointer Button Is Down`. |
-| **Justification UX** | `On Key [Space] ▶ Jump` : un nœud, un fil. Chaque nœud a exactement une sémantique d'exécution, ce qui rend le catalogue enseignable — « une sortie de flux démarre, une sortie de donnée répond » est une règle sans exception. Le rangement suit : `On Key` est dans `Events`, `Key Is Down` dans `Input`. |
-| **Impact Core** | Deux types de nœuds ajoutés, deux réécrits. Aucun nouveau vocabulaire : voir §3.1. |
-| **Impact runtime** | `runEvent()` demande au nœud quels flux se déclenchent, au lieu de tous les suivre. |
-| **Sérialisation** | Inchangée pour `Key Is Down` : le type `input.key` et le port `held` sont conservés exprès, donc tout graphe qui lisait `held` le lit encore. |
-| **Migration** | Voir §3.3. |
+| **The old decision** | ADR-0040 §2: `component` is hidden, and the picker shows the property name alone. |
+| **The problem** | The name alone is ambiguous as soon as two Components declare `speed`, `position`, `enabled` or `height` — which is the normal case and not an edge case. In the LIST a header answers; on the node, closed, there is no header. |
+| **The new decision** | **One picker, hierarchical, as before.** What changes is how the ANSWER reads: closed, the control shows `Transform ▸ Rotation`; open, the list keeps the short names under their headers. The `.px`'s own properties have no prefix: there is only one possible Component. |
+| **UX rationale** | The Component becomes **visible as context** again without becoming a **question** again. The creator never chooses it separately; they read it. Two independent selections stay refused — that was ADR-0040 §1's fault, and it is not reintroduced. |
+| **Core impact** | None. The storage is unchanged: `component` + `property`, two project-scoped identities. |
+| **Runtime impact** | None: it is presentation. |
+| **Serialization** | None. |
+| **Migration** | None. |
 
-### 3.1 Comment un nœud d'entrée dit ce qui s'est produit — sans vocabulaire nouveau
+### 2.1 A glyph, never a dot
 
-`runEvent()` suivait **toutes** les sorties de flux de tout nœud déclarant `event:`. C'était
-indistinguable de « les suivre toutes » tant qu'aucun événement n'était **conditionnel**.
+`Transform.rotation` is a programming-language expression. `Transform ▸ Rotation` is a direction: the
+property is **inside** the Component, and the shape says so without a word. The node's title, for its
+part, still does not move — `Get Property` stays `Get Property` (ADR-0040 §5).
 
-La réponse réutilise le contrat que tout nœud de flux respecte déjà :
+---
+
+## 3. Decision: an event and a state are two nodes
+
+> **A node with a FLOW output triggers something. A node with a DATA output answers a question. No
+> node does both.**
+
+| | |
+|---|---|
+| **The old decision** | ADR-0014 §5: a `Key` node answers all three questions — held, pressed this step, released this step — through three boolean outputs. |
+| **The problem** | The three are not the same kind of thing. "Held" is a STATE, true while you hold; "pressed" is a MOMENT, true once. Merging them into booleans forces every moment through `On Update → Branch`, and makes the creator carry a game-loop notion before their first success. |
+| **The new decision** | **`On Key`** — an event node, a `Key` parameter, two flow outputs `Pressed` and `Released`, no data output. **`Key Is Down`** — a data node, a `Key` parameter, one boolean output `Is Down`. The same for the pointer: `On Pointer Button` and `Pointer Button Is Down`. |
+| **UX rationale** | `On Key [Space] ▶ Jump`: one node, one wire. Each node has exactly one execution semantics, which makes the catalogue teachable — "a flow output starts, a data output answers" is a rule with no exception. The filing follows: `On Key` is in `Events`, `Key Is Down` in `Input`. |
+| **Core impact** | Two node types added, two rewritten. No new vocabulary: see §3.1. |
+| **Runtime impact** | `runEvent()` asks the node which flows fire, instead of following them all. |
+| **Serialization** | Unchanged for `Key Is Down`: the `input.key` type and the `held` port are deliberately kept, so any graph that read `held` still reads it. |
+| **Migration** | See §3.3. |
+
+### 3.1 How an input node says what happened — with no new vocabulary
+
+`runEvent()` followed **every** flow output of every node declaring `event:`. That was
+indistinguishable from "follow them all" while no event was **conditional**.
+
+The answer reuses the contract every flow node already honours:
 
 ```
 execute(io) → portId | portId[] | null
 ```
 
-C'est celui de `Branch` et de `Sequence`. Un nœud d'entrée qui déclare `execute` dit quels
-flux partent ce pas-ci ; un nœud qui n'en déclare pas les déclenche tous — ce que veulent
-`On Start` et `On Update`, et pourquoi aucun des deux n'a changé.
+It is `Branch`'s and `Sequence`'s. An input node that declares `execute` says which flows leave this
+step; a node that declares none triggers them all — which is what `On Start` and `On Update` want,
+and why neither of them changed.
 
-`continuationsOf()` lit les trois formes au même endroit, pour les deux appelants, afin
-qu'un nœud d'entrée et un nœud de flux ne puissent pas diverger sur le sens de `null`.
+`continuationsOf()` reads all three shapes in the same place, for both callers, so that an input node
+and a flow node cannot diverge about what `null` means.
 
-### 3.2 Ce qui reste une condition, et pourquoi c'est délibéré
+### 3.2 What stays a condition, and why that is deliberate
 
-« Tant que je tiens Droite, avance » coûte toujours `On Update → Branch → Set`. C'est
-**correct** : tenir une touche n'est pas un événement, c'est vrai à chaque pas jusqu'à ce
-que ça ne le soit plus. En faire un événement mettrait au catalogue un nœud qui se déclenche
-soixante fois par seconde en ressemblant exactement à celui qui se déclenche une fois.
+"While I hold Right, move forward" still costs `On Update → Branch → Set`. That is **correct**:
+holding a key is not an event, it is true on every step until it is not. Making it an event would put
+in the catalogue a node that fires sixty times a second while looking exactly like the one that fires
+once.
 
 ### 3.3 Migration
 
-| Graphe ancien | Après |
+| An old graph | After |
 |---|---|
-| lit `input.key` → `held` | **inchangé.** Le type et le port sont conservés ; seul le libellé devient `Key Is Down`. |
-| lit `input.key` → `pressed` / `released` | le fil désigne un port qui n'existe plus. `validateGraph()` le signale (`UNKNOWN_PORT`), et l'interpréteur **saute le fil périmé et exécute le reste** — le graphe tourne, amputé, et le panneau dit où. |
+| reads `input.key` → `held` | **unchanged.** The type and the port are kept; only the label becomes `Key Is Down`. |
+| reads `input.key` → `pressed` / `released` | the wire designates a port that no longer exists. `validateGraph()` reports it (`UNKNOWN_PORT`), and the interpreter **skips the stale wire and runs the rest** — the graph runs, amputated, and the panel says where. |
 
-Le second cas n'est **pas réécrit automatiquement**, et c'est un choix : un fil de donnée
-vers une condition de `Branch` et une sortie de flux n'ont pas la même topologie, et deviner
-laquelle le créateur voulait reviendrait à réécrire son graphe à sa place. Un signalement
-visible vaut mieux qu'une réécriture silencieuse (ADR-0027 §8). Aucun jeu n'est maintenu
-pendant cette phase, ce qui est précisément le moment de payer ce coût.
+The second case is **not rewritten automatically**, and that is a choice: a data wire into a
+`Branch`'s condition and a flow output do not have the same topology, and guessing which the creator
+wanted would amount to rewriting their graph for them. A visible report beats a silent rewrite
+(ADR-0027 §8). No game is maintained during this phase, which is precisely when to pay that cost.
 
-### 3.4 Ce que cette décision ne corrige pas
+### 3.4 What this decision does not fix
 
-Un appui **et** un relâchement entre deux pas de simulation ne sont vus ni par l'ancien
-modèle ni par le nouveau : `pressed()` est `enfoncée maintenant && pas au pas précédent`,
-donc un tap trop rapide laisse les deux ensembles vides. C'est une propriété du modèle
-d'input (ADR-0014 §5), antérieure à cette décision et non traitée ici. Un test la consigne
-pour qu'elle soit constatée plutôt que redécouverte.
+A press **and** a release between two simulation steps are seen by neither the old model nor the new
+one: `pressed()` is `down now && not down at the previous step`, so a tap that is too quick leaves
+both sets empty. That is a property of the input model (ADR-0014 §5), older than this decision and
+not addressed here. A test records it so that it is observed rather than rediscovered.
 
 ---
 
-## 6. La matrice du glisser-déposer
+## 6. The drag and drop matrix
 
-Le critère est « **est-ce une action qu'un créateur peut raisonnablement vouloir faire ?** »,
-jamais « est-ce facile à implémenter ». Chaque case dit ce que le geste SIGNIFIE ; une case
-refusée l'est avec une phrase, parce qu'un refus silencieux est la pire réponse à un geste
-(ADR-0026 §6).
+The criterion is "**is this an action a creator could reasonably want to perform?**", never "is it
+easy to implement". Each cell says what the gesture MEANS; a refused cell is refused with a sentence,
+because a silent refusal is the worst answer to a gesture (ADR-0026 §6).
 
-### Vers le graphe
+### Into the graph
 
-| Ce qu'on porte | Sur le canevas vide | Sur un nœud |
+| What you carry | On empty canvas | On a node |
 |---|---|---|
-| **Object** (Hierarchy) | **Accepte** — déclare une entrée `objectref` nommée d'après l'Object, et pose un `Get Object` qui la lit. Aucune `ObjectId` n'entre dans le `.px`. | **Accepte** — pointe le nœud sur cet Object, en réutilisant l'entrée si elle existe déjà. |
-| **Property** (Inspector) | **Accepte, après un choix** — menu `Get` / `Set`, puis un nœud **fini** : l'Object, le Component et la propriété étaient tous connus au moment du geste. | **Accepte** — écrit le chemin complet sur le nœud. |
-| **Component** (Inspector) | **Refuse**, avec une phrase — voir §6.1. | **Refuse**, avec la même phrase. |
-| **Resource** (Project) | **Accepte** — un nœud `Resource` tenant son identité. Rien n'est dupliqué : la ressource existe déjà. | **Accepte** si le nœud tient une ressource. |
-| **Fichier** (hors du navigateur) | **Accepte** — importe dans le Project, puis pose un nœud `Resource` dessus. **Deux annulations**, voir §6.2. | **Accepte** si le nœud tient une ressource : importe, puis pointe. Idem. |
-| n'importe quoi, canevas sans `.px` ouvert | **Refuse** — « il n'y a pas de Component ouvert sur ce canevas ». | — |
+| **Object** (Hierarchy) | **Accepts** — declares an `objectref` input named after the Object, and places a `Get Object` that reads it. No `ObjectId` enters the `.px`. | **Accepts** — points the node at that Object, reusing the input if it already exists. |
+| **Property** (Inspector) | **Accepts, after a choice** — a `Get` / `Set` menu, then a **finished** node: the Object, the Component and the property were all known at the moment of the gesture. | **Accepts** — writes the full path onto the node. |
+| **Component** (Inspector) | **Refuses**, with a sentence — see §6.1. | **Refuses**, with the same sentence. |
+| **Resource** (Project) | **Accepts** — a `Resource` node holding its identity. Nothing is duplicated: the resource already exists. | **Accepts** if the node holds a resource. |
+| **File** (from outside the browser) | **Accepts** — imports into the Project, then places a `Resource` node on it. **Two undos**, see §6.2. | **Accepts** if the node holds a resource: imports, then points. Same. |
+| anything, on a canvas with no `.px` open | **Refuses** — "there is no Component open on this canvas". | — |
 
-### Ailleurs
+### Elsewhere
 
-| Ce qu'on porte | Cible | Résultat |
+| What you carry | Target | Result |
 |---|---|---|
-| Object | propriété `objectref` | **Accepte** — assigne l'identité (ADR-0034 §3.5). |
-| Object | Project | **Refuse** — un Object appartient à une scène ; le Project tient des ressources. |
-| Component | Object (Hierarchy) | **Accepte** — l'ajoute à cet Object. C'est la signification principale de ce drag. |
-| Resource | propriété `resource` | **Accepte** si la propriété déclare l'accepter. |
-| Resource | scène / Hierarchy | **Accepte** — instancie. |
-| Resource | dossier du Project | **Accepte** — déplace. |
-| Fichier | Project / scène / Hierarchy / propriété / contenu | **Accepte** — importe, et fait ensuite ce que la cible veut dire. |
+| Object | an `objectref` property | **Accepts** — assigns the identity (ADR-0034 §3.5). |
+| Object | Project | **Refuses** — an Object belongs to a scene; the Project holds resources. |
+| Component | an Object (Hierarchy) | **Accepts** — adds it to that Object. That is this drag's main meaning. |
+| Resource | a `resource` property | **Accepts** if the property declares that it accepts it. |
+| Resource | the scene / Hierarchy | **Accepts** — instantiates. |
+| Resource | a Project folder | **Accepts** — moves. |
+| File | Project / scene / Hierarchy / a property / content | **Accepts** — imports, and then does what the target means. |
 
-### 6.1 Component → graphe : refusé, et cette fois c'est mesuré
+### 6.1 Component → graph: refused, and this time it is measured
 
-Le geste a été retiré une première fois **par argument** : le Component était caché, donc le
-dépôt écrivait un paramètre que rien ne montrait. Il a été réactivé quand le contrôle s'est
-mis à afficher `Transform ▸ …`, ce qui rendait l'effet visible.
+The gesture was withdrawn a first time **by argument**: the Component was hidden, so the drop wrote a
+parameter nothing showed. It was reactivated when the control started displaying `Transform ▸ …`,
+which made the effect visible.
 
-À l'essai, le raisonnement ne tient pas :
+In use, the reasoning does not hold:
 
-> **Le sélecteur de propriété écrit les DEUX moitiés.** Un dépôt de Component règle
-> `component` et laisse `property` ouverte ; la toute première action du créateur — choisir
-> la propriété — réécrit `component`. Le seul effet du geste est remplacé par le geste
-> suivant.
+> **The property picker writes BOTH halves.** A Component drop sets `component` and leaves `property`
+> open; the creator's very first action — choosing the property — rewrites `component`. The gesture's
+> only effect is replaced by the next gesture.
 
-C'est exactement le critère posé pour cette tranche : « sans créer un paramètre qui sera
-immédiatement remplacé par une autre action ». Et il n'existe pas de version « finie » de ce
-geste : quelle propriété est précisément ce qu'un Component ne dit pas, et la deviner serait
-la magie que cet éditeur refuse (ADR-0037 §2.4).
+That is exactly the criterion set for this slice: "without creating a parameter that will immediately
+be replaced by another action". And there is no "finished" version of this gesture: which property is
+precisely what a Component does not say, and guessing it would be the magic this editor refuses
+(ADR-0037 §2.4).
 
-**Un Component garde donc une signification, une seule, et elle est ailleurs :** le donner à
-un Object. Le refus le dit.
+**A Component therefore keeps one meaning, and only one, and it is elsewhere:** giving it to an
+Object. The refusal says so.
 
-| Geste | Ce que le créateur veut | Ce qui est produit |
+| Gesture | What the creator wants | What is produced |
 |---|---|---|
-| Object → graphe | « travailler sur cet Object » | une entrée nommée + un nœud qui la lit — **fini** |
-| Property → graphe | « lire/écrire cette valeur » | un nœud visé et configuré — **fini** |
-| Component → graphe | — | rien qui survive au clic suivant |
+| Object → graph | "work on this Object" | a named input + a node that reads it — **finished** |
+| Property → graph | "read/write this value" | a targeted, configured node — **finished** |
+| Component → graph | — | nothing that survives the next click |
 
-### 6.2 Le dépôt d'un fichier n'est pas une seule annulation, et ne peut pas l'être
+### 6.2 A file drop is not one undo, and cannot be
 
-Mesuré : un Ctrl+Z retire le nœud, la ressource importée reste dans le Project.
+Measured: a Ctrl+Z removes the node, and the imported resource stays in the Project.
 
-Ce n'est pas un oubli de `batch`. Le geste écrit dans **deux ressources** — le manifeste du
-projet pour l'import, le `.px` pour le nœud — et ADR-0024 donne à chaque ressource sa propre
-pile. Une entrée couvrant les deux serait une annulation inter-ressources, que
-ADR-0034 §3.7 laisse explicitement ouverte.
+It is not a forgotten `batch`. The gesture writes into **two resources** — the project manifest for
+the import, the `.px` for the node — and ADR-0024 gives each resource its own stack. An entry
+covering both would be a cross-resource undo, which ADR-0034 §3.7 explicitly leaves open.
 
-Le comportement est donc : **le nœud s'annule, la ressource reste**. C'est aussi le moins
-surprenant des deux : une ressource importée est un fait du projet, et la faire disparaître
-parce qu'on annule un nœud serait plus étonnant que de la laisser. Les dépôts qui n'écrivent
-que dans le `.px` — Object, Property — restent, eux, atomiques (`batch`, ADR-0024 §4).
+The behaviour is therefore: **the node undoes, the resource stays**. It is also the less surprising of
+the two: an imported resource is a fact about the project, and making it disappear because you undid
+a node would be more startling than leaving it. Drops that write only into the `.px` — Object,
+Property — stay atomic (`batch`, ADR-0024 §4).
 
-La même remarque vaut pour `Add Component ▸ Custom Component` : créer le `.px` et l'attacher
-sont deux ressources, donc deux annulations.
+The same remark applies to `Add Component ▸ Custom Component`: creating the `.px` and attaching it are
+two resources, and therefore two undos.
 
-### Ce qui reste délibérément refusé
+### What stays deliberately refused
 
-| Geste | Pourquoi non |
+| Gesture | Why not |
 |---|---|
-| Fichier → graphe, plusieurs à la fois | Un nœud tient **une** ressource. Les autres seraient importées puis silencieusement perdues, ce qui est pire que ne pas les prendre. |
-| Property → nœud qui ne travaille sur aucune propriété | Il n'y a rien à y écrire ; le refus dit où déposer. |
-| Component → nœud, ou canevas | §6.1 : tout ce qu'il écrit est réécrit par le clic suivant. |
+| File → graph, several at once | A node holds **one** resource. The others would be imported and then silently lost, which is worse than not taking them. |
+| Property → a node that works on no property | There is nothing to write there; the refusal says where to drop. |
+| Component → a node, or the canvas | §6.1: everything it writes is rewritten by the next click. |
 
 ---
 
-## 4. Contrats observables
+## 4. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| `On Key` ne déclenche que le pas où la touche bouge | `interpreter.test.js`, via `Runtime.step()` |
-| Une touche tenue cent pas ne déclenche qu'une fois | idem |
-| `Key Is Down` reste vrai tant qu'on tient | idem |
-| Le port `held` de `input.key` est inchangé | `nodes.test.js` |
-| Un nœud d'événement n'a aucune sortie de donnée, et l'inverse | `nodes.test.js`, sur le catalogue réel |
-| `On Key` est dans `Events`, `Key Is Down` dans `Input` | idem |
-| Aucun nœud ne se renomme selon sa configuration | `nodes.test.js` (ADR-0040 §5) |
-| Le contrôle fermé affiche `Transform ▸ Rotation` | `inspector/node.test.js` |
-| La liste garde les noms courts sous leurs en-têtes | idem |
-| Le chemin ne contient jamais de point | idem |
+| `On Key` fires only on the step where the key moves | `interpreter.test.js`, through `Runtime.step()` |
+| A key held for a hundred steps fires once | the same |
+| `Key Is Down` stays true while you hold | the same |
+| `input.key`'s `held` port is unchanged | `nodes.test.js` |
+| An event node has no data output, and vice versa | `nodes.test.js`, on the real catalogue |
+| `On Key` is in `Events`, `Key Is Down` in `Input` | the same |
+| No node renames itself according to its configuration | `nodes.test.js` (ADR-0040 §5) |
+| The closed control shows `Transform ▸ Rotation` | `inspector/node.test.js` |
+| The list keeps the short names under their headers | the same |
+| The path never contains a dot | the same |
 
 ---
 
-## 5. Alternatives écartées
+## 5. Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| Garder les booléens et ajouter un nœud `On Key` à côté | Deux façons de lire une touche, dont une piège : `Just Pressed` en booléen reste un nœud qui se lit comme un état et se comporte comme un moment. |
-| Un seul nœud `Key` avec flux **et** booléen | C'est le mélange qui rend Blueprints illisible pour un débutant : une boîte, deux sémantiques d'exécution, et rien dans le dessin qui dise laquelle s'applique. |
-| Un paramètre `When [Pressed | Released]` au lieu de deux ports | Cache la moitié des possibilités derrière un choix fait avant que le créateur sache qu'il la veut, et rend incomposable « au relâchement, tirer » à côté de « à l'appui, viser ». |
-| Faire de `Is Down` un événement continu | Un nœud qui se déclenche soixante fois par seconde en ressemblant à celui qui se déclenche une fois. |
-| Réécrire automatiquement les anciens fils `pressed` | Deviner une topologie à la place du créateur. Le signalement est honnête, la réécriture ne l'est pas. |
-| Deux listes déroulantes Component puis Property | La faute qu'ADR-0040 §1 a corrigée. Le Component redevient un contexte, pas une question. |
+| Keeping the booleans and adding an `On Key` node beside them | Two ways of reading a key, one of them a trap: a boolean `Just Pressed` stays a node that reads as a state and behaves as a moment. |
+| A single `Key` node with both flow **and** boolean | It is the mixture that makes Blueprints unreadable for a beginner: one box, two execution semantics, and nothing in the drawing saying which applies. |
+| A `When [Pressed | Released]` parameter instead of two ports | It hides half the possibilities behind a choice made before the creator knows they want it, and makes "on release, shoot" beside "on press, aim" non-composable. |
+| Making `Is Down` a continuous event | A node that fires sixty times a second while looking like the one that fires once. |
+| Automatically rewriting old `pressed` wires | Guessing a topology on the creator's behalf. The report is honest, the rewrite is not. |
+| Two dropdowns, Component and then Property | The mistake ADR-0040 §1 fixed. The Component becomes context again, not a question. |

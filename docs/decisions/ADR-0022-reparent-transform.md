@@ -1,120 +1,117 @@
-# ADR-0022 — Le reparentage préserve le monde, et cette politique appartient à l'Editor
+# ADR-0022 — Reparenting preserves the world, and that policy belongs to the Editor
 
-- **Statut :** **accepté** (2026-08-14)
-- **Dépend de :** ADR-0002 (valeurs locales, monde dérivé), ADR-0012 (le Runtime rapporte, il ne corrige pas), ADR-0019 (`REPARENT`)
+- **Status:** **accepted** (2026-08-14)
+- **Depends on:** ADR-0002 (local values, a derived world), ADR-0012 (the Runtime reports, it does not correct), ADR-0019 (`REPARENT`)
 
-## Contexte observé
+## Observed context
 
-`Object.addChild()` conservait le **Transform local**. Déposer un objet dans une autre
-branche de la Hierarchy le faisait donc sauter à l'écran, là où son nouveau parent le
-plaçait.
+`Object.addChild()` kept the **local Transform**. Dropping an object into another branch of the
+Hierarchy therefore made it jump on screen, to wherever its new parent placed it.
 
-`Matrix` n'avait pas de `decompose()` : rien ne permettait de repasser d'une matrice aux
-cinq valeurs qu'un `Transform` stocke.
+`Matrix` had no `decompose()`: nothing allowed going back from a matrix to the five values a
+`Transform` stores.
 
-## Décision
+## Decision
 
-### 1. Le monde est préservé par défaut, et la politique vit dans l'Editor
+### 1. The world is preserved by default, and the policy lives in the Editor
 
 ```
-Geste dans la Hierarchy  =  batch {
-                              REPARENT      { object, parent, index, previous… }
-                              SET_PROPERTY  x
-                              SET_PROPERTY  y
-                              SET_PROPERTY  rotation
-                              SET_PROPERTY  scaleX
-                              SET_PROPERTY  scaleY
-                            }
+A gesture in the Hierarchy  =  batch {
+                                 REPARENT      { object, parent, index, previous… }
+                                 SET_PROPERTY  x
+                                 SET_PROPERTY  y
+                                 SET_PROPERTY  rotation
+                                 SET_PROPERTY  scaleX
+                                 SET_PROPERTY  scaleY
+                               }
 ```
 
-Ranger son arborescence, c'est ranger — pas déplacer. Unity, Godot et Blender font tous
-cela, et pour la même raison.
+Tidying your tree is tidying — not moving. Unity, Godot and Blender all do this, and for the same
+reason.
 
-**Cinq raisons de composer ce recalcul dans l'Editor plutôt que dans le Core :**
+**Five reasons to compose that recomputation in the Editor rather than in the Core:**
 
-1. **`REPARENT` reste inversible par sa seule structure.** Un `REPARENT` qui recalculerait
-   le Transform devrait aussi transporter les cinq valeurs précédentes pour être annulable ;
-   il porterait deux mutations sous un seul nom.
-2. **La réplication reste exacte.** Les valeurs recalculées voyagent comme des nombres. Si
-   chaque nœud recalculait sa propre décomposition, deux machines divergeraient sur des
-   flottants — le genre de désynchronisation qu'on ne diagnostique jamais.
-3. **`batch` existe déjà** (ADR-0008) et fait exactement cela : un dépôt = **une** entrée
-   d'historique, six opérations.
-4. **Le Core garde une seule loi.** `parent.addChild(child)` depuis un script conserve le
-   local — c'est ce qu'un script attend, et ce que `editor/project/starter.js` utilise. La
-   préservation du monde est une **politique d'éditeur**, écrite dans `editor/commands.js`.
-5. **ADR-0002 est respecté** : les valeurs restent locales, le monde reste dérivé, rien
-   n'est stocké en double.
+1. **`REPARENT` stays invertible by its structure alone.** A `REPARENT` that recomputed the
+   Transform would also have to carry the five previous values to be undoable; it would carry two
+   mutations under one name.
+2. **Replication stays exact.** The recomputed values travel as numbers. If each node recomputed
+   its own decomposition, two machines would diverge on floats — the kind of desynchronization you
+   never diagnose.
+3. **`batch` already exists** (ADR-0008) and does exactly this: one drop = **one** history entry,
+   six operations.
+4. **The Core keeps one law.** `parent.addChild(child)` from a script preserves the local
+   transform — which is what a script expects, and what `editor/project/starter.js` uses. World
+   preservation is an **editor policy**, written in `editor/commands.js`.
+5. **ADR-0002 is honoured**: the values stay local, the world stays derived, nothing is stored
+   twice.
 
-`reparentObject(scene, object, parent, index, { preserveWorld })` : `preserveWorld: false`
-conserve le local, ce que fera un jour une case « conserver la position locale » dans l'UI.
+`reparentObject(scene, object, parent, index, { preserveWorld })`: `preserveWorld: false` keeps the
+local transform, which is what a "keep the local position" checkbox in the UI will one day do.
 
-### 2. `Matrix.decompose()` est pure, et exacte hors cisaillement
+### 2. `Matrix.decompose()` is pure, and exact outside shear
 
 ```
 x, y     = e, f
 scaleX   = hypot(a, b)
 rotation = atan2(b, a)
-scaleY   = (a·d − b·c) / scaleX        signé : un parent miroir reste miroir
-skew     = (a·c + b·d) / scaleX²       nul exactement quand les colonnes sont orthogonales
+scaleY   = (a·d − b·c) / scaleX        signed: a mirrored parent stays mirrored
+skew     = (a·c + b·d) / scaleX²       exactly zero when the columns are orthogonal
 ```
 
-`scaleY` est dérivé du **déterminant** et non de `hypot(c, d)` : `hypot` renverrait une
-valeur positive et perdrait silencieusement le retournement.
+`scaleY` is derived from the **determinant** rather than from `hypot(c, d)`: `hypot` would return a
+positive value and silently lose the flip.
 
-### 3. Le cisaillement est signalé, jamais corrigé en silence
+### 3. Shear is reported, never silently corrected
 
-`(x, y, rotation, scaleX, scaleY)` décrit une translation, une rotation et une échelle
-d'axes — **cinq nombres pour une transformation affine qui en a six**. Le sixième est le
-cisaillement, et il apparaît dès qu'un ancêtre porte une **échelle non uniforme** *et*
-qu'un nœud intermédiaire est **tourné**. C'est le même mur que la `lossyScale` d'Unity, et
-il n'a pas de solution propre dans un modèle local à cinq valeurs.
+`(x, y, rotation, scaleX, scaleY)` describes a translation, a rotation and an axis scale — **five
+numbers for an affine transform that has six**. The sixth is shear, and it appears as soon as an
+ancestor carries a **non-uniform scale** *and* an intermediate node is **rotated**. It is the same
+wall as Unity's `lossyScale`, and it has no clean solution in a local five-value model.
 
-**Politique retenue :**
+**The policy adopted:**
 
-- `decompose()` renvoie la meilleure approximation sans cisaillement, **et** `sheared: true`
-  avec le `skew` mesuré ;
-- le reparentage **a lieu** — le geste de l'utilisateur n'est pas refusé ;
-- les valeurs locales sont **laissées telles quelles** — un placement défendable plutôt
-  qu'un placement faux ;
-- un rapport est émis (`onReport`, `kind: 'reparent:sheared'`).
+- `decompose()` returns the best shear-free approximation, **and** `sheared: true` with the measured
+  `skew`;
+- the reparent **happens** — the user's gesture is not refused;
+- the local values are **left as they are** — a defensible placement rather than a wrong one;
+- a report is emitted (`onReport`, `kind: 'reparent:sheared'`).
 
-C'est ADR-0012 appliqué à la géométrie : **le système ne corrige pas en silence, il dit ce
-qu'il n'a pas pu faire.** Un reparentage sous un parent cisaillant est rare ; le rendre
-silencieusement déformant serait bien pire que de le rendre bruyant.
+This is ADR-0012 applied to geometry: **the system does not silently correct, it says what it could
+not do.** Reparenting under a shearing parent is rare; making it silently distorting would be far
+worse than making it noisy.
 
-Le même repli couvre un parent d'échelle nulle, dont la matrice n'est pas inversible.
+The same fallback covers a parent with zero scale, whose matrix is not invertible.
 
-## Ce que cet ADR ne décide pas
+## What this ADR does not decide
 
-- La formulation exacte du message montré au créateur, ni le canal (la fenêtre Console
-  n'existe pas encore — le rapport part par `onReport`).
-- L'option UI « conserver la position locale ». Le modèle la porte déjà
-  (`preserveWorld: false`), l'interface pas encore.
+- The exact wording of the message shown to the creator, nor the channel (the Console window does
+  not exist yet — the report goes through `onReport`).
+- The "keep the local position" UI option. The model already carries it (`preserveWorld: false`),
+  the interface does not yet.
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Ranger la Hierarchy ne déplace plus rien.
-- Un dépôt reste une seule entrée d'undo.
-- Aucun nœud distant ne recalcule de flottants : ils voyagent.
-- La limite du modèle à cinq valeurs est nommée et rapportée, au lieu d'être découverte
-  comme un bug de rendu.
+- Tidying the Hierarchy no longer moves anything.
+- A drop stays a single undo entry.
+- No remote node recomputes floats: they travel.
+- The five-value model's limit is named and reported, instead of being discovered as a rendering
+  bug.
 
-### Négatives
+### Negative
 
-- Un dépôt produit six Operations là où il en produisait zéro. C'est le prix d'une
-  réplication exacte, et le `batch` le ramène à une entrée d'historique.
-- Le cas cisaillé demande à l'appelant de traiter un rapport.
+- A drop produces six Operations where it produced none. That is the price of exact replication,
+  and the `batch` brings it back to one history entry.
+- The sheared case asks the caller to handle a report.
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **Conserver le local par défaut** | L'objet saute à l'écran alors que le créateur rangeait. |
-| **Recalculer dans le gestionnaire Core** | Chaque nœud recalculerait ses propres flottants → divergence indiagnosticable ; et `REPARENT` cesserait d'être inversible par sa seule structure. |
-| **Interdire l'échelle non uniforme sur un parent** | Trop restrictif pour un moteur 2D, où étirer un décor est courant. |
-| **Stocker des matrices monde** | Contredit ADR-0002 et réintroduit deux sources de vérité. |
-| **Approximer le cisaillement sans le dire** | Déforme l'objet en silence. C'est exactement ce qu'ADR-0012 refuse. |
-| **Refuser le geste sous un parent cisaillant** | Refuser une action légitime pour un cas rare, au lieu de la faire et de le dire. |
+| **Keeping the local transform by default** | The object jumps on screen when the creator was tidying. |
+| **Recomputing in the Core handler** | Every node would recompute its own floats → an undiagnosable divergence; and `REPARENT` would stop being invertible by its structure alone. |
+| **Forbidding non-uniform scale on a parent** | Too restrictive for a 2D engine, where stretching scenery is common. |
+| **Storing world matrices** | It contradicts ADR-0002 and reintroduces two sources of truth. |
+| **Approximating the shear without saying so** | It silently distorts the object. That is exactly what ADR-0012 refuses. |
+| **Refusing the gesture under a shearing parent** | Refusing a legitimate action for a rare case, instead of doing it and saying so. |

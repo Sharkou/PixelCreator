@@ -1,93 +1,91 @@
-# ADR-0054 — Dire ce qui est vrai
+# ADR-0054 — Say what is true
 
-- **Statut :** **accepté** (2026-09-01)
-- **Décide :** le nom de la catégorie `Object` ; ce qu'affiche un picker jamais touché ; ce que le seam d'ouverture du Preview a le droit d'affirmer
-- **Dépend de :** ADR-0042 §5 (l'opener est délibérément inatteignable), ADR-0043 (le namespace Object), ADR-0047 §1 (une seule question par picker), ADR-0053 (un chemin, un décodeur)
-- **Ne décide pas :** `Random`, `Delay`, `Timer`, `Destroy`, `Spawn`, `On Collision` ; la largeur des nœuds ; le transport du canal live
+- **Status:** **accepted** (2026-09-01)
+- **Decides:** the name of the `Object` category; what an untouched picker displays; what the Preview's opening seam is allowed to assert
+- **Depends on:** ADR-0042 §5 (the opener is deliberately unreachable), ADR-0043 (the Object namespace), ADR-0047 §1 (one question per picker), ADR-0053 (one path, one decoder)
+- **Does not decide:** `Random`, `Delay`, `Timer`, `Destroy`, `Spawn`, `On Collision`; node width; the live channel's transport
 
 ---
 
-Trois défauts sans rapport apparent, un seul énoncé : **une interface n'a pas le droit
-d'affirmer ce qu'elle n'observe pas.** Un nom qui décrit l'implémentation plutôt que la
-question posée, une boîte vide au-dessus d'une simulation qui tourne déjà, un message
-d'échec émis sur le chemin du succès — dans les trois cas ce qui est montré et ce qui est
-vrai avaient divergé.
+Three apparently unrelated defects, one statement: **an interface has no right to assert what it does
+not observe.** A name describing the implementation rather than the question asked, an empty box above
+a simulation that is already running, a failure message emitted on the success path — in all three
+cases what was shown and what was true had diverged.
 
-## 1. La catégorie s'appelle `Object`, pas `References`
+## 1. The category is called `Object`, not `References`
 
-Le catalogue rangeait `Self`, `Parent`, `Find By Tag`, `Get Object` et `Is Valid` sous
-**`References`** — le nom du mécanisme. Or chacun de ces nœuds répond à une seule question,
-et ce n'est pas « quelle référence » :
+The catalogue filed `Self`, `Parent`, `Find By Tag`, `Get Object` and `Is Valid` under
+**`References`** — the mechanism's name. But each of those nodes answers a single question, and it is
+not "which reference":
 
-> **Quel Object ?**
+> **Which Object?**
 
-Un débutant qui cherche « l'objet que j'ai touché » ne pense pas en références ; il pense en
-objets. Le nom de la catégorie est donc celui de la **question à laquelle tous ses nœuds
-répondent**, jamais celui de la structure qui l'implémente.
+A beginner looking for "the object I touched" does not think in references; they think in objects. The
+category's name is therefore that of the **question all its nodes answer**, never that of the
+structure that implements it.
 
-Le catalogue se lit maintenant :
+The catalogue now reads:
 
 ```
 Events · Input · Flow · Object · Properties · Transform · Values · Math · Compare · Logic · Debug
 ```
 
-`Object` reprend par ailleurs le mot que le namespace de propriétés emploie déjà (ADR-0043) :
-un seul mot pour une seule notion, dans les deux endroits où l'utilisateur la rencontre.
+`Object` also reuses the word the property namespace already employs (ADR-0043): one word for one
+notion, in both places the user meets it.
 
-## 2. Un picker intouché montre ce que le runtime lira
+## 2. An untouched picker shows what the runtime will read
 
-Un `On Key` neuf affichait **`None`** dans son champ `Key`. Son interprète, lui, lisait déjà
-`params.key ?? 'Space'`. La carte et la simulation ne parlaient donc pas de la même touche :
-appuyer sur Espace déclenchait un nœud qui prétendait n'écouter rien.
+A fresh `On Key` displayed **`None`** in its `Key` field. Its interpreter, meanwhile, already read
+`params.key ?? 'Space'`. The card and the simulation therefore were not talking about the same key:
+pressing Space triggered a node that claimed to be listening to nothing.
 
-La cause est une seule expression, dans `referenceChoice()` :
-
-```
-  chosen = node?.params?.[name] ?? ''        → le défaut déclaré est ignoré
-```
-
-> **Un param jamais touché affiche la valeur déclarée par défaut, pas une boîte vide.**
-
-**Seulement là où un défaut est déclaré.** Un picker dont le défaut est `null` — toute
-propriété, tout Component, toute référence de socket — continue d'afficher son placeholder,
-parce que là *rien* EST la réponse et que le dire est précisément l'intérêt du champ.
-
-C'est le même défaut que `value.number` avait déjà connu et qui a déjà été corrigé une fois :
-la boîte et la simulation en désaccord sur la même valeur.
-
-## 3. `noopener` rend le blocage indétectable, donc on ne l'affirme pas
-
-`defaultOpen()` lisait la valeur de retour de `window.open(url, '_blank', 'noopener')` comme
-une preuve d'ouverture :
+The cause is one expression, in `referenceChoice()`:
 
 ```
-  return globalThis.open?.(url, '_blank', 'noopener') ?? null;   → null = « bloqué »
+  chosen = node?.params?.[name] ?? ''        → the declared default is ignored
 ```
 
-Mais `noopener` **spécifie** que rien n'est rendu : une fenêtre ouverte avec cette option ne
-donne aucun handle à son ouvreur. `null` est donc ce à quoi ressemble le **succès**. Le
-créateur recevait « The browser blocked the preview window » à chaque pression, pendant que
-le Preview s'ouvrait devant lui — la notice avait été émise 144 fois dans la console au
-moment où elle a été mesurée, une par preview jamais ouvert, et toutes étaient fausses.
+> **A param never touched displays the declared default value, not an empty box.**
 
-> **Le seam répond si l'appel a été FAIT, jamais si une fenêtre est apparue.**
+**Only where a default is declared.** A picker whose default is `null` — any property, any Component,
+any socket reference — keeps displaying its placeholder, because there *nothing* IS the answer and
+saying so is exactly the point of the field.
 
-Rien ici ne peut le savoir, et la seule façon d'en obtenir la preuve serait de rendre
-`window.opener` au jeu — exactement le couplage que ce seam existe pour refuser
-(ADR-0042 §5). Un créateur dont les pop-ups sont réellement bloqués garde l'URL : elle est
-dans le résultat dans les deux cas.
+It is the same defect `value.number` had already hit and that has already been fixed once: the box and
+the simulation disagreeing about the same value.
 
-Le seul cas encore détectable — un hôte sans `window.open` du tout — reste signalé, et c'est
-désormais le seul que la notice décrit.
+## 3. `noopener` makes blocking undetectable, so we do not assert it
 
-## 4. Contrats observables
+`defaultOpen()` read the return value of `window.open(url, '_blank', 'noopener')` as proof of an
+opening:
 
-| Contrat | Vérifiable par |
+```
+  return globalThis.open?.(url, '_blank', 'noopener') ?? null;   → null = "blocked"
+```
+
+But `noopener` **specifies** that nothing is returned: a window opened with that option gives its
+opener no handle. `null` is therefore what **success** looks like. The creator received "The browser
+blocked the preview window" on every press, while the Preview opened in front of them — the notice had
+been emitted 144 times in the console at the moment it was measured, one per preview never blocked,
+and all of them false.
+
+> **The seam answers whether the call was MADE, never whether a window appeared.**
+
+Nothing here can know that, and the only way of getting proof would be to give `window.opener` back to
+the game — exactly the coupling this seam exists to refuse (ADR-0042 §5). A creator whose pop-ups are
+genuinely blocked keeps the URL: it is in the result either way.
+
+The one case still detectable — a host with no `window.open` at all — is still reported, and is now
+the only one the notice describes.
+
+## 4. Observable contracts
+
+| Contract | Verifiable by |
 |---|---|
-| Les cinq nœuds de la catégorie sont rangés sous `Object` | `nodes.test.js`, `palette.test.js` |
-| Un `On Key` neuf affiche `Space`, la valeur que son interprète lit | `inspector/node.test.js` |
-| Un picker sans défaut déclaré affiche toujours son placeholder | idem |
-| Le retour `null` de `noopener` n'est pas lu comme un blocage | `preview.test.js` |
-| Un hôte sans `window.open` prévient quand même le créateur | idem |
-| `Pressed` une fois, `Down` chaque pas, `Released` une fois | **exécuté dans Preview** |
-| Ouvrir un Preview n'écrit rien dans la console | **exécuté dans Chrome** |
+| The category's five nodes are filed under `Object` | `nodes.test.js`, `palette.test.js` |
+| A fresh `On Key` displays `Space`, the value its interpreter reads | `inspector/node.test.js` |
+| A picker with no declared default always shows its placeholder | the same |
+| `noopener`'s `null` return is not read as a block | `preview.test.js` |
+| A host with no `window.open` still warns the creator | the same |
+| `Pressed` once, `Down` every step, `Released` once | **run in Preview** |
+| Opening a Preview writes nothing to the console | **run in Chrome** |

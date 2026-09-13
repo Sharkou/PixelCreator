@@ -1,37 +1,37 @@
-# Audit architectural — Phase 1
+# Architectural audit — Phase 1
 
-**Périmètre :** fondations du modèle de données (Components utilisateur, graphe `.px`,
-Document / Resource / Scene / Object / Component, ordre structurel, socle Undo/Redo).
-**Date :** 2026-08-14
-**Aucun fichier du dépôt n'a été modifié.**
+**Scope:** the foundations of the data model (user Components, the `.px` graph, Document /
+Resource / Scene / Object / Component, structural order, the Undo/Redo groundwork).
+**Date:** 2026-08-14
+**No file in the repository was modified.**
 
 ---
 
-## 0. Méthode, et ce qu'elle ne couvre pas
+## 0. Method, and what it does not cover
 
-Ce qui a été fait :
+What was done:
 
-- lecture des refs et du reflog Git directement dans `.git/` ;
-- lecture de `src/core`, `src/runtime`, `src/editor`, `docs/`, les 17 ADR, `tools/` ;
-- exécution de la suite de tests et du contrôle de couches sur une **copie** du dépôt ;
-- une sonde d'exécution jetable (hors dépôt) pour **mesurer** le comportement de l'ordre
-  et de la sérialisation, au lieu de le déduire du code.
+- read the Git refs and reflog directly in `.git/`;
+- read `src/core`, `src/runtime`, `src/editor`, `docs/`, the 17 ADRs, `tools/`;
+- ran the test suite and the layer check on a **copy** of the repository;
+- used a throwaway execution probe (outside the repository) to **measure** the behaviour of
+  ordering and serialization, instead of inferring it from the code.
 
-Limites, à signaler explicitement :
+Limits, stated explicitly:
 
-| Limite | Conséquence |
+| Limit | Consequence |
 |---|---|
-| Aucun shell n'est exposé sur ta machine dans cette session | **`git status` n'a pas pu être exécuté.** L'état de propreté du working tree est déduit, pas vérifié |
-| `legacy/` et `tools/parity/baseline/` non copiés | **`tools/parity/run.js` n'a pas été exécuté.** Les 39 scénarios de parité ne sont pas revalidés ici |
-| Tests exécutés sur une copie, pas in situ | Node 22.22.2 côté sandbox. La version Node de ta machine n'est pas connue |
+| No shell is exposed on your machine in this session | **`git status` could not be run.** The cleanliness of the working tree is inferred, not verified |
+| `legacy/` and `tools/parity/baseline/` were not copied | **`tools/parity/run.js` was not run.** The 39 parity scenarios are not revalidated here |
+| Tests run on a copy, not in place | Node 22.22.2 in the sandbox. The Node version on your machine is unknown |
 
-Rien dans ce rapport n'est déduit de l'UI.
+Nothing in this report is inferred from the UI.
 
 ---
 
-## 1. État réel du dépôt
+## 1. The repository's real state
 
-### Références
+### References
 
 ```
 HEAD                     -> refs/heads/master
@@ -40,13 +40,13 @@ refs/remotes/origin/master = 19107304aabaeee5a29c340c3f4d81d7219de490
 remote origin            =  https://github.com/Sharkou/PixelCreator.git
 ```
 
-**Local et `origin/master` sont strictement alignés** : 0 commit en avance, 0 en retard.
+**Local and `origin/master` are exactly aligned**: 0 commits ahead, 0 behind.
 
-### Correction à ton point de départ
+### A correction to your starting point
 
-> « Dernier commit : "Refine editor interactions and viewport controls" »
+> "Last commit: 'Refine editor interactions and viewport controls'"
 
-**C'est HEAD~1, pas HEAD.** Le dernier commit est :
+**That is HEAD~1, not HEAD.** The last commit is:
 
 ```
 19107304  docs: move reference documentation      2026-08-14 13:07:50 UTC   <- HEAD
@@ -54,10 +54,10 @@ remote origin            =  https://github.com/Sharkou/PixelCreator.git
 85740f11  Converge editor UI to modern layout
 ```
 
-Ce commit a déplacé la documentation de référence (`docs/reference/**`, 45 fichiers).
-Il est poussé sur `origin/master`.
+That commit moved the reference documentation (`docs/reference/**`, 45 files). It is pushed to
+`origin/master`.
 
-### Le reflog montre une réécriture d'historique
+### The reflog shows a history rewrite
 
 ```
 85740f11 -> d71804c7   commit: Refine editor interactions and viewport controls   12:36:15
@@ -66,115 +66,114 @@ d71804c7 -> 85740f11   reset: moving to HEAD~1                                  
 70de6ba0 -> 19107304   commit: docs: move reference documentation                 13:07:50
 ```
 
-`d71804c7` est **orphelin** : le commit « Refine editor interactions » a été défait puis
-refait sous un autre SHA. `ORIG_HEAD` pointe encore dessus. Ce n'est pas un problème en
-soi — `origin/master` est cohérent avec l'état local — mais c'est à savoir si tu comptais
-sur ce SHA quelque part.
+`d71804c7` is **orphaned**: the "Refine editor interactions" commit was undone and then redone
+under another SHA. `ORIG_HEAD` still points at it. That is not a problem in itself —
+`origin/master` is consistent with the local state — but it is worth knowing if you were
+relying on that SHA anywhere.
 
-Détail sans gravité : `packed-refs` contient encore un `origin/master` périmé
-(`a52633bc`), masqué par la ref lâche. Normal après un `fetch`.
+A harmless detail: `packed-refs` still holds a stale `origin/master` (`a52633bc`), shadowed by
+the loose ref. Normal after a `fetch`.
 
 ### Working tree
 
-`git status` n'a pas pu être exécuté. Indice indirect : **aucun fichier** de `src/`,
-`docs/`, `tools/`, `design/` n'a une date de modification postérieure au dernier commit
-(le plus récent est à 12:45:45 UTC, le commit à 13:07:50 UTC). C'est **cohérent** avec un
-working tree propre, ce n'est pas une preuve — un `git status` de ta part lèvera le doute
-en une seconde.
+`git status` could not be run. Indirect evidence: **no file** in `src/`, `docs/`, `tools/` or
+`design/` has a modification date later than the last commit (the most recent is at 12:45:45
+UTC, the commit at 13:07:50 UTC). That is **consistent** with a clean working tree; it is not
+proof — a `git status` on your side would settle it in a second.
 
 ---
 
-## 2. Tests exécutés avant toute analyse
+## 2. Tests run before any analysis
 
 ```
-tools/test.sh              497 tests, 497 passés, 0 échec   (4,5 s)
-node tools/layers/run.js   profil v2 : 0 import interdit sur 325 imports scannés
-                           profil legacy : ignoré (legacy/ absent de la copie)
+tools/test.sh              497 tests, 497 passed, 0 failed   (4.5 s)
+node tools/layers/run.js   v2 profile: 0 forbidden imports out of 325 imports scanned
+                           legacy profile: skipped (legacy/ absent from the copy)
 ```
 
-`MIGRATION_STATUS.md` annonçait 480 tests / 318 imports après l'étape 3.5 ; on est à
-497 / 325 après les deux derniers commits. Cohérent.
+`MIGRATION_STATUS.md` announced 480 tests / 318 imports after step 3.5; we are at 497 / 325
+after the last two commits. Consistent.
 
-**Non exécuté :** `tools/parity/run.js` (39 scénarios) — voir §0.
+**Not run:** `tools/parity/run.js` (39 scenarios) — see §0.
 
 ---
 
-## 3. Ce qu'est le modèle, aujourd'hui, fait par fait
+## 3. What the model is today, fact by fact
 
 ### 3.1 Object — `src/core/object.js`
 
-Un `Object` est un `Proxy` réactif dont l'état interne vit sous un `Symbol` (`STATE`),
-donc invisible à l'énumération et à la sérialisation.
+An `Object` is a reactive `Proxy` whose internal state lives under a `Symbol` (`STATE`), so it
+is invisible to enumeration and to serialization.
 
-**État interne** (`object.js:54-69`) :
+**Internal state** (`object.js:54-69`):
 
 ```js
 {
-    components: new Map(),   // type -> instance     <- ordre = ordre d'attachement
-    exposed:    new Map(),   // prop -> composant fournisseur (façade, ADR-0002)
-    children:   [],          // tableau              <- ordre = ordre d'ajout
+    components: new Map(),   // type -> instance     <- order = attachment order
+    exposed:    new Map(),   // prop -> providing component (the façade, ADR-0002)
+    children:   [],          // array                <- order = order of addition
     parent:     null,
     scene:      null,
-    notify:     null,        // fourni par la Scene
+    notify:     null,        // provided by the Scene
     detachedOperations: null
 }
 ```
 
-**Propriétés propres** (donc sérialisées) : `id` (non writable), `name`, `tag`, `layer`,
+**Own properties** (and therefore serialized): `id` (non-writable), `name`, `tag`, `layer`,
 `active`, `visible`, `lock`, `owner`.
 
-**API structurelle** : `addComponent`, `removeComponent`, `getComponent`, `hasComponent`,
+**Structural API**: `addComponent`, `removeComponent`, `getComponent`, `hasComponent`,
 `addChild`, `removeChild`, plus `setProperty` / `observe`.
 
-- `addChild` fait `children.push(child)` (`object.js:297`) — **toujours en fin**.
-- `removeChild` fait `indexOf` + `splice` (`object.js:313-316`).
-- `get components` renvoie un **snapshot gelé**, dont l'ordre des clés est l'ordre
-  d'insertion de la `Map`.
-- `get children` renvoie une **copie** du tableau.
+- `addChild` does `children.push(child)` (`object.js:297`) — **always at the end**.
+- `removeChild` does `indexOf` + `splice` (`object.js:313-316`).
+- `get components` returns a **frozen snapshot**, whose key order is the `Map`'s insertion
+  order.
+- `get children` returns a **copy** of the array.
 
-**Aucune primitive de déplacement à un index n'existe.**
+**No primitive for moving to an index exists.**
 
 ### 3.2 Component — `src/core/component.js`
 
-Pas de classe de base, contrat en duck-typing (ADR-0004) : `update`, `draw`, `bounds`,
-`onAttach`, `onDetach`, `static type`, `static exposes`, `static schema`.
+No base class, a duck-typed contract (ADR-0004): `update`, `draw`, `bounds`, `onAttach`,
+`onDetach`, `static type`, `static exposes`, `static schema`.
 
-Un `ComponentRegistry` résout `type -> classe` pour la désérialisation, avec un
-`register(Class, { replace })` explicitement prévu pour la réédition d'un composant
-utilisateur (`component.js:157`).
+A `ComponentRegistry` resolves `type -> class` for deserialization, with a
+`register(Class, { replace })` explicitly provided for re-editing a user component
+(`component.js:157`).
 
-**Un Object porte au plus un composant par type** (Q4, tranchée). `addComponent` d'un type
-déjà présent **jette** au lieu de remplacer silencieusement.
+**An Object carries at most one component per type** (Q4, settled). `addComponent` of a type
+already present **throws** instead of silently replacing.
 
 ### 3.3 Scene — `src/core/scene.js`
 
-Collection **plate** : `Map<id, Object>`. La hiérarchie est un lien parent/enfant entre
-objets de la scène, pas un imbriquement de stockage.
+A **flat** collection: `Map<id, Object>`. The hierarchy is a parent/child link between objects
+of the scene, not a nesting of storage.
 
-- `objects()` → ordre d'insertion de la `Map` ;
-- `roots()` → `objects().filter(o => !o.parent)`, donc **ordre d'insertion**, pas un ordre
-  propre aux racines ;
-- la Scene possède le pipeline `Operations` : c'est l'unité de réplication ;
-- elle émet six événements de structure : `added`, `removed`, `component:added`,
-  `component:removed`, `child:added`, `child:removed`.
+- `objects()` → the `Map`'s insertion order;
+- `roots()` → `objects().filter(o => !o.parent)`, so **insertion order**, not an ordering that
+  belongs to the roots;
+- the Scene owns the `Operations` pipeline: it is the unit of replication;
+- it emits six structural events: `added`, `removed`, `component:added`, `component:removed`,
+  `child:added`, `child:removed`.
 
-> Coquille documentaire : le commentaire de `scene.js:83` dit « ces cinq événements » et en
-> liste six. Cosmétique.
+> A documentation slip: the comment at `scene.js:83` says "these five events" and lists six.
+> Cosmetic.
 
-**Aucune primitive de réordonnancement des objets n'existe.** `Scene.add()` d'un objet déjà
-présent renvoie l'objet sans rien changer — on ne peut donc pas réinsérer pour réordonner.
+**No primitive for reordering objects exists.** `Scene.add()` of an object already present
+returns the object unchanged — so you cannot reinsert in order to reorder.
 
-### 3.4 Sérialisation — `src/core/serialize.js`
+### 3.4 Serialization — `src/core/serialize.js`
 
-`FORMAT_VERSION = 1`. Explicite, jamais par énumération accidentelle.
+`FORMAT_VERSION = 1`. Explicit, never by accidental enumeration.
 
-- `serializeObject` : liste de champs fixe, `parent` = id, `children` = tableau d'ids
-  (**ordonné**), `components` = objet ;
-- `serializeComponent` : clés du `static schema` s'il existe, sinon propriétés propres ;
-  `active` ajouté hors schéma ;
-- `serializeComponents` : **trie les types par ordre alphabétique** (`serialize.js:151-155`) ;
-- `deserializeScene` : deux passes, les liens `children` sont restaurés **dans l'ordre
-  enregistré**.
+- `serializeObject`: a fixed field list, `parent` = an id, `children` = an array of ids
+  (**ordered**), `components` = an object;
+- `serializeComponent`: the keys of the `static schema` if there is one, otherwise the own
+  properties; `active` added outside the schema;
+- `serializeComponents`: **sorts the types alphabetically** (`serialize.js:151-155`);
+- `deserializeScene`: two passes, and the `children` links are restored **in the recorded
+  order**.
 
 ### 3.5 Operations — `src/core/operations/`
 
@@ -182,348 +181,339 @@ présent renvoie l'objet sans rien changer — on ne peut donc pas réinsérer p
 export const OperationType = { SET_PROPERTY: 'SET_PROPERTY' };
 ```
 
-**Un seul type d'opération existe.** Une Operation est gelée et porte
+**Only one operation type exists.** An Operation is frozen and carries
 `{ type, target: { object, component }, prop, value, previous, origin, actor, batch, seq }`.
 
-Le pipeline `Operations` a deux entrées, et c'est tout le design anti-écho :
+The `Operations` pipeline has two entries, and that is the whole anti-echo design:
 
-| | Autorité | Émet `'operation'` |
+| | Authority | Emits `'operation'` |
 |---|---|---|
-| `submit(op)` | oui | oui |
-| `apply(op)` | non | non |
+| `submit(op)` | yes | yes |
+| `apply(op)` | no | no |
 
-`Operations.register(type, handler)` est **déjà** la couture d'extension : Scene et Object
-peuvent enregistrer leurs opérations structurelles sans que le pipeline connaisse le modèle.
-Personne ne s'en sert aujourd'hui.
+`Operations.register(type, handler)` is **already** the extension seam: Scene and Object can
+register their structural operations without the pipeline knowing the model. Nobody uses it
+today.
 
-### 3.6 Réplication
+### 3.6 Replication
 
-`src/network/` **n'existe pas**. Le point de branchement est
-`scene.operations.on('operation', …)`. Rien d'autre n'est écrit.
+`src/network/` **does not exist**. The attachment point is
+`scene.operations.on('operation', …)`. Nothing else is written.
 
 ### 3.7 Runtime — `src/runtime/`
 
-`Runtime.step()` (`runtime.js:135-165`) :
+`Runtime.step()` (`runtime.js:135-165`):
 
 ```js
-for (const object of this.#scene.objects()) {          // ordre d'insertion Scene
+for (const object of this.#scene.objects()) {          // Scene insertion order
     const components = object.components;
-    for (const type of Object.keys(components)) {      // ordre d'ATTACHEMENT
+    for (const type of Object.keys(components)) {      // ATTACHMENT order
         component.update(object, context);
         this.#behaviors?.behaviorFor(component)?.update?.(object, context);
     }
 }
 ```
 
-`SceneRenderer.#drawOrder()` trie par `layer` ; le tri JS étant stable, l'ordre d'insertion
-de la scène départage à `layer` égal.
+`SceneRenderer.#drawOrder()` sorts by `layer`; since the JS sort is stable, the scene's
+insertion order breaks ties at equal `layer`.
 
-`Behaviors` (`runtime/scripting/behaviors.js`) tient `type -> graphe`,
-`graphe -> fabrique` et `composant -> { graph, behavior }`. **Il ne contient ni modèle de
-graphe, ni interprète** : `interpret` lui est passé en paramètre.
+`Behaviors` (`runtime/scripting/behaviors.js`) holds `type -> graph`, `graph -> factory` and
+`component -> { graph, behavior }`. **It contains neither a graph model nor an interpreter**:
+`interpret` is passed to it as a parameter.
 
 ### 3.8 Editor — `src/editor/`
 
-Verdict : **l'Editor est bien un pur consommateur du Core.** Vérifié, pas supposé.
+Verdict: **the Editor really is a pure consumer of the Core.** Verified, not assumed.
 
-- `hierarchy.js` lit `scene.roots()` et `object.children` ; aucune arborescence parallèle ;
-- `inspector.js` lit `object.components` puis `componentSchema()` ou la réflexion ;
-  aucun `if (type === '…')` ;
-- `selection.js` est un état d'Editor, non répliqué, absent du Core (ADR-0017) ;
-- `commands.js` est mince et se déclare lui-même point d'insertion des Operations
-  structurelles et de l'undo ;
-- le contrôle de couches passe : 0 import interdit sur 325.
+- `hierarchy.js` reads `scene.roots()` and `object.children`; no parallel tree;
+- `inspector.js` reads `object.components` and then `componentSchema()` or reflection; no
+  `if (type === '…')`;
+- `selection.js` is Editor state, not replicated, absent from the Core (ADR-0017);
+- `commands.js` is thin and declares itself the insertion point for structural Operations and
+  for undo;
+- the layer check passes: 0 forbidden imports out of 325.
 
-Et surtout, le seul endroit où l'Editor a rencontré une capacité manquante du Core, il a
-**refusé de contourner** et l'a écrit (`inspector.js:99`) :
+And above all, at the one place where the Editor met a missing Core capability, it **refused to
+work around it** and wrote it down (`inspector.js:99`):
 
-> *« it reserved room for a drag handle that does not exist (component order is a Core
-> capability the model does not expose yet, see the report) »*
+> *"it reserved room for a drag handle that does not exist (component order is a Core
+> capability the model does not expose yet, see the report)"*
 
-**Aucun drag & drop de réordonnancement n'existe** dans l'Editor — ni dans la Hierarchy, ni
-dans l'Inspector.
+**No reordering drag and drop exists** in the Editor — neither in the Hierarchy nor in the
+Inspector.
 
 ### 3.9 `px-tabs`
 
-`src/editor/ui/tabs.js`, 118 lignes, **zéro consommateur**, enregistré par `editor.js`.
-Le fichier documente déjà son rôle futur et la liste de ce qui ne doit **pas** être
-construit maintenant (cycle de vie, fermeture, overflow, drag, détachement). Conforme à ta
-consigne : rien à faire, rien à supprimer.
+`src/editor/ui/tabs.js`, 118 lines, **zero consumers**, registered by `editor.js`. The file
+already documents its future role and the list of what must **not** be built now (lifecycle,
+closing, overflow, drag, detachment). In line with your instruction: nothing to do, nothing to
+delete.
 
 ---
 
-## 4. Point critique — l'ordre structurel
+## 4. The critical point — structural order
 
-### 4.1 Ce que j'ai mesuré, pas déduit
+### 4.1 What I measured, rather than inferred
 
-Sonde exécutée hors dépôt, sur le Core réel :
+A probe run outside the repository, against the real Core:
 
 ```
-ordre d'attachement (= ordre d'exécution runtime, = ordre Inspector) : [ Zeta, Alpha ]
-ordre des clés sérialisées                                           : [ Alpha, Zeta ]
-après aller-retour serialize -> deserialize                          : [ Alpha, Zeta ]
+attachment order (= runtime execution order, = Inspector order) : [ Zeta, Alpha ]
+serialized key order                                            : [ Alpha, Zeta ]
+after a serialize -> deserialize round trip                     : [ Alpha, Zeta ]
 
-ordre des enfants                    : [ a, b ]
-enfants après aller-retour           : [ a, b ]        <- préservé
+child order                          : [ a, b ]
+children after a round trip          : [ a, b ]        <- preserved
 
-valeur d'un composant après remove + re-add : 42 -> 1  <- perdue
+a component's value after remove + re-add : 42 -> 1    <- lost
 ```
 
-### 4.2 Contradiction documentée à trancher avant tout le reste
+### 4.2 A documented contradiction to settle before anything else
 
-Deux fichiers du Core affirment le contraire l'un de l'autre :
+Two Core files state the opposite of each other:
 
-| Fichier | Affirmation |
+| File | Claim |
 |---|---|
-| `serialize.js:151` | *« component type carries no ordering meaning »* → tri alphabétique |
-| `runtime.js:113` | *« Every component's `update(self, ctx)` runs […] in scene insertion order »* → l'ordre d'attachement **est** l'ordre d'exécution |
+| `serialize.js:151` | *"component type carries no ordering meaning"* → an alphabetical sort |
+| `runtime.js:113` | *"Every component's `update(self, ctx)` runs […] in scene insertion order"* → attachment order **is** execution order |
 
-Conséquence concrète, aujourd'hui, sans rien changer : **sauvegarder puis recharger un
-projet change l'ordre d'exécution des composants d'un objet.** Deux composants dont l'un
-lit ce que l'autre écrit dans le même pas ne se comportent pas pareil avant et après une
-sauvegarde.
+The concrete consequence, today, with nothing changed: **saving and reloading a project changes
+the execution order of an object's components.** Two components where one reads what the other
+writes within the same step do not behave the same before and after a save.
 
-C'est un défaut **antérieur** à la question du réordonnancement, et c'est le premier à
-régler : ajouter un `moveComponent()` sur un modèle dont l'ordre ne survit pas à un
-aller-retour donnerait une primitive dont le résultat s'efface au chargement suivant.
+That is a defect **prior** to the reordering question, and the first to fix: adding a
+`moveComponent()` to a model whose order does not survive a round trip would give you a
+primitive whose result vanishes at the next load.
 
-Deux issues cohérentes, mutuellement exclusives — **c'est une décision qui t'appartient** :
+Two coherent, mutually exclusive outcomes — **this is a decision that is yours to make**:
 
-- **A.** L'ordre des composants est signifiant → la sérialisation doit le préserver (le tri
-  alphabétique disparaît, ou un champ d'ordre explicite apparaît) et une primitive de
-  déplacement a un sens.
-- **B.** L'ordre des composants n'est pas signifiant → le runtime ne doit pas en dépendre
-  (ordre d'exécution défini autrement : par le type, par une priorité déclarée…), et
-  « réordonner un Component » redevient une pure préférence d'affichage de l'Inspector,
-  qui n'a alors rien à faire dans le Core.
+- **A.** Component order is meaningful → serialization must preserve it (the alphabetical sort
+  goes away, or an explicit order field appears) and a move primitive makes sense.
+- **B.** Component order is not meaningful → the runtime must not depend on it (execution order
+  defined some other way: by type, by a declared priority…), and "reordering a Component"
+  becomes a pure Inspector display preference, which then has no business in the Core.
 
-Je ne tranche pas : c'est structurant, et la réponse change ce qu'on écrit dans le Core.
+I am not settling it: it is structural, and the answer changes what we write in the Core.
 
-### 4.3 Inventaire exact de ce qui manque
+### 4.3 An exact inventory of what is missing
 
-| Besoin | Existe ? | Ce qu'il y a à la place |
+| Need | Exists? | What is there instead |
 |---|---|---|
-| Déplacer un Component à un index | **non** | rien |
-| Déplacer un enfant à un index | **non** | `addChild` = push en fin |
-| Réordonner les racines d'une Scene | **non** | ordre d'insertion de la `Map`, non modifiable |
-| Opération `MOVE` / `REORDER` | **non** | `OperationType` ne contient que `SET_PROPERTY` |
-| Contournement remove + re-add | possible | **détruit les valeurs et place en fin** — mesuré |
+| Move a Component to an index | **no** | nothing |
+| Move a child to an index | **no** | `addChild` = push to the end |
+| Reorder a Scene's roots | **no** | the `Map`'s insertion order, not modifiable |
+| A `MOVE` / `REORDER` operation | **no** | `OperationType` contains only `SET_PROPERTY` |
+| The remove + re-add workaround | possible | **destroys the values and puts it at the end** — measured |
 
-Point important pour la Phase 2 : la liste d'opérations planifiée par ADR-0008 et
-`ARCHITECTURE.md` §6.2 est `SET_PROPERTY`, `ADD_OBJECT`, `REMOVE_OBJECT`, `ADD_COMPONENT`,
-`REMOVE_COMPONENT`, `ADD_CHILD`, `REMOVE_CHILD`, `ADD_RESOURCE`, `REMOVE_RESOURCE`.
-**Aucune opération de réordonnancement n'y figure.** En ajouter une n'est pas une
-contradiction d'ADR, mais c'est une extension d'une décision documentée : elle demande ton
-accord explicite.
+An important point for Phase 2: the operation list planned by ADR-0008 and `ARCHITECTURE.md`
+§6.2 is `SET_PROPERTY`, `ADD_OBJECT`, `REMOVE_OBJECT`, `ADD_COMPONENT`, `REMOVE_COMPONENT`,
+`ADD_CHILD`, `REMOVE_CHILD`, `ADD_RESOURCE`, `REMOVE_RESOURCE`. **No reordering operation is in
+it.** Adding one is not a contradiction of an ADR, but it is an extension of a documented
+decision: it needs your explicit agreement.
 
 ---
 
-## 5. Components utilisateur
+## 5. User Components
 
-### 5.1 Les quatre notions sont déjà distinctes dans le code
+### 5.1 The four notions are already distinct in the code
 
-Aucune abstraction supplémentaire n'est nécessaire — le modèle existant les sépare déjà :
+No extra abstraction is needed — the existing model already separates them:
 
-| Notion | Où elle vit | Forme |
+| Notion | Where it lives | Form |
 |---|---|---|
-| **Component natif** | `core/components/transform.js`, `runtime/rendering/components/*` | classe JS écrite à la main |
-| **Component utilisateur** | produit par `defineComponent()` | classe JS **générée**, indistinguable en aval |
-| **Définition de Component** | `core/definition.js` | enregistrement JSON `{ type, properties, graph }`, posé sur la classe (`static definition`) |
-| **Instance de Component** | attachée à un Object | `Proxy` réactif ne portant **que des valeurs** |
+| **A native Component** | `core/components/transform.js`, `runtime/rendering/components/*` | a hand-written JS class |
+| **A user Component** | produced by `defineComponent()` | a **generated** JS class, indistinguishable downstream |
+| **A Component definition** | `core/definition.js` | a JSON record `{ type, properties, graph }`, set on the class (`static definition`) |
+| **A Component instance** | attached to an Object | a reactive `Proxy` carrying **values only** |
 
-`defineComponent()` construit la classe **sans `eval` ni `new Function`**, pose
-`static type`, `static schema`, `static definition`, et initialise chaque clé du schéma à
-son défaut (conteneurs copiés par instance). C'est propre et c'est déjà testé.
+`defineComponent()` builds the class **without `eval` or `new Function`**, sets `static type`,
+`static schema` and `static definition`, and initializes each schema key to its default
+(containers copied per instance). It is clean and it is already tested.
 
-### 5.2 Ce qui manque réellement
+### 5.2 What is actually missing
 
-| Manque | Gravité | Détail |
+| Gap | Severity | Detail |
 |---|---|---|
-| **Identité d'une définition** | **structurel** | Une définition est identifiée par son seul `type` (une chaîne). Renommer un Component utilisateur crée un type différent : au chargement, `registry.create(type)` **jette** et toutes les instances existantes sont orphelines. ADR-0010 pose que « les noms ne sont pas des identités » pour les Objects ; les définitions y contreviennent aujourd'hui |
-| **Persistance** | bloquant | Rien n'écrit ni ne lit une définition. Pas de `Resource`, pas de fichier, pas de chargeur |
-| **Qui appelle `register` / `bind`** | bloquant | Point ouvert explicite d'ADR-0016 et d'ADR-0015 |
-| **Validation des `properties`** | réel | `defineComponent` vérifie seulement que chaque entrée est un objet. Ni le `type` déclaré, ni `min`/`max`, ni `values` ne sont validés |
-| **Migration des instances** | connu | Point ouvert d'ADR-0016, renvoyé à l'Editor |
+| **A definition's identity** | **structural** | A definition is identified by its `type` alone (a string). Renaming a user Component creates a different type: at load time, `registry.create(type)` **throws** and every existing instance is orphaned. ADR-0010 establishes that "names are not identities" for Objects; definitions violate that today |
+| **Persistence** | blocking | Nothing writes or reads a definition. No `Resource`, no file, no loader |
+| **Who calls `register` / `bind`** | blocking | An explicitly open point in ADR-0016 and ADR-0015 |
+| **Validating `properties`** | real | `defineComponent` only checks that each entry is an object. Neither the declared `type`, nor `min`/`max`, nor `values` are validated |
+| **Migrating instances** | known | An open point in ADR-0016, deferred to the Editor |
 
-### 5.3 Deux vocabulaires de types de propriétés, dans deux couches, sans source commune
+### 5.3 Two property-type vocabularies, in two layers, with no common source
 
-C'est le second défaut réel que l'audit fait apparaître, et il touche directement les
-Components utilisateur :
+This is the second real defect the audit surfaces, and it touches user Components directly:
 
 | `core/definition.js` — `DEFAULTS` | `editor/inspector/schema.js` — `FieldKind` |
 |---|---|
 | `number`, `int`, `boolean`, `string`, `color`, `array`, `object` | `number`, `int`, `range`, `boolean`, `string`, `color`, `enum`, `readonly` |
 
-- `array` et `object` ont un défaut dans le Core mais **retombent en `READONLY`** dans
-  l'Inspector : une propriété tableau d'un Component utilisateur ne serait pas éditable.
-- `enum` et `range` sont éditables mais **n'ont aucun défaut** côté Core : une propriété
-  `enum` sans `default` explicite démarre à `null`.
-- `resource` est listé dans ADR-0007 comme type envisagé et **n'existe nulle part**.
-- `vector2` et `action` sont listés dans ADR-0007, absents des deux côtés.
+- `array` and `object` have a default in the Core but **fall back to `READONLY`** in the
+  Inspector: an array property of a user Component would not be editable.
+- `enum` and `range` are editable but **have no default** on the Core side: an `enum` property
+  with no explicit `default` starts at `null`.
+- `resource` is listed in ADR-0007 as a contemplated type and **exists nowhere**.
+- `vector2` and `action` are listed in ADR-0007 and are absent from both sides.
 
-Tant que le vocabulaire de types n'a pas une source unique, tout Component utilisateur peut
-déclarer une propriété que l'Inspector refuse d'éditer ou que le Core initialise mal.
+Until the type vocabulary has a single source, any user Component can declare a property the
+Inspector refuses to edit or the Core initializes wrongly.
 
-Sur ta consigne « ne pas implémenter des types pour faire la liste » : les seuls types dont
-le besoin est **démontré** par le chantier en cours sont `enum` (déjà rendu par l'Inspector,
-sans défaut Core) et `resource` (indispensable dès qu'un Component utilisateur référence un
-graphe, une image ou un autre Component). `array` et `object` sont déjà à moitié présents et
-créent une incohérence par leur seule existence — les fermer coûte moins cher que les
-laisser.
+On your instruction "do not implement types just to complete a list": the only types whose need
+is **demonstrated** by the work in progress are `enum` (already rendered by the Inspector, with
+no Core default) and `resource` (indispensable as soon as a user Component references a graph,
+an image or another Component). `array` and `object` are already half present and create an
+inconsistency by their mere existence — closing them costs less than leaving them.
 
 ---
 
-## 6. Le graphe `.px`
+## 6. The `.px` graph
 
-### 6.1 Ce qui est déjà tranché par les ADR — ne pas rouvrir
+### 6.1 What the ADRs have already settled — do not reopen
 
-| Question | Réponse | Source |
+| Question | Answer | Source |
 |---|---|---|
-| `.px` est-il du JavaScript ? | **Non.** Ressource JSON structurée, MIME `application/px`, jamais `import()` | ADR-0009 |
-| Interprété ou compilé ? | **Interprété.** Pas d'`eval`, pas de `new Function` | ADR-0009, Q7 |
-| `.px` produit-il un type de Component ? | **Non, jamais.** Il est le *comportement* d'un type qui existe déjà | ADR-0015, ADR-0016 |
-| Où le graphe est-il rattaché ? | Au **type**, pas à l'instance | ADR-0015 §1, ADR-0016 §3 |
-| Le graphe est-il sérialisé avec l'instance ? | **Non.** Une scène de mille `Controller` porte mille `speed` et un seul graphe | ADR-0016 §3 |
-| Le graphe est-il mutable ? | **Non.** Éditer = produire un nouveau graphe et `bind()` | ADR-0016 §7 |
-| Le Core lit-il le graphe ? | **Non.** Donnée opaque transportée ; l'interprétation appartient au Runtime | ADR-0016 §5 |
-| Forme du graphe | `{ version, nodes[], connections[], variables[], metadata }` | ADR-0009 |
+| Is `.px` JavaScript? | **No.** A structured JSON resource, MIME `application/px`, never `import()`ed | ADR-0009 |
+| Interpreted or compiled? | **Interpreted.** No `eval`, no `new Function` | ADR-0009, Q7 |
+| Does a `.px` produce a Component type? | **No, never.** It is the *behaviour* of a type that already exists | ADR-0015, ADR-0016 |
+| Where is the graph attached? | To the **type**, not to the instance | ADR-0015 §1, ADR-0016 §3 |
+| Is the graph serialized with the instance? | **No.** A scene of a thousand `Controller`s carries a thousand `speed`s and one graph | ADR-0016 §3 |
+| Is the graph mutable? | **No.** Editing = producing a new graph and `bind()`ing it | ADR-0016 §7 |
+| Does the Core read the graph? | **No.** Opaque transported data; interpretation belongs to the Runtime | ADR-0016 §5 |
+| The graph's shape | `{ version, nodes[], connections[], variables[], metadata }` | ADR-0009 |
 
-### 6.2 Ce qui n'est pas tranché
+### 6.2 What is not settled
 
-| Point ouvert | Statut |
+| Open point | Status |
 |---|---|
-| **Le modèle de graphe lui-même et son interprète** | 0 ligne de code. C'est ce que `MIGRATION_STATUS.md` désigne comme « ce qui manque » pour l'étape 4 |
-| Devenir des `variables` d'un graphe vis-à-vis du schéma du Component | ouvert dans ADR-0009 **et** ADR-0015 |
-| Qui charge et appelle `bind()` | ouvert dans ADR-0009, ADR-0015, ADR-0016 |
+| **The graph model itself and its interpreter** | 0 lines of code. It is what `MIGRATION_STATUS.md` designates as "what is missing" for step 4 |
+| What becomes of a graph's `variables` with respect to the Component's schema | open in ADR-0009 **and** ADR-0015 |
+| Who loads and calls `bind()` | open in ADR-0009, ADR-0015, ADR-0016 |
 
-### 6.3 Resource / Document / Asset — rien n'existe
+### 6.3 Resource / Document / Asset — nothing exists
 
-C'est le trou le plus large de l'audit, et il conditionne tout le reste :
+This is the widest gap in the audit, and it gates everything else:
 
-- **`Resource` n'existe pas** dans `src/`. `ARCHITECTURE.md` §9 le décrit comme un futur
-  (id stable indépendant du chemin, plus de DataURL base64, révocation des Blob URL,
-  IndexedDB en cache).
-- **`Document` n'existe nulle part**, ni dans le code, ni dans les ADR, ni dans
-  `ARCHITECTURE.md`. C'est un mot de ta consigne, pas un concept du dépôt.
-- **`Asset` n'apparaît que dans une maquette** (`<px-assets>` dans `ARCHITECTURE.md` §5.2)
-  et dans le texte de la coquille `px-project`.
+- **`Resource` does not exist** in `src/`. `ARCHITECTURE.md` §9 describes it as a future (a
+  stable id independent of the path, no more base64 DataURLs, Blob URL revocation, IndexedDB as
+  a cache).
+- **`Document` exists nowhere**, neither in the code, nor in the ADRs, nor in
+  `ARCHITECTURE.md`. It is a word from your instruction, not a concept of the repository.
+- **`Asset` appears only in a mockup** (`<px-assets>` in `ARCHITECTURE.md` §5.2) and in the text
+  of the `px-project` shell.
 
-Autrement dit : les relations Document ↔ Resource ↔ Scene ↔ `.px` ne sont pas « à retrouver
-dans les ADR » — **elles n'y sont pas**. C'est le point qui demandera une vraie décision
-d'architecture en Phase 2, et c'est aussi le préalable de `px-tabs`, du `Graph`, du
-chargement de projet et de `behaviors.bind()`.
+In other words: the Document ↔ Resource ↔ Scene ↔ `.px` relations are not "to be found in the
+ADRs" — **they are not there**. That is the point that will require a real architecture decision
+in Phase 2, and it is also the prerequisite for `px-tabs`, for the `Graph`, for project loading
+and for `behaviors.bind()`.
 
-Ce que le code impose déjà comme contraintes à cette future décision :
+What the code already imposes as constraints on that future decision:
 
-1. La Scene est l'unité de réplication (elle possède le pipeline `Operations`).
-2. Le Core ne doit rien apprendre du graphe (ADR-0016 §5) — donc une `Resource` graphe est
-   du transport, pas de l'interprétation.
-3. Une définition est du JSON pur, donc stockable comme une ressource, versionnable et
-   diffable.
-4. Le Core ne dépend de rien : `Resource` ne peut pas amener DOM, `fetch` ou IndexedDB
-   dans `core/`.
+1. The Scene is the unit of replication (it owns the `Operations` pipeline).
+2. The Core must learn nothing about the graph (ADR-0016 §5) — so a graph `Resource` is
+   transport, not interpretation.
+3. A definition is pure JSON, so it is storable as a resource, versionable and diffable.
+4. The Core depends on nothing: `Resource` cannot bring the DOM, `fetch` or IndexedDB into
+   `core/`.
 
 ---
 
 ## 7. Undo / Redo
 
-### 7.1 Rien n'existe
+### 7.1 Nothing exists
 
-Aucun module d'historique, aucune pile, aucun `undo()` dans `src/`. Les seules occurrences
-du mot sont des commentaires d'intention.
+No history module, no stack, no `undo()` in `src/`. The only occurrences of the word are
+comments of intent.
 
-### 7.2 Ce qui est déjà prêt
+### 7.2 What is already in place
 
-- Chaque `SET_PROPERTY` porte **`previous`** — c'est précisément ce qui rend l'inversion
-  possible ;
-- **`batch`** existe sur chaque opération : un drag = une entrée d'historique ;
-- `scene.operations.on('operation', …)` est la couture d'enregistrement, déjà testée
-  (`core.test.js:145`, *« operations carry what undo will need »*) ;
-- la séparation `submit` / `apply` fait qu'un undo rejoué par `apply()` **ne réémet rien** —
-  donc pas de boucle, ni locale, ni réseau ;
-- `Operations.register(type, handler)` permet d'ajouter des types sans toucher au pipeline.
+- Every `SET_PROPERTY` carries **`previous`** — which is precisely what makes inversion
+  possible;
+- **`batch`** exists on every operation: one drag = one history entry;
+- `scene.operations.on('operation', …)` is the recording seam, already tested
+  (`core.test.js:145`, *"operations carry what undo will need"*);
+- the `submit` / `apply` separation means an undo replayed through `apply()` **re-emits
+  nothing** — so no loop, local or network;
+- `Operations.register(type, handler)` allows types to be added without touching the pipeline.
 
-### 7.3 Ce qui bloque ta liste de mutations
+### 7.3 What blocks your list of mutations
 
-| Mutation | Représentable aujourd'hui ? |
+| Mutation | Representable today? |
 |---|---|
-| Modify Property | **oui** |
-| Rename | oui (c'est un `SET_PROPERTY` sur `name`) |
-| Create / Delete | **non** — pas de type d'opération, et un `Delete` doit transporter le sous-arbre sérialisé pour être inversible |
-| Add Component / Remove Component | **non** — un `Remove` doit transporter les valeurs du composant |
-| Move (reparentage) | **non** |
-| Reorder | **non** — et voir §4.2 : il faut d'abord décider si l'ordre est signifiant |
+| Modify Property | **yes** |
+| Rename | yes (it is a `SET_PROPERTY` on `name`) |
+| Create / Delete | **no** — no operation type, and a `Delete` must carry the serialized subtree to be invertible |
+| Add Component / Remove Component | **no** — a `Remove` must carry the component's values |
+| Move (reparenting) | **no** |
+| Reorder | **no** — and see §4.2: you have to decide first whether order is meaningful |
 
-### 7.4 Un détail à connaître avant qu'il ne durcisse
+### 7.4 A detail to know before it hardens
 
-`seq` est un compteur **de module** (`operation.js:14`), global au processus et partagé par
-toutes les scènes. C'est sans conséquence aujourd'hui. Ça en aura une le jour où `seq`
-devient un numéro de séquence réseau ou une clé d'ordre d'historique.
-
----
-
-## 8. Liste des incohérences relevées
-
-Classées par gravité, toutes vérifiées dans le code :
-
-1. **Ordre des composants** — signifiant au runtime, alphabétique à la sérialisation.
-   Change le comportement d'un projet après un aller-retour. *(§4.2)*
-2. **Deux vocabulaires de types de propriétés** — `DEFAULTS` du Core et `FieldKind` de
-   l'Editor divergent, sans source commune. *(§5.3)*
-3. **Identité d'une définition de Component** — le nom fait office d'identité, ce que
-   ADR-0010 refuse ailleurs. *(§5.2)*
-4. `scene.js:83` annonce « cinq événements » et en liste six. Cosmétique.
-5. `inspector.js:99` renvoie à « the report » — un document d'audit qui n'est pas dans
-   `docs/`. Traçabilité.
+`seq` is a **module-level** counter (`operation.js:14`), global to the process and shared by
+every scene. That has no consequence today. It will the day `seq` becomes a network sequence
+number or a history ordering key.
 
 ---
 
-## 9. Décidé / non décidé — tableau de synthèse
+## 8. List of inconsistencies found
 
-| Sujet | Statut | Source |
+Ranked by severity, all verified in the code:
+
+1. **Component order** — meaningful at runtime, alphabetical at serialization. It changes a
+   project's behaviour after a round trip. *(§4.2)*
+2. **Two property-type vocabularies** — the Core's `DEFAULTS` and the Editor's `FieldKind`
+   diverge, with no common source. *(§5.3)*
+3. **A Component definition's identity** — the name acts as the identity, which ADR-0010 refuses
+   elsewhere. *(§5.2)*
+4. `scene.js:83` announces "five events" and lists six. Cosmetic.
+5. `inspector.js:99` refers to "the report" — an audit document that is not in `docs/`.
+   Traceability.
+
+---
+
+## 9. Decided / not decided — summary table
+
+| Subject | Status | Source |
 |---|---|---|
-| Object reste `Object`, `children`, `owner` | **décidé** | ADR-0001 |
-| Transform est un Component, `object.x` façade | **décidé** | ADR-0002 |
-| `x =` direct vs `setProperty()` contrôlé | **décidé** | ADR-0003 |
-| Un seul Component par type, duck-typing | **décidé** | ADR-0004, Q4 |
-| Inspector piloté par schéma, repli réflexif | **décidé** | ADR-0007 |
-| Toute mutation représentable en Operation | **décidé** | ADR-0008 |
-| `.px` = graphe JSON interprété | **décidé** | ADR-0009, Q7 |
-| Un graphe est le comportement d'un **type** | **décidé** | ADR-0015 |
-| Définition = `type` + propriétés + graphe | **décidé** | ADR-0016 |
-| Sélection = concern Editor uniquement | **décidé** | ADR-0017 |
-| **Ordre des Components : signifiant ou non** | **NON DÉCIDÉ** | contradiction §4.2 |
-| **Opérations de réordonnancement** | **NON DÉCIDÉ** | absentes de la liste ADR-0008 |
-| **Identité d'une définition** | **NON DÉCIDÉ** | — |
-| **Vocabulaire unique des types de propriétés** | **NON DÉCIDÉ** | ADR-0007 liste des intentions |
-| **`Resource` : forme, identité, chargement** | **NON DÉCIDÉ** | `ARCHITECTURE.md` §9, intention seule |
-| **`Document` : le concept n'existe pas** | **NON DÉCIDÉ** | absent du dépôt |
-| **Modèle de graphe et interprète `.px`** | **NON DÉCIDÉ** | 0 ligne |
-| **Qui appelle `register` / `bind`** | **NON DÉCIDÉ** | point ouvert ×3 ADR |
-| Migration des instances si définition change | **NON DÉCIDÉ** | ADR-0016, renvoyé à l'Editor |
-| Q8 — `Renderer [ Type ▼ ]` unique | **ouvert** | `MIGRATION_STATUS.md` |
+| Object stays `Object`, `children`, `owner` | **decided** | ADR-0001 |
+| Transform is a Component, `object.x` a façade | **decided** | ADR-0002 |
+| `x =` direct vs `setProperty()` controlled | **decided** | ADR-0003 |
+| One Component per type, duck-typing | **decided** | ADR-0004, Q4 |
+| A schema-driven Inspector, reflective fallback | **decided** | ADR-0007 |
+| Every mutation representable as an Operation | **decided** | ADR-0008 |
+| `.px` = an interpreted JSON graph | **decided** | ADR-0009, Q7 |
+| A graph is the behaviour of a **type** | **decided** | ADR-0015 |
+| A definition = `type` + properties + graph | **decided** | ADR-0016 |
+| Selection = an Editor concern only | **decided** | ADR-0017 |
+| **Component order: meaningful or not** | **NOT DECIDED** | the contradiction in §4.2 |
+| **Reordering operations** | **NOT DECIDED** | absent from the ADR-0008 list |
+| **A definition's identity** | **NOT DECIDED** | — |
+| **A single property-type vocabulary** | **NOT DECIDED** | ADR-0007 lists intentions |
+| **`Resource`: shape, identity, loading** | **NOT DECIDED** | `ARCHITECTURE.md` §9, intent only |
+| **`Document`: the concept does not exist** | **NOT DECIDED** | absent from the repository |
+| **The `.px` graph model and interpreter** | **NOT DECIDED** | 0 lines |
+| **Who calls `register` / `bind`** | **NOT DECIDED** | an open point in 3 ADRs |
+| Migrating instances when a definition changes | **NOT DECIDED** | ADR-0016, deferred to the Editor |
+| Q8 — a single `Renderer [ Type ▼ ]` | **open** | `MIGRATION_STATUS.md` |
 
 ---
 
-## 10. Les décisions que je ne prends pas
+## 10. The decisions I am not taking
 
-Conformément à la consigne, je m'arrête ici. Quatre décisions sont structurantes et
-conditionnent tout ce que la Phase 2 pourrait proposer. Aucune ne peut être inventée à
-partir du code ou des ADR :
+Per the instruction, I stop here. Four decisions are structural and gate everything Phase 2
+could propose. None of them can be invented from the code or from the ADRs:
 
-1. **L'ordre des Components d'un Object est-il signifiant ?** (§4.2, issue A ou B). Tout le
-   reste du chantier « réordonnancement » en découle.
-2. **Le réordonnancement devient-il une Operation de premier rang** (`MOVE_COMPONENT`,
-   `MOVE_CHILD`, `MOVE_OBJECT`), donc réplicable et annulable — ou reste-t-il hors du
-   protocole ? ADR-0008 ne l'a pas prévu.
-3. **Qu'est-ce qu'une `Resource`, et existe-t-il un `Document` ?** C'est le préalable du
-   `.px`, du `Graph`, du chargement de projet et de `px-tabs`. Rien dans le dépôt ne
-   permet de le déduire.
-4. **Une définition de Component a-t-elle une identité stable distincte de son nom ?**
-   Sans réponse, renommer un Component utilisateur casse les projets qui l'utilisent.
+1. **Is the order of an Object's Components meaningful?** (§4.2, outcome A or B). All the rest
+   of the "reordering" work follows from it.
+2. **Does reordering become a first-class Operation** (`MOVE_COMPONENT`, `MOVE_CHILD`,
+   `MOVE_OBJECT`), and therefore replicable and undoable — or does it stay outside the protocol?
+   ADR-0008 did not anticipate it.
+3. **What is a `Resource`, and is there a `Document`?** It is the prerequisite for `.px`, for the
+   `Graph`, for project loading and for `px-tabs`. Nothing in the repository lets you infer it.
+4. **Does a Component definition have a stable identity distinct from its name?** Without an
+   answer, renaming a user Component breaks the projects that use it.
 
-Dis-moi comment tu veux trancher — ou demande-moi une Phase 2 qui présente les options
-chiffrées, avec pour chacune : impact Core / Runtime / Editor / sérialisation /
-réplication / Undo-Redo, risques et alternatives écartées.
+Tell me how you want to settle these — or ask for a Phase 2 that lays out the options with
+figures, and for each one: impact on Core / Runtime / Editor / serialization / replication /
+Undo-Redo, risks, and rejected alternatives.
 
-**Aucun fichier modifié. Aucun commit. Aucun push.**
+**No file modified. No commit. No push.**

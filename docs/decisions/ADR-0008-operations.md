@@ -1,56 +1,55 @@
-# ADR-0008 — Formaliser les mutations en Operations
+# ADR-0008 — Formalize mutations as Operations
 
-- **Statut :** **accepté** (2026-08-12)
-- **Dépend de :** ADR-0003 (Property System)
-- **Complété par :** ADR-0011 (autorité)
+- **Status:** **accepted** (2026-08-12)
+- **Depends on:** ADR-0003 (Property System)
+- **Completed by:** ADR-0011 (authority)
 
-## Contexte observé
+## Observed context
 
-**Le protocole réseau de Legacy est déjà un système d'opérations qui ne dit pas son nom.**
+**Legacy's network protocol already is an operation system that does not say so.**
 
-| Message actuel | Charge utile | Opération implicite |
+| Current message | Payload | Implicit operation |
 |---|---|---|
 | `update` | `{id, type, component, prop, value}` | `SET_PROPERTY` |
-| `add` | objet sérialisé | `ADD_OBJECT` |
-| `remove` | id | `REMOVE_OBJECT` |
+| `add` | a serialized object | `ADD_OBJECT` |
+| `remove` | an id | `REMOVE_OBJECT` |
 | `addComponent` | `{id, component}` | `ADD_COMPONENT` |
 | `removeComponent` | `{id, component}` | `REMOVE_COMPONENT` |
 | `addChild` | `{id, child}` | `ADD_CHILD` |
 | `removeChild` | `{id, child}` | `REMOVE_CHILD` |
 | `upload_file` / `delete_file` | | `ADD_RESOURCE` / `REMOVE_RESOURCE` |
 
-La forme est bonne. Ce qui manque :
+The shape is good. What is missing:
 
-- **`previous`** — impossible d'annuler ;
-- **`seq`** — pas d'ordre total, pas de détection de perte ;
-- **`author`** — pas d'attribution, donc pas de collaboration ;
-- **regroupement** — un drag produit des centaines de messages indépendants ; le
-  throttle censé les limiter est neutralisé (`const delay = 0` dans `Network.sync()`).
+- **`previous`** — undoing is impossible;
+- **`seq`** — no total ordering, no loss detection;
+- **`author`** — no attribution, and therefore no collaboration;
+- **grouping** — a drag produces hundreds of independent messages; the throttle meant to limit
+  them is neutralized (`const delay = 0` in `Network.sync()`).
 
-## Décision
+## Decision
 
-Formaliser ce qui existe. **L'ergonomie utilisateur ne change pas.**
+Formalize what exists. **The user's ergonomics do not change.**
 
-**VALIDÉ :** toute mutation du modèle doit être représentable par une Operation interne.
-C'est ce qui ouvre, à terme, réseau, historique, undo/redo, collaboration et IA.
+**SETTLED:** every mutation of the model must be representable as an internal Operation. That is
+what eventually opens up network, history, undo/redo, collaboration and AI.
 
 ```
 object.setProperty('x', 100)
    → Change { object, prop:'x', value:100, previous:80, origin:'editor' }   (ADR-0003)
       → Operation SET_PROPERTY { target, prop, value, previous, seq, actor }
          → authority.check()                                                (ADR-0011)
-            → état autoritaire → propagation
+            → authoritative state → propagation
 ```
 
-L'utilisateur **n'écrit jamais** une Operation à la main. Elle est produite par le
-Property System.
+The user **never writes** an Operation by hand. It is produced by the Property System.
 
-`object.x = 100` — mutation directe de l'état — ne produit **pas** d'Operation : c'est
-une sortie de simulation, pas une intention (voir ADR-0003).
+`object.x = 100` — a direct mutation of the state — produces **no** Operation: it is a simulation
+output, not an intent (see ADR-0003).
 
-**`setProperty()` n'est pas « la méthode réseau ».** Le réseau est une destination
-possible de l'Operation, pas sa définition : la même Operation alimente aussi
-l'historique, l'undo/redo, la collaboration et tout autre système abonné.
+**`setProperty()` is not "the network method".** The network is one possible destination of the
+Operation, not its definition: the same Operation also feeds the history, undo/redo,
+collaboration and any other subscribed system.
 
 ### Format
 
@@ -67,77 +66,74 @@ l'historique, l'undo/redo, la collaboration et tout autre système abonné.
 }
 ```
 
-### Ce que cela débloque
+### What this unlocks
 
-| Champ | Débloque |
+| Field | Unlocks |
 |---|---|
 | `previous` | undo / redo |
-| `seq` | ordre total, détection de perte, rejeu |
-| `author` | collaboration, attribution, journalisation |
-| `batch` | un drag = **une** entrée d'historique |
+| `seq` | total ordering, loss detection, replay |
+| `author` | collaboration, attribution, logging |
+| `batch` | one drag = **one** history entry |
 
-Et, à plus long terme : replay d'une session, journal d'audit, et une IA capable de
-modifier un projet en émettant des Operations plutôt qu'en manipulant le DOM.
+And, further out: replaying a session, an audit log, and an AI able to modify a project by
+emitting Operations rather than by manipulating the DOM.
 
-## Amendements
+## Amendments
 
-> **ADR-0019 (2026-08-14) — les Operations structurelles.** Le tableau ci-dessus est un
-> **inventaire du protocole Legacy**, pas une liste de conception. ADR-0019 le remplace par
-> l'ensemble effectivement implémenté, et fusionne notamment `ADD_CHILD` et `REMOVE_CHILD`
-> dans une seule Operation :
+> **ADR-0019 (2026-08-14) — the structural Operations.** The table above is an **inventory of the
+> Legacy protocol**, not a design list. ADR-0019 replaces it with the set actually implemented,
+> and in particular merges `ADD_CHILD` and `REMOVE_CHILD` into a single Operation:
 >
 > `REPARENT { object, parent, index, previousParent, previousIndex }`
 >
-> Elle couvre quatre gestes — reparenter, détacher (`parent: null`), réordonner parmi ses
-> frères, réordonner parmi les racines — parce que ce sont la même mutation : un dépôt entre
-> deux lignes change le parent **et** la position, atomiquement. La capacité couverte est
-> rigoureusement identique à celle des deux messages Legacy. S'y ajoutent `ADD_OBJECT`,
-> `REMOVE_OBJECT`, `ADD_COMPONENT`, `REMOVE_COMPONENT`, `MOVE_COMPONENT`, et
-> `ADD_RESOURCE` / `REMOVE_RESOURCE` à la portée du Project (ADR-0020).
+> It covers four gestures — reparenting, detaching (`parent: null`), reordering among siblings,
+> reordering among the roots — because they are the same mutation: a drop between two rows
+> changes the parent **and** the position, atomically. The capability covered is rigorously
+> identical to that of the two Legacy messages. Added to it are `ADD_OBJECT`, `REMOVE_OBJECT`,
+> `ADD_COMPONENT`, `REMOVE_COMPONENT`, `MOVE_COMPONENT`, and `ADD_RESOURCE` / `REMOVE_RESOURCE`
+> at Project scope (ADR-0020).
 >
-> ADR-0019 précise également que **`seq` est par pipeline** et non par module : un numéro de
-> séquence ordonne les opérations d'**une** unité répliquée.
+> ADR-0019 also clarifies that **`seq` is per pipeline** and not per module: a sequence number
+> orders the operations of **one** replicated unit.
 
-> **ADR-0024 (2026-08-14) — undo/redo.** « Undo/redo devient une conséquence de
-> l'architecture » est rendu concret : le Core fournit `invert(operation)`, l'Editor tient
-> la pile, et annuler passe par `submit(invert(op))` — jamais par un `apply()` silencieux,
-> qui désynchroniserait le projet sans un bruit.
+> **ADR-0024 (2026-08-14) — undo/redo.** "Undo/redo becomes a consequence of the architecture" is
+> made concrete: the Core provides `invert(operation)`, the Editor holds the stack, and undoing
+> goes through `submit(invert(op))` — never through a silent `apply()`, which would
+> desynchronize the project without a sound.
 
-## Non-décisions explicites
+## Explicit non-decisions
 
-- **Ce n'est ni un CRDT ni de l'OT.** La collaboration multi-utilisateurs reste hors
-  périmètre. On s'assure seulement de ne pas la rendre impossible.
-- **Pas d'`event sourcing`.** L'état reste la source de vérité ; les Operations sont un
-  canal de mutation et un historique, pas le stockage primaire.
-- **La résolution de conflits reste « dernier arrivé gagne »**, comme aujourd'hui.
-  `seq` rend simplement le conflit détectable — et l'autorité serveur (ADR-0011) donne
-  désormais un arbitre là où il n'y en avait aucun.
-- **Le système de permissions n'est pas implémenté.** Les Operations transportent un
-  `actor` et traversent `authority.check()`, mais la politique initiale peut être
-  permissive.
+- **This is neither a CRDT nor OT.** Multi-user collaboration stays out of scope. We only make
+  sure we are not making it impossible.
+- **No event sourcing.** State remains the source of truth; Operations are a mutation channel and
+  a history, not the primary storage.
+- **Conflict resolution stays "last write wins"**, as today. `seq` merely makes the conflict
+  detectable — and server authority (ADR-0011) now provides an arbiter where there was none.
+- **The permission system is not implemented.** Operations carry an `actor` and go through
+  `authority.check()`, but the initial policy may be permissive.
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Undo/redo devient une conséquence de l'architecture, pas une fonctionnalité à part.
-- Le batching corrige un défaut réseau réel (débit par frappe).
-- Le protocole devient versionnable et documentable.
+- Undo/redo becomes a consequence of the architecture, not a separate feature.
+- Batching fixes a real network defect (one message per keystroke).
+- The protocol becomes versionable and documentable.
 
-### Négatives
+### Negative
 
-- **Charge utile plus lourde** (`previous`, `seq`, `author`). À compenser par la
-  suppression de la duplication `_prop` (facteur 3 mesuré) et par le batching.
-- **Migration coordonnée obligatoire** : le serveur est privé, en Deno, sur une API
-  WebSocket obsolète. Client et serveur doivent basculer ensemble (risque R4).
-- Calculer `previous` impose une lecture avant chaque écriture — déjà nécessaire pour
-  le trap `set` du Proxy, donc coût nul en pratique.
+- **A heavier payload** (`previous`, `seq`, `author`). To be offset by removing the `_prop`
+  duplication (a measured factor of 3) and by batching.
+- **A coordinated migration is mandatory**: the server is private, in Deno, on an obsolete
+  WebSocket API. Client and server must switch together (risk R4).
+- Computing `previous` requires a read before every write — already necessary for the Proxy's
+  `set` trap, so the cost is nil in practice.
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **Garder les messages actuels** | Pas d'undo, pas de batching, pas d'ordre. Bloque plusieurs objectifs produit. |
-| **Exposer les Operations à l'utilisateur** (`ops.setProperty(...)`) | Détruit l'ergonomie, explicitement exclu par la vision. |
-| **CRDT (Yjs, Automerge)** | Dépendance lourde, modèle de données imposé, complexité sans commune mesure avec le besoin actuel. |
-| **Diff d'état par frame** | Perd l'intention (« l'utilisateur a déplacé l'objet ») et donc la qualité de l'undo. |
+| **Keep the current messages** | No undo, no batching, no ordering. It blocks several product goals. |
+| **Expose Operations to the user** (`ops.setProperty(...)`) | It destroys the ergonomics, explicitly ruled out by the vision. |
+| **A CRDT (Yjs, Automerge)** | A heavy dependency, an imposed data model, complexity out of all proportion to the current need. |
+| **Per-frame state diffing** | It loses the intent ("the user moved the object") and therefore the quality of the undo. |

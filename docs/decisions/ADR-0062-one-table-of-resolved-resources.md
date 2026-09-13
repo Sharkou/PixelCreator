@@ -1,264 +1,260 @@
-# ADR-0062 — Une seule table de ressources résolues, et le backend répond des pixels
+# ADR-0062 — One table of resolved resources, and the backend answers with pixels
 
-- **Statut :** **accepté** (2026-09-12)
-- **Décide :** qui transforme un `ResourceId` en image décodée ; ce que `drawImage()` reçoit ; où vit le cache ; ce qu'un Sprite mesure ; comment une animation est décrite ; où vit un clip ; pourquoi il n'y a pas de `flipX`
-- **Dépend de :** ADR-0004 (capacités optionnelles), ADR-0005 (le rendu passe par une abstraction), ADR-0007 (schéma), ADR-0012 (isolation), ADR-0020 (Resource, store asynchrone), ADR-0021 (identité d'une définition), ADR-0026 §1 (une ressource porte son contenu), ADR-0050 (le flip est une rotation hors du plan), ADR-0060 §5 (le son est une sortie construite avec un résolveur), ADR-0061 §4 (les définitions sont résolues avant la simulation)
-- **Amende :** ADR-0061 §4 — `PrefabRegistry` devient `ResourceRegistry`, une table pour tous les genres de définition
-- **Ne décide pas :** l'atlas à rectangles libres, le pivot par frame, la durée par frame, l'import Aseprite, les os, le chargement de polices — voir §6
-
----
-
-## 1. Problème
-
-Trois manques, et le premier était un **trou** plutôt qu'une fonctionnalité absente :
-
-```
-Sprite.source = ResourceId        ← ce qu'un créateur choisit
-Sprite.image  = null              ← ce que le rendu lit
-                                  ← et rien, nulle part, ne reliait les deux
-```
-
-Un `grep` sur `new Image|createImageBitmap|\.image =` ne trouvait que l'initialisation à
-`null`. **Un Sprite n'a jamais rien dessiné, dans aucun build.** Le Component n'était pas en
-cause : il manquait la moitié qui résout.
-
-Les deux autres suivaient : sans image, pas d'animation ; et une animation aurait amené un
-`AnimationRegistry` à côté du `PrefabRegistry`, puis un troisième, puis un quatrième.
+- **Status:** **accepted** (2026-09-12)
+- **Decides:** who turns a `ResourceId` into a decoded image; what `drawImage()` receives; where the cache lives; what a Sprite measures; how an animation is described; where a clip lives; why there is no `flipX`
+- **Depends on:** ADR-0004 (optional capabilities), ADR-0005 (rendering goes through an abstraction), ADR-0007 (schema), ADR-0012 (isolation), ADR-0020 (Resource, asynchronous store), ADR-0021 (the identity of a definition), ADR-0026 §1 (a resource carries its content), ADR-0050 (a flip is a rotation out of the plane), ADR-0060 §5 (sound is an output built with a resolver), ADR-0061 §4 (definitions are resolved before the simulation)
+- **Amends:** ADR-0061 §4 — `PrefabRegistry` becomes `ResourceRegistry`, one table for every kind of definition
+- **Does not decide:** the free-rectangle atlas, per-frame pivot, per-frame duration, Aseprite import, bones, font loading — see §6
 
 ---
 
-## 2. Le backend répond des pixels ; le modèle ne porte qu'une identité
+## 1. Problem
 
-> **`drawImage(source, …)` reçoit un `ResourceId`. Le backend le résout.**
+Three things missing, and the first was a **hole** rather than an absent feature:
 
-C'est la troisième application d'un seul joint, pas un troisième joint :
+```
+Sprite.source = ResourceId        ← what a creator picks
+Sprite.image  = null              ← what rendering reads
+                                  ← and nothing, anywhere, connected the two
+```
 
-| | résolu par | rempli par | lu | valeur tenue |
+A `grep` for `new Image|createImageBitmap|\.image =` found nothing but the initialisation to
+`null`. **A Sprite has never drawn anything, in any build.** The Component was not at fault: the
+half that resolves was missing.
+
+The other two followed: no image, no animation; and an animation would have brought an
+`AnimationRegistry` alongside the `PrefabRegistry`, then a third, then a fourth.
+
+---
+
+## 2. The backend answers with pixels; the model carries nothing but an identity
+
+> **`drawImage(source, …)` receives a `ResourceId`. The backend resolves it.**
+
+This is the third application of one seam, not a third seam:
+
+| | resolved by | filled by | read | value held |
 |---|---|---|---|---|
-| son | `AudioOutput` construit avec un résolveur | l'application | `play(clip)` | `HTMLAudioElement` |
-| prefab / animation | `ResourceRegistry` | `loadDefinitions()` | `ctx.resources.get(id)` | des données |
-| **image** | **`ImageCache` construit avec un résolveur** | l'application | `drawImage(id, …)` | `ImageBitmap` |
+| sound | `AudioOutput` built with a resolver | the application | `play(clip)` | `HTMLAudioElement` |
+| prefab / animation | `ResourceRegistry` | `loadDefinitions()` | `ctx.resources.get(id)` | data |
+| **image** | **`ImageCache` built with a resolver** | the application | `drawImage(id, …)` | `ImageBitmap` |
 
-**Pourquoi le backend et pas le Component.** Un `ImageBitmap` est une valeur de Canvas 2D ; un
-backend WebGL tiendrait une texture GL. Poser l'une des deux dans `Sprite.image`, c'était
-mettre une valeur **non sérialisable et spécifique à un backend** dans le modèle. En donnant
-l'identité au backend, un Sprite reste exactement ce que le format écrit.
+**Why the backend and not the Component.** An `ImageBitmap` is a Canvas 2D value; a WebGL backend
+would hold a GL texture. Putting either one in `Sprite.image` meant putting a
+**non-serialisable, backend-specific** value into the model. Giving the identity to the backend
+keeps a Sprite exactly what the format writes.
 
-**Décoder est asynchrone, dessiner ne l'est pas.** `get(id)` répond ce qui est décodé **à cet
-instant** — l'image, ou `null` — et lance le décodage à la première demande. Une frame qui
-arrive avant l'image ne dessine rien et la suivante dessine. Rien n'attend, rien ne bloque, et
-`draw()` ne touche aucun stockage.
+**Decoding is asynchronous, drawing is not.** `get(id)` answers with what is decoded **at that
+instant** — the image, or `null` — and starts the decode on first request. A frame that arrives
+before the image draws nothing and the next one draws. Nothing waits, nothing blocks, and
+`draw()` touches no storage.
 
-**`preload()` existe pour qui PEUT attendre.** Ouvrir un bundle et appuyer sur Play sont deux
-moments où l'attente est permise et où une première frame trouée ne l'est pas. Tout ce qui est
-importé ensuite arrive par `get()`, une frame plus tard et sans attente.
+**`preload()` exists for whoever CAN wait.** Opening a bundle and pressing Play are two moments
+where waiting is allowed and where a first frame full of holes is not. Everything imported
+afterwards arrives through `get()`, one frame later and with no wait.
 
-**Le résolveur d'image peut être asynchrone, celui du son non**, et la différence est réelle :
-un son démarre **depuis un pas** et doit répondre tout de suite, une image est décodée hors du
-chemin de frame de toute façon. L'Editor passe donc `project.read` lui-même et ne recopie
-aucun payload.
+**The image resolver may be asynchronous, the sound one may not**, and the difference is real: a
+sound starts **from a step** and has to answer immediately, whereas an image is decoded off the
+frame path anyway. The Editor therefore passes `project.read` itself and copies no payload.
 
-**Un hôte sans API image n'est pas une panne.** Pas de `createImageBitmap`, pas de `Image` :
-chaque `get()` répond `null`, la simulation est identique et rien n'est dessiné — la phrase que
-`SilentAudio` fait déjà pour le son.
+**A host with no image API is not a breakdown.** No `createImageBitmap`, no `Image`: every
+`get()` answers `null`, the simulation is identical and nothing is drawn — the sentence
+`SilentAudio` already says for sound.
 
-### Ce que le cache garantit
+### What the cache guarantees
 
-| Cas | Réponse |
+| Case | Answer |
 |---|---|
-| cent Sprites sur une image | **un** décodage |
-| ressource absente | mémorisée absente ; le projet n'est pas relu soixante fois par seconde |
-| image illisible | échec mémorisé, tentée **une** fois, rien n'est levé (ADR-0012) |
-| payload remplacé | `invalidate(id)` ; la `revision` est ce qui le déclenche (ADR-0020 §7) |
-| invalidée pendant un décodage | l'image qui finit n'appartient à personne : elle est fermée |
-| `clear()` | tout est relâché (`ImageBitmap.close()`) |
+| a hundred Sprites on one image | **one** decode |
+| resource missing | remembered missing; the project is not re-read sixty times a second |
+| unreadable image | failure remembered, tried **once**, nothing is thrown (ADR-0012) |
+| payload replaced | `invalidate(id)`; the `revision` is what triggers it (ADR-0020 §7) |
+| invalidated during a decode | the image that finishes belongs to nobody: it is closed |
+| `clear()` | everything is released (`ImageBitmap.close()`) |
 
 ---
 
-## 3. Une seule vérité sur la taille : `0` veut dire « celle de l'image »
+## 3. One truth about size: `0` means "the image's own"
 
-`Sprite.width` / `height` valaient `0` par défaut et `0` voulait dire **invisible** — donc un
-Sprite ajouté depuis le menu ne dessinait rien même une fois l'image résolue, et la règle de
-drop inventait un `64 × 64` qui n'était vrai d'aucune image.
+`Sprite.width` / `height` defaulted to `0` and `0` meant **invisible** — so a Sprite added from
+the menu drew nothing even once the image resolved, and the drop rule invented a `64 × 64` that
+was true of no image at all.
 
-> **Zéro veut dire « la taille de l'image », pas « rien ».**
+> **Zero means "the size of the image", not "nothing".**
 
-| Déclaré | Dessiné |
+| Declared | Drawn |
 |---|---|
-| les deux | exactement ça — une image étirée exprès |
-| **un seul** | celui-là, l'autre **en proportion de ce qui est réellement dessiné** |
-| aucun | la frame, ou l'image entière |
-| pas encore décodée | rien cette frame, et la suivante dessine |
+| both | exactly that — an image stretched on purpose |
+| **one only** | that one, the other **in proportion to what is actually drawn** |
+| neither | the frame, or the whole image |
+| not yet decoded | nothing this frame, and the next one draws |
 
-**La proportion vient de la FRAME, pas de la planche.** Une bande de 320 × 32 contenant dix
-frames de 32 × 32 est dix carrés ; mettre à l'échelle l'une d'elles avec le ratio de la bande
-rendrait un personnage dix fois trop large.
+**The proportion comes from the FRAME, not the sheet.** A 320 × 32 strip holding ten 32 × 32
+frames is ten squares; scaling one of them by the strip's ratio would make a character ten times
+too wide.
 
-**`imageSize(source)` est une opération du contrat de rendu**, et c'est légitime là où
-`measureText` ne l'était pas (ADR-0060 §3) : la taille d'une image est un **fait sur la
-ressource**, identique dans tous les backends, alors que la métrique d'un texte dépend de qui
-rastérise. `bounds()` lit la dernière taille réellement dessinée ; un Object jamais dessiné ne
-rapporte rien, et le picking retombe sur le carré de poignée qu'il donne déjà à un Object sans
-géométrie.
+**`imageSize(source)` is an operation of the rendering contract**, and it is legitimate where
+`measureText` was not (ADR-0060 §3): the size of an image is a **fact about the resource**,
+identical in every backend, whereas a text metric depends on who rasterises it. `bounds()` reads
+the last size actually drawn; an Object never drawn reports nothing, and picking falls back to
+the handle square it already gives an Object with no geometry.
 
 ---
 
-## 4. Une animation est une Resource, et son rectangle est une fonction pure
+## 4. An animation is a Resource, and its rectangle is a pure function
 
 ```js
 Walk.animation
 { version: 1, source, frameWidth, frameHeight, count, columns, first, fps, loop }
 ```
 
-**Une Resource, pas un champ par instance.** Dix ennemis qui jouent `Walk` nomment un clip ;
-le retimer les retime tous, et une instance porte un `ResourceId` au lieu d'une copie. C'est
-l'argument d'ADR-0026 §1 pour un `.px` et celui d'ADR-0061 pour un prefab.
+**A Resource, not a field per instance.** Ten enemies playing `Walk` name a clip; retiming it
+retimes them all, and an instance carries a `ResourceId` instead of a copy. It is ADR-0026 §1's
+argument for a `.px` and ADR-0061's for a prefab.
 
-**`columns` est DÉCLARÉ, jamais mesuré**, et c'est ce qui rend `frameAt()` pure. Le dériver de
-la largeur de la planche décodée ferait dépendre un rectangle de frame de l'état d'un
-décodage — la même frame serait deux rectangles avant et après l'arrivée de l'image — et
-mettrait le renderer à l'intérieur d'une fonction du Core. La forme d'une planche est un fait
-que son auteur connaît.
+**`columns` is DECLARED, never measured**, and that is what makes `frameAt()` pure. Deriving it
+from the decoded sheet's width would make a frame rectangle depend on the state of a decode —
+the same frame would be two rectangles before and after the image arrived — and would put the
+renderer inside a Core function. The shape of a sheet is a fact its author knows.
 
-**La tête de lecture est en SECONDES, jamais un index de frame.** La même durée écoulée donne
-la même frame à 30 et à 144 images par seconde, parce que la division est faite une fois plutôt
-qu'accumulée soixante fois par seconde en index arrondi. C'est ce qui fait d'une animation une
-partie de la simulation déterministe plutôt qu'une décoration posée dessus.
+**The playhead is in SECONDS, never a frame index.** The same elapsed time gives the same frame
+at 30 and at 144 frames per second, because the division is done once rather than accumulated
+sixty times a second as a rounded index. That is what makes an animation part of the
+deterministic simulation rather than a decoration laid on top of it.
 
-**Lire puis avancer, jamais l'inverse.** Avancer d'abord, c'est afficher la frame 1 dès le
-premier pas : la frame d'ouverture de toute animation n'est jamais montrée. La frame affichée
-est celle du temps où la simulation **est** ; l'horloge bouge ensuite.
+**Read then advance, never the other way round.** Advancing first means showing frame 1 on the
+very first step: the opening frame of every animation is never seen. The frame shown is the one
+for the time the simulation **is** at; the clock moves afterwards.
 
-### `SpriteAnimator`, et pas vingt champs de plus sur `Sprite`
+### `SpriteAnimator`, and not twenty more fields on `Sprite`
 
-Un Sprite répond « quelle image, quelle taille » ; un animateur répond « quelle frame, et
-quand ». Deux questions, deux durées de vie, deux Components — et un Object qui veut les deux
-le dit en portant les deux. L'animateur écrit `Sprite.source` **et** `Sprite.frame` : le clip
-nomme sa propre planche, donc les deux ne peuvent pas être en désaccord.
+A Sprite answers "which image, what size"; an animator answers "which frame, and when". Two
+questions, two lifetimes, two Components — and an Object that wants both says so by carrying
+both. The animator writes `Sprite.source` **and** `Sprite.frame`: the clip names its own sheet,
+so the two cannot disagree.
 
-### Un seul nœud, et il existe pour la seule chose que `Set Property` ne peut pas dire
+### One node, and it exists for the one thing `Set Property` cannot say
 
-`SpriteAnimator.clip` est une propriété `resource` ordinaire, donc choisir une animation est
-déjà `Set Property` — et par le raisonnement d'ADR-0060 §6 cela aurait dû suffire. Cela ne
-suffit pas, pour une raison qu'un créateur rencontre en une minute : **écrire deux fois la même
-valeur est un no-op**, donc « rejoue l'attaque » ne ferait rien du tout. Redémarrer est un
-**moment**, et un moment est un nœud.
+`SpriteAnimator.clip` is an ordinary `resource` property, so picking an animation is already
+`Set Property` — and by ADR-0060 §6's reasoning that should have been enough. It is not, for a
+reason a creator meets within a minute: **writing the same value twice is a no-op**, so "replay
+the attack" would do nothing at all. Restarting is a **moment**, and a moment is a node.
 
-`Animation Finished` est une **question**, posée depuis `On Update`, et pas un événement : un
-nœud d'entrée est exécuté à chaque update (`interpreter.js`), donc un événement one-shot
-demanderait une mémoire par nœud et par instance — le second genre d'état qu'ADR-0058 n'a
-délibérément pas.
+`Animation Finished` is a **question**, asked from `On Update`, not an event: an input node runs
+on every update (`interpreter.js`), so a one-shot event would need memory per node and per
+instance — the second kind of state ADR-0058 deliberately does not have.
 
-### Un clip naît d'une planche, parce qu'il ne peut naître de rien d'autre
+### A clip is born from a sheet, because it can be born from nothing else
 
-Le `+` du panneau Project propose `Animation…`, **à côté d'`Image…` et par le même
-mécanisme** : la rangée déclare qu'elle a besoin d'un fichier, le panneau le demande, et la
-rangée fabrique **deux** ressources — la planche importée et le clip qui la nomme.
+The Project panel's `+` offers `Animation…`, **next to `Image…` and through the same
+mechanism**: the row declares that it needs a file, the panel asks for it, and the row makes
+**two** resources — the imported sheet and the clip that names it.
 
-| Décision | Raison |
+| Decision | Reason |
 |---|---|
-| la rangée **choisit une image** | un clip sans planche ne nomme aucune frame. Une entrée de menu qui crée une ressource inerte est exactement le « menu qui n'ouvre rien » que `project/commands.js` refuse depuis ADR-0025 |
-| la grille est **lue dans l'en-tête du fichier** | `project/image.js` sait déjà répondre « combien de pixels » sans décoder ; une bande de carrés est la forme de toute planche exportée par Aseprite ou Piskel |
-| un en-tête muet donne 32 x 32, une frame | visiblement faux dès la première lecture, plutôt qu'invisiblement faux pour toujours |
-| **deux ressources, deux annulations** | ce sont deux intentions `add` ; en faire une seule serait décider ce qu'est un geste, et ce n'est pas la décision de cette rangée |
+| the row **picks an image** | a clip with no sheet names no frame. A menu entry that creates an inert resource is exactly the "menu that opens nothing" `project/commands.js` has refused since ADR-0025 |
+| the grid is **read from the file header** | `project/image.js` already knows how to answer "how many pixels" without decoding; a strip of squares is the shape of every sheet exported by Aseprite or Piskel |
+| a silent header gives 32 x 32, one frame | visibly wrong from the first read, rather than invisibly wrong forever |
+| **two resources, two undos** | these are two `add` intentions; merging them would be deciding what a gesture is, and that is not this row's decision |
 
-L'Inspector dit ensuite ce qu'un clip **est** — sa planche par son nom, sa grille, sa vitesse,
-sa boucle — en lecture seule, comme tout ce qui n'est pas le nom (§ en tête de
+The Inspector then says what a clip **is** — its sheet by name, its grid, its speed, its loop —
+read-only, like everything that is not the name (§ at the top of
 `editor/inspector/resource.js`).
 
 ```
-BLOCKED: régler la grille d'un clip dans l'Editor
-Reason: il manque le contrat qui rend un PAYLOAD de ressource éditable depuis l'Inspector.
-        Aujourd'hui, seul un `.px` l'est, et seulement parce que le Workspace lui attache un
-        MODÈLE VIVANT (`editor/project/definitions.js`) dont chaque champ est réactif et dont
-        chaque écriture passe par le pipeline de cette ressource — c'est ce qui donne l'undo
-        par ressource d'ADR-0024. Une animation n'a pas de modèle de ce genre, et en inventer
-        un pour quatre nombres reviendrait à écrire la moitié d'un éditeur d'animation sans
-        décider de l'autre moitié (§6 : timeline, aperçu, découpage).
-        Ce qui est livré entre-temps : la grille devinée à la création, et `saveAnimation()`
-        dans la couche Project pour qui l'écrit par l'API.
+BLOCKED: setting a clip's grid in the Editor
+Reason: the contract that makes a resource PAYLOAD editable from the Inspector is missing.
+        Today only a `.px` is, and only because the Workspace attaches a LIVE MODEL to it
+        (`editor/project/definitions.js`) whose every field is reactive and whose every write
+        goes through that resource's pipeline — which is what gives the per-resource undo of
+        ADR-0024. An animation has no model of that kind, and inventing one for four numbers
+        would amount to writing half an animation editor without deciding the other half
+        (§6: timeline, preview, slicing).
+        What ships in the meantime: the grid guessed at creation, and `saveAnimation()` in the
+        Project layer for whoever writes it through the API.
 ```
 
 ---
 
-## 5. Pas de `flipX`, et ce n'est pas un oubli
+## 5. No `flipX`, and that is not an oversight
 
-ADR-0050 a **retiré** `flipX`/`flipY` en montrant qu'une projection orthographique fait d'une
-rotation autour de l'axe vertical **exactement** une mise à l'échelle horizontale par `cos θ`.
-`Transform.rotationY = 180°` est donc un miroir exact, déjà sérialisé, déjà testé, déjà dans
-l'Inspector — et il sait dire `45` là où un booléen ne sait dire que « de dos ».
+ADR-0050 **removed** `flipX`/`flipY` by showing that an orthographic projection makes a rotation
+around the vertical axis **exactly** a horizontal scale by `cos θ`. `Transform.rotationY = 180°`
+is therefore an exact mirror, already serialised, already tested, already in the Inspector — and
+it can say `45` where a boolean can only say "facing away".
 
-Le contrat de rendu a donc `clip` (ce qu'une planche exige) et **rien** pour le miroir.
+The rendering contract therefore has `clip` (what a sheet requires) and **nothing** for
+mirroring.
 
 ---
 
-## 6. Ce que cet ADR ne décide pas
+## 6. What this ADR does not decide
 
-| Point ouvert | Pourquoi |
+| Open point | Why |
 |---|---|
-| **Atlas à rectangles libres** | Une grille régulière est la forme de toutes les planches de tutoriel ; un atlas est un pipeline, et un pipeline est un produit |
-| **Pivot / durée / trim par frame** | Chacun est une décision sur ce pipeline |
-| **Import Aseprite, os, squelettes** | Idem, en plus gros |
-| **Mipmaps, filtrage, atlas de textures** | Optimisations de rendu ; rien ne les demande encore |
-| **Éditeur d'animation dans l'Editor** | Un clip se **crée** depuis le panneau Project (§4) et s'inspecte ; le **régler** demande une timeline et un modèle vivant de ressource — voir le `BLOCKED` de §4, et ADR-0026 qui range déjà la timeline parmi les fenêtres non conçues |
-| **Chargement de polices** | ADR-0060 §8, inchangé |
+| **Free-rectangle atlas** | A regular grid is the shape of every tutorial sheet; an atlas is a pipeline, and a pipeline is a product |
+| **Per-frame pivot / duration / trim** | Each one is a decision about that pipeline |
+| **Aseprite import, bones, skeletons** | The same, on a larger scale |
+| **Mipmaps, filtering, texture atlases** | Rendering optimisations; nothing asks for them yet |
+| **An animation editor in the Editor** | A clip is **created** from the Project panel (§4) and can be inspected; **setting** it needs a timeline and a live resource model — see §4's `BLOCKED`, and ADR-0026, which already files the timeline among the windows that have not been designed |
+| **Font loading** | ADR-0060 §8, unchanged |
 
 ---
 
-## 7. Contre-épreuves
+## 7. Counter-tests
 
-| Vérifié | Où |
+| Verified | Where |
 |---|---|
-| Une image est demandée synchroniquement et arrive un tour plus tard | `runtime/rendering/images.test.js` |
-| Cent demandes, un décodage | idem |
-| Ressource absente : lue **une** fois, jamais soixante fois par seconde | idem |
-| Image illisible : échouée une fois, rien n'est levé | idem |
-| Invalidation : relecture, et l'ancienne image est fermée | idem |
-| **Contre-épreuve** : sans invalidation, les anciens pixels restent | idem |
-| `preload()` compte ce qui est utilisable | idem |
-| Résolveur asynchrone (le chemin de l'Editor) | idem |
-| Hôte sans API image : rien, et rien ne casse | idem |
-| Le backend reçoit l'identité et dessine ce qu'il a résolu | idem |
-| `clip` dessine un rectangle de la planche | idem |
-| Image pas encore arrivée : rien n'est dessiné | idem |
-| Taille naturelle, une dimension donnée, aucune | idem |
-| Un prefab spawné montre son image à la frame où il apparaît | idem |
-| Grille de frames, `first`, bande simple, clip sans cellule | `runtime/rendering/components/sprite-animator.test.js` |
-| Version inconnue refusée | idem |
-| Boucle, non-boucle, `fps: 0` | idem |
-| Même temps écoulé à deux tailles de pas | idem |
-| Pause, vitesse, changement de clip, clip supprimé | idem |
-| Animateur sans Sprite, Runtime sans resources | idem |
-| La tête de lecture n'atteint jamais le format | idem |
-| `Play Animation` redémarre ce que `Set Property` ne redémarrerait pas | idem |
-| `Animation Finished` sur un Object sans animateur | idem |
-| Un clip est créé depuis une planche, et la grille vient de l'en-tête | `editor/project/commands.test.js` |
-| La planche est importée avec lui, octet pour octet | idem |
-| Un en-tête illisible donne quand même un clip jouable | idem |
-| La rangée refuse d'inventer une planche | idem |
-| **Contre-épreuve** : deux ressources sont deux annulations, et c'est dit | idem |
-| L'Inspector nomme la planche, la grille, la vitesse, la boucle | `editor/inspector/resource.test.js` |
-| Une planche supprimée est dite « Missing », jamais un identifiant | idem |
-| Un prefab dit combien d'Objects il ferait | idem |
+| An image is requested synchronously and arrives one turn later | `runtime/rendering/images.test.js` |
+| A hundred requests, one decode | the same |
+| Resource missing: read **once**, never sixty times a second | the same |
+| Unreadable image: failed once, nothing is thrown | the same |
+| Invalidation: re-read, and the old image is closed | the same |
+| **Counter-test**: with no invalidation, the old pixels stay | the same |
+| `preload()` counts what is usable | the same |
+| Asynchronous resolver (the Editor's path) | the same |
+| Host with no image API: nothing, and nothing breaks | the same |
+| The backend receives the identity and draws what it resolved | the same |
+| `clip` draws a rectangle of the sheet | the same |
+| Image not yet arrived: nothing is drawn | the same |
+| Natural size, one dimension given, neither | the same |
+| A spawned prefab shows its image on the frame it appears | the same |
+| Frame grid, `first`, plain strip, clip with no cell | `runtime/rendering/components/sprite-animator.test.js` |
+| Unknown version refused | the same |
+| Loop, no loop, `fps: 0` | the same |
+| The same elapsed time at two step sizes | the same |
+| Pause, speed, clip change, clip deleted | the same |
+| Animator with no Sprite, Runtime with no resources | the same |
+| The playhead never reaches the format | the same |
+| `Play Animation` restarts what `Set Property` would not | the same |
+| `Animation Finished` on an Object with no animator | the same |
+| A clip is created from a sheet, and the grid comes from the header | `editor/project/commands.test.js` |
+| The sheet is imported with it, byte for byte | the same |
+| An unreadable header still gives a playable clip | the same |
+| The row refuses to invent a sheet | the same |
+| **Counter-test**: two resources are two undos, and it is said | the same |
+| The Inspector names the sheet, the grid, the speed, the loop | `editor/inspector/resource.test.js` |
+| A deleted sheet is called "Missing", never an identifier | the same |
+| A prefab says how many Objects it would make | the same |
 
 ---
 
-## 8. Conséquences
+## 8. Consequences
 
-### Positives
+### Positive
 
-- **Un Sprite dessine.** Le trou le plus ancien du dépôt est fermé.
-- Une seule table de définitions résolues, un seul chargeur, une frontière de moins à tenir.
-- La taille d'un Sprite a une vérité unique et un défaut utile.
-- Une animation partagée est une Resource partagée.
-- Le Core ne connaît toujours ni DOM, ni stockage, ni décodeur.
+- **A Sprite draws.** The repository's oldest hole is closed.
+- One table of resolved definitions, one loader, one less boundary to maintain.
+- A Sprite's size has a single truth and a useful default.
+- A shared animation is a shared Resource.
+- The Core still knows nothing of the DOM, of storage, or of a decoder.
 
-### Négatives
+### Negative
 
-- `RENDERER_OPERATIONS` gagne `imageSize`, et `drawImage` change de premier argument : tout
-  backend et tout double de test doit suivre.
-- `PrefabRegistry` est renommé `ResourceRegistry` et `Runtime({ prefabs })` devient
-  `Runtime({ resources })` — une tranche de six semaines l'aurait payé plus cher.
-- `bounds()` d'un Sprite jamais dessiné répond `null` ; le picking retombe sur le carré de
-  poignée, ce qui est correct et visible.
-- `columns` est un champ qu'un créateur doit remplir, là où mesurer aurait paru automatique.
+- `RENDERER_OPERATIONS` gains `imageSize`, and `drawImage` changes its first argument: every
+  backend and every test double has to follow.
+- `PrefabRegistry` is renamed `ResourceRegistry` and `Runtime({ prefabs })` becomes
+  `Runtime({ resources })` — six weeks later it would have cost more.
+- `bounds()` on a Sprite never drawn answers `null`; picking falls back to the handle square,
+  which is correct and visible.
+- `columns` is a field a creator has to fill in, where measuring would have looked automatic.

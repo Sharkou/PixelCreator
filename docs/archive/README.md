@@ -1,24 +1,23 @@
-# Documents archivés
+# Archived documents
 
-Ces documents précèdent la Phase 0. Ils sont **conservés comme sources d'intention**,
-pas comme descriptions du comportement du code.
+These documents predate Phase 0. They are **kept as sources of intent**, not as descriptions of
+what the code does.
 
-Plusieurs de leurs affirmations sont **contredites par le code** — c'est ce qui a motivé
-la règle d'étiquetage OBSERVÉ / DÉCISION HISTORIQUE / PROPOSITION V2 / QUESTION À VALIDER
-(voir `../CONVENTIONS.md`).
+Several of their claims are **contradicted by the code** — which is what motivated the labelling
+rule OBSERVED / HISTORICAL DECISION / V2 PROPOSAL / OPEN QUESTION (see `../CONVENTIONS.md`).
 
-| Affirmation | Réalité vérifiée |
+| Claim | Verified reality |
 |---|---|
-| « The editor never mutates engine state directly » | L'Editor écrit `scene.current.$x = …` directement (`editor/system/handler.js`) |
-| « Local update: `obj.setProperty('x', 100)` / Network: `obj.syncProperty(...)` » | Ces méthodes existent mais l'Editor utilise en réalité l'accesseur `$prop` |
-| « No component-to-component coupling » | `Animator` pilote `Animation` ; `Controller` appelle `self.translate()` qui appelle `components.collider.update()` |
-| « If something is visible, it owns a renderer component » | `Object.select()` et `Object.preview()` dessinent depuis le Core, hors composant |
+| "The editor never mutates engine state directly" | The Editor writes `scene.current.$x = …` directly (`editor/system/handler.js`) |
+| "Local update: `obj.setProperty('x', 100)` / Network: `obj.syncProperty(...)`" | Those methods exist, but the Editor actually uses the `$prop` accessor |
+| "No component-to-component coupling" | `Animator` drives `Animation`; `Controller` calls `self.translate()`, which calls `components.collider.update()` |
+| "If something is visible, it owns a renderer component" | `Object.select()` and `Object.preview()` draw from the Core, outside any component |
 
-| Fichier | Remplacé par |
+| File | Replaced by |
 |---|---|
 | `project-vision.md` | `../PROJECT.md` |
 | `architecture.md` | `../ARCHITECTURE.md` + `../architecture/*.md` |
 | `coding-guidelines.md` | `../CONVENTIONS.md` |
-| `documentation.md` | réparti entre `../PROJECT.md` et `../CONVENTIONS.md` |
+| `documentation.md` | split between `../PROJECT.md` and `../CONVENTIONS.md` |
 
-Rien n'a été perdu : ces fichiers restent lisibles ici et dans l'historique git.
+Nothing has been lost: these files stay readable here and in the git history.

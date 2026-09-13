@@ -2,7 +2,7 @@
 
 This page is a **map**, not the specification. The specification is
 [ARCHITECTURE.md](../ARCHITECTURE.md) and the 72
-[ADRs](../decisions/) — both in French, both authoritative. What follows orients you in the
+[ADRs](../decisions/), both authoritative. What follows orients you in the
 code and tells you which document or ADR settles each subject, so you do not have to read
 eight thousand lines to change one panel.
 

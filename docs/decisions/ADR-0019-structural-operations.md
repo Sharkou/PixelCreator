@@ -1,155 +1,149 @@
-# ADR-0019 — Operations structurelles, `invert()`, et `REPARENT` unifié
+# ADR-0019 — Structural Operations, `invert()`, and a unified `REPARENT`
 
-- **Statut :** **accepté** (2026-08-14)
-- **Dépend de :** ADR-0008 (Operations), ADR-0011 (autorité), ADR-0018 (ordre structurel)
-- **Complète et amende :** ADR-0008, § « Contexte observé »
+- **Status:** **accepted** (2026-08-14)
+- **Depends on:** ADR-0008 (Operations), ADR-0011 (authority), ADR-0018 (structural order)
+- **Completes and amends:** ADR-0008, §"Observed context"
 
-## Contexte observé
+## Observed context
 
-`OperationType` ne contenait que `SET_PROPERTY`. Toute mutation de **structure** — créer,
-supprimer, attacher un Component, reparenter — se faisait par appel direct, donc :
-sans arbitrage, sans réplication, sans historique.
+`OperationType` contained only `SET_PROPERTY`. Every **structural** mutation — creating, deleting,
+attaching a Component, reparenting — was done by a direct call, and therefore: with no arbitration,
+no replication, no history.
 
-`ADR-0008` dressait la liste des messages réseau de Legacy, dont `addChild` et
-`removeChild`. Cette liste est un **inventaire d'un protocole existant**, pas une décision
-de conception : elle décrivait ce que Legacy envoyait.
+`ADR-0008` listed Legacy's network messages, including `addChild` and `removeChild`. That list is
+an **inventory of an existing protocol**, not a design decision: it described what Legacy sent.
 
-`Object.addChild()` détachait déjà l'objet de son parent précédent (`object.js`) —
-« ajouter un enfant » *était* déjà un reparentage.
+`Object.addChild()` already detached the object from its previous parent (`object.js`) — "adding a
+child" *already was* a reparent.
 
-## Décision
+## Decision
 
-### 1. Sept types pour la Scene, deux pour le Project
+### 1. Seven types for the Scene, two for the Project
 
-| Type | Portée | Payload | Inverse |
+| Type | Scope | Payload | Inverse |
 |---|---|---|---|
 | `SET_PROPERTY` | Scene | `{ target, prop, value, previous }` | `previous` ↔ `value` |
 | `ADD_OBJECT` | Scene | `{ object, subtree, parent, index }` | `REMOVE_OBJECT` |
 | `REMOVE_OBJECT` | Scene | `{ object, subtree, parent, index }` | `ADD_OBJECT` |
 | `ADD_COMPONENT` | Scene | `{ object, component, index, values }` | `REMOVE_COMPONENT` |
 | `REMOVE_COMPONENT` | Scene | `{ object, component, index, values }` | `ADD_COMPONENT` |
-| `MOVE_COMPONENT` | Scene | `{ object, component, index, previousIndex }` | indices échangés |
-| `REPARENT` | Scene | `{ object, parent, index, previousParent, previousIndex }` | le même, `previous*` échangés |
-| `ADD_RESOURCE` / `REMOVE_RESOURCE` | Project | manifeste + payload | l'un l'autre |
+| `MOVE_COMPONENT` | Scene | `{ object, component, index, previousIndex }` | indices swapped |
+| `REPARENT` | Scene | `{ object, parent, index, previousParent, previousIndex }` | the same, `previous*` swapped |
+| `ADD_RESOURCE` / `REMOVE_RESOURCE` | Project | manifest + payload | each other |
 
-### 2. `REPARENT` remplace `ADD_CHILD` et `REMOVE_CHILD`
+### 2. `REPARENT` replaces `ADD_CHILD` and `REMOVE_CHILD`
 
-**VALIDÉ.** Une seule Operation couvre quatre gestes :
+**SETTLED.** One Operation covers four gestures:
 
-- reparenter ;
-- détacher (`parent: null`) ;
-- réordonner parmi ses frères (même parent, autre index) ;
-- **réordonner parmi les racines** — les racines d'une Scene sont les enfants d'un parent
-  implicite `null` (ADR-0018).
+- reparenting;
+- detaching (`parent: null`);
+- reordering among siblings (the same parent, another index);
+- **reordering among the roots** — a Scene's roots are the children of an implicit `null` parent
+  (ADR-0018).
 
-Le geste réel dans une Hierarchy est un dépôt *entre deux lignes* : il change le parent
-**et** la position, atomiquement. Deux Operations séparées devraient toujours voyager
-ensemble, s'annuler ensemble, et dans le bon ordre.
+The real gesture in a Hierarchy is a drop *between two rows*: it changes the parent **and** the
+position, atomically. Two separate Operations would always have to travel together, undo together,
+and in the right order.
 
-Et l'argument décisif : **l'inverse d'un `REPARENT` est un `REPARENT`**. Deux opérations
-qui s'annulent l'une l'autre sont la même opération.
+And the decisive argument: **the inverse of a `REPARENT` is a `REPARENT`**. Two operations that
+cancel each other out are the same operation.
 
-> **Ce n'est pas un renversement d'ADR-0008.** La capacité couverte est rigoureusement
-> identique ; c'est la liste d'un inventaire réseau qui est simplifiée. ADR-0008 est amendé
-> en conséquence.
+> **This is not a reversal of ADR-0008.** The capability covered is rigorously identical; what is
+> simplified is the list of a network inventory. ADR-0008 is amended accordingly.
 
-### 3. Les événements de structure ne fusionnent pas
+### 3. The structural events do not merge
 
-`child:added` / `child:removed` restent. **Ce sont deux couches différentes :**
+`child:added` / `child:removed` stay. **They are two different layers:**
 
-| | Operation | Événement de Scene |
+| | Operation | Scene event |
 |---|---|---|
-| Ce que c'est | une intention arbitrable, répliquable, annulable | une notification que la forme a changé |
-| Produite par | `submit()` | toute mutation, y compris un `addChild()` de script |
+| What it is | an arbitrable, replicable, undoable intent | a notification that the shape has changed |
+| Produced by | `submit()` | any mutation, including a script's `addChild()` |
 
-Fusionner les deux rendrait chaque appel de script répliquable, et chaque changement
-répliqué inobservable.
+Merging the two would make every script call replicable, and every replicated change
+unobservable.
 
-### 3 bis. Un événement de structure est annoncé quand la forme est entière — ajouté 2026-08-17
+### 3 bis. A structural event is announced when the shape is whole — added 2026-08-17
 
-Précision issue de l'implémentation, pas un renversement. `reparent()` délie puis relie ;
-les notifications émises **entre les deux** décrivaient un arbre où l'objet n'appartenait
-à rien. Un écouteur qui reconstruit à cet instant — la Hierarchy — dessinait un arbre sans
-lui, et rien ne suivait pour le corriger.
+A clarification from the implementation, not a reversal. `reparent()` unlinks and then relinks; the
+notifications emitted **between the two** described a tree in which the object belonged to nothing.
+A listener that rebuilds at that moment — the Hierarchy — drew a tree without it, and nothing
+followed to fix it.
 
-Les notifications d'un remaniement sont donc retenues et émises **une fois**, quand la
-forme est celle que la scène a. La liste des événements ne change pas ; ce qui est garanti
-en plus est que **l'état lu pendant un événement est un état cohérent**. Sans cette
-garantie, « la Scene annonce que la forme a changé » n'a pas de sens utilisable.
+The notifications of a rearrangement are therefore held and emitted **once**, when the shape is the
+one the scene has. The list of events does not change; what is additionally guaranteed is that
+**the state read during an event is a coherent state**. Without that guarantee, "the Scene
+announces that the shape has changed" has no usable meaning.
 
-### 4. `apply()` n'écrit jamais par une API qui resoumettrait
+### 4. `apply()` never writes through an API that would resubmit
 
-**La propriété anti-écho est étendue aux Operations structurelles.** Chaque gestionnaire
-mute par les primitives internes (`linkChild`, `unlinkChild`, la collection ordonnée),
-qui ne produisent aucune Operation. Appliquer une opération répliquée ne renvoie donc
-rien : **la boucle n'est pas prévenue, elle est irreprésentable** (ADR-0008).
+**The anti-echo property is extended to the structural Operations.** Every handler mutates through
+the internal primitives (`linkChild`, `unlinkChild`, the ordered collection), which produce no
+Operation. Applying a replicated operation therefore sends nothing back: **the loop is not
+prevented, it is unrepresentable** (ADR-0008).
 
-### 5. Un gestionnaire refuse, il ne jette pas
+### 5. A handler refuses, it does not throw
 
-Un cycle, un index qui ne change rien, un Component déjà attaché → `applied: false`,
-**aucune Operation émise**. Un `throw` dans le pipeline remonterait au transport. La garde
-de cycle (`isAncestorOf`) vit désormais dans le gestionnaire, pas seulement dans
-`addChild()`, parce qu'une opération répliquée doit être validée aussi.
+A cycle, an index that changes nothing, a Component already attached → `applied: false`, **no
+Operation emitted**. A `throw` inside the pipeline would propagate to the transport. The cycle
+guard (`isAncestorOf`) now lives in the handler, not only in `addChild()`, because a replicated
+operation must be validated too.
 
-**Cycle en réseau :** deux clients reparentent simultanément A sous B et B sous A. Chaque
-opération est valide localement, leur composition ne l'est pas. C'est le serveur
-autoritaire qui tranche, dans **son** ordre (ADR-0011). Aucune machinerie supplémentaire.
+**A cycle over the network:** two clients simultaneously reparent A under B and B under A. Each
+operation is valid locally; their composition is not. It is the authoritative server that decides,
+in **its** order (ADR-0011). No extra machinery.
 
-### 6. `seq` est par pipeline
+### 6. `seq` is per pipeline
 
-C'était un compteur de module, partagé par toutes les scènes du processus. Il devient un
-compteur d'instance, **apposé par le pipeline au moment du `submit()`**. Une opération qui
-arrive déjà numérotée — répliquée — garde le numéro de son auteur.
+It used to be a module-level counter, shared by every scene in the process. It becomes an instance
+counter, **stamped by the pipeline at `submit()` time**. An operation that arrives already
+numbered — replicated — keeps its author's number.
 
-### 7. Les identifiants sont générés par l'auteur
+### 7. Identifiers are generated by the author
 
-Ils voyagent dans le payload. Un identifiant minté par le récepteur ferait diverger les
-scènes d'une machine à l'autre.
+They travel in the payload. An identifier minted by the receiver would make the scenes diverge from
+one machine to another.
 
-### 8. `invert()` appartient au Core
+### 8. `invert()` belongs to the Core
 
-Pure, sans modèle, testable sous Node. Une seule place connaît la règle d'inversion de
-chaque type. `seq` de l'inverse est remis à `null` : c'est une **nouvelle** intention, qui
-prend son propre numéro auprès du pipeline qui l'accepte. `actor` et `batch` sont
-conservés. Voir ADR-0024 pour ce qui en est fait.
+Pure, model-free, testable under Node. One place knows each type's inversion rule. The inverse's
+`seq` is reset to `null`: it is a **new** intent, which takes its own number from whichever
+pipeline accepts it. `actor` and `batch` are preserved. See ADR-0024 for what is done with it.
 
-### 9. Les champs d'inversion sont nommés et séparables
+### 9. The inversion fields are named and separable
 
-`previous`, `subtree`, `values`, `previous*` ne servent qu'à inverser. Un transport est
-libre de les élaguer — un serveur n'en a pas besoin pour appliquer. **Cette optimisation
-n'est pas construite** ; le format la rend seulement possible, et c'est le fait de nommer
-les champs qui la rend possible.
+`previous`, `subtree`, `values` and `previous*` serve only to invert. A transport is free to prune
+them — a server does not need them in order to apply. **That optimization is not built**; the
+format merely makes it possible, and it is naming the fields that makes it possible.
 
-## Ce que cet ADR ne décide pas
+## What this ADR does not decide
 
-- La granularité des Operations d'édition de graphe (`ADD_NODE`, `CONNECT`…). Tant que le
-  modèle de graphe n'existe pas, un graphe se sauvegarde entier. Report délibéré.
-- Le format réseau des Operations structurelles sur le fil.
+- The granularity of graph editing Operations (`ADD_NODE`, `CONNECT`…). As long as the graph model
+  does not exist, a graph is saved whole. A deliberate deferral.
+- The network format of the structural Operations on the wire.
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Créer, supprimer, attacher, réordonner et reparenter deviennent répliquables et
-  annulables, sans code d'undo dédié.
-- Un dépôt de Hierarchy est **une** opération atomique, avec **un** inverse et **une**
-  validation de cycle.
-- Quatre gestes, un modèle mental.
+- Creating, deleting, attaching, reordering and reparenting become replicable and undoable, with no
+  dedicated undo code.
+- A Hierarchy drop is **one** atomic operation, with **one** inverse and **one** cycle validation.
+- Four gestures, one mental model.
 
-### Négatives
+### Negative
 
-- ADR-0008 devait être amendé : c'est une liste écrite dans un ADR accepté qui est
-  remplacée.
-- `Scene` prend un `registry`, puisqu'`ADD_COMPONENT` reconstruit une instance.
-- `Operations.register` prend une option `resolveTarget`, parce qu'un `ADD_OBJECT` nomme
-  une cible qui n'existe pas encore.
+- ADR-0008 had to be amended: a list written in an accepted ADR is being replaced.
+- `Scene` takes a `registry`, since an `ADD_COMPONENT` rebuilds an instance.
+- `Operations.register` takes a `resolveTarget` option, because an `ADD_OBJECT` names a target that
+  does not exist yet.
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **Garder `ADD_CHILD` / `REMOVE_CHILD` + une Operation de réordonnancement** | Un dépôt produit deux ou trois opérations qui doivent toujours voyager et s'annuler ensemble, et dont l'ordre importe. Trois règles d'inversion au lieu d'une. |
-| **`UNPARENT` séparé** | Son inverse est un `REPARENT`. C'est la même opération avec `parent: null`. |
-| **Valider les cycles dans `addChild()` seulement** | Une opération répliquée ne passe pas par `addChild()`. |
-| **Faire jeter les gestionnaires invalides** | Le `throw` remonterait au transport. |
-| **Garder `seq` global au module** | Sans conséquence tant que c'est un numéro d'ordre local ; faux le jour où c'est un numéro de séquence réseau. |
+| **Keeping `ADD_CHILD` / `REMOVE_CHILD` + a reordering Operation** | A drop produces two or three operations that must always travel and undo together, and whose order matters. Three inversion rules instead of one. |
+| **A separate `UNPARENT`** | Its inverse is a `REPARENT`. It is the same operation with `parent: null`. |
+| **Validating cycles in `addChild()` only** | A replicated operation does not go through `addChild()`. |
+| **Making invalid handlers throw** | The `throw` would propagate to the transport. |
+| **Keeping `seq` global to the module** | Harmless while it is a local ordering number; wrong the day it is a network sequence number. |

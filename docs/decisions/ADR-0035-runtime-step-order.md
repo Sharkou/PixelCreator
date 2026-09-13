@@ -1,226 +1,214 @@
-# ADR-0035 — L'ordre d'exécution de `Runtime.step()`
+# ADR-0035 — The execution order of `Runtime.step()`
 
-- **Statut :** **accepté** (2026-08-22)
-- **Décide :** dans quel ordre le Runtime exécute les Objects d'une Scene, et dans quel ordre le renderer les dessine à `layer` égal
-- **Dépend de :** ADR-0005 (modules de runtime), ADR-0011 (autorité et déterminisme), ADR-0015 (un graphe s'exécute où son Component s'exécute), ADR-0018 (ordre structurel), ADR-0034 (ordre canonique d'une Scene)
-- **Amende :** le contrat écrit dans `runtime/runtime.js` — « in scene insertion order »
-
----
-
-## Pourquoi c'est un ADR séparé
-
-ADR-0034 avait besoin d'un ordre canonique et l'a défini. La tentation était d'y intégrer
-aussi le changement d'ordre d'exécution du Runtime. Trois raisons l'ont écarté, et chacune
-suffit :
-
-1. **C'est modifier un contrat écrit.** `runtime/runtime.js` documentait, en toutes lettres,
-   que les composants s'exécutent « with the same fixed delta, **in scene insertion order** ».
-   Changer cela au détour d'une décision sur les références aurait été un changement de
-   contrat par effet de bord.
-2. **Ce n'est pas une conséquence d'ADR-0034.** Celui-ci porte sur l'**observation** — un nœud
-   qui construit une liste ordonnée et en prend le premier. Celui-là porte sur l'**exécution**
-   — qui tourne avant qui. Un `Find By Tag` canonique est déterministe quel que soit l'ordre
-   de `step()`.
-3. **La portée n'est pas la même.** L'ordre d'exécution concerne **tout composant du moteur**,
-   y compris ceux écrits en JavaScript qui n'ont rien à voir avec le visual scripting.
+- **Status:** **accepted** (2026-08-22)
+- **Decides:** in what order the Runtime runs a Scene's Objects, and in what order the renderer draws them at equal `layer`
+- **Depends on:** ADR-0005 (runtime modules), ADR-0011 (authority and determinism), ADR-0015 (a graph runs where its Component runs), ADR-0018 (structural order), ADR-0034 (a Scene's canonical order)
+- **Amends:** the contract written in `runtime/runtime.js` — "in scene insertion order"
 
 ---
 
-## Contexte observé
+## Why this is a separate ADR
 
-`runtime/runtime.js` itérait `this.#scene.objects()`, c'est-à-dire l'ordre d'insertion dans
-la `Map` de la Scene.
+ADR-0034 needed a canonical order and defined one. The temptation was to fold the Runtime's
+execution-order change into it as well. Three reasons ruled that out, and each one suffices:
 
-ADR-0034 §1 a mesuré que **cet ordre est fonction de l'historique de construction, pas de
-l'état** :
-
-- après un reparent, l'ordre d'insertion et l'ordre hiérarchique divergent (`A,B,C` contre
-  `A,C,B`) ;
-- la sérialisation **normalise** l'ordre d'insertion vers l'ordre hiérarchique, donc un
-  rechargement change `objects()` sans que l'état ait bougé ;
-- une suppression suivie de son Operation inverse laisse l'état identique et l'ordre
-  d'insertion différent.
-
-Conséquence : deux machines au même état répliqué mais d'historiques différents — l'une
-démarrée depuis un instantané, l'autre ayant rejoué les opérations — exécutaient leurs
-composants dans un ordre différent.
-
-Ce fait était **inobservable depuis un `.px`** tant qu'un graphe ne pouvait ni lire ni écrire
-hors de son propre Component. ADR-0034 §3.3 le rend atteignable sans écrire une ligne de
-code, par `property.setOn`.
+1. **It changes a written contract.** `runtime/runtime.js` documented, in so many words, that
+   components run "with the same fixed delta, **in scene insertion order**". Changing that in passing,
+   inside a decision about references, would have been a contract change by side effect.
+2. **It is not a consequence of ADR-0034.** That one is about **observation** — a node building an
+   ordered list and taking the first of it. This one is about **execution** — who runs before whom. A
+   canonical `Find By Tag` is deterministic whatever `step()`'s order is.
+3. **The scope is not the same.** Execution order concerns **every component in the engine**,
+   including those written in JavaScript that have nothing to do with visual scripting.
 
 ---
 
-## Impact mesuré sur l'existant
+## Observed context
 
-| Élément | Constat |
+`runtime/runtime.js` iterated `this.#scene.objects()`, that is, the insertion order in the Scene's
+`Map`.
+
+ADR-0034 §1 measured that **this order is a function of the construction history, not of the state**:
+
+- after a reparent, insertion order and hierarchical order diverge (`A,B,C` versus `A,C,B`);
+- serialization **normalizes** insertion order into hierarchical order, so a reload changes
+  `objects()` without the state having moved;
+- a deletion followed by its inverse Operation leaves the state identical and the insertion order
+  different.
+
+The consequence: two machines in the same replicated state but with different histories — one started
+from a snapshot, the other having replayed the operations — ran their components in a different
+order.
+
+That fact was **unobservable from a `.px`** while a graph could neither read nor write outside its own
+Component. ADR-0034 §3.3 makes it reachable without writing a line of code, through
+`property.setOn`.
+
+---
+
+## Measured impact on what exists
+
+| Item | Finding |
 |---|---|
-| Composants livrés possédant un `update()` | **un seul** : `ParticleSystem`. `Transform`, `Sprite`, `RectangleRenderer`, `Tilemap` et `Camera` n'en ont pas |
-| Ce `update()` lit-il d'autres objets ? | Non : il fait avancer ses propres particules |
-| Tests assertant un ordre inter-objets | **un seul**, dans `runtime/runtime.test.js` : deux racines créées dans l'ordre, donc insertion et hiérarchie coïncident. Il est passé sans adaptation |
+| Shipped components with an `update()` | **exactly one**: `ParticleSystem`. `Transform`, `Sprite`, `RectangleRenderer`, `Tilemap` and `Camera` have none |
+| Does that `update()` read other objects? | No: it advances its own particles |
+| Tests asserting an inter-object order | **exactly one**, in `runtime/runtime.test.js`: two roots created in order, so insertion and hierarchy coincide. It passed without adaptation |
 
-Le risque pratique était donc faible. Le changement de contrat, lui, est réel : c'est cela
-que cet ADR existe pour rendre délibéré plutôt qu'incident.
+The practical risk was therefore low. The contract change, however, is real: that is what this ADR
+exists to make deliberate rather than incidental.
 
 ---
 
-## Décision
+## Decision
 
-### 1. `Runtime.step()` parcourt l'ordre canonique
+### 1. `Runtime.step()` walks the canonical order
 
-**VALIDÉ.** `Runtime.step()` itère `hierarchyOrder(scene)` — la fonction qu'ADR-0034 §3.1 a
-sortie de `serialize.js` — et non plus `scene.objects()`. Il n'y a **pas** de seconde
-implémentation de l'ordre hiérarchique : le writer, les recherches de la Scene et le Runtime
-lisent la même.
+**SETTLED.** `Runtime.step()` iterates `hierarchyOrder(scene)` — the function ADR-0034 §3.1 lifted out
+of `serialize.js` — and no longer `scene.objects()`. There is **no** second implementation of the
+hierarchical order: the writer, the Scene's lookups and the Runtime all read the same one.
 
-**Un parent s'exécute avant ses enfants**, ce qui est aussi ce qu'une hiérarchie de
-transforms veut dire.
+**A parent runs before its children**, which is also what a hierarchy of transforms means.
 
-L'ordre d'exécution devient une fonction de l'**état répliqué** : il ne dépend que de `roots`
-et de `children`, deux listes ordonnées maintenues par le seul `REPARENT`, toutes deux
-répliquées et toutes deux sérialisées. L'ordre d'insertion n'est aucune de ces choses.
+Execution order becomes a function of the **replicated state**: it depends only on `roots` and
+`children`, two ordered lists maintained by `REPARENT` alone, both replicated and both serialized.
+Insertion order is none of those things.
 
-Rien d'autre du pas de simulation ne bouge : le delta reste fixe, l'ordre des Components à
-l'intérieur d'un Object reste celui d'ADR-0018, et l'isolation des erreurs d'ADR-0012 est
-inchangée.
+Nothing else in the simulation step moves: the delta stays fixed, the order of Components inside an
+Object stays ADR-0018's, and ADR-0012's error isolation is unchanged.
 
-### 2. Le contrat écrit dit l'ordre réel, et pourquoi c'est celui-là
+### 2. The written contract says the real order, and why it is that one
 
-**VALIDÉ.** La phrase « in scene insertion order » est remplacée dans `runtime/runtime.js`
-par l'ordre canonique et sa raison : l'ordre d'insertion est un fait sur la façon dont une
-scène a été **construite**, pas sur ce qu'elle **est**.
+**SETTLED.** The phrase "in scene insertion order" is replaced in `runtime/runtime.js` by the
+canonical order and its reason: insertion order is a fact about how a scene was **built**, not about
+what it **is**.
 
-### 3. À `layer` égal, le dessin suit le même ordre canonique
+### 3. At equal `layer`, drawing follows the same canonical order
 
-**VALIDÉ.** `runtime/rendering/scene-renderer.js` part désormais de `hierarchyOrder(scene)`
-puis trie par `layer`. `Array.prototype.sort` étant stable :
+**SETTLED.** `runtime/rendering/scene-renderer.js` now starts from `hierarchyOrder(scene)` and then
+sorts by `layer`. Since `Array.prototype.sort` is stable:
 
-1. **`layer` décide** — le comportement existant des layers est intact ;
-2. **à `layer` égal, l'ordre canonique départage.**
+1. **`layer` decides** — the existing behaviour of layers is intact;
+2. **at equal `layer`, the canonical order breaks the tie.**
 
-Avant, le départage venait de `scene.objects()`, donc de l'ordre d'insertion : « ce qui
-recouvre quoi » était un fait sur l'historique d'une scène, et la même scène sauvegardée puis
-rechargée pouvait dessiner une paire dans l'autre sens. C'était le même défaut qu'au §1, sur
-un autre consommateur.
+Before, the tiebreak came from `scene.objects()`, and therefore from insertion order: "what covers
+what" was a fact about a scene's history, and the same scene saved and reloaded could draw a pair the
+other way round. It was the same defect as in §1, on a different consumer.
 
-**Le Runtime et le renderer partent donc du même ordre canonique.** Il y en a un, pas deux :
-laisser le dessin sur l'ordre d'insertion aurait été garder deux ordres pour une seule idée.
+**The Runtime and the renderer therefore start from the same canonical order.** There is one, not
+two: leaving drawing on insertion order would have been keeping two orders for one idea.
 
-### 4. `Scene.objects()` ne change pas
+### 4. `Scene.objects()` does not change
 
-**VALIDÉ.** Il reste le stockage et l'ordre d'insertion, et son API publique est inchangée.
-Le rendre canonique aurait été une refonte — le stockage, la sérialisation, le renderer,
-l'Editor et l'ensemble de la suite de tests en dépendent — et ADR-0034 §1 avait déjà écarté
-cette voie.
+**SETTLED.** It stays the storage and the insertion order, and its public API is unchanged. Making it
+canonical would have been a rewrite — the storage, serialization, the renderer, the Editor and the
+whole test suite depend on it — and ADR-0034 §1 had already ruled that path out.
 
-### 5. L'invariant d'atteignabilité était violable, et la cause est corrigée à sa source
+### 5. The reachability invariant was violable, and the cause is fixed at its source
 
-**VALIDÉ.** Le risque que ce document signalait en S6 n'était pas théorique : il était
-atteignable par l'API publique, et **il cassait déjà la sérialisation**.
+**SETTLED.** The risk this document flagged in S6 was not theoretical: it was reachable through the
+public API, and **it already broke serialization**.
 
-`Scene.add()` ne plaçait un objet dans les roots que `if (!object.parent)`, sans vérifier que
-ce parent appartienne à **cette** Scene. Un objet ajouté alors que son parent est ailleurs
-n'était donc ni une racine, ni l'enfant de quoi que ce soit que la scène puisse atteindre.
-Mesuré :
+`Scene.add()` only put an object in the roots `if (!object.parent)`, without checking that the parent
+belonged to **this** Scene. An object added while its parent is elsewhere was therefore neither a
+root, nor the child of anything the scene could reach. Measured:
 
 ```
-elsewhere.addChild(orphan);   // `elsewhere` n'a jamais rejoint la scène
+elsewhere.addChild(orphan);   // `elsewhere` never joined the scene
 scene.add(orphan);
 
 scene.size          → 1
 scene.objects()     → ['Orphan']
 scene.roots()       → []
-hierarchyOrder()    → []          ← invisible au parcours canonique
-serializeScene()    → []          ← et déjà perdu à la sauvegarde
+hierarchyOrder()    → []          ← invisible to the canonical traversal
+serializeScene()    → []          ← and already lost on save
 ```
 
-La scène le détenait, `objects()` le listait, et plus rien d'autre ne le voyait. Tant que le
-Runtime itérait `objects()`, il tournait quand même ; en adoptant le parcours canonique, il
-aurait **cessé d'être simulé**.
+The scene held it, `objects()` listed it, and nothing else saw it. As long as the Runtime iterated
+`objects()`, it ran anyway; adopting the canonical traversal, it would have **stopped being
+simulated**.
 
-**La correction est dans `Scene.add()`, à la source :** une racine est un objet sans parent
-**dans cette Scene**. C'est la moitié manquante d'une condition, pas un repli.
+**The fix is in `Scene.add()`, at the source:** a root is an object with no parent **in this Scene**.
+It is the missing half of a condition, not a fallback.
 
-> **Ce n'est pas un repli dans `Runtime.step()`,** et c'est la partie qui mérite d'être
-> défendue. Un repli — « puis les objets non atteignables, dans l'ordre où on les trouve » —
-> aurait rendu la simulation correcte en masquant le défaut d'ajout qui l'a produit, et aurait
-> réintroduit une part d'ordre d'insertion dans l'ordre canonique. ADR-0034 §3.1 l'écrivait
-> déjà : aucun repli n'est ajouté pour un objet non atteignable.
+> **It is not a fallback in `Runtime.step()`,** and that is the part worth defending. A fallback —
+> "then the unreachable objects, in the order they are found" — would have made the simulation correct
+> by hiding the defect in adding that produced it, and would have reintroduced a share of insertion
+> order into the canonical order. ADR-0034 §3.1 already wrote it: no fallback is added for an
+> unreachable object.
 
-Le cas ordinaire est intact : attacher un enfant à un parent qui **est** dans la scène, puis
-l'ajouter, donne toujours un enfant et non une racine.
+The ordinary case is untouched: attaching a child to a parent that **is** in the scene, then adding
+it, still gives a child and not a root.
 
-La correction bénéficie à `serializeScene()` autant qu'au Runtime, puisque les deux lisent le
-même parcours : un tel objet est désormais écrit dans la scène enregistrée au lieu d'en
-disparaître en silence.
+The fix benefits `serializeScene()` as much as the Runtime, since both read the same traversal: such
+an object is now written into the saved scene instead of silently disappearing from it.
 
 ---
 
-## Contrats observables
+## Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| Un parent s'exécute avant ses enfants | l'enfant peut avoir rejoint la scène le premier |
-| L'ordre d'`update` ne dépend pas de l'historique | aller-retour de sérialisation, puis suppression suivie de son inverse |
-| Deux chemins de construction, un seul ordre | opérations rejouées contre instantané |
-| `layer` prime, l'ordre canonique départage | deux objets de même `layer`, deux objets de `layer` différents |
-| Tout objet de la scène est simulé, et écrit | un objet ajouté alors que son parent est ailleurs |
-| `Scene.objects()` reste l'ordre d'insertion | assert direct, à côté de chaque assertion d'ordre d'exécution |
+| A parent runs before its children | the child may have joined the scene first |
+| The `update` order does not depend on history | a serialization round trip, then a deletion followed by its inverse |
+| Two construction paths, one order | replayed operations versus a snapshot |
+| `layer` wins, the canonical order breaks the tie | two objects at the same `layer`, two objects at different `layer`s |
+| Every object of the scene is simulated, and written | an object added while its parent is elsewhere |
+| `Scene.objects()` stays insertion order | a direct assert, beside every execution-order assertion |
 
 ---
 
 ## Tests
 
-Écrits dans `runtime/runtime.test.js` et `runtime/rendering/rendering.test.js`.
+Written in `runtime/runtime.test.js` and `runtime/rendering/rendering.test.js`.
 
-| # | Test | Protège |
+| # | Test | Protects |
 |---|---|---|
-| S1 | L'ordre d'`update` est identique avant et après un aller-retour de sérialisation | l'ordre est fonction de l'état |
-| S2 | L'ordre d'`update` est identique avant et après une suppression suivie de son Operation inverse, par la vraie pipeline | idem, sur le chemin d'undo |
-| S3 | Un parent s'exécute avant ses enfants, même si l'enfant a rejoint la scène le premier | la conséquence sémantique du §1 |
-| S4 | Le test d'ordre existant de `runtime/runtime.test.js` continue de passer | non-régression du contrat visible |
-| S5 | Deux `Runtime` construits par deux chemins différents — opérations rejouées contre instantané — produisent la même trace tout en stockant différemment | **le critère qui justifie l'ADR** |
-| S6 | Tout objet d'une Scene est atteignable depuis ses roots, donc simulé et écrit | §5 |
-| S7 | Deux objets de même `layer` sont dessinés dans l'ordre canonique | §3 |
-| S8 | `layer` continue de primer sur la forme de l'arbre | §3, dans l'autre sens |
+| S1 | The `update` order is identical before and after a serialization round trip | the order is a function of the state |
+| S2 | The `update` order is identical before and after a deletion followed by its inverse Operation, through the real pipeline | the same, on the undo path |
+| S3 | A parent runs before its children, even if the child joined the scene first | §1's semantic consequence |
+| S4 | The existing order test in `runtime/runtime.test.js` keeps passing | no regression of the visible contract |
+| S5 | Two `Runtime`s built by two different paths — replayed operations versus a snapshot — produce the same trace while storing differently | **the criterion that justifies the ADR** |
+| S6 | Every object of a Scene is reachable from its roots, and therefore simulated and written | §5 |
+| S7 | Two objects at the same `layer` are drawn in canonical order | §3 |
+| S8 | `layer` still wins over the shape of the tree | §3, the other way round |
 
-Sept de ces huit tests échouent contre l'implémentation précédente, ce qui est la seule
-preuve qui vaille qu'ils gardent quelque chose. Le huitième — S8 — passait déjà : il garde
-contre une régression future où le départage écraserait le tri par `layer`.
-
----
-
-## Conséquences
-
-### Positives
-
-- L'ordre d'exécution du moteur cesse d'être une propriété de l'historique d'une scène.
-- Le Runtime et le renderer lisent **un** ordre, défini **une** fois, partagé avec le writer.
-- Un parent s'exécute avant ses enfants, ce qui est ce qu'une hiérarchie de transforms dit.
-- Un objet que la scène détenait sans pouvoir l'atteindre cesse d'exister : il est simulé et
-  il est sauvegardé.
-- L'écriture croisée d'ADR-0034 §3.3 porte désormais sa garantie multijoueur.
-
-### Négatives
-
-- Le parcours alloue à chaque pas et à chaque frame, là où `objects()` rendait une copie du
-  stockage. Le dépôt assume déjà ce coût plutôt qu'un cache, pour la raison que
-  `scene-renderer.js` énonce : un cache invalidé à chaque écriture est une optimisation
-  spéculative et un état de plus à tenir juste.
-- Un contrat écrit change. Aucun composant livré n'en dépendait — un seul possède un
-  `update()`, et il est autonome — mais du code écrit à la main contre l'ordre d'insertion
-  s'exécuterait maintenant dans un autre ordre.
-- `Scene.add()` gagne une condition. Elle ne change que le cas qui était déjà cassé.
+Seven of those eight tests fail against the previous implementation, which is the only proof worth
+having that they guard something. The eighth — S8 — already passed: it guards against a future
+regression where the tiebreak would override the `layer` sort.
 
 ---
 
-## Alternatives écartées
+## Consequences
 
-| Alternative | Pourquoi non |
+### Positive
+
+- The engine's execution order stops being a property of a scene's history.
+- The Runtime and the renderer read **one** order, defined **once**, shared with the writer.
+- A parent runs before its children, which is what a hierarchy of transforms says.
+- An object the scene held without being able to reach it ceases to exist: it is simulated and it is
+  saved.
+- ADR-0034 §3.3's cross-object write now carries its multiplayer guarantee.
+
+### Negative
+
+- The traversal allocates on every step and every frame, where `objects()` returned a copy of the
+  storage. The repository already accepts that cost rather than a cache, for the reason
+  `scene-renderer.js` states: a cache invalidated on every write is a speculative optimization and one
+  more piece of state to keep right.
+- A written contract changes. No shipped component depended on it — only one has an `update()`, and it
+  is self-contained — but hand-written code relying on insertion order would now run in a different
+  order.
+- `Scene.add()` gains a condition. It changes only the case that was already broken.
+
+---
+
+## Rejected alternatives
+
+| Alternative | Why not |
 |---|---|
-| Ne rien changer | Tenable tant qu'aucun nœud n'écrit chez un voisin ; intenable dès que `property.setOn` existe |
-| Rendre `Scene.objects()` canonique | Écarté par ADR-0034 §1 : refonte du stockage et de tous ses lecteurs |
-| Faire maintenir l'ordre canonique par la Scene, de façon incrémentale | Un cache, donc une seconde source de vérité à invalider sur chaque `REPARENT` |
-| Trier par `id` | Déterministe, mais l'ordre d'exécution cesserait d'avoir un sens lisible pour un créateur |
-| Laisser le dessin sur l'ordre d'insertion | Deux ordres pour une seule idée, et « ce qui recouvre quoi » resterait un fait sur l'historique |
-| Un repli dans `Runtime.step()` pour les objets non atteignables | Masquerait le défaut d'ajout qui les produit, et remettrait de l'ordre d'insertion dans l'ordre canonique |
+| Changing nothing | Tenable while no node writes to a neighbour; untenable as soon as `property.setOn` exists |
+| Making `Scene.objects()` canonical | Ruled out by ADR-0034 §1: a rewrite of the storage and all of its readers |
+| Having the Scene maintain the canonical order incrementally | A cache, and therefore a second source of truth to invalidate on every `REPARENT` |
+| Sorting by `id` | Deterministic, but execution order would stop having a meaning a creator can read |
+| Leaving drawing on insertion order | Two orders for one idea, and "what covers what" would stay a fact about history |
+| A fallback in `Runtime.step()` for unreachable objects | It would hide the defect in adding that produces them, and would put insertion order back into the canonical order |

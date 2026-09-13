@@ -1,161 +1,155 @@
-# ADR-0020 — `Resource`, `ResourceId`, `ResourceStore`, et la couche `src/project/`
+# ADR-0020 — `Resource`, `ResourceId`, `ResourceStore`, and the `src/project/` layer
 
-- **Statut :** **accepté** (2026-08-14)
-- **Dépend de :** ADR-0010 (identité par ID), ADR-0011 (serveur autoritaire), ADR-0017 (l'état d'IDE n'entre pas dans le modèle)
-- **Complété par :** ADR-0021 (identité d'une définition), ADR-0024 (Undo/Redo)
+- **Status:** **accepted** (2026-08-14)
+- **Depends on:** ADR-0010 (identity by ID), ADR-0011 (an authoritative server), ADR-0017 (IDE state does not enter the model)
+- **Completed by:** ADR-0021 (a definition's identity), ADR-0024 (Undo/Redo)
 
-## Contexte observé
+## Observed context
 
-Legacy dérivait l'identité d'une ressource de son emplacement : `id = path + name`
-(`ARCHITECTURE.md` §9). Renommer un fichier changeait donc **ce qu'il était**, et cassait
-toute référence vers lui. Les payloads binaires voyageaient en base64 **à l'intérieur** du
-JSON d'une scène, ce qui faisait transporter les images à chaque instantané répliqué.
+Legacy derived a resource's identity from its location: `id = path + name`
+(`ARCHITECTURE.md` §9). Renaming a file therefore changed **what it was**, and broke every
+reference to it. Binary payloads travelled as base64 **inside** a scene's JSON, which made images
+travel with every replicated snapshot.
 
-v2 n'avait aucune notion de ressource : `Store` (IndexedDB) était écrit et inutilisé, et
-rien ne chargeait un projet.
+v2 had no notion of a resource: `Store` (IndexedDB) was written and unused, and nothing loaded a
+project.
 
-## Décision
+## Decision
 
-### 1. Une seule unité : `Resource`
+### 1. One unit: `Resource`
 
-`kind ∈ { folder, scene, component, graph, asset }` — **`folder` ajouté par ADR-0025**.
+`kind ∈ { folder, scene, component, graph, asset }` — **`folder` added by ADR-0025**.
 
 | | |
 |---|---|
-| **Identité** | `ResourceId` opaque, **immuable**, indépendante du nom et du rangement |
-| **Contient** | `id`, `kind`, `name` (affiché), `parent` (rangement), `revision`, `created`, `modified`, `mime` pour un asset |
-| **Ne contient pas** | une référence par chemin ; de l'état d'exécution ; de l'état d'Editor |
-| **Propriétaire** | la couche **Project** |
+| **Identity** | an opaque `ResourceId`, **immutable**, independent of the name and of the filing |
+| **Holds** | `id`, `kind`, `name` (displayed), `parent` (filing), `revision`, `created`, `modified`, `mime` for an asset |
+| **Does not hold** | a reference by path; execution state; Editor state |
+| **Owner** | the **Project** layer |
 
-- `id` — identité. Jamais dérivée du nom ni du rangement, jamais réutilisée.
-- `name` — affichage. Modifiable, non unique, **référencé par rien**.
-- `parent` — rangement, **par identité**. Le déplacer ne casse rien.
+- `id` — identity. Never derived from the name or the filing, never reused.
+- `name` — display. Editable, non-unique, **referenced by nothing**.
+- `parent` — filing, **by identity**. Moving it breaks nothing.
 
-> **Amendé le 2026-08-17 (ADR-0025).** Cette section écrivait `path` — une chaîne
-> indicative. Une chaîne faisait de la hiérarchie une convention de nommage : renommer un
-> dossier obligeait à réécrire chaque entrée qui le mentionnait, et rien ne disait qu'un
-> dossier existait. `parent` nomme un `Resource` de `kind: 'folder'`, comme `Object.parent`
-> nomme un objet ; le chemin affiché est **dérivé**. `MANIFEST_VERSION` passe à 2.
+> **Amended on 2026-08-17 (ADR-0025).** This section used to say `path` — an indicative string. A
+> string made the hierarchy a naming convention: renaming a folder forced a rewrite of every entry
+> mentioning it, and nothing said a folder existed. `parent` names a `Resource` of
+> `kind: 'folder'`, as `Object.parent` names an object; the displayed path is **derived**.
+> `MANIFEST_VERSION` goes to 2.
 
-Déplacer un projet : les chemins changent, les ids non. Copier un projet : ids identiques,
-cohérence interne préservée. Renommer : un champ d'affichage bouge, rien d'autre.
+Moving a project: the paths change, the ids do not. Copying a project: identical ids, internal
+coherence preserved. Renaming: a display field moves, nothing else.
 
-**Importer une ressource d'un autre projet** est le seul cas de collision concevable ; le
-traitement honnête est une passe de remappage à l'import. **Il n'est pas construit.**
+**Importing a resource from another project** is the only conceivable collision case; the honest
+treatment is a remapping pass at import time. **It is not built.**
 
-### 2. `Asset` n'existe pas comme concept
+### 2. `Asset` does not exist as a concept
 
-Une image est une `Resource` de `kind: 'asset'` dont le payload vit hors du JSON. En faire
-un pair de `Resource` créerait deux schémas d'identité, deux formes de référence dans une
-propriété, deux chemins de chargement et de réplication — et laisserait sans réponse :
-pourquoi une image serait-elle un `Asset` et un `.px` une `Resource`, alors qu'une
-propriété les référence de la même façon ?
+An image is a `Resource` of `kind: 'asset'` whose payload lives outside the JSON. Making it a peer
+of `Resource` would create two identity schemes, two forms of reference in a property, two loading
+and replication paths — and would leave unanswered: why would an image be an `Asset` and a `.px` a
+`Resource`, when a property references them the same way?
 
-« Asset » reste un mot d'interface. Pas un concept du modèle.
+"Asset" stays an interface word. Not a model concept.
 
-### 3. `Document` n'existe pas
+### 3. `Document` does not exist
 
-| Ce que `Document` apporterait | Qui le détient déjà |
+| What `Document` would bring | Who already holds it |
 |---|---|
-| identité | `Resource.id` |
-| contenu | le payload |
-| persistance | `ResourceStore` |
-| état « modifié » | dérivable de l'événement `'operation'` du pipeline de la ressource |
-| pile d'undo | l'historique, **par ressource**, donc déjà indexé par `ResourceId` |
-| état de vue (scroll, zoom, repli) | **état d'Editor, qui n'entre jamais dans le projet** |
+| identity | `Resource.id` |
+| content | the payload |
+| persistence | `ResourceStore` |
+| a "modified" state | derivable from the resource pipeline's `'operation'` event |
+| an undo stack | the history, **per resource**, therefore already indexed by `ResourceId` |
+| view state (scroll, zoom, collapse) | **Editor state, which never enters the project** |
 
-`Document` serait donc soit un alias de `Resource`, soit un mélange de modèle et d'état
-d'IDE — l'erreur exacte que `scene.current` était dans Legacy, et que **ADR-0017** interdit.
+`Document` would therefore be either an alias for `Resource`, or a mixture of model and IDE state —
+the exact mistake `scene.current` was in Legacy, and that **ADR-0017** forbids.
 
-**Ce qu'un onglet ouvre s'appelle un `OpenEditor`** : `{ resourceId, kind, viewState,
-history }`, un objet de la couche Editor, **jamais sérialisé dans le projet**. Sa
-persistance éventuelle (« quels onglets étaient ouverts ») appartient à un *workspace*, un
-artefact jetable dont la perte ne coûte rien.
+**What a tab opens is called an `OpenEditor`**: `{ resourceId, kind, viewState, history }`, an
+Editor-layer object, **never serialized into the project**. Its possible persistence ("which tabs
+were open") belongs to a *workspace*, a disposable artefact whose loss costs nothing.
 
-### 4. `ResourceStore` est le seul point de contact avec le stockage
+### 4. `ResourceStore` is the only point of contact with storage
 
 ```
-list()            entrées du manifeste
+list()            manifest entries
 read(id)          payload
-write(res, data)  persiste
+write(res, data)  persists
 delete(id)
 ```
 
-Une interface, plusieurs implémentations, aucune dans le Core : mémoire (tests, démarrage),
-IndexedDB (local / hors ligne), HTTP (plus tard — l'implémentation seule change).
+One interface, several implementations, none in the Core: memory (tests, startup), IndexedDB
+(local / offline), HTTP (later — only the implementation changes).
 
-Le contrat est **asynchrone** : chaque méthode peut renvoyer une promesse, et les appelants
-attendent. Un store qui parle à IndexedDB ou à un serveur ne peut pas être synchrone, et
-prétendre le contraire imposerait de réécrire tous les appelants le jour où il arrive.
+The contract is **asynchronous**: every method may return a promise, and callers wait. A store
+talking to IndexedDB or to a server cannot be synchronous, and pretending otherwise would force a
+rewrite of every caller the day it arrives.
 
-**Chargement paresseux et par identifiant :** ouvrir un projet lit le manifeste, pas les
-payloads. **Un payload binaire n'est jamais en base64 dans le JSON d'une scène.**
+**Lazy loading, by identifier:** opening a project reads the manifest, not the payloads. **A binary
+payload is never base64 inside a scene's JSON.**
 
-### 5. Une nouvelle couche `src/project/`
+### 5. A new `src/project/` layer
 
 ```
 editor/  ──►  project/  ──►  core/
 runtime/ ──►  core/
-core/    ──►  (rien)
+core/    ──►  (nothing)
 ```
 
-`project/` n'importe ni le DOM, ni `runtime/`, ni `editor/`. Un serveur headless doit
-pouvoir charger un projet — c'est ce qu'impose **ADR-0011**.
+`project/` imports neither the DOM, nor `runtime/`, nor `editor/`. A headless server must be able
+to load a project — which is what **ADR-0011** requires.
 
-`runtime/ → project/` est interdit aussi : ce serait mettre le stockage derrière une API de
-runtime, ce que `behaviors.bind(type, graph)` — qui prend un graphe **résolu** — existe
-précisément pour éviter.
+`runtime/ → project/` is forbidden too: it would put storage behind a runtime API, which is exactly
+what `behaviors.bind(type, graph)` — which takes an **already-resolved** graph — exists to avoid.
 
-**Les règles sont déclarées dans `tools/layers/rules.js` et vérifiées à chaque exécution**,
-pas seulement écrites ici.
+**The rules are declared in `tools/layers/rules.js` and checked on every run**, not merely written
+here.
 
-### 6. Un second pipeline `Operations`, pas un second système
+### 6. A second `Operations` pipeline, not a second system
 
-Le `resolve` d'un pipeline de Scene résout des identifiants d'`Object` ; il ne peut pas
-résoudre une ressource. Le Project instancie donc son propre `Operations` : même classe,
-même contrat, même anti-écho, `resolve` différent — exactement comme un `Object` détaché
-instancie déjà le sien.
+A Scene pipeline's `resolve` resolves `Object` identifiers; it cannot resolve a resource. The
+Project therefore instantiates its own `Operations`: the same class, the same contract, the same
+anti-echo, a different `resolve` — exactly as a detached `Object` already instantiates its own.
 
-`ADD_RESOURCE` / `REMOVE_RESOURCE` en découlent, et sont inversibles comme les autres
-(ADR-0019).
+`ADD_RESOURCE` / `REMOVE_RESOURCE` follow from it, and are invertible like the rest (ADR-0019).
 
-### 7. `revision` sert à deux choses, et à deux seulement
+### 7. `revision` serves two purposes, and only two
 
-Dire à `Behaviors` qu'un graphe a changé, et dire à l'Editor qu'un panneau doit se
-reconstruire. **Les instances ne stockent pas de `revision`** — c'est ce qui garde la
-réconciliation structurelle simple (ADR-0021).
+Telling `Behaviors` that a graph has changed, and telling the Editor that a panel must be rebuilt.
+**Instances do not store a `revision`** — that is what keeps structural reconciliation simple
+(ADR-0021).
 
-## Ce que cet ADR ne décide pas
+## What this ADR does not decide
 
-| Point ouvert | Où il sera tranché |
+| Open point | Where it will be settled |
 |---|---|
-| L'implémentation IndexedDB et la politique de cache HTTP | avec le mode hors ligne |
-| Le remappage d'identifiants à l'import inter-projets | quand l'import existera |
-| La portée d'undo d'une action qui touche deux ressources | quand la fenêtre `Graph` existera (voir ADR-0024) |
-| Le format binaire des payloads d'assets | avec le pipeline d'assets |
+| The IndexedDB implementation and the HTTP cache policy | with offline mode |
+| Identifier remapping on cross-project import | when import exists |
+| The undo scope of an action touching two resources | when the `Graph` window exists (see ADR-0024) |
+| The binary format of asset payloads | with the asset pipeline |
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Renommer, déplacer et copier deviennent gratuits — le défaut de Legacy disparaît par
-  construction.
-- Une scène répliquée ne transporte plus d'images.
-- Un serveur headless charge le même projet qu'un navigateur.
-- Créer et supprimer une ressource est répliquable et annulable, sans code dédié.
+- Renaming, moving and copying become free — Legacy's defect disappears by construction.
+- A replicated scene no longer carries images.
+- A headless server loads the same project a browser does.
+- Creating and deleting a resource is replicable and undoable, with no dedicated code.
 
-### Négatives
+### Negative
 
-- Une couche de plus, et une règle de dépendances de plus à faire respecter.
-- Le contrat asynchrone du store se propage aux appelants (`loadComponentDefinitions` est
-  `async`) même quand l'implémentation est synchrone.
+- One more layer, and one more dependency rule to enforce.
+- The store's asynchronous contract propagates to the callers (`loadComponentDefinitions` is
+  `async`) even when the implementation is synchronous.
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **`Document` comme unité d'édition** | Soit un alias de `Resource`, soit un mélange de modèle et d'état d'IDE. C'est `scene.current` qui revient. |
-| **`Asset` pair de `Resource`** | Deux identités, deux références, deux chargements, deux réplications, sans raison. |
-| **Mettre le chargement dans `editor/`** | Un serveur ne peut pas dépendre d'un IDE (ADR-0011). |
-| **Identité = chemin + nom** | C'est exactement le défaut de Legacy : renommer change ce qu'une chose est. |
-| **Payload binaire en base64 dans la scène** | Fait voyager les images à chaque instantané. |
+| **`Document` as the editing unit** | Either an alias for `Resource`, or a mixture of model and IDE state. That is `scene.current` coming back. |
+| **`Asset` as a peer of `Resource`** | Two identities, two references, two loadings, two replications, for no reason. |
+| **Putting loading in `editor/`** | A server cannot depend on an IDE (ADR-0011). |
+| **Identity = path + name** | That is exactly Legacy's defect: renaming changes what a thing is. |
+| **A base64 binary payload inside the scene** | It makes images travel with every snapshot. |

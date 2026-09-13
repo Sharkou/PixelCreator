@@ -1,76 +1,76 @@
 # Architecture v2
 
-> **Statut : DÉCISIONS VALIDÉES le 2026-08-12, ET IMPLÉMENTÉES DEPUIS.** Les questions
-> bloquantes de la Phase 0 ont été tranchées, et `src/` tient aujourd'hui `core/`, `project/`,
-> `runtime/`, `editor/` et `preview/`. Ce document décrit l'architecture **en vigueur** ;
-> l'état d'avancement détaillé vit dans `migration/MIGRATION_STATUS.md` et les décisions
-> prises depuis dans `decisions/` — la table complète est dans `PROJECT_MEMORY.md`.
+> **Status: DECISIONS ACCEPTED on 2026-08-12, AND IMPLEMENTED SINCE.** The blocking questions
+> from Phase 0 have been settled, and `src/` today holds `core/`, `project/`, `runtime/`,
+> `editor/` and `preview/`. This document describes the architecture **in force**; detailed
+> progress lives in `migration/MIGRATION_STATUS.md` and the decisions taken since in
+> `decisions/` — the complete table is in `PROJECT_MEMORY.md`.
 >
-> Chaque décision structurante est justifiée par une observation de
-> `migration/LEGACY_ANALYSIS.md`. Le relevé des décisions de la Phase 0 est en §10.
+> Every structural decision is justified by an observation from
+> `migration/LEGACY_ANALYSIS.md`. The record of the Phase 0 decisions is in §10.
 >
-> **Ce fichier ne s'allonge pas à chaque tranche.** Une décision prise après la Phase 0 est un
-> ADR ; ce qui est écrit ici est ce qui n'a pas changé depuis.
+> **This file does not grow with every slice of work.** A decision taken after Phase 0 is an
+> ADR; what is written here is what has not changed since.
 
-## Décisions validées — résumé
+## Accepted decisions — summary
 
-| Sujet | Décision |
+| Subject | Decision |
 |---|---|
-| Property System | `object.x = 100` — mutation directe de l'état |
-| | `object.setProperty('x', 100)` — mutation contrôlée via le Property System → Operation |
-| | **`object.$x` est supprimé** — trop implicite pour une API publique |
-| | Toute mutation du modèle est représentable par une **Operation** |
-| Components | **Un seul Component par type** et par Object |
-| | `Transform` est un Component normal ; `object.x` en est un accès pratique |
-| Runtime | Domaines directement sous `runtime/`, **pas de couche `Systems/`** |
-| | `Object.update()` / `Object.draw()` conservés ; un Component peut faire les deux |
-| Rendering | **Canvas 2D** en v2, derrière une abstraction légère ouvrant WebGL/WebGPU |
-| Multiplayer | **Le serveur est l'autorité de simulation.** Le modèle distingue mutation joueur et mutation éditeur autorisée |
-| Scripting | `.px` = graphe visuel, `.js` = JavaScript natif. `.px` cesse d'être du JS |
-| Editor | Web Components natifs, préfixe **`px-`**. Modèle central, vues réactives |
-| Erreurs runtime | Le Runtime **isole et rapporte**, il ne modifie pas le modèle. Pas d'auto-désactivation |
-| Input | Abstrait, indexé par owner, **passé à `step()`** — jamais un global |
-| Caméra | Un `Object` ordinaire ; le `Viewport` est l'écran ; la matrice de vue est dérivée |
-| Scripting | Un Component peut avoir un graphe `.px` qui définit son comportement. **Pas de Component `Script`**, pas de `ScriptSystem` |
-| Graphe `.px` | Modèle au **Core** (`core/graph/`), interprète au Runtime, rendu SVG à l'Editor. Nœuds, ports et connexions par **identité** ; une propriété utilisateur porte un `id` qu'un renommage ne touche pas (ADR-0027) |
-| Components créés par l'utilisateur | Une **définition** (`type` + propriétés + graphe) produit un Component ordinaire ; la définition appartient au type, jamais à l'instance |
-| Feedback de drag | **Reflow live dans les listes plates, jamais dans l’arbre** : une liste plate pose une question (quel rang ?), un arbre en pose deux (quel parent, quel rang ?) et sa cible ne doit pas bouger pendant qu’on vise (ADR-0028) |
-| Surfaces de l’Editor | Le **stage** porte ce qui s’édite — Viewport et Graph s’y échangent par onglets. Le Graph n’ira pas dans la bande basse : un éditeur nodal a besoin de surface (ADR-0028 §4) |
-| Transport | **Play joue la scène vivante**, pas une copie. Play prend un instantané, Stop le restaure, les modifications faites en jeu sont perdues et l’historique est vidé au démarrage (ADR-0029) |
-| Références | Une propriété `resource` est **choisie, déposée ou vidée — jamais tapée** : un contrôle qui montre ce que la référence désigne, et une déclaration (`kind`, `mime`) que le sélecteur et la règle de dépôt lisent tous les deux (ADR-0030 §1) |
-| Rangs | Réordonner une propriété de `.px` est `REMOVE_PROPERTY` + `ADD_PROPERTY` **sous un `batch`** : deux opérations existantes portent déjà le descripteur et l'index, donc il n'y a pas de `MOVE_PROPERTY` (ADR-0030 §2) |
-| Recherche | Un menu long **s'ouvre sur ses catégories**, et une requête est **notée** contre le nom, le type, la catégorie et les alias — module pur et testé, jamais un `includes()` (ADR-0030 §3) |
-| Couleur | **Six teintes, deux questions** : ce qu'est un nœud et ce que transporte un fil puisent dans la même palette, donc un nœud Math et un port `number` sont le même bleu (ADR-0030 §4). Un nœud littéral **est** une valeur, donc il porte la teinte de son type et non celle de sa catégorie (ADR-0033 §4) |
-| Sélection | **Une intention s'annonce, elle ne se déduit pas** : une fenêtre dit `object` / `resource` / `clear`, un aiguilleur écrit dans les deux détenteurs, et au plus un est plein (ADR-0032) |
-| Nœuds | **Un nœud est une suite de rangées** : un contrôle appartient à la rangée du port qu'il édite, donc un `Number` tient sur une ligne et le slot de `Set Property` fait face à sa valeur (ADR-0033 §1) |
-| Fils | Le trait visible est **inerte** ; c'est la cible sous lui qu'on pointe. Reprendre un fil n'écrit rien avant le lâcher, et le remplacement est **un** `batch` (ADR-0033 §2, §3) |
-| Projets Legacy | **Aucune migration de données à concevoir** — il n'existe pas de projets v1 |
+| Property System | `object.x = 100` — direct state mutation |
+| | `object.setProperty('x', 100)` — controlled mutation through the Property System → Operation |
+| | **`object.$x` is removed** — too implicit for a public API |
+| | Every mutation of the model is representable as an **Operation** |
+| Components | **One Component per type** and per Object |
+| | `Transform` is an ordinary Component; `object.x` is a convenient way into it |
+| Runtime | Domains sit directly under `runtime/`, **no `Systems/` layer** |
+| | `Object.update()` / `Object.draw()` are kept; a Component may do both |
+| Rendering | **Canvas 2D** in v2, behind a thin abstraction that leaves WebGL/WebGPU open |
+| Multiplayer | **The server is the simulation authority.** The model distinguishes a player mutation from an authorized editor mutation |
+| Scripting | `.px` = visual graph, `.js` = native JavaScript. `.px` stops being JS |
+| Editor | Native Web Components, **`px-`** prefix. Central model, reactive views |
+| Runtime errors | The Runtime **isolates and reports**; it does not modify the model. No auto-disabling |
+| Input | Abstract, indexed by owner, **passed to `step()`** — never a global |
+| Camera | An ordinary `Object`; the `Viewport` is the screen; the view matrix is derived |
+| Scripting | A Component may have a `.px` graph that defines its behaviour. **No `Script` Component**, no `ScriptSystem` |
+| `.px` graph | Model in the **Core** (`core/graph/`), interpreter in the Runtime, SVG rendering in the Editor. Nodes, ports and connections addressed by **identity**; a user property carries an `id` that renaming does not touch (ADR-0027) |
+| User-created Components | A **definition** (`type` + properties + graph) yields an ordinary Component; the definition belongs to the type, never to the instance |
+| Drag feedback | **Live reflow in flat lists, never in the tree**: a flat list asks one question (which rank?), a tree asks two (which parent, which rank?) and its target must not move while you are aiming at it (ADR-0028) |
+| Editor surfaces | The **stage** carries what is being edited — Viewport and Graph swap there through tabs. The Graph will not go in the bottom strip: a node editor needs surface area (ADR-0028 §4) |
+| Transport | **Play plays the live scene**, not a copy. Play takes a snapshot, Stop restores it, changes made while playing are lost and history is cleared at start (ADR-0029) |
+| References | A `resource` property is **chosen, dropped or cleared — never typed**: a control that shows what the reference designates, and a declaration (`kind`, `mime`) that both the picker and the drop rule read (ADR-0030 §1) |
+| Ranks | Reordering a `.px` property is `REMOVE_PROPERTY` + `ADD_PROPERTY` **inside a `batch`**: two existing operations already carry the descriptor and the index, so there is no `MOVE_PROPERTY` (ADR-0030 §2) |
+| Search | A long menu **opens on its categories**, and a query is **scored** against name, type, category and aliases — a pure, tested module, never an `includes()` (ADR-0030 §3) |
+| Colour | **Six hues, two questions**: what a node is and what a wire carries draw from the same palette, so a Math node and a `number` port are the same blue (ADR-0030 §4). A literal node **is** a value, so it takes the hue of its type rather than of its category (ADR-0033 §4) |
+| Selection | **An intent is announced, it is not inferred**: a window says `object` / `resource` / `clear`, a router writes into both holders, and at most one is filled (ADR-0032) |
+| Nodes | **A node is a sequence of rows**: a control belongs to the row of the port it edits, so a `Number` fits on one line and the slot of `Set Property` faces its value (ADR-0033 §1) |
+| Wires | The visible stroke is **inert**; what you point at is the target underneath it. Picking a wire back up writes nothing before the release, and replacement is **one** `batch` (ADR-0033 §2, §3) |
+| Legacy projects | **No data migration to design** — there are no v1 projects |
 
 ---
 
-## 1. Principe directeur
+## 1. Guiding principle
 
-L'analyse de Legacy conduit à une conclusion nette : **les concepts sont bons, les
-implémentations sont fragiles.** Le triple canal d'écriture, le Core partagé, le
-`update/draw` avec `self` en argument, l'Inspector réflexif — tout cela fonctionne et
-n'a pas d'équivalent plus simple.
+The analysis of Legacy leads to a clear conclusion: **the concepts are good, the
+implementations are fragile.** The triple write channel, the shared Core, `update/draw` with
+`self` as an argument, the reflective Inspector — all of it works, and none of it has a
+simpler equivalent.
 
-Les problèmes réels sont ailleurs :
+The real problems are elsewhere:
 
-| Problème réel | Nature |
+| Real problem | Nature |
 |---|---|
-| Réactivité perdue sur les propriétés dynamiques et les champs `#` | implémentation |
-| Sérialisation ×3 et enfants dupliqués | implémentation |
-| `Core → Editor`, `Input → Network` | couplage |
-| Ajouter une fenêtre = éditer 4 fichiers | modularité UI |
-| Graphe sans modèle de données | fonctionnalité absente |
-| Aucun test | outillage |
+| Reactivity lost on dynamic properties and `#` fields | implementation |
+| ×3 serialization and duplicated children | implementation |
+| `Core → Editor`, `Input → Network` | coupling |
+| Adding a window means editing 4 files | UI modularity |
+| A graph with no data model | missing feature |
+| No tests | tooling |
 
-**Aucun de ces problèmes n'exige un ECS, une architecture Systems, ni un framework UI.**
+**None of these problems requires an ECS, a Systems architecture, or a UI framework.**
 
 ---
 
-## 2. Découpage
+## 2. Decomposition
 
 ```
                           Pixel Creator
@@ -88,35 +88,34 @@ Les problèmes réels sont ailleurs :
   logger                    loop
 ```
 
-**Règle de dépendance, unique et vérifiable :**
+**One dependency rule, and it is checkable:**
 
 ```
 editor/  ──►  project/  ──►  core/
 editor/  ──►  runtime/  ──►  core/
 network/ ──►  core/
-core/    ──►  (rien)
+core/    ──►  (nothing)
 ```
 
-`core/` n'importe ni `project/`, ni `runtime/`, ni `editor/`, ni `network/`, ni le DOM.
-`project/` — identité, stockage, chargement (ADR-0020) — n'importe ni le DOM, ni
-`runtime/`, ni `editor/` : un serveur sans écran doit charger le même projet qu'un
-navigateur. `runtime/ → project/` est interdit dans l'autre sens, parce que
-`behaviors.bind(type, graph)` prend un graphe **résolu**.
+`core/` imports neither `project/`, nor `runtime/`, nor `editor/`, nor `network/`, nor the
+DOM. `project/` — identity, storage, loading (ADR-0020) — imports neither the DOM, nor
+`runtime/`, nor `editor/`: a server with no screen must load the same project a browser does.
+`runtime/ → project/` is forbidden in the other direction, because `behaviors.bind(type, graph)`
+takes an **already-resolved** graph.
 
-Un test automatisé vérifie cette règle (voir `development/TESTING.md`), et depuis
-2026-08-17 la même exécution échoue aussi sur un import statique qui ne résout vers aucun
-fichier.
+An automated test checks this rule (see `development/TESTING.md`), and since 2026-08-17 the
+same run also fails on a static import that resolves to no file.
 
-### Pourquoi pas de dossier `systems/`
+### Why there is no `systems/` directory
 
-**OBSERVÉ :** Legacy n'a jamais eu de « System ». La physique vit dans
-`Collider.update()`, l'animation dans `Animator.update()`. L'organisation par module de
-domaine (`physics/`, `anim/`, `input/`) est celle qui existe et qui se lit bien.
+**OBSERVED:** Legacy never had a "System". Physics lives in `Collider.update()`, animation in
+`Animator.update()`. Organizing by domain module (`physics/`, `anim/`, `input/`) is what
+exists, and it reads well.
 
-**PROPOSITION V2 :** on conserve l'organisation par domaine. Le mot « System » n'est
-employé que lorsqu'un module orchestre réellement plusieurs objets — par exemple un
-`CollisionSystem` qui remplacerait la boucle O(n²) actuelle par un balayage spatial.
-Ce serait alors un vrai service, pas une case dans un schéma.
+**V2 PROPOSAL:** keep the organization by domain. The word "System" is used only where a
+module genuinely orchestrates several objects — for instance a `CollisionSystem` that would
+replace the current O(n²) loop with a spatial sweep. That would be a real service, not a box
+in a diagram.
 
 ---
 
@@ -124,158 +123,157 @@ Ce serait alors un vrai service, pas une case dans un schéma.
 
 ### 3.1 Object
 
-`Object` reste `Object` (ADR-0001). Il redevient un **conteneur** :
+`Object` stays `Object` (ADR-0001). It becomes a **container** again:
 
 ```js
 class Object {
-    id            // identité de l'objet
-    owner         // ex-`uid` : le joueur propriétaire
+    id            // the object's identity
+    owner         // formerly `uid`: the owning player
     name, tag, layer
     active, visible, lock
-    components    // Map<string, Component>   — un seul par type
+    components    // Map<string, Component>   — one per type
     parent, children
 }
 ```
 
-Sortent de `Object` (vers `editor/`) : `detectMouse`, `detectSide`, `select`,
-`createImage`, `preview`. Ce sont des opérations d'IDE, elles n'ont pas à empêcher le
-chargement du Core côté serveur.
+Leaving `Object` (for `editor/`): `detectMouse`, `detectSide`, `select`, `createImage`,
+`preview`. These are IDE operations; they have no business preventing the Core from loading on
+the server.
 
-**Renommages retenus.** Ils étaient bloqués par la compatibilité des données ; la
-décision « aucun projet v1 à migrer » lève ce blocage :
+**Renames adopted.** They were blocked by data compatibility; the decision "no v1 projects to
+migrate" removes that block:
 
-| Legacy | v2 | Raison |
+| Legacy | v2 | Reason |
 |---|---|---|
-| `childs` | `children` | anglais correct |
-| `uid` | `owner` | `uid` désigne le **joueur propriétaire**, pas l'objet |
-| `static` | *supprimé* | déclaré, jamais lu |
+| `childs` | `children` | correct English |
+| `uid` | `owner` | `uid` designates the **owning player**, not the object |
+| `static` | *removed* | declared, never read |
 
-### 3.2 Transform devient un Component, `object.x` reste `object.x`
+### 3.2 Transform becomes a Component, `object.x` stays `object.x`
 
-**VALIDÉ** (ADR-0002). `x`, `y`, `rotation`, `scaleX`, `scaleY` quittent `Object` pour
-un composant `Transform`, **avec une seule source de vérité**. `width` et `height` n'en
-font pas partie : une taille appartient aux composants de rendu et de collision.
-Les valeurs sont **locales** ; la transformation monde est dérivée, jamais stockée.
+**SETTLED** (ADR-0002). `x`, `y`, `rotation`, `scaleX`, `scaleY` leave `Object` for a
+`Transform` component, **with a single source of truth**. `width` and `height` are not part of
+it: a size belongs to the rendering and collision components. The values are **local**; the
+world transform is derived, never stored.
 
 ```js
-// Transform détient les valeurs
-object.components.get('Transform').x   // ← source de vérité unique
+// Transform holds the values
+object.components.get('Transform').x   // ← the single source of truth
 
-// Object expose une façade — pas une copie
+// Object exposes a façade — not a copy
 Object.prototype = {
     get x()  { return this.components.get('Transform').x; },
     set x(v) {        this.components.get('Transform').x = v; }
 }
 ```
 
-Les deux écritures suivantes sont donc strictement équivalentes et ne peuvent pas
-diverger :
+The two writes below are therefore strictly equivalent and cannot diverge:
 
 ```js
 object.x = 100;
 object.getComponent('Transform').x = 100;
 ```
 
-Bénéfices : la hiérarchie de transformation (aujourd'hui `_x`/`__x` codé en dur dans
-`Object`) devient la responsabilité de `Transform` ; un objet purement logique n'a pas
-besoin de position ; l'Inspector affiche `Transform` comme n'importe quel composant.
+Benefits: the transform hierarchy (today `_x`/`__x`, hard-coded in `Object`) becomes
+`Transform`'s responsibility; a purely logical object needs no position; the Inspector shows
+`Transform` like any other component.
 
-Risque assumé : deux indirections par lecture de `x` dans les boucles chaudes.
-Le benchmark de §4.2 montre que le budget existe, mais le rendu devra lire
-`transform` une fois par objet plutôt que `self.x` répété.
+Accepted risk: two indirections per read of `x` in hot loops. The benchmark in §4.2 shows the
+budget is there, but rendering will have to read `transform` once per object rather than
+repeat `self.x`.
 
 ### 3.3 Property System
 
-Le mécanisme conceptuel est conservé à l'identique. L'implémentation passe de
-`Object.defineProperty` par propriété à un **`Proxy` par objet** (ADR-0003).
+The conceptual mechanism is kept identical. The implementation moves from a per-property
+`Object.defineProperty` to **one `Proxy` per object** (ADR-0003).
 
-**Ce qui ne change pas — l'ergonomie :**
-
-```js
-object.x = 100;                   // change + notifie les vues, aucune Operation
-object.setProperty('x', 100);     // change + notifie + produit une Operation
-```
-
-**Ce que le Proxy corrige, mesuré :**
-
-| Défaut Legacy | Résolu |
-|---|---|
-| Propriété ajoutée après coup non réactive | ✅ le trap intercepte toute clé |
-| Champs `#privés` invisibles | ✅ non concerné (état interne, hors modèle) |
-| `_prop`/`$prop` énumérables, sérialisation ×3 | ✅ aucun stockage parasite |
-| Écriture 301 ms / 3 M ops | ✅ **77 ms** — 4× plus rapide |
-| Pas de valeur précédente | ✅ le trap la lit avant d'écrire |
-
-### Les deux formes d'écriture — VALIDÉ
+**What does not change — the ergonomics:**
 
 ```js
-object.x = 100;                   // mutation directe de l'état de l'objet
-object.setProperty('x', 100);     // mutation contrôlée via le Property System
+object.x = 100;                   // changes + notifies the views, no Operation
+object.setProperty('x', 100);     // changes + notifies + produces an Operation
 ```
 
-**`object.$x` est supprimé** — trop implicite et trop spécifique à Pixel Creator pour
-constituer une API publique. Il n'existe ni en v2, ni comme syntaxe cible du harnais.
+**What the Proxy fixes, measured:**
 
-| Forme | Effet |
+| Legacy defect | Fixed |
 |---|---|
-| `object.x = 100` | met à jour l'état, émet un `Change` — les vues réagissent. **Aucune Operation.** |
-| `object.setProperty('x', 100)` | `Change` **et** Operation |
+| A property added later is not reactive | ✅ the trap intercepts every key |
+| `#private` fields invisible | ✅ not applicable (internal state, outside the model) |
+| `_prop`/`$prop` enumerable, ×3 serialization | ✅ no parasitic storage |
+| Writing 301 ms / 3 M ops | ✅ **77 ms** — 4× faster |
+| No previous value | ✅ the trap reads it before writing |
+
+### The two forms of writing — SETTLED
+
+```js
+object.x = 100;                   // direct mutation of the object's state
+object.setProperty('x', 100);     // controlled mutation through the Property System
+```
+
+**`object.$x` is removed** — too implicit, and too specific to Pixel Creator, to be a public
+API. It exists neither in v2 nor as target syntax for the harness.
+
+| Form | Effect |
+|---|---|
+| `object.x = 100` | updates the state, emits a `Change` — views react. **No Operation.** |
+| `object.setProperty('x', 100)` | `Change` **and** Operation |
 
 ```
-setProperty()  →  Property System  →  Operation  →  contexte / autorité / destination
+setProperty()  →  Property System  →  Operation  →  context / authority / destination
 ```
 
-**`setProperty()` n'est pas « la méthode réseau ».** C'est le chemin contrôlé du modèle.
-Ce que devient l'Operation dépend du contexte : validation par l'autorité, réplication,
-historique, undo/redo, collaboration, transmission à un autre système. Le réseau est
-une destination possible, pas la définition.
+**`setProperty()` is not "the network method".** It is the model's controlled path. What the
+Operation becomes depends on the context: validation by the authority, replication, history,
+undo/redo, collaboration, hand-off to another system. The network is one possible destination,
+not the definition.
 
-Une Operation entrante reste explicitement identifiable par `origin: 'network'`.
+An incoming Operation stays explicitly identifiable through `origin: 'network'`.
 
-> **⚠ Même nom, sens différent de Legacy.** Dans Legacy, `setProperty()` écrit `_x`
-> directement et **ne réplique pas** ; c'est `$x` / `syncProperty()` qui répliquent.
-> En v2, le rôle de `$x` / `syncProperty()` est repris par `setProperty()`, et le
-> `setProperty()` historique disparaît en tant que tel. Tout raisonnement par analogie
-> avec `legacy/` induira en erreur — le mapping est explicite dans le harnais de parité.
+> **⚠ Same name, different meaning from Legacy.** In Legacy, `setProperty()` writes `_x`
+> directly and **does not replicate**; `$x` / `syncProperty()` are what replicate. In v2, the
+> role of `$x` / `syncProperty()` is taken over by `setProperty()`, and the historical
+> `setProperty()` disappears as such. Any reasoning by analogy with `legacy/` will mislead —
+> the mapping is explicit in the parity harness.
 
-> **Les couches internes ne sont pas une API.** Legacy empile `object.x` → `_x` → `__x`.
-> Ces niveaux sont documentés parce qu'ils expliquent le comportement observable, mais
-> `_x` et `__x` restent de simples possibilités d'implémentation : ni les utilisateurs
-> ni les composants n'ont à les manipuler, et aucune API publique v2 n'en dépend.
+> **The internal layers are not an API.** Legacy stacks `object.x` → `_x` → `__x`. Those
+> levels are documented because they explain observable behaviour, but `_x` and `__x` remain
+> mere implementation possibilities: neither users nor components have any business touching
+> them, and no public v2 API depends on them.
 
-Le `Change` émis devient :
+The emitted `Change` becomes:
 
 ```js
 { object, component, prop, value, previous, origin }
 ```
 
-`origin` ∈ `runtime` | `local` | `editor` | `player` | `network`. Il remplace l'astuce
-actuelle (« quelle méthode a été appelée ») par une donnée explicite, et supprime le
-besoin de `setProperty(prop, value, dispatch=false)` pour éviter les échos : la couche
-réseau ignore simplement les changements d'origine `network`.
+`origin` ∈ `runtime` | `local` | `editor` | `player` | `network`. It replaces the current
+trick ("which method was called") with explicit data, and removes the need for
+`setProperty(prop, value, dispatch=false)` to avoid echoes: the network layer simply ignores
+changes whose origin is `network`.
 
 ### 3.4 Serialization
 
-Un `serialize()` explicite remplace la sérialisation implicite par `JSON.stringify` :
+An explicit `serialize()` replaces implicit serialization through `JSON.stringify`:
 
-- pas de doublons `_`/`$` (il n'y en a plus),
-- les enfants sont référencés par id, **jamais imbriqués en entier**,
-- les images ne partent plus en base64 dans l'état de scène (référence par id de ressource),
-- versionné, pour que les projets existants restent lisibles.
+- no `_`/`$` duplicates (there are none left),
+- children are referenced by id, **never nested whole**,
+- images no longer travel as base64 inside the scene state (referenced by resource id),
+- versioned, so existing projects stay readable.
 
-Gain attendu sur le heartbeat : facteur 3 sur la duplication `_prop`, plus la
-suppression de la duplication des enfants.
+Expected gain on the heartbeat: a factor of 3 on the `_prop` duplication, plus the removal of
+the child duplication.
 
-### 3.5 Events et Logger
+### 3.5 Events and Logger
 
-Le bus `System.addEventListener/dispatchEvent` est conservé (synchrone, ordonné,
-prévisible). Il est extrait dans `core/events.js` et gagne un `off()` fiable.
+The `System.addEventListener/dispatchEvent` bus is kept (synchronous, ordered, predictable).
+It is extracted into `core/events.js` and gains a reliable `off()`.
 
-`System` est démantelé : c'est aujourd'hui un fourre-tout (id, random, sync, fichiers,
-validation d'`<input>`, événements, logs). Voir `architecture/CORE.md`.
+`System` is dismantled: today it is a catch-all (id, random, sync, files, `<input>` validation,
+events, logs). See `architecture/CORE.md`.
 
-Le logger conserve l'identité visuelle historique (catégories colorées) derrière une
-API nommée — voir `development/LOGGING.md`.
+The logger keeps its historical visual identity (coloured categories) behind a named API — see
+`development/LOGGING.md`.
 
 ---
 
@@ -283,23 +281,23 @@ API nommée — voir `development/LOGGING.md`.
 
 ### 4.1 Components
 
-Le contrat historique est conservé **et enfin explicite** (ADR-0004) :
+The historical contract is kept **and finally made explicit** (ADR-0004):
 
 ```js
-update(self, ctx)   // simulation      — client ET serveur
-draw(self, renderer) // rendu          — client uniquement
+update(self, ctx)   // simulation      — client AND server
+draw(self, renderer) // rendering      — client only
 ```
 
-`self` reste passé en argument (pas de `this.object`) : c'est ce qui garde les
-composants sérialisables sans cycle. `ParticleSystem` reste l'exemple canonique —
-simulation dans `update`, rendu dans `draw`, serveur sans `draw`.
+`self` is still passed as an argument (no `this.object`): that is what keeps components
+serializable without a cycle. `ParticleSystem` remains the canonical example — simulation in
+`update`, rendering in `draw`, server without `draw`.
 
-`draw(self, renderer)` reçoit une abstraction de rendu au lieu de lire le singleton
-`Graphics.ctx`. Cela n'impose **pas** de transformer les composants en « RenderSystems » :
-un composant garde sa logique de rendu quand c'est pertinent.
+`draw(self, renderer)` receives a rendering abstraction instead of reading the `Graphics.ctx`
+singleton. That does **not** mean turning components into "RenderSystems": a component keeps
+its rendering logic where that makes sense.
 
-Nouveauté : un composant **déclare son schéma** (ADR-0007), ce qui alimente l'Inspector,
-la validation, et la sérialisation :
+New: a component **declares its schema** (ADR-0007), which feeds the Inspector, validation and
+serialization:
 
 ```js
 static schema = {
@@ -308,133 +306,130 @@ static schema = {
 };
 ```
 
-Le schéma est **optionnel** : sans lui, l'Inspector retombe sur l'inférence réflexive
-actuelle, qui fonctionne déjà. Écrire un composant reste une affaire de dix lignes.
+The schema is **optional**: without it the Inspector falls back on the current reflective
+inference, which already works. Writing a component stays a ten-line affair.
 
-**VALIDÉ :** un `Object` ne porte **qu'un seul Component d'un type donné**. La clé de
-`components` reste le nom du type, comme dans Legacy.
+**SETTLED:** an `Object` carries **only one Component of a given type**. The key in
+`components` stays the type name, as in Legacy.
 
-**VALIDÉ :** un Component peut implémenter `update()`, `draw()`, ou les deux.
-`ParticleSystem`, `Sprite` et `Tilemap` participent ainsi directement au rendu.
+**SETTLED:** a Component may implement `update()`, `draw()`, or both. `ParticleSystem`,
+`Sprite` and `Tilemap` take part in rendering directly, on that basis.
 
-> **Conséquence sur Legacy.** Deux de ces trois cas ne sont pas conformes aujourd'hui :
-> `Sprite` est une **sous-classe d'`Object`**, pas un Component, et `Tilemap` expose
-> `draw(ctx, camera)`, signature incompatible avec `Object.draw()`. En v2, `Sprite`
-> devient un Component et `Tilemap` adopte `draw(self, renderer)`. C'est un abandon
-> délibéré de comportements Legacy erronés.
+> **Consequence for Legacy.** Two of those three cases are not conformant today: `Sprite` is a
+> **subclass of `Object`**, not a Component, and `Tilemap` exposes `draw(ctx, camera)`, a
+> signature incompatible with `Object.draw()`. In v2, `Sprite` becomes a Component and
+> `Tilemap` adopts `draw(self, renderer)`. This is a deliberate abandonment of incorrect
+> Legacy behaviour.
 
-### 4.2 Organisation
+### 4.2 Organization
 
-**VALIDÉ.** Les domaines sont directement sous `runtime/`, sans couche intermédiaire :
+**SETTLED.** The domains sit directly under `runtime/`, with no intermediate layer:
 
 ```
 runtime/
-├── clock/         temps, delta-time, timers
-├── physics/       collisions, corps, spatial hash
+├── clock/         time, delta-time, timers
+├── physics/       collisions, bodies, spatial hash
 ├── animation/     animator, animation, tween
-├── rendering/     backend Canvas 2D + abstraction
-├── input/         état des entrées par owner
-├── scripting/     comportements de Components définis par un graphe .px
-└── loop.js        orchestration des phases
+├── rendering/     Canvas 2D backend + abstraction
+├── input/         input state per owner
+├── scripting/     Component behaviours defined by a .px graph
+└── loop.js        phase orchestration
 ```
 
-Aucun `PhysicsSystem`, `RenderSystem`, `AnimationSystem` ou `ScriptSystem` n'est créé
-par principe (ADR-0005).
+No `PhysicsSystem`, `RenderSystem`, `AnimationSystem` or `ScriptSystem` is created on
+principle (ADR-0005).
 
 ### 4.3 Rendering
 
-**VALIDÉ :** le backend v2 est **Canvas 2D**. Une abstraction légère est interposée pour
-qu'un backend WebGL ou WebGPU reste possible plus tard — sans être conçue pour eux
-aujourd'hui.
+**SETTLED:** the v2 backend is **Canvas 2D**. A thin abstraction sits in front so that a WebGL
+or WebGPU backend stays possible later — without being designed for them today.
 
-Concrètement, cela signifie une seule chose : `draw(self, renderer)` reçoit un objet
-`renderer` au lieu de lire le singleton `Graphics.ctx`. L'abstraction se limite au
-vocabulaire réellement utilisé par les composants existants (`rect`, `circle`, `image`,
-`text`, `fill`, `stroke`, `light`, transformations).
+Concretely that means one thing: `draw(self, renderer)` receives a `renderer` object instead
+of reading the `Graphics.ctx` singleton. The abstraction is limited to the vocabulary the
+existing components actually use (`rect`, `circle`, `image`, `text`, `fill`, `stroke`,
+`light`, transforms).
 
-**Ne pas surarchitecturer** : pas de graphe de commandes, pas de batching, pas de
-matériaux, pas de passes tant qu'un besoin réel ne l'exige pas.
+**Do not over-architect**: no command graph, no batching, no materials, no passes until a real
+need demands them.
 
-### 4.4 Boucle
+### 4.4 Loop
 
-Les phases sont séparées, comme le serveur le fait déjà :
+The phases are separated, as the server already does:
 
 ```
 frame:
   input.poll()
-  for each object: object.update()     ← toute la simulation d'abord
+  for each object: object.update()     ← all the simulation first
   collisions.resolve()
-  renderer.render(scene, camera)       ← puis tout le rendu
-  editor.overlay()                     ← puis les surcouches IDE (si Editor)
+  renderer.render(scene, camera)       ← then all the rendering
+  editor.overlay()                     ← then the IDE overlays (if Editor)
 ```
 
-**OBSERVÉ :** Legacy entrelace update et draw par objet, ce qui rend l'ordre
-d'observation dépendant du tri par `layer` — non déterministe pour un moteur
-multijoueur. Le serveur ne fait pas cette erreur.
+**OBSERVED:** Legacy interleaves update and draw per object, which makes the observation order
+depend on the `layer` sort — non-deterministic for a multiplayer engine. The server does not
+make that mistake.
 
-Le tri par `layer` reste fait **à chaque frame**. `layer` peut changer à tout moment et
-le tri est négligeable devant le rendu ; un cache invalidé sur écriture serait une
-optimisation spéculative et un état de plus à maintenir. Il sera introduit si une mesure
-le demande — voir `architecture/RUNTIME.md`.
+The `layer` sort is still done **every frame**. `layer` can change at any moment and the sort
+is negligible next to rendering; a cache invalidated on write would be a speculative
+optimization and one more piece of state to maintain. It will be introduced if a measurement
+asks for it — see `architecture/RUNTIME.md`.
 
-Une exception levée par un Component est **isolée et rapportée**, jamais transformée en
-mutation du modèle : le Runtime ne désactive rien (ADR-0012).
+An exception thrown by a Component is **isolated and reported**, never turned into a mutation
+of the model: the Runtime disables nothing (ADR-0012).
 
-Le picking souris et les poignées de redimensionnement sortent de `Renderer.render()`
-vers `editor/viewport/`. **C'est ce qui supprime `import { Dnd } from '/editor/...'`
-dans le Core.**
+Mouse picking and the resize handles move out of `Renderer.render()` into `editor/viewport/`.
+**That is what removes `import { Dnd } from '/editor/...'` from the Core.**
 
 ### 4.5 Input
 
-`Input` ne dépend plus de `Network` (correctif du bug §6.3 de l'analyse) :
+`Input` no longer depends on `Network` (fixing the bug in §6.3 of the analysis):
 
 ```
-runtime/input/  →  état abstrait, indexé par owner ; un owner "local" existe toujours
-network/        →  alimente l'état des entrées des owners distants
+runtime/input/  →  abstract state, indexed by owner; a "local" owner always exists
+network/        →  feeds the input state of remote owners
 ```
 
-> **Correction (ADR-0014).** Ce paragraphe plaçait initialement l'input dans `core/`,
-> en contradiction avec `architecture/RUNTIME.md`. C'est `runtime/` qui est retenu : le
-> Core est le modèle, il n'a ni temps ni entrées.
+> **Correction (ADR-0014).** This paragraph originally placed input in `core/`, contradicting
+> `architecture/RUNTIME.md`. `runtime/` is what was adopted: the Core is the model, it has
+> neither time nor input.
 
-L'état est **abstrait** — touches, boutons, pointeur, axes — et ne connaît aucun
-événement navigateur. Il est **passé au pas de simulation** :
+The state is **abstract** — keys, buttons, pointer, axes — and knows about no browser event.
+It is **passed into the simulation step**:
 
 ```js
 runtime.step(input);
 runtime.advance(elapsed, input);
 ```
 
-C'est ce qui rend la simulation déterministe et rejouable côté serveur. Un runtime
-construit sans input tourne sur un input vide plutôt que d'aller chercher un global.
+That is what makes the simulation deterministic and replayable on the server. A runtime built
+without input runs on empty input rather than reaching for a global.
 
-Conséquence directe : **le mode solo hors ligne fonctionne**, ce qui n'est pas le cas
-aujourd'hui.
+Direct consequence: **offline single-player works**, which is not the case today.
 
 ---
 
 ## 5. Editor
 
-### 5.1 Ce qu'on garde absolument
+### 5.1 What we keep, absolutely
 
-La synchronisation temps réel actuelle est **bonne** et ne doit pas être remplacée par
-un store ou un framework :
+The current real-time synchronization is **good** and must not be replaced by a store or a
+framework:
 
-- source de vérité unique = l'`Object`,
-- le DOM est une projection,
-- la garde `document.activeElement` permet l'édition lettre par lettre.
+- single source of truth = the `Object`,
+- the DOM is a projection,
+- the `document.activeElement` guard is what allows letter-by-letter editing.
 
-### 5.2 Ce qu'on change : la modularité
+### 5.2 What we change: modularity
 
-**OBSERVÉ :** ajouter une fenêtre exige d'éditer `index.html` (700 lignes), `app.js`,
-un CSS et le module ; `editor/windows/window.js` est un `// TODO` vide.
+**OBSERVED:** adding a window requires editing `index.html` (700 lines), `app.js`, a CSS file
+and the module itself; `editor/windows/window.js` is an empty `// TODO`.
 
-**PROPOSITION V2 :** des Web Components natifs comme primitives (ADR-0006). Chaque
-fenêtre porte son propre balisage, ses styles (Shadow DOM) et son cycle de vie.
+**V2 PROPOSAL:** native Web Components as primitives (ADR-0006). Each window carries its own
+markup, its styles (Shadow DOM) and its lifecycle.
 
 ```
-Primitives          Fenêtres construites dessus
-──────────          ───────────────────────────
+Primitives          Windows built on them
+──────────          ─────────────────────
 <px-window>         <px-hierarchy>
 <px-panel>          <px-inspector>
 <px-split>          <px-assets>
@@ -447,150 +442,145 @@ Primitives          Fenêtres construites dessus
 <px-modal>, <px-menu>
 ```
 
-Ajouter une fenêtre devient : écrire un fichier, l'enregistrer auprès du layout.
+Adding a window becomes: write one file, register it with the layout.
 
-La liaison propriété↔DOM par classe CSS globale (`<id>-<prop>` +
-`getElementsByClassName` sur `document`) est remplacée par un **binding scopé** : le
-composant `<px-property>` s'abonne au `Change` de la propriété qu'il affiche et se met
-à jour lui-même. Même comportement observable, sans requête DOM globale, et compatible
-Shadow DOM.
+The property↔DOM binding through a global CSS class (`<id>-<prop>` +
+`getElementsByClassName` on `document`) is replaced by a **scoped binding**: the
+`<px-property>` component subscribes to the `Change` of the property it displays and updates
+itself. Same observable behaviour, without a global DOM query, and compatible with the Shadow
+DOM.
 
 ### 5.3 Inspector
 
-Piloté par schéma quand il existe, réflexif sinon (ADR-0007). Zéro `if (component === …)`.
-Cela corrige au passage : les décimales tronquées par `parseInt`, l'absence de min/max,
-les couleurs mal détectées (`''` initial), et les branches `TODO Range`/`TODO Array`
-mortes.
+Schema-driven where a schema exists, reflective otherwise (ADR-0007). Zero
+`if (component === …)`. This incidentally fixes: decimals truncated by `parseInt`, missing
+min/max, mis-detected colours (initial `''`), and the dead `TODO Range`/`TODO Array` branches.
 
 ### 5.4 Viewport
 
-`Handler` (27 ko, `switch` de 8 cas dupliqué) est découpé en **outils** :
-`SelectTool`, `MoveTool`, `ResizeTool`, `PanTool`, `ZoomTool`. Un seul outil actif,
-une interface commune. Le redimensionnement 8 directions devient une fonction unique
-paramétrée par le côté.
+`Handler` (27 kB, an 8-case `switch` duplicated) is split into **tools**: `SelectTool`,
+`MoveTool`, `ResizeTool`, `PanTool`, `ZoomTool`. One active tool, a common interface. The
+8-direction resize becomes a single function parameterized by the side.
 
 ---
 
-## 6. Network et Operations
+## 6. Network and Operations
 
-### 6.1 Constat
+### 6.1 Observation
 
-**OBSERVÉ :** le protocole actuel *est déjà* un système d'opérations qui ne dit pas son
-nom. `update {id, component, prop, value}` = `SET_PROPERTY`. `addComponent`, `addChild`,
-`add`, `remove` sont déjà des opérations nommées.
+**OBSERVED:** the current protocol *already is* an operation system that does not say so.
+`update {id, component, prop, value}` = `SET_PROPERTY`. `addComponent`, `addChild`, `add`,
+`remove` are already named operations.
 
-### 6.2 Proposition
+### 6.2 Proposal
 
-**VALIDÉ :** toute mutation du modèle doit être représentable par une Operation interne.
-C'est ce qui ouvre, à terme, réseau, historique, undo/redo, collaboration et IA.
+**SETTLED:** every mutation of the model must be representable as an internal Operation. That
+is what eventually opens up network, history, undo/redo, collaboration and AI.
 
-On formalise ce qui existe déjà, sans changer l'ergonomie utilisateur (ADR-0008) :
+We formalize what already exists, without changing the user's ergonomics (ADR-0008):
 
 ```
 object.setProperty('x', 100)   → Change { origin: 'editor' }
                                → Operation SET_PROPERTY { target, prop, value, previous }
-                               → autorité (ADR-0011)
-                               → état autoritaire → propagation
+                               → authority (ADR-0011)
+                               → authoritative state → propagation
 ```
 
-L'utilisateur n'écrit jamais une Operation à la main. Elle est **produite** par le
-Property System.
+The user never writes an Operation by hand. It is **produced** by the Property System.
 
-`object.x = 100` (mutation directe) ne produit **pas** d'Operation : c'est une sortie de
-simulation, pas une intention. Voir ADR-0003 pour la justification de cette frontière et
-la garde de développement qui la protège.
+`object.x = 100` (direct mutation) produces **no** Operation: it is a simulation output, not an
+intent. See ADR-0003 for the reasoning behind that boundary and the development guard that
+protects it.
 
-Opérations : `SET_PROPERTY`, `ADD_OBJECT`, `REMOVE_OBJECT`, `ADD_COMPONENT`,
+Operations: `SET_PROPERTY`, `ADD_OBJECT`, `REMOVE_OBJECT`, `ADD_COMPONENT`,
 `REMOVE_COMPONENT`, `ADD_CHILD`, `REMOVE_CHILD`, `ADD_RESOURCE`, `REMOVE_RESOURCE`.
 
-Ce que le format ajoute par rapport aux messages actuels :
+What the format adds over the current messages:
 
-| Champ | Débloque |
+| Field | Unlocks |
 |---|---|
 | `previous` | undo/redo |
-| `seq` | ordre total, détection de perte |
+| `seq` | total ordering, loss detection |
 | `author` | collaboration, attribution |
-| `batch` | un drag = **une** opération, pas 300 |
+| `batch` | one drag = **one** operation, not 300 |
 
-Le batching répond directement au `delay = 0` qui neutralise le throttle actuel.
+Batching answers directly the `delay = 0` that neutralizes the current throttle.
 
-**Ce n'est pas un CRDT et pas de l'OT.** La collaboration multi-utilisateurs reste hors
-périmètre ; on s'assure seulement de ne pas la rendre impossible.
+**This is not a CRDT and not OT.** Multi-user collaboration stays out of scope; we only make
+sure we are not making it impossible.
 
-### 6.3 Réplication d'état
+### 6.3 State replication
 
-Le heartbeat « scène complète toutes les 4 s » (qui écrase les saisies en cours) est
-remplacé par des **snapshots delta** : seules les propriétés modifiées depuis le dernier
-accusé de réception sont envoyées. La réconciliation complète reste disponible à la
-connexion et à la demande.
+The "full scene every 4 s" heartbeat (which overwrites in-progress edits) is replaced by
+**delta snapshots**: only the properties modified since the last acknowledgement are sent. Full
+reconciliation stays available on connection and on demand.
 
-### 6.4 Autorité — VALIDÉ
+### 6.4 Authority — SETTLED
 
-**Le serveur est l'autorité de simulation en multijoueur compétitif.** Voir ADR-0011.
+**The server is the simulation authority in competitive multiplayer.** See ADR-0011.
 
-Le modèle distingue deux natures de mutation :
+The model distinguishes two natures of mutation:
 
-| Nature | Émetteur | Traitement |
+| Nature | Emitter | Handling |
 |---|---|---|
-| **Mutation joueur/client** | un joueur en jeu | intention soumise au serveur ; le client peut prédire, le serveur tranche |
-| **Mutation éditeur autorisée** | le créateur, avec les permissions | Operation autorisée → **validée côté serveur** → appliquée à l'état autoritaire → propagée |
+| **Player/client mutation** | a player in game | an intent submitted to the server; the client may predict, the server decides |
+| **Authorized editor mutation** | the creator, with permissions | an authorized Operation → **validated server-side** → applied to the authoritative state → propagated |
 
-Dans les deux cas, le chemin est le même : Operation → validation → état autoritaire →
-propagation. Seules la source et la vérification changent.
+In both cases the path is the same: Operation → validation → authoritative state →
+propagation. Only the source and the check differ.
 
-**OBSERVÉ :** aujourd'hui le serveur n'a aucune autorité — il applique ce qu'on lui
-envoie et rediffuse. Et l'Editor est de fait autoritaire, sans qu'aucune vérification
-n'existe. C'est un abandon délibéré du comportement Legacy.
+**OBSERVED:** today the server has no authority — it applies what it is sent and rebroadcasts.
+And the Editor is authoritative in practice, with no check of any kind. This is a deliberate
+abandonment of Legacy behaviour.
 
-Le système de permissions complet **n'est pas implémenté maintenant**. L'architecture
-doit simplement prévoir le point d'insertion : un `authority` qui reçoit chaque
-Operation et répond accepté / rejeté / transformé.
+The full permission system is **not implemented now**. The architecture merely has to provide
+the insertion point: an `authority` that receives each Operation and answers accepted /
+rejected / transformed.
 
 ---
 
-## 7. Client / Serveur
+## 7. Client / Server
 
 ```
-                     core/  (identique des deux côtés)
+                     core/  (identical on both sides)
                             │
               ┌─────────────┴─────────────┐
               │                           │
-           Client                      Serveur
+           Client                      Server
               │                           │
-    runtime + renderer             runtime sans rendu
-    editor (optionnel)             network + persistance
+    runtime + renderer             runtime without rendering
+    editor (optional)              network + persistence
 ```
 
-Pas de `ClientObject` / `ServerObject`. La différence n'est pas dans le modèle mais
-dans les **modules chargés** : le serveur n'importe pas `renderer/`.
+No `ClientObject` / `ServerObject`. The difference is not in the model but in the **modules
+loaded**: the server does not import `renderer/`.
 
-`mod.js` reste le point d'entrée partagé. La v2 le scinde en `core/mod.js` (partagé) et
-`runtime/mod.js` (client), pour que le serveur cesse d'importer transitivement le
-rendu et le DOM.
+`mod.js` remains the shared entry point. v2 splits it into `core/mod.js` (shared) and
+`runtime/mod.js` (client), so that the server stops transitively importing rendering and the
+DOM.
 
 ---
 
 ## 8. Scripting
 
-Deux langages, un seul modèle objet (ADR-0009) :
+Two languages, one object model (ADR-0009):
 
-| Extension | Nature | Exécution |
+| Extension | Nature | Execution |
 |---|---|---|
-| `.px` | **graphe**, ressource structurée JSON | interprété (ou compilé) par le runtime |
-| `.js` | vrai module JavaScript ES | `import()` dynamique, comme aujourd'hui |
+| `.px` | **graph**, a structured JSON resource | interpreted (or compiled) by the runtime |
+| `.js` | a real JavaScript ES module | dynamic `import()`, as today |
 
-**OBSERVÉ :** aujourd'hui `.px` est dans `allowedScriptsTypes` à côté de
-`text/javascript` et passe par `import()` — c'est donc du JavaScript déguisé, ce que la
-vision refuse explicitement. Le serveur, lui, connaît `application/pixelscript`.
-**Les deux types MIME doivent être unifiés.**
+**OBSERVED:** today `.px` sits in `allowedScriptsTypes` next to `text/javascript` and goes
+through `import()` — so it is JavaScript in disguise, which the vision explicitly refuses. The
+server, for its part, knows `application/pixelscript`. **The two MIME types must be unified.**
 
-Le graphe reçoit enfin un modèle de données sérialisable, indépendant du DOM.
+The graph finally gets a serializable data model, independent of the DOM.
 
-> **Amendé le 2026-08-18 (ADR-0027).** L'exemple d'origine désignait un port par son
-> **index** (`"from": ["nodeA", "out", 0]`) et portait des `variables`. Les deux sont
-> abandonnés : un index est exactement le défaut mesuré dans Legacy — un type de nœud
-> gagnant un port recâble silencieusement tous les graphes — et une variable de graphe *est*
-> une propriété du Component (§ « Un Component créé par un utilisateur »).
+> **Amended on 2026-08-18 (ADR-0027).** The original example designated a port by its **index**
+> (`"from": ["nodeA", "out", 0]`) and carried `variables`. Both are abandoned: an index is
+> exactly the defect measured in Legacy — a node type that gains a port silently rewires every
+> graph — and a graph variable *is* a property of the Component (see "A Component created by a
+> user").
 
 ```json
 {
@@ -605,34 +595,34 @@ Le graphe reçoit enfin un modèle de données sérialisable, indépendant du DO
 }
 ```
 
-Un nœud, un port et une connexion ont chacun une **identité stable** ; `from` est toujours
-la sortie et `to` toujours l'entrée, quel que soit le sens dans lequel le fil a été tiré.
+A node, a port and a connection each have a **stable identity**; `from` is always the output
+and `to` always the input, whichever way the wire was dragged.
 
-L'éditeur de nœuds est reconstruit sur ce modèle plutôt que d'en être un : `core/graph/`
-tient le modèle, `editor/graph/view.js` l'arithmétique de la toile, et
-`editor/windows/graph.js` le rendu SVG. Les idées de rendu retenues de Legacy — Bézier
-horizontale au décalage `max(50, distance × 0.4)`, pan/zoom par transformation de vue — le
-sont explicitement ; le reste (un nœud est un `<div>`, un port se localise par
-`getBoundingClientRect()`) est ce qu'ADR-0027 refuse de reproduire.
+The node editor is rebuilt on top of that model rather than being it: `core/graph/` holds the
+model, `editor/graph/view.js` the canvas arithmetic, and `editor/windows/graph.js` the SVG
+rendering. The rendering ideas kept from Legacy — a horizontal Bézier with an offset of
+`max(50, distance × 0.4)`, pan/zoom by view transform — are kept explicitly; the rest (a node
+is a `<div>`, a port is located with `getBoundingClientRect()`) is what ADR-0027 refuses to
+reproduce.
 
-### Ce qu'un nœud est, et qui l'exécute (ADR-0027)
+### What a node is, and who runs it (ADR-0027)
 
-Un type de nœud déclare **sa forme et ce qu'il fait dans une seule table**, au Core : ses
-ports (flux ou donnée, typés par `PropertyType`) et son évaluation, qui est pure — elle lit
-ses entrées et écrit à travers le Component, sans horloge, sans aléatoire, sans DOM.
+A node type declares **its shape and what it does in one table**, in the Core: its ports (flow
+or data, typed by `PropertyType`) and its evaluation, which is pure — it reads its inputs and
+writes through the Component, with no clock, no randomness, no DOM.
 
-`runtime/scripting/interpreter.js` détient ce qui n'appartient à aucun nœud : l'ordre
-d'exécution (flux poussé en profondeur d'abord, données tirées), l'état par instance, un
-budget par événement, et des `GraphError` structurées que le runtime isole et rapporte
-(ADR-0012). Un flux qui boucle est une **boucle**, pas une erreur ; un cycle de **données**
-en est une, parce qu'une valeur définie par elle-même n'a aucun ordre d'évaluation.
+`runtime/scripting/interpreter.js` holds what belongs to no node: the execution order (flow
+pushed depth-first, data pulled), per-instance state, a per-event budget, and structured
+`GraphError`s that the runtime isolates and reports (ADR-0012). A flow that loops is a **loop**,
+not an error; a **data** cycle is one, because a value defined by itself has no evaluation
+order.
 
-`.px` et `.js` manipulent les mêmes `Object`, `Component`, `Property`, `Scene`,
-`Resource`, `Event` : ce sont deux façades sur une seule API, pas deux moteurs.
+`.px` and `.js` manipulate the same `Object`, `Component`, `Property`, `Scene`, `Resource` and
+`Event`: they are two façades over one API, not two engines.
 
-### Où un graphe entre dans la simulation (ADR-0015)
+### Where a graph enters the simulation (ADR-0015)
 
-Un graphe est le **comportement d'un type de Component**, jamais un composant :
+A graph is the **behaviour of a Component type**, never a component:
 
 ```
 Object
@@ -643,113 +633,110 @@ Object
 └── Collider
 ```
 
-**Il n'existe pas de Component `Script`** et un `.px` ne génère aucun type de composant.
-Un `.js` en fournit un (classe exportée par défaut) ; un `.px` définit le comportement
-d'un type qui existe déjà.
+**There is no `Script` Component** and a `.px` generates no component type. A `.js` provides
+one (the default-exported class); a `.px` defines the behaviour of a type that already exists.
 
 ```
 graph ──(interpret)──► create(component) ──► behavior.update(self, ctx)
-        une fois par graphe    une fois par instance      à chaque pas
+        once per graph        once per instance         every step
 ```
 
-Le graphe est lu une fois et partagé par tous les composants de son type ; **chaque
-instance a son propre état d'exécution**. Le comportement vit dans une `WeakMap`, jamais
-dans les données sérialisées du composant. Le runtime exécute le graphe là où il exécute
-le composant : même pas, même ordre, même isolation d'erreur, client comme serveur.
+The graph is read once and shared by every component of its type; **each instance has its own
+execution state**. The behaviour lives in a `WeakMap`, never in the component's serialized
+data. The runtime runs the graph where it runs the component: same step, same order, same
+error isolation, client and server alike.
 
-### Un Component créé par un utilisateur (ADR-0016)
+### A Component created by a user (ADR-0016)
 
-Un Component est **propriétés + comportement**. Une **définition** écrit ce couple comme
-donnée — `{ type, properties, graph }` — et `defineComponent()` en fait une classe de
-composant ordinaire, enregistrée comme les autres. La définition appartient au **type** :
-une instance ne porte que ses valeurs, jamais une copie du graphe.
+A Component is **properties + behaviour**. A **definition** writes that pair as data —
+`{ type, properties, graph }` — and `defineComponent()` turns it into an ordinary component
+class, registered like the others. The definition belongs to the **type**: an instance carries
+only its values, never a copy of the graph.
 
-C'est ce qui permet à l'Editor de créer un Custom Component, de définir ses propriétés,
-d'éditer son graphe, d'enregistrer sa définition et de le réutiliser partout.
+That is what lets the Editor create a Custom Component, define its properties, edit its graph,
+save its definition and reuse it everywhere.
 
-**Une propriété utilisateur a une identité (ADR-0027).** Le schéma reste indexé par nom —
-c'est ce que lit `defineComponent()` et ce qu'affiche l'Inspector — mais chaque descripteur
-porte un `id` frappé une fois, et c'est **lui** qu'un nœud stocke :
+**A user property has an identity (ADR-0027).** The schema stays keyed by name — that is what
+`defineComponent()` reads and what the Inspector displays — but each descriptor carries an `id`
+minted once, and **that** is what a node stores:
 
 ```json
 "properties": { "speed": { "id": "p7", "type": "number", "default": 120 } }
 ```
 
-Renommer `speed` en `walkSpeed` laisse donc le graphe câblé. C'est ADR-0021 une échelle plus
-bas : l'identité n'est pas un nom. Une propriété supprimée ne laisse jamais de référence
-pendante — le validateur la signale, la toile cerne le nœud, l'interprète lève une erreur
-structurée.
+Renaming `speed` to `walkSpeed` therefore leaves the graph wired. This is ADR-0021 one level
+down: identity is not a name. A deleted property never leaves a dangling reference — the
+validator reports it, the canvas rings the node, the interpreter throws a structured error.
 
-`editor/graph/compiler.js` (lexer d'un langage type Rust, jamais exécutable) est
-abandonné. `editor/graph/component.js` est renommé pour ne plus entrer en collision
-avec les composants de jeu.
+`editor/graph/compiler.js` (a lexer for a Rust-like language, never executable) is abandoned.
+`editor/graph/component.js` is renamed so that it no longer collides with game components.
 
 ---
 
-## 9. Ressources
+## 9. Resources
 
-- `Resource` devient réel et remplace le `File` augmenté (aujourd'hui `Resource` existe
-  mais n'est jamais utilisée).
-- Un id stable, indépendant du chemin (aujourd'hui `id = path + name` : renommer un
-  fichier change son identité et casse les références).
-- Les images ne sont plus stockées en DataURL base64 dans l'état de scène.
-- Les Blob URL sont révoquées (fuite actuelle à chaque réimport).
-- IndexedDB (`Store`, déjà écrit et inutilisé) sert de cache local et de mode hors ligne.
-- Le hot reload par `import()` + événement `import` est conservé tel quel : il marche.
+- `Resource` becomes real and replaces the augmented `File` (today `Resource` exists but is
+  never used).
+- A stable id, independent of the path (today `id = path + name`: renaming a file changes its
+  identity and breaks references).
+- Images are no longer stored as base64 DataURLs inside the scene state.
+- Blob URLs are revoked (a current leak on every re-import).
+- IndexedDB (`Store`, already written and unused) serves as the local cache and the offline
+  mode.
+- Hot reload through `import()` + the `import` event is kept as is: it works.
 
-**État 2026-08-17 :** `project/` existe — `Resource`, `ResourceId`, `ResourceStore`
-(implémentation mémoire), `Project` et son pipeline d'Operations, chargement des
-définitions de Components et des scènes. IndexedDB reste à brancher : c'est un échange
-d'implémentation derrière l'interface, sans effet sur les appelants.
+**State as of 2026-08-17:** `project/` exists — `Resource`, `ResourceId`, `ResourceStore` (an
+in-memory implementation), `Project` and its Operation pipeline, loading of Component
+definitions and of scenes. IndexedDB remains to be plugged in: that is an implementation swap
+behind the interface, with no effect on callers.
 
-**Complété le 2026-08-17 (ADR-0025) :** un dossier est une `Resource` de `kind: 'folder'`,
-et le rangement est un lien `parent` — pas une chaîne `path`. Renommer un dossier ne
-réécrit donc rien, déplacer une ressource est un `SET_PROPERTY`, et supprimer un dossier
-emporte son contenu en un seul `batch` annulable. `MANIFEST_VERSION = 2`. Le chemin affiché
-(`Assets/Images`) est dérivé des liens, jamais stocké. Les entrées portent aussi `created`
-et `modified` ; la taille appartient au store, qui la mesure ou répond `null`.
+**Completed on 2026-08-17 (ADR-0025):** a folder is a `Resource` of `kind: 'folder'`, and
+filing is a `parent` link — not a `path` string. Renaming a folder therefore rewrites nothing,
+moving a resource is a `SET_PROPERTY`, and deleting a folder takes its contents with it in a
+single undoable `batch`. `MANIFEST_VERSION = 2`. The displayed path (`Assets/Images`) is derived
+from the links, never stored. Entries also carry `created` and `modified`; size belongs to the
+store, which either measures it or answers `null`.
 
 ---
 
-## 10. Registre des décisions
+## 10. Decision register
 
-### Tranchées le 2026-08-12
+### Settled on 2026-08-12
 
-| # | Question | Décision |
+| # | Question | Decision |
 |---|---|---|
-| Q3 | Garde-t-on le sigil `$` ? | **Non — supprimé définitivement.** `object.x = v` est la mutation directe, `object.setProperty('x', v)` la mutation contrôlée. |
-| Q4 | Deux composants du même type par objet ? | **Non.** Un seul par type, clé = nom du type. |
-| Q5 | Autorité serveur | **Le serveur est l'autorité de simulation.** Le modèle distingue mutation joueur et mutation éditeur autorisée (ADR-0011). |
-| Q6 | Compatibilité des projets Legacy | **Aucune.** Il n'existe pas de projets v1. Ne pas concevoir de migration de données. |
-| Q8 | Cible du Renderer | **Canvas 2D**, derrière une abstraction légère ouvrant WebGL/WebGPU plus tard. Ne pas surarchitecturer. |
+| Q3 | Do we keep the `$` sigil? | **No — removed for good.** `object.x = v` is the direct mutation, `object.setProperty('x', v)` the controlled one. |
+| Q4 | Two components of the same type per object? | **No.** One per type, keyed by type name. |
+| Q5 | Server authority | **The server is the simulation authority.** The model distinguishes a player mutation from an authorized editor mutation (ADR-0011). |
+| Q6 | Compatibility with Legacy projects | **None.** There are no v1 projects. Do not design a data migration. |
+| Q8 | Renderer target | **Canvas 2D**, behind a thin abstraction leaving WebGL/WebGPU open later. Do not over-architect. |
 
-### Débloquées par Q6, tranchées par défaut
+### Unblocked by Q6, settled by default
 
-Ces deux renommages n'étaient bloqués que par la compatibilité des données, désormais
-sans objet. Retenus sauf objection :
+These two renames were blocked only by data compatibility, which no longer applies. Adopted
+unless someone objects:
 
-| # | Question | Décision |
+| # | Question | Decision |
 |---|---|---|
-| Q1 | `childs` → `children` ? | **Oui.** |
-| Q2 | `uid` → `owner` ? | **Oui.** Le champ désigne le joueur propriétaire. |
+| Q1 | `childs` → `children`? | **Yes.** |
+| Q2 | `uid` → `owner`? | **Yes.** The field designates the owning player. |
 
-| Q7 | `.px` : interprété ou compilé en JS ? | **Interprété**, pour le débogage et la sécurité. Le format n'aura pas à changer si une compilation s'avère nécessaire plus tard. |
+| Q7 | `.px`: interpreted or compiled to JS? | **Interpreted**, for debuggability and safety. The format will not have to change if compilation turns out to be necessary later. |
 
-**Toutes les questions bloquantes sont tranchées.** Il ne reste que des points mineurs,
-décidables à l'implémentation, listés dans les ADR concernés (ex. `Transform` ajouté par
-défaut ou non).
+**Every blocking question is settled.** Only minor points remain, decidable at implementation
+time and listed in the ADRs concerned (for example, whether `Transform` is added by default).
 
 ---
 
-## 11. Ce qu'on ne fait pas
+## 11. What we are not doing
 
-- Pas d'ECS, pas d'archétypes, pas de stockage colonnaire.
-- Pas de dossier `systems/` par principe.
-- Pas de renommage `Object` → `Entity`.
-- Pas de suppression de `Component.draw()`.
-- Pas de framework UI.
-- Pas de store réactif séparé dans l'Editor — la source de vérité reste l'`Object`.
-- Pas de remplacement du Property System par une API verbeuse.
-- Pas de dépendance à Lya.
-- Pas de publication du serveur privé.
-- Pas de génération massive de fichiers avant validation de ce document.
+- No ECS, no archetypes, no columnar storage.
+- No `systems/` directory on principle.
+- No `Object` → `Entity` rename.
+- No removal of `Component.draw()`.
+- No UI framework.
+- No separate reactive store in the Editor — the source of truth stays the `Object`.
+- No replacement of the Property System by a verbose API.
+- No dependency on Lya.
+- No publication of the private server.
+- No mass file generation before this document is accepted.

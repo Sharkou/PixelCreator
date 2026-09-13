@@ -1,17 +1,17 @@
 # Logging
 
-## OBSERVÉ
+## OBSERVED
 
-Il n'existe pas de logger. Des `console.log` avec styles CSS inline, dispersés dans le
-code, suivant une convention de couleurs constante :
+There is no logger. There are `console.log` calls with inline CSS styles, scattered through the
+code, following a consistent colour convention:
 
-| Couleur | Motif | Sens |
+| Colour | Pattern | Meaning |
 |---|---|---|
-| `#11AB0D` vert | `[SERVER] …` | trafic réseau |
-| `#3b78ff` bleu | `info: …` | information moteur |
-| `#F9F1A5` jaune | `warn: …` | avertissement |
+| `#11AB0D` green | `[SERVER] …` | network traffic |
+| `#3b78ff` blue | `info: …` | engine information |
+| `#F9F1A5` yellow | `warn: …` | a warning |
 
-Exemples réels :
+Real examples:
 
 ```js
 console.log('%c[SERVER] Connection established!', 'color: #11AB0D');
@@ -19,35 +19,34 @@ console.log('%cinfo: File loaded: ' + file.id, 'color: #3b78ff');
 console.log('%cwarn: ' + string, 'color: #F9F1A5');
 ```
 
-`System.log()`, `System.debug()`, `System.warn()` codifient partiellement ces trois
-styles — mais **la plupart des appels ne les utilisent pas** et réécrivent le style à
-la main. `System.getDate()` produit un horodatage `[2026-08-12 14:03:22.041]` qui n'est
-**jamais utilisé**.
+`System.log()`, `System.debug()` and `System.warn()` partly codify those three styles — but
+**most calls do not use them** and rewrite the style by hand. `System.getDate()` produces a
+`[2026-08-12 14:03:22.041]` timestamp that is **never used**.
 
-Côté serveur, les mêmes helpers existent (`log`, `debug`, `error`) avec les mêmes
-couleurs — la convention est donc partagée client/serveur.
+On the server side, the same helpers exist (`log`, `debug`, `error`) with the same colours — so
+the convention is shared between client and server.
 
-### Ce qui fonctionne
+### What works
 
-L'identité visuelle. Un développeur reconnaît immédiatement une ligne réseau d'une
-ligne moteur dans la console. **C'est un acquis à conserver.**
+The visual identity. A developer immediately tells a network line from an engine line in the
+console. **That is an asset worth keeping.**
 
-### Ce qui ne fonctionne pas
+### What does not work
 
-- Impossible de filtrer par catégorie ou par niveau.
-- Impossible de désactiver les logs en production.
-- Les catégories sont implicites, dans une chaîne de caractères.
-- Beaucoup de `console.log` bruts sans style ni préfixe.
-- Le `try/catch` de `Object.update()` fait `console.error(err)` **à chaque frame et par
-  composant** : une erreur systématique produit des milliers de lignes identiques.
-  C'est ce qui a rendu invisible le bug du mode solo hors ligne.
-- L'horodatage est écrit mais inutilisé.
+- There is no way to filter by category or by level.
+- There is no way to turn logs off in production.
+- The categories are implicit, inside a string.
+- Many raw `console.log` calls with no style and no prefix.
+- The `try/catch` in `Object.update()` does `console.error(err)` **every frame and per
+  component**: a systematic error produces thousands of identical lines. That is what made the
+  offline single-player bug invisible.
+- The timestamp is written and unused.
 
 ---
 
-## PROPOSITION V2
+## V2 PROPOSAL
 
-Conserver l'identité visuelle, la mettre derrière une API nommée.
+Keep the visual identity, put it behind a named API.
 
 ```js
 logger.network('Connection established');
@@ -57,31 +56,31 @@ logger.editor('Inspector rebuilt');
 logger.core('Property system initialized');
 ```
 
-Chaque catégorie garde sa couleur historique :
+Each category keeps its historical colour:
 
-| Catégorie | Couleur | Origine |
+| Category | Colour | Origin |
 |---|---|---|
-| `network` | `#11AB0D` | conservée |
-| `core` / `scene` | `#3b78ff` | conservée (`info:`) |
-| `runtime` | à définir | |
-| `editor` | à définir | |
-| `warn` | `#F9F1A5` | conservée |
-| `error` | rouge | |
+| `network` | `#11AB0D` | kept |
+| `core` / `scene` | `#3b78ff` | kept (`info:`) |
+| `runtime` | to be defined | |
+| `editor` | to be defined | |
+| `warn` | `#F9F1A5` | kept |
+| `error` | red | |
 
-### Ajouts
+### Additions
 
-- **Niveaux** : `debug` < `info` < `warn` < `error`, seuil configurable.
-- **Filtrage par catégorie** : `logger.enable('network', 'runtime')`.
-- **Silencieux en production**, verbeux en développement.
-- **Déduplication** : un message identique répété est agrégé
-  (`… ×1247`) au lieu d'être répété à chaque frame. C'est le correctif direct du bruit
-  produit par le `try/catch` de `Object.update()`.
-- **Horodatage optionnel**, en réutilisant `System.getDate()` qui existe déjà.
-- **Même API côté serveur** : c'est du Core, donc sans dépendance au navigateur ; le
-  formatage couleur s'adapte (codes ANSI hors navigateur).
+- **Levels**: `debug` < `info` < `warn` < `error`, with a configurable threshold.
+- **Filtering by category**: `logger.enable('network', 'runtime')`.
+- **Silent in production**, verbose in development.
+- **Deduplication**: an identical repeated message is aggregated (`… ×1247`) instead of being
+  repeated every frame. That is the direct fix for the noise produced by the `try/catch` in
+  `Object.update()`.
+- **Optional timestamp**, reusing the `System.getDate()` that already exists.
+- **The same API on the server**: it is Core code, so it has no browser dependency; the colour
+  formatting adapts (ANSI codes outside a browser).
 
-### Ce qu'on ne fait pas
+### What we are not doing
 
-- Pas de bibliothèque de logging externe.
-- Pas de télémétrie ni d'envoi distant.
-- Pas de remplacement des couleurs : elles font partie de l'identité du projet.
+- No external logging library.
+- No telemetry, no remote reporting.
+- No replacement of the colours: they are part of the project's identity.

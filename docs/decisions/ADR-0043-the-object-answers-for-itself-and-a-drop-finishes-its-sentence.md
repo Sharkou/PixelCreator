@@ -1,217 +1,214 @@
-# ADR-0043 — L'Object répond de lui-même, un dépôt finit sa phrase, et une intention vaut un nœud
+# ADR-0043 — The Object answers for itself, a drop finishes its sentence, and one intention is worth one node
 
-- **Statut :** **accepté** (2026-08-29)
-- **Complété par :** ADR-0056 (2026-09-07) — le point ouvert `Destroy` / `Spawn` de §8 est tranché : ce sont des changements structurels écrits par les primitives de la Scene, donc invariant 5 tient sans Operation
-- **Décide :** comment un graphe atteint les propriétés propres de l'Object ; où va l'`ObjectId`
-  quand un dépôt nomme un Object ; ce qui justifie un nœud utilitaire ; ce qui reste refusé
-- **Dépend de :** ADR-0001 (Object reste Object), ADR-0002 (Transform est un Component),
-  ADR-0007 (Inspector à schéma), ADR-0023 (`PropertyType`), ADR-0024 (undo par ressource),
-  ADR-0026 (drag & drop), ADR-0027 (modèle de graphe), ADR-0034 (références d'Object),
-  ADR-0037 (un dépôt déclare), ADR-0039 (portée d'une identité), ADR-0040 (un nœud par
-  intention), ADR-0041 (moments, états, chemins de propriété)
-- **Amende :** ADR-0037 §2.4 (le dépôt d'un Object n'écrit plus *seulement* dans le `.px`) ;
-  ADR-0007 (les champs d'Object de l'Inspector sont dérivés, non réécrits)
-- **Ne décide pas :** un port `component` ou `property`, toujours refusés (§5) ; le dépôt d'un
-  Component dans un graphe, toujours refusé (§6) ; une phrase de refus pour la liste de
-  Components de l'Inspector (§7)
-
----
-
-## 1. Le défaut : les quatre propriétés qu'un débutant voit d'abord étaient les quatre qu'un graphe ne pouvait pas toucher
-
-L'Inspector ouvre sur `Name`, `Tag`, `Layer`, `Active`. Ce sont littéralement les premières
-lignes qu'un créateur rencontre. Aucune n'était atteignable depuis un graphe.
-
-La cause n'est pas un oubli, c'est une conséquence : le sélecteur de propriétés est alimenté
-par le **registre des Components** (`componentCatalogue()`), et ces quatre-là n'appartiennent à
-aucun Component — elles appartiennent à l'Object (ADR-0001). Rien ne les déclare, donc rien ne
-les offre.
-
-Mesuré : `objectFields()` les écrivait **à la main** dans l'Editor, et le Core n'en disait rien.
-Deux lecteurs, une seule liste écrite, l'autre inexistante.
-
-> « Éteins cet ennemi », « renomme cet objet », « change son plan de dessin » : trois phrases
-> ordinaires, inécrivables.
+- **Status:** **accepted** (2026-08-29)
+- **Completed by:** ADR-0056 (2026-09-07) — §8's open `Destroy` / `Spawn` point is settled: they are structural changes written by the Scene's primitives, so invariant 5 holds with no Operation
+- **Decides:** how a graph reaches the Object's own properties; where the `ObjectId` goes when a drop
+  names an Object; what justifies a utility node; what stays refused
+- **Depends on:** ADR-0001 (Object stays Object), ADR-0002 (Transform is a Component), ADR-0007
+  (schema-driven Inspector), ADR-0023 (`PropertyType`), ADR-0024 (undo per resource), ADR-0026 (drag
+  and drop), ADR-0027 (the graph model), ADR-0034 (Object references), ADR-0037 (a drop declares),
+  ADR-0039 (the scope of an identity), ADR-0040 (one node per intention), ADR-0041 (moments, states,
+  property paths)
+- **Amends:** ADR-0037 §2.4 (an Object drop no longer writes *only* into the `.px`); ADR-0007 (the
+  Inspector's Object fields are derived, not rewritten)
+- **Does not decide:** a `component` or `property` port, still refused (§5); dropping a Component
+  into a graph, still refused (§6); a refusal sentence for the Inspector's Component list (§7)
 
 ---
 
-## 2. Décision : `Object` est un ESPACE DE NOMS de propriétés, jamais un Component
+## 1. The defect: the four properties a beginner sees first were the four a graph could not touch
 
-> **`component: 'Object'` dans un `.px` se résout vers l'Object lui-même. Ce n'est pas un type,
-> ce n'est dans aucun registre, et `getComponent('Object')` ne répondra jamais.**
+The Inspector opens on `Name`, `Tag`, `Layer`, `Active`. They are literally the first lines a creator
+meets. None was reachable from a graph.
+
+The cause is not an oversight, it is a consequence: the property picker is fed by the **Component
+registry** (`componentCatalogue()`), and those four belong to no Component — they belong to the
+Object (ADR-0001). Nothing declares them, so nothing offers them.
+
+Measured: `objectFields()` wrote them **by hand** in the Editor, and the Core said nothing about them.
+Two readers, one written list, the other nonexistent.
+
+> "Turn this enemy off", "rename this object", "change its draw layer": three ordinary sentences,
+> unwritable.
+
+---
+
+## 2. Decision: `Object` is a property NAMESPACE, never a Component
+
+> **`component: 'Object'` in a `.px` resolves to the Object itself. It is not a type, it is in no
+> registry, and `getComponent('Object')` will never answer.**
 
 | | |
 |---|---|
-| **Problème** | Le seul chemin qui menait à une propriété passait par un Component. Les quatre propriétés de l'Object n'en ont pas. |
-| **Décision** | Le Core déclare `OBJECT_COMPONENT = 'Object'` et `objectProperties()` — `name`, `tag`, `layer`, `active`, dans la forme exacte que `declaredProperties()` rend. Le sélecteur ouvre sur ce groupe ; l'interprète, en le voyant, rend **l'Object** au lieu d'un de ses components. |
-| **Justification UX** | Le créateur lit `Object ▸ Name` à côté de `Transform ▸ X`, dans une seule liste groupée. Il n'apprend rien de neuf : c'est la forme d'ADR-0041 §2, appliquée à ce qui était déjà sous ses yeux. |
-| **Impact Core** | Une déclaration (`core/object.js`), deux branches (`targetComponent()`, `catalogueOf()` dans `graph/standard.js`). Aucun type nouveau, aucun `PropertyType` nouveau, aucun port nouveau. |
-| **Impact runtime** | Aucun mécanisme nouveau : l'Object est déjà le Proxy réactif que la Scene tient, donc `object.name = …` depuis un graphe est le même `Change` que depuis l'Inspector (ADR-0003, ADR-0015 §5). |
-| **Sérialisation** | `component: 'Object'` est un **mot fixe du moteur**, de portée projet exactement comme `'Transform'`. Aucune identité de scène n'entre nulle part : ADR-0034 invariant 1 est intact. |
-| **Migration** | Aucune. Aucun graphe existant ne nomme `Object`. |
+| **The problem** | The only path to a property went through a Component. The Object's four properties have none. |
+| **The decision** | The Core declares `OBJECT_COMPONENT = 'Object'` and `objectProperties()` — `name`, `tag`, `layer`, `active`, in the exact shape `declaredProperties()` returns. The picker opens on that group; the interpreter, on seeing it, returns **the Object** instead of one of its components. |
+| **UX rationale** | The creator reads `Object ▸ Name` beside `Transform ▸ X`, in one grouped list. They learn nothing new: it is ADR-0041 §2's shape, applied to what was already in front of them. |
+| **Core impact** | One declaration (`core/object.js`), two branches (`targetComponent()`, `catalogueOf()` in `graph/standard.js`). No new type, no new `PropertyType`, no new port. |
+| **Runtime impact** | No new mechanism: the Object is already the reactive Proxy the Scene holds, so `object.name = …` from a graph is the same `Change` as from the Inspector (ADR-0003, ADR-0015 §5). |
+| **Serialization** | `component: 'Object'` is a **fixed engine word**, project-scoped exactly like `'Transform'`. No scene identity enters anywhere: ADR-0034's invariant 1 is intact. |
+| **Migration** | None. No existing graph names `Object`. |
 
-### 2.1 Pourquoi pas un vrai Component
+### 2.1 Why not a real Component
 
-Un `ObjectProperties` enregistré aurait donné le même sélecteur — et aurait menti trois fois :
-il serait apparu dans **Add Component**, il aurait pu être **retiré** d'un Object, et il aurait
-fallu l'ajouter aux cinquante objets d'une scène existante pour que leurs graphes marchent.
-Un Object *a* un nom ; il ne se le fait pas donner.
+A registered `ObjectProperties` would have given the same picker — and would have lied three times: it
+would have appeared in **Add Component**, it could have been **removed** from an Object, and you would
+have had to add it to the fifty objects of an existing scene for their graphs to work. An Object *has*
+a name; it does not get given one.
 
-### 2.2 Ce qui protège le mot
+### 2.2 What protects the word
 
-Le sentinelle est un mot, donc quelque chose pourrait le prendre. Trois faits le rendent sûr, et
-le troisième est un test :
+The sentinel is a word, so something could take it. Three facts make it safe, and the third is a
+test:
 
-- aucune classe livrée ne s'appelle `Object` ;
-- un `.px` est identifié par sa `ResourceId` et ne peut pas réclamer un nom ;
-- `builtins.test.js` échoue le jour où un type enregistré s'appelle `Object`.
+- no shipped class is called `Object`;
+- a `.px` is identified by its `ResourceId` and cannot claim a name;
+- `builtins.test.js` fails the day a registered type is called `Object`.
 
-### 2.3 `lock` et `owner` sont absents, délibérément
+### 2.3 `lock` and `owner` are absent, deliberately
 
-`lock` est un confort d'édition que la Hierarchy possède et que la simulation ne lit jamais ;
-`owner` nomme un joueur et appartient au vocabulaire multijoueur, qui n'a pas encore d'histoire
-côté créateur. Ni l'un ni l'autre n'est une propriété du **jeu**.
+`lock` is an editing convenience the Hierarchy owns and the simulation never reads; `owner` names a
+player and belongs to the multiplayer vocabulary, which has no creator-facing story yet. Neither is a
+property of the **game**.
 
-### 2.4 Une déclaration, deux lecteurs
+### 2.4 One declaration, two readers
 
-`objectFields()` (Inspector) **dérive** désormais de `objectProperties()`. Les libellés et les
-infobulles restent dans l'Editor — c'est de la présentation — mais la liste et les types
-viennent du Core. Écrite deux fois, elle aurait divergé au cinquième champ, et un créateur
-aurait rencontré une propriété d'un côté et pas de l'autre.
+`objectFields()` (Inspector) now **derives** from `objectProperties()`. The labels and tooltips stay in
+the Editor — that is presentation — but the list and the types come from the Core. Written twice, it
+would have diverged at the fifth field, and a creator would have met a property on one side and not
+the other.
 
 ---
 
-## 3. Décision : un dépôt qui NOMME un Object écrit son identité dans la SCÈNE
+## 3. Decision: a drop that NAMES an Object writes its identity into the SCENE
 
-> **Le `.px` reçoit un nom de prise. La scène reçoit l'`ObjectId`. Un seul geste fait les deux.**
+> **The `.px` receives a socket name. The scene receives the `ObjectId`. One gesture does both.**
 
 | | |
 |---|---|
-| **Ancienne décision** | ADR-0037 §2.4 : déposer un Object sur un graphe déclare une propriété `objectref` nommée d'après lui, et un nœud qui la lit — et **s'arrête là**, « une seule ressource est écrite ». |
-| **Problème, mesuré** | Le geste produisait un nœud qui *paraissait* fini et ne faisait **rien**. La prise valait `null` sur chaque exemplaire, donc `Set Property` visé dessus n'écrivait nulle part, en silence (ADR-0034 §3.4 — et c'est correct). Il fallait ensuite sélectionner chaque Object porteur et régler la valeur dans l'Inspector : trois étapes que rien n'annonce. C'est la façon la plus courante dont cette fonctionnalité échouait. |
-| **Nouvelle décision** | Le geste écrit aussi la valeur d'instance : pour chaque Object de la **scène ouverte** portant ce Component, la prise est pointée sur l'`ObjectId` nommé — **uniquement là où rien n'est encore répondu**. |
-| **Justification UX** | « Fais glisser Player sur ton graphe » doit produire un graphe qui **tourne**. Le modèle de ADR-0037 reste enseignable — un `.px` déclare une entrée, chaque Object dit quoi y brancher — mais un défaut se constate, il ne se cherche pas. |
-| **Impact Core** | Aucun. La commande vit dans l'Editor (`editor/commands.js:pointSocketAt`). |
-| **Impact runtime** | Aucun. |
-| **Sérialisation** | Aucune du côté `.px`. Côté scène, c'est une valeur `objectref` ordinaire, celle qu'ADR-0034 §3.5 a définie. |
-| **Migration** | Aucune. Les `.px` déjà écrits gardent leurs prises ; elles se remplissent au prochain dépôt. |
+| **The old decision** | ADR-0037 §2.4: dropping an Object on a graph declares an `objectref` property named after it, and a node that reads it — and **stops there**, "a single resource is written". |
+| **The problem, measured** | The gesture produced a node that *looked* finished and did **nothing**. The socket was `null` on every instance, so a `Set Property` pointed at it wrote nowhere, silently (ADR-0034 §3.4 — and that is correct). You then had to select each carrying Object and set the value in the Inspector: three steps nothing announces. It is the most common way this feature failed. |
+| **The new decision** | The gesture also writes the instance value: for every Object of the **open scene** carrying that Component, the socket is pointed at the named `ObjectId` — **only where nothing has been answered yet**. |
+| **UX rationale** | "Drag Player onto your graph" has to produce a graph that **runs**. ADR-0037's model stays teachable — a `.px` declares an input, each Object says what to plug into it — but a default is observed, not hunted for. |
+| **Core impact** | None. The command lives in the Editor (`editor/commands.js:pointSocketAt`). |
+| **Runtime impact** | None. |
+| **Serialization** | None on the `.px` side. On the scene side, it is an ordinary `objectref` value, the one ADR-0034 §3.5 defined. |
+| **Migration** | None. The `.px`s already written keep their sockets; they fill in on the next drop. |
 
-### 3.1 Seulement là où rien n'est répondu
+### 3.1 Only where nothing has been answered
 
-Un créateur qui a visé la porte n°3 sur un autre Player le garde. **Un geste qui nomme un défaut
-ne doit pas défaire une décision.** La règle est donc « remplir le vide », jamais « écraser ».
+A creator who pointed door #3 at a different Player keeps it. **A gesture that names a default must
+not undo a decision.** The rule is therefore "fill the blanks", never "overwrite".
 
-### 3.2 Deux ressources, deux annulations — et c'est dit
+### 3.2 Two resources, two undos — and it is said
 
-Le geste écrit dans le `.px` et dans la Scene. ADR-0024 donne à chaque ressource sa pile, donc
-`Ctrl Z` sur la toile retire la prise et le nœud, et les valeurs que la scène a gagnées
-s'annulent sur la pile de la scène.
+The gesture writes into the `.px` and into the Scene. ADR-0024 gives each resource its own stack, so
+`Ctrl Z` on the canvas removes the socket and the node, and the values the scene gained undo on the
+scene's stack.
 
-C'est exactement la forme qu'ADR-0041 §6.2 a déjà tranchée pour le dépôt d'un fichier, et le
-moins surprenant des deux partages : une scène continue de pointer vers l'Object qu'un créateur
-a désigné même s'il change d'avis sur le nœud.
+That is exactly the shape ADR-0041 §6.2 already settled for a file drop, and the less surprising of
+the two splits: a scene keeps pointing at the Object a creator designated even if they change their
+mind about the node.
 
-**ADR-0037 §2.4 est amendé sur ce point, et sur celui-là seulement.** Sa phrase « une seule
-ressource est écrite » servait à écarter la question d'annulation inter-ressources ; cette
-question a depuis reçu sa réponse (ADR-0041 §6.2), donc la prémisse a cessé d'être nécessaire.
-L'invariant qu'elle protégeait — aucune identité de scène dans un `.px` — n'est pas touché.
+**ADR-0037 §2.4 is amended on that point, and on that point only.** Its sentence "a single resource is
+written" served to set aside the cross-resource undo question; that question has since been answered
+(ADR-0041 §6.2), so the premise stopped being necessary. The invariant it protected — no scene
+identity in a `.px` — is untouched.
 
-### 3.3 Les écritures sont AUTORISÉES, pas silencieuses
+### 3.3 The writes are AUTHORIZED, not silent
 
-`setProperty()`, comme toute valeur que l'Editor écrit : une Operation, répliquée, annulable
-(CONVENTIONS.md). Une écriture simple aurait atteint la valeur sans jamais atteindre l'historique.
+`setProperty()`, like every value the Editor writes: an Operation, replicated, undoable
+(CONVENTIONS.md). A plain write would have reached the value without ever reaching the history.
 
 ---
 
-## 4. Décision : `Translate` — une intention mérite un nœud, une mécanique n'en mérite pas
+## 4. Decision: `Translate` — an intention deserves a node, a mechanic does not
 
-> **`Translate` déplace un Object relativement à sa position. Ce n'est pas `Set Position`, et
-> les deux restent.**
+> **`Translate` moves an Object relative to its position. It is not `Set Position`, and both stay.**
 
 | | |
 |---|---|
-| **Problème, compté** | Avancer d'un cran le long de X coûtait `Get Property ▸ x` + `Add` + `Set Property ▸ x` : trois nœuds, deux fils, deux passages dans le sélecteur. Sur les deux axes, **six nœuds**. Aucun des trois ne parle de déplacer ; ils parlent de la manière dont un déplacement se calcule. |
-| **Décision** | Un nœud `transform.translate`, catégorie `Properties`, avec `Object` (prise + sélecteur, comme Get/Set Property), `X`, `Y`, et un flux d'entrée/sortie. |
-| **Justification UX** | « Bouge » est une intention ; `Get`, `Add`, `Set` sont sa mécanique (ADR-0040). Le critère n'est pas « combien de nœuds économisés » mais « est-ce une phrase que le créateur pense ». |
-| **Pourquoi pas une septième catégorie** | Une catégorie répond à « qu'est-ce que ce nœud EST » (ADR-0039 §2) et lui donne une teinte. `Translate` change ce qu'un Object tient — c'est la famille `Properties`, la même que le `Get`+`Add`+`Set` qu'il abrège. |
-| **Pourquoi X et Y et pas un Vector2** | Le Core n'a pas de type vecteur, et ADR-0023 §2 a retiré l'idée délibérément. `x` et `y` sont deux nombres partout ailleurs — dans Transform, dans la rangée appariée de l'Inspector, dans `Pointer`. Inventer un type pour un nœud serait l'abstraction que ce catalogue existe sans. |
-| **Espace local** | `Transform.x` est une position dans l'espace du parent (ADR-0002), donc `Translate` s'y ajoute. Un déplacement en espace monde exigerait l'inverse de la matrice du parent et contredirait discrètement le nombre que l'Inspector montre pour le même Object. |
-| **Un Object sans Transform** | Rien ne se passe, rien n'est levé, le flux continue — la famille d'échec d'ADR-0034 §3.4. |
+| **The problem, counted** | Moving one step along X cost `Get Property ▸ x` + `Add` + `Set Property ▸ x`: three nodes, two wires, two trips through the picker. On both axes, **six nodes**. None of the three speaks about moving; they speak about how a move is computed. |
+| **The decision** | A `transform.translate` node, category `Properties`, with `Object` (a socket + picker, like Get/Set Property), `X`, `Y`, and a flow in/out. |
+| **UX rationale** | "Move" is an intention; `Get`, `Add`, `Set` are its mechanics (ADR-0040). The criterion is not "how many nodes are saved" but "is this a sentence the creator thinks". |
+| **Why not a seventh category** | A category answers "what this node IS" (ADR-0039 §2) and gives it a hue. `Translate` changes what an Object holds — that is the `Properties` family, the same as the `Get`+`Add`+`Set` it abbreviates. |
+| **Why X and Y and not a Vector2** | The Core has no vector type, and ADR-0023 §2 removed the idea deliberately. `x` and `y` are two numbers everywhere else — in Transform, in the Inspector's paired row, in `Pointer`. Inventing a type for one node would be the abstraction this catalogue exists without. |
+| **Local space** | `Transform.x` is a position in the parent's space (ADR-0002), so `Translate` adds into it. A world-space move would need the inverse of the parent's matrix and would quietly contradict the number the Inspector shows for the same Object. |
+| **An Object with no Transform** | Nothing happens, nothing is thrown, the flow continues — ADR-0034 §3.4's failure family. |
 
-### 4.1 Ce qui n'a PAS été ajouté, et pourquoi
+### 4.1 What was NOT added, and why
 
-`Set Position`, `Rotate`, `Scale`, `Clamp`, `Destroy`, `Spawn`, `Random`, `Delay` restent
-absents. `Translate` a été admis parce qu'il abrège une phrase **mesurée** à six nœuds ; les
-autres attendent la même mesure. En particulier : `Destroy` et `Spawn` sont des changements
-**structurels** de la Scene, et ADR-0034 invariant 5 dit qu'un nœud ne produit aucune Operation
-— c'est une décision à prendre, pas une ligne à écrire. `Random` et `Delay` heurtent le
-déterminisme (ADR-0011) et l'absence d'état d'exécution par instance.
+`Set Position`, `Rotate`, `Scale`, `Clamp`, `Destroy`, `Spawn`, `Random` and `Delay` stay absent.
+`Translate` was admitted because it abbreviates a sentence **measured** at six nodes; the others await
+the same measurement. In particular: `Destroy` and `Spawn` are **structural** changes to the Scene, and
+ADR-0034's invariant 5 says a node produces no Operation — that is a decision to take, not a line to
+write. `Random` and `Delay` collide with determinism (ADR-0011) and with the absence of per-instance
+execution state.
 
 ---
 
-## 5. Refusé : un Component ou une propriété fournis par un fil
+## 5. Refused: a Component or a property supplied by a wire
 
-La question a été reposée sérieusement, avec le code sous les yeux.
+The question was asked again seriously, with the code in front of us.
 
-**Ce n'est pas faisable proprement, et la raison est le typage, pas le conservatisme.**
+**It is not cleanly feasible, and the reason is typing, not conservatism.**
 
-Le port de sortie de `Get Property` est typé par `resolvedProperty(node, context)`, résolu
-**localement**, depuis les params du nœud lui-même. C'est ce qui permet trois choses :
+`Get Property`'s output port is typed by `resolvedProperty(node, context)`, resolved **locally**, from
+the node's own params. That is what makes three things possible:
 
-| Ce que le typage local donne | Ce qu'il devient si le Component arrive par un fil |
+| What local typing gives | What it becomes if the Component arrives by a wire |
 |---|---|
-| Le port de sortie a le type exact de la propriété | il retombe sur `ANY_TYPE` |
-| Le sélecteur propose les propriétés du type nommé | il n'a rien à proposer |
-| Un mauvais fil est refusé **au moment du geste** (`canConnect`) | il n'est plus refusable qu'à l'exécution |
-| `shapeDependsOnNode()` sait quand redessiner | la forme dépendrait de la topologie du graphe |
+| The output port has the property's exact type | it falls back to `ANY_TYPE` |
+| The picker offers the named type's properties | it has nothing to offer |
+| A bad wire is refused **at gesture time** (`canConnect`) | it can only be refused at run time |
+| `shapeDependsOnNode()` knows when to redraw | the shape would depend on the graph's topology |
 
-C'est exactement le scindage `Get Component → Get Property` qu'ADR-0034 §3.3 a écarté par
-argument, et qu'ADR-0039 §4 a confirmé en refusant les types de port `component` et `property`.
+That is exactly the `Get Component → Get Property` split ADR-0034 §3.3 ruled out by argument, and which
+ADR-0039 §4 confirmed by refusing the `component` and `property` port types.
 
-**Décision : inchangé.** Ce qu'un créateur veut réellement — « lire telle propriété de tel
-Component, sur un Object éventuellement dynamique » — est déjà entièrement exprimable : la
-**propriété** est l'intention et elle est connue à l'écriture ; l'**Object** est ce qui varie,
-et il varie déjà (prise, sélecteur, ou `Self`). Une demi-solution n'est pas fabriquée.
+**Decision: unchanged.** What a creator actually wants — "read that property of that Component, on an
+Object that may be dynamic" — is already entirely expressible: the **property** is the intention and it
+is known at writing time; the **Object** is what varies, and it already varies (a socket, a picker, or
+`Self`). A half-solution is not built.
 
 ---
 
-## 6. Refusé, pour la troisième fois : un Component déposé dans un graphe
+## 6. Refused, for the third time: a Component dropped into a graph
 
-| Geste | Ce que le créateur veut | Ce qui est produit | Durable ? |
+| Gesture | What the creator wants | What is produced | Durable? |
 |---|---|---|---|
-| **Object → graphe** | « travailler sur cet Object » | une entrée nommée, un nœud qui la lit, et la scène pointée dessus (§3) | oui |
-| **Property → graphe** | « lire/écrire cette valeur » | un nœud visé et configuré | oui |
-| **Component → graphe** | — | un paramètre que le premier clic réécrit | **non** |
+| **Object → graph** | "work on this Object" | a named input, a node that reads it, and the scene pointed at it (§3) | yes |
+| **Property → graph** | "read/write this value" | a targeted, configured node | yes |
+| **Component → graph** | — | a parameter the first click rewrites | **no** |
 
-Le sélecteur de propriété écrit **les deux moitiés**. Un dépôt de Component règle `component` et
-laisse `property` ouverte ; choisir la propriété — la toute première chose que le créateur fera —
-réécrit `component`. Mesuré une fois (ADR-0040 §4), remesuré (ADR-0041 §6.1), inchangé ici.
+The property picker writes **both halves**. A Component drop sets `component` and leaves `property`
+open; choosing the property — the very first thing the creator will do — rewrites `component`. Measured
+once (ADR-0040 §4), remeasured (ADR-0041 §6.1), unchanged here.
 
-Un Component garde une signification, une seule : **se donner à un Object**. Le refus le dit.
+A Component keeps one meaning, and only one: **giving itself to an Object**. The refusal says so.
 
 ---
 
-## 7. Contrats observables
+## 7. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| `Object ▸ Name/Tag/Layer/Active` est offert par le sélecteur, en premier groupe | `inspector/node.test.js` |
-| Aucun type enregistré ne s'appelle `Object` | `runtime/builtins.test.js` |
-| Les rangées d'Object de l'Inspector et le groupe du sélecteur viennent d'une seule déclaration | `inspector/schema.test.js` |
-| Écrire `Object ▸ Active` depuis un graphe retire l'objet de l'image suivante | `runtime/pipeline.test.js` |
-| Un dépôt d'Object pointe les exemplaires de la scène, et seulement ceux qui n'ont pas de réponse | `editor/commands.test.js` |
-| Une prise vide ou morte n'écrit rien et ne rapporte rien | `runtime/pipeline.test.js` |
-| `Translate` ajoute, deux fois de suite ajoute deux fois | `interpreter.test.js` |
-| `Translate` et `Get`+`Add`+`Set` atteignent le même état | idem |
-| Une touche pressée déplace l'objet, et l'image le dessine à sa nouvelle place et pas à l'ancienne | `runtime/pipeline.test.js` |
-| Un fichier déposé sur la liste de Components importe et attache | `dnd/dnd.test.js` |
+| `Object ▸ Name/Tag/Layer/Active` is offered by the picker, as the first group | `inspector/node.test.js` |
+| No registered type is called `Object` | `runtime/builtins.test.js` |
+| The Inspector's Object rows and the picker's group come from one declaration | `inspector/schema.test.js` |
+| Writing `Object ▸ Active` from a graph removes the object from the next frame | `runtime/pipeline.test.js` |
+| An Object drop points the scene's instances, and only those with no answer | `editor/commands.test.js` |
+| An empty or dead socket writes nothing and reports nothing | `runtime/pipeline.test.js` |
+| `Translate` adds, and twice in a row adds twice | `interpreter.test.js` |
+| `Translate` and `Get`+`Add`+`Set` reach the same state | the same |
+| A pressed key moves the object, and the frame draws it in its new place and not its old one | `runtime/pipeline.test.js` |
+| A file dropped on the Component list imports and attaches | `dnd/dnd.test.js` |
 
-## 8. Ce que cet ADR ne décide pas
+## 8. What this ADR does not decide
 
-| Point ouvert | Pourquoi |
+| Open point | Why |
 |---|---|
-| Une phrase de refus pour la liste de Components de l'Inspector | Un refus silencieux y existe déjà pour les ressources non consommables ; le combler est cohérent (ADR-0026 §6) mais concerne toute la zone, pas cette tranche |
-| `Destroy`, `Spawn` | Changements structurels de la Scene ; ADR-0034 invariant 5 doit être tranché d'abord |
-| `Random`, `Delay` | Déterminisme (ADR-0011) et état d'exécution par instance |
-| Une transition d'input plus courte qu'un pas | Antérieur, consigné par ADR-0041 §3.4 |
-| Un sélecteur d'Object listant la scène depuis le nœud | Le glisser-déposer est le geste conçu, et il suffit désormais ; un sélecteur de scène dans un éditeur de portée projet est une question distincte |
+| A refusal sentence for the Inspector's Component list | A silent refusal already exists there for non-consumable resources; filling it in is coherent (ADR-0026 §6) but concerns the whole area, not this slice |
+| `Destroy`, `Spawn` | Structural changes to the Scene; ADR-0034's invariant 5 has to be settled first |
+| `Random`, `Delay` | Determinism (ADR-0011) and per-instance execution state |
+| An input transition shorter than a step | Pre-existing, recorded by ADR-0041 §3.4 |
+| An Object picker listing the scene from the node | Drag and drop is the designed gesture, and it now suffices; a scene picker inside a project-scoped editor is a separate question |

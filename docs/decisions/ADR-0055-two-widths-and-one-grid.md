@@ -1,112 +1,105 @@
-# ADR-0055 — Deux largeurs, une grille
+# ADR-0055 — Two widths, one grid
 
-- **Statut :** **accepté** (2026-09-07)
-- **Décide :** ce que mesure un contrôle seul sur sa ligne ; quels types prennent les deux
-  cellules de la colonne des valeurs ; ce que réserve une gouttière de poignée ; où vit la
-  hauteur d'un bandeau de région ; ce qu'un panneau vide dessine
-- **Dépend de :** ADR-0006 (une fenêtre annonce, le shell route), ADR-0007 (schéma de
-  l'Inspector), ADR-0023 (types de propriétés), ADR-0045 §9 (une couleur redevient courte),
-  ADR-0046 §7 (deux largeurs, déclarées une fois)
-- **Amende :** ADR-0047 §4 — **remplacée** : un contrôle seul reprend les deux cellules ;
-  ADR-0046 §7 — « un mot et une option choisie » ne sont plus courts
-- **Ne décide pas :** la largeur d'une carte de nœud (elle reste celle d'ADR-0046 §7, et le
-  node ne lit pas `isWide`) ; la colonne de libellé de 62 px ; la densité tactile
+- **Status:** **accepted** (2026-09-07)
+- **Decides:** what a lone control on its row measures; which types take both cells of the value
+  column; what a handle gutter reserves; where a region banner's height lives; what an empty panel
+  draws
+- **Depends on:** ADR-0006 (a window announces, the shell routes), ADR-0007 (the Inspector's schema),
+  ADR-0023 (property types), ADR-0045 §9 (a colour becomes short again), ADR-0046 §7 (two widths,
+  declared once)
+- **Amends:** ADR-0047 §4 — **replaced**: a lone control takes both cells back; ADR-0046 §7 — "a word
+  and a chosen option" are no longer short
+- **Does not decide:** a node card's width (it stays ADR-0046 §7's, and the node does not read
+  `isWide`); the 62 px label column; touch density
 
 ---
 
-## 1. Trois grilles, trois bords droits, et aucun alignement
+## 1. Three grids, three right edges, and no alignment
 
-ADR-0046 §7 posait la règle utile : **un contrôle court prend une cellule, un contrôle large
-prend les deux.** ADR-0047 §4 l'a corrigée en donnant au contrôle seul « quatre parts de
-contrôle pour une part d'air », soit environ 70 %. Mesuré dans Chrome, panneau à 304 px :
+ADR-0046 §7 set the useful rule: **a short control takes one cell, a wide control takes both.**
+ADR-0047 §4 corrected it by giving a lone control "four parts of control to one part of air", about
+70 %. Measured in Chrome, panel at 304 px:
 
-| Ligne | Bord droit (px depuis le bord du panneau) |
+| Row | Right edge (px from the panel's edge) |
 |---|---|
-| un nombre seul | 165 |
-| `Alpha`, seul sur sa ligne | **233** |
-| le `Y` de `Position` | 280 |
+| a lone number | 165 |
+| `Alpha`, alone on its row | **233** |
+| `Position`'s `Y` | 280 |
 
-Le bord à 233 ne s'aligne sur rien. La correction visait deux marges droites et en a produit
-trois — parce qu'elle traitait le symptôme (un champ Sprite qui allait plus loin que les
-nombres) plutôt que la cause : **la colonne des valeurs a deux cellules, et un contrôle large
-en prend deux.** C'est ce que dit ADR-0046 §7, et c'est ce qui aligne le bord droit d'un
-`Sprite` sur celui du `Y` de `Position`, exactement.
+The edge at 233 lines up with nothing. The correction was aimed at two right margins and produced
+three — because it treated the symptom (a Sprite field running further than the numbers) rather than
+the cause: **the value column has two cells, and a wide control takes two.** That is what ADR-0046 §7
+says, and it is what lines a `Sprite`'s right edge up with `Position`'s `Y`, exactly.
 
-> **Une grille pour toutes les lignes : `1fr` · gouttière · `1fr` · gouttière. Un contrôle
-> court prend la première cellule, une paire en prend une chacune, un contrôle large prend
-> les deux cellules et la gouttière du milieu.**
+> **One grid for every row: `1fr` · gutter · `1fr` · gutter. A short control takes the first cell, a
+> pair takes one each, and a wide control takes both cells and the middle gutter.**
 
-Il y avait trois déclarations de grille dans `windows/inspector.js` ; il y en a une, et deux
-règles de placement. Les deux bords droits sont à 165 et 276, et rien d'autre.
+There were three grid declarations in `windows/inspector.js`; there is one, and two placement rules.
+The two right edges are at 165 and 276, and nothing else.
 
-## 2. Taper, c'est montrer
+## 2. Typing is showing
 
-ADR-0046 §7 rangeait « un mot et une option choisie » parmi les valeurs courtes. La
-conséquence, jamais mesurée : `Name` et `Tag` — les deux premières lignes que rencontre un
-créateur — tenaient dans une boîte de dix caractères, et un `enum` était trop étroit pour
-lire l'option qu'il affichait. Un contrôle dans lequel on **tape** ou dont on **lit** le
-choix n'a pas de « valeur courte » à montrer : il a du texte.
+ADR-0046 §7 filed "a word and a chosen option" among the short values. The consequence, never measured:
+`Name` and `Tag` — the first two rows a creator meets — fitted in a ten-character box, and an `enum`
+was too narrow to read the option it displayed. A control you **type** into or whose choice you
+**read** has no "short value" to show: it has text.
 
-`STRING` et `ENUM` rejoignent donc `RESOURCE`, `OBJECT`, `RANGE`, `LIST` et `READONLY` dans
-`WIDE_KINDS` (`inspector/schema.js`). `COLOR` reste court : une pastille n'a pas de contenu
-qui déborde, elle a une cible qu'on clique — la correction d'ADR-0046 §7 tient.
+`STRING` and `ENUM` therefore join `RESOURCE`, `OBJECT`, `RANGE`, `LIST` and `READONLY` in
+`WIDE_KINDS` (`inspector/schema.js`). `COLOR` stays short: a swatch has no content that overflows, it
+has a target you click — ADR-0046 §7's correction holds.
 
-La règle était « mesurée dans Chrome » et nulle part ailleurs, ce qui est exactement pourquoi
-elle a pu dériver. Elle a maintenant un test (`schema.test.js`).
+The rule was "measured in Chrome" and nowhere else, which is exactly why it could drift. It now has a
+test (`schema.test.js`).
 
-## 3. Une gouttière est déclarée une fois, et elle sait ce qu'elle contient
+## 3. A gutter is declared once, and it knows what it holds
 
-La grille écrivait `16px` littéralement à ses deux extrémités, et la poignée qui s'y place
-tirait sa largeur du glyphe. Deux façons de dire le même nombre, dont une seule bougerait le
-jour où l'autre change. `--grip` est déclaré en tête de la feuille du panneau, vaut
-`var(--px-icon)` — la poignée EST une icône de la petite taille — et est lu par la grille et
-par la poignée.
+The grid wrote `16px` literally at both of its ends, and the handle placed there took its width from
+the glyph. Two ways of saying the same number, only one of which would move the day the other
+changed. `--grip` is declared at the top of the panel's sheet, is `var(--px-icon)` — a handle IS an
+icon at the small size — and is read by the grid and by the handle.
 
-Ce n'est pas un token de design : rien hors de l'Inspector ne met quoi que ce soit en page
-contre une poignée. Et la gouttière reste à la taille du glyphe plutôt que de descendre à
-l'encre qu'il dessine : c'est une cible de glisser, et un geste se vise.
+It is not a design token: nothing outside the Inspector lays anything out against a handle. And the
+gutter stays the size of the glyph rather than shrinking to the ink it draws: it is a drag target, and
+a gesture is aimed at.
 
-`icon()` arrondit d'ailleurs toute taille demandée à 16 ou 20 (`ui/icons.js`), donc les `12`
-et le `14` passés à quelques appels ne sont jamais arrivés dans le DOM. Ils sont retirés :
-un nombre qui ne fait rien est un nombre qu'on croira plus tard.
+`icon()` in fact rounds any requested size to 16 or 20 (`ui/icons.js`), so the `12`s and the `14`
+passed to a few calls never reached the DOM. They are removed: a number that does nothing is a number
+somebody will believe later.
 
-## 4. Un bandeau de région a une hauteur, et les régions sont trois
+## 4. A region banner has a height, and there are three regions
 
-L'en-tête d'une `px-window` mesurait `--px-hit + --px-space-2` ; la bande d'onglets de la
-scène mesurait `--px-hit`. Les deux sont côte à côte sur la même ligne, donc la couture qui
-traverse le haut de l'espace de travail descendait de sept pixels en passant au milieu.
+A `px-window`'s header measured `--px-hit + --px-space-2`; the scene's tab strip measured `--px-hit`.
+The two sit side by side on the same line, so the seam crossing the top of the workspace stepped down
+seven pixels halfway across.
 
-`--px-header` est cette hauteur, déclarée dans `ui/styles.js` et lue par les deux. Un token à
-deux consommateurs est un token ; c'est la même règle qui a fait de la colonne de libellé de
-62 px une constante locale et non un token.
+`--px-header` is that height, declared in `ui/styles.js` and read by both. A token with two consumers
+is a token; it is the same rule that made the 62 px label column a local constant and not a token.
 
-## 5. Un état vide, et il y en avait quatre
+## 5. An empty state, and there were four
 
-`ui/empty-state.js` existe « parce que deux fenêtres en montrent un et qu'ils ne doivent pas
-diverger ». Trois autres avaient divergé : l'Inspector centrait le sien avec 32 px de marge
-et un glyphe à 0.35, le Graph répétait les six mêmes propriétés une graduation de texte plus
-bas, la Hierarchy imprimait un paragraphe sans glyphe. Ils diffèrent par **ce qu'ils disent**,
-qui est tout l'intérêt d'un état vide, et par rien d'autre.
+`ui/empty-state.js` exists "because two windows show one and they must not diverge". Three others had
+diverged: the Inspector centred its own with 32 px of margin and a glyph at 0.35, the Graph repeated
+the same six properties one text step lower, the Hierarchy printed a paragraph with no glyph. They
+differ in **what they say**, which is the whole point of an empty state, and in nothing else.
 
-Le Graph garde une seule ligne à lui — un canevas n'a pas de corps à remplir, donc son état
-flotte au-dessus du plan.
+The Graph keeps one line of its own — a canvas has no body to fill, so its state floats above the
+plane.
 
-## 6. Ce qu'une racine d'ombre ne voit pas
+## 6. What a shadow root does not see
 
-`[hidden] { display: none !important }` était déclaré pour le document et pas pour les
-racines d'ombre, où toute déclaration `display` d'une fenêtre bat le défaut du navigateur.
-Quatre fenêtres avaient découvert le fait séparément et l'avaient rustiné chacune de son
-côté. C'est énoncé une fois dans la feuille de base, pour la même raison que `box-sizing` :
-une règle du document ne traverse pas une frontière d'ombre.
+`[hidden] { display: none !important }` was declared for the document and not for the shadow roots,
+where any `display` declaration of a window beats the browser's default. Four windows had discovered
+the fact separately and each patched it on their own. It is stated once in the base sheet, for the
+same reason as `box-sizing`: a document rule does not cross a shadow boundary.
 
-## 7. Contrats observables
+## 7. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| Un contrôle court mesure une cellule, un large les deux | `schema.test.js`, et mesuré dans Chrome |
-| Tout bord droit du panneau tombe sur l'une de deux abscisses | `getBoundingClientRect()` sur `.fields` |
-| `Name`, `Tag` et un `enum` tiennent un nom lisible | à l'œil |
-| Une gouttière réserve la taille du glyphe qu'elle contient | mesuré |
-| La bande d'onglets et les en-têtes de fenêtre finissent sur la même ligne | mesuré |
-| Un état vide est le même objet dans les cinq fenêtres | à l'œil, et une seule règle |
-| Un élément portant `hidden` dans une racine d'ombre disparaît | l'état vide du Graph, un nœud posé |
+| A short control measures one cell, a wide one both | `schema.test.js`, and measured in Chrome |
+| Every right edge in the panel falls on one of two x positions | `getBoundingClientRect()` on `.fields` |
+| `Name`, `Tag` and an `enum` hold a readable name | by eye |
+| A gutter reserves the size of the glyph it holds | measured |
+| The tab strip and the window headers end on the same line | measured |
+| An empty state is the same object in all five windows | by eye, and one rule |
+| An element carrying `hidden` inside a shadow root disappears | the Graph's empty state, a placed node |

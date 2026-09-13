@@ -1,207 +1,193 @@
-# ADR-0025 — Un dossier est une `Resource`, la hiérarchie est un lien `parent`, et l'Inspector inspecte les ressources
+# ADR-0025 — A folder is a `Resource`, the hierarchy is a `parent` link, and the Inspector inspects resources
 
-- **Statut :** **accepté** (2026-08-17)
-- **Dépend de :** ADR-0010 (identité opaque), ADR-0017 (l'état d'IDE n'entre pas dans le modèle), ADR-0019 (Operations structurelles), ADR-0020 (`Resource`, `ResourceStore`, couche `project/`), ADR-0024 (Undo/Redo)
-- **Amende :** ADR-0020 § « Une seule unité : `Resource` » — `path` est remplacé par `parent`
+- **Status:** **accepted** (2026-08-17)
+- **Depends on:** ADR-0010 (an opaque identity), ADR-0017 (IDE state does not enter the model), ADR-0019 (structural Operations), ADR-0020 (`Resource`, `ResourceStore`, the `project/` layer), ADR-0024 (Undo/Redo)
+- **Amends:** ADR-0020 §"One unit: `Resource`" — `path` is replaced by `parent`
 
-## Contexte observé
+## Observed context
 
-Le panneau Project listait le manifeste à plat et rien d'autre. Six défauts, tous du même
-genre — le panneau savait des choses que le modèle ignorait, ou l'inverse :
+The Project panel listed the manifest flat and nothing else. Six defects, all of the same kind —
+the panel knew things the model did not, or the other way round:
 
-| Constat | Cause |
+| Finding | Cause |
 |---|---|
-| Aucun moyen de créer une ressource | La création n'existait que dans `editor.js`, pour la scène de démarrage |
-| Aucun moyen d'organiser | `path` était une chaîne indicative, jamais lue par personne |
-| `Untitled Scene` portait l'icône de la fenêtre `Hierarchy` | Une seule table d'icônes, indexée par un mot qui désignait deux choses |
-| Le renommage s'arrêtait à la première lettre | Une opération par frappe ; chaque opération reconstruisait la liste, qui emportait le champ en cours d'édition |
-| Impossible de désélectionner | La sélection vivait dans le panneau, sans rien pour la remettre à zéro |
-| Une ressource sélectionnée n'affichait rien | L'Inspector ne connaissait qu'un `Object` |
+| No way to create a resource | Creation existed only in `editor.js`, for the starter scene |
+| No way to organize | `path` was an indicative string, never read by anyone |
+| `Untitled Scene` carried the `Hierarchy` window's icon | One icon table, keyed by a word that designated two things |
+| Renaming stopped at the first letter | One operation per keystroke; every operation rebuilt the list, which took the field being edited with it |
+| No way to deselect | Selection lived in the panel, with nothing to clear it |
+| A selected resource displayed nothing | The Inspector knew only an `Object` |
 
-## Décision
+## Decision
 
-### 1. Un dossier est une `Resource` de `kind: 'folder'`
+### 1. A folder is a `Resource` of `kind: 'folder'`
 
-**VALIDÉ.** Pas un concept à côté de `Resource` : une identité opaque, un nom, une place
-dans le manifeste, comme tout le reste. Ce qu'un dossier n'a pas, c'est un payload.
+**SETTLED.** Not a concept beside `Resource`: an opaque identity, a name, a place in the manifest,
+like everything else. What a folder does not have is a payload.
 
-En conséquence, et sans une ligne de code dédiée : renommer un dossier est le
-`SET_PROPERTY` qui renomme une scène ; le supprimer est le `REMOVE_RESOURCE` qui supprime
-un graphe ; les deux sont répliqués, arbitrés et annulables (ADR-0019, ADR-0024).
+As a consequence, and without a single dedicated line of code: renaming a folder is the
+`SET_PROPERTY` that renames a scene; deleting it is the `REMOVE_RESOURCE` that deletes a graph;
+both are replicated, arbitrated and undoable (ADR-0019, ADR-0024).
 
-> Un second concept — un `Folder` pair de `Resource` — aurait produit deux schémas
-> d'identité, deux jeux d'Operations, deux piles d'undo et deux chemins de sérialisation,
-> pour représenter « une chose qui porte un nom et contient d'autres choses ». C'est
-> exactement l'argument qu'ADR-0020 oppose déjà à `Asset` et à `Document`.
+> A second concept — a `Folder` as a peer of `Resource` — would have produced two identity schemes,
+> two sets of Operations, two undo stacks and two serialization paths, to represent "a thing that
+> carries a name and contains other things". That is exactly the argument ADR-0020 already makes
+> against `Asset` and `Document`.
 
-### 2. `parent` remplace `path`
+### 2. `parent` replaces `path`
 
-**VALIDÉ, et c'est un amendement d'ADR-0020.** `path` était une chaîne : la hiérarchie
-était donc une convention de nommage.
+**SETTLED, and it is an amendment to ADR-0020.** `path` was a string: the hierarchy was therefore a
+naming convention.
 
-| Avec `path` | Avec `parent` |
+| With `path` | With `parent` |
 |---|---|
-| Renommer un dossier = réécrire chaque entrée qui le mentionne | Rien à réécrire : le nom est ailleurs |
-| Deux entrées peuvent être en désaccord sur `assets/` | Il n'existe qu'un `assets`, désigné par son id |
-| Rien ne dit si `assets/` existe | Un parent nomme une ressource qui existe, ou l'opération est refusée |
-| Déplacer = réécrire une chaîne | Déplacer = `SET_PROPERTY parent`, inversible |
+| Renaming a folder = rewriting every entry that mentions it | Nothing to rewrite: the name is elsewhere |
+| Two entries can disagree about `assets/` | There is only one `assets`, designated by its id |
+| Nothing says whether `assets/` exists | A parent names a resource that exists, or the operation is refused |
+| Moving = rewriting a string | Moving = `SET_PROPERTY parent`, invertible |
 
-C'est la même idée qu'`Object.parent` dans le Core : **la structure est un lien, jamais un
-chemin**. Le chemin affiché (`Assets/Images`) est **dérivé** (`folderPath()`), donc
-toujours juste.
+It is the same idea as `Object.parent` in the Core: **structure is a link, never a path**. The
+displayed path (`Assets/Images`) is **derived** (`folderPath()`), and therefore always right.
 
-`MANIFEST_VERSION` passe à **2**. Aucune migration n'est écrite : il n'existe aucun projet
-au format 1 (ARCHITECTURE.md §10).
+`MANIFEST_VERSION` goes to **2**. No migration is written: there is no format-1 project
+(ARCHITECTURE.md §10).
 
-### 3. Aucune Operation nouvelle
+### 3. No new Operation
 
-Déplacer est `SET_PROPERTY parent`. Créer est `ADD_RESOURCE`. Supprimer est
-`REMOVE_RESOURCE`. **La liste d'ADR-0019 ne bouge pas** — c'est le test honnête de savoir
-si les dossiers entrent dans le modèle : s'il avait fallu un `MOVE_RESOURCE`, c'est que le
-modèle ne les représentait pas.
+Moving is `SET_PROPERTY parent`. Creating is `ADD_RESOURCE`. Deleting is `REMOVE_RESOURCE`.
+**ADR-0019's list does not move** — that is the honest test of whether folders fit the model: if a
+`MOVE_RESOURCE` had been needed, the model would not have been representing them.
 
-Ce qui s'ajoute est une **garde**, pas un type : un `parent` qui nomme une ressource
-inconnue, une non-ressource-dossier, l'entrée elle-même ou l'un de ses descendants est
-**refusé** (`applied: false`). La garde vit dans le gestionnaire, donc elle vaut aussi pour
-une opération répliquée (ADR-0019 §5).
+What is added is a **guard**, not a type: a `parent` that names an unknown resource, a
+non-folder resource, the entry itself or one of its descendants is **refused**
+(`applied: false`). The guard lives in the handler, so it applies to a replicated operation too
+(ADR-0019 §5).
 
-### 4. Supprimer un dossier supprime son contenu — et ce qu'une ressource possède
+### 4. Deleting a folder deletes its contents — and what a resource owns
 
-**VALIDÉ.** Un dossier emporte ce qu'il contient, en **un seul `batch`**, donc un seul
-`Ctrl Z` le rend entier, payloads compris (ADR-0024).
+**SETTLED.** A folder takes what it contains with it, in **one `batch`**, so a single `Ctrl Z` gives
+it back whole, payloads included (ADR-0024).
 
-Les alternatives ont été écartées : remonter les enfants d'un cran réarrange en silence un
-projet que quelqu'un était en train de ranger ; les laisser sous un dossier disparu les
-perd sans le dire.
+The alternatives were rejected: moving the children up one level silently rearranges a project
+somebody was tidying; leaving them under a vanished folder loses them without saying so.
 
-~~**Une ressource peut aussi en posséder une autre.**~~ **Caduc depuis ADR-0026 :** un
-Component et son graphe sont désormais **une seule** ressource `.px`, donc il n'existe plus
-de possession à suivre dans un payload. Supprimer un `.px` supprime le graphe parce que
-c'était le même fichier.
+~~**A resource can also own another.**~~ **Obsolete since ADR-0026:** a Component and its graph are
+now **one** `.px` resource, so there is no ownership to track inside a payload. Deleting a `.px`
+deletes the graph because it was the same file.
 
-### 5. Ce que le manifeste porte en plus
+### 5. What the manifest additionally carries
 
-`created` et `modified`, en millisecondes epoch, **apposés par l'auteur** comme
-l'identifiant et pour la même raison (ADR-0019 §7). `modified` avance avec `revision`, dans
-le même `batch` qu'une écriture de payload.
+`created` and `modified`, in epoch milliseconds, **stamped by the author** like the identifier and
+for the same reason (ADR-0019 §7). `modified` advances with `revision`, in the same `batch` as a
+payload write.
 
-La **taille** n'entre pas dans le manifeste : elle appartient au stockage, qui la mesure
-(`ResourceStore.size(id)`) ou **admet qu'il ne peut pas** en répondant `null`. Un panneau
-qui afficherait « 0 B » pour un fichier jamais mesuré ment ; un panneau qui affiche « — »
-dit la vérité.
+**Size** does not go into the manifest: it belongs to storage, which either measures it
+(`ResourceStore.size(id)`) or **admits it cannot** by answering `null`. A panel that displayed
+"0 B" for a file that was never measured is lying; a panel that displays "—" tells the truth.
 
-### 6. Le renommage est **une** intention, pas une par frappe — AMENDÉ (ADR-0026)
+### 6. Renaming is **one** intent, not one per keystroke — AMENDED (ADR-0026)
 
-> **Amendement du 2026-08-18.** La conclusion « écrire à la validation » est renversée :
-> le modèle bouge à **chaque frappe**, comme partout ailleurs dans l'Editor, et c'est le
-> `batch` minté pour la session de frappe qui garde **une seule** entrée d'historique.
-> Le raisonnement ci-dessous reste juste sur le fond — un renommage est une intention —
-> et c'est le moyen qui était mauvais : la validation coûtait la réactivité pour un
-> problème que le format savait déjà résoudre (ADR-0024 §4).
+> **Amendment of 2026-08-18.** The conclusion "write on commit" is reversed: the model moves on
+> **every keystroke**, as everywhere else in the Editor, and it is the `batch` minted for the typing
+> session that keeps **one** history entry. The reasoning below remains right in substance — a
+> rename is an intent — and it is the means that was wrong: committing cost reactivity for a
+> problem the format already knew how to solve (ADR-0024 §4).
 
-**VALIDÉ, et c'est une exception délibérée à la règle lettre par lettre.**
+**SETTLED, and it is a deliberate exception to the letter-by-letter rule.**
 
-Le Property System propage à chaque frappe, et c'est l'ergonomie du produit : taper dans
-l'Inspector retitre la ligne de Hierarchy immédiatement (ADR-0003, EDITOR.md). Cette règle
-vaut pour **le modèle de scène**, où une écriture est une valeur qui vit.
+The Property System propagates on every keystroke, and that is the product's ergonomics: typing in
+the Inspector retitles the Hierarchy row immediately (ADR-0003, EDITOR.md). That rule applies to
+**the scene model**, where a write is a value that lives.
 
-Le nom d'une ressource est un acte d'auteur ponctuel : une opération par caractère produit
-onze entrées d'historique pour « New Folder », et onze opérations répliquées pour un mot.
-Le renommage d'une ressource **est donc validé** (Entrée, ou perte du focus), et abandonné
-par Échap sans rien émettre.
+A resource's name is a one-off authoring act: one operation per character produces eleven history
+entries for "New Folder", and eleven replicated operations for one word. Renaming a resource **is
+therefore committed** (Enter, or losing focus), and abandoned by Esc with nothing emitted.
 
-`<px-field>` reçoit deux options pour cela — `write` (le pipeline qui arbitre n'est pas
-celui d'un Component) et `commit: 'change'`. Ce sont deux options, pas un second contrôle.
+`<px-field>` receives two options for this — `write` (the arbitrating pipeline is not a Component's)
+and `commit: 'change'`. Two options, not a second control.
 
-### 7. La sélection de ressource appartient au `Workspace`
+### 7. Resource selection belongs to the `Workspace`
 
-Deux fenêtres ont besoin de la même réponse — le panneau surligne une ligne, l'Inspector
-affiche des champs — donc elle ne peut pas appartenir à l'une des deux. Elle vit dans le
-`Workspace`, comme un `ResourceId` et non comme l'entrée : une entrée retenue survivrait à
-la suppression de la ressource.
+Two windows need the same answer — the panel highlights a row, the Inspector displays fields — so it
+cannot belong to either. It lives in the `Workspace`, as a `ResourceId` and not as the entry: a
+retained entry would survive the resource's deletion.
 
-**Un `Object` et une `Resource` sont mutuellement exclusifs**, parce qu'il y a un seul
-Inspector. L'exclusion est câblée dans `editor.js` — aucune des deux fenêtres n'a besoin de
-savoir que l'autre existe.
+**An `Object` and a `Resource` are mutually exclusive**, because there is one Inspector. The
+exclusion is wired in `editor.js` — neither window needs to know the other exists.
 
-Ce qui reste au panneau : **quel dossier est ouvert**, et le contenu de la recherche.
-De l'état de fenêtre, jamais du projet (ADR-0017).
+What stays with the panel: **which folder is open**, and the search text. Window state, never
+project state (ADR-0017).
 
-### 8. `Ctrl Z` suit la dernière intention émise
+### 8. `Ctrl Z` follows the last intent emitted
 
-Une pile par ressource (ADR-0024) oblige le raccourci à désigner **laquelle**. La sélection
-ne peut pas y répondre : supprimer une ressource l'efface, et l'undo qui la restaurerait
-viserait alors la scène.
+One stack per resource (ADR-0024) forces the shortcut to designate **which**. Selection cannot
+answer that: deleting a resource clears it, and the undo that would restore it would then target
+the scene.
 
-Le `Workspace` retient donc le **contexte** — `'scene'` ou `'project'` — d'après le
-pipeline sur lequel une opération vient d'être annoncée. C'est « ce que le créateur était
-en train de faire », et cela survit à la disparition de la sélection.
+The `Workspace` therefore remembers the **context** — `'scene'` or `'project'` — from the pipeline
+on which an operation was just announced. It is "what the creator was doing", and it survives the
+disappearance of the selection.
 
-### 9. L'Inspector route, il ne branche pas
+### 9. The Inspector routes, it does not branch
 
-Un panneau de `Resource` à côté du panneau d'`Object`, construit des mêmes primitives :
-même en-tête d'identité, mêmes sections, mêmes lignes, même `<px-field>`.
+A `Resource` panel beside the `Object` panel, built from the same primitives: the same identity
+header, the same sections, the same rows, the same `<px-field>`.
 
-**Ce qui diffère d'un `kind` à l'autre est une ligne de table**, dans
-`editor/inspector/resource.js` : des champs supplémentaires, et éventuellement de quoi
-montrer son contenu. Ajouter un kind, c'est deux lignes ; rien dans la fenêtre n'apprend
-son nom. La chaîne de `if (kind === 'image')` que tout navigateur d'assets finit par
-produire est ce que cette table existe pour empêcher.
+**What differs from one `kind` to another is one table row**, in `editor/inspector/resource.js`:
+extra fields, and possibly a way to show its content. Adding a kind is two lines; nothing in the
+window learns its name. The chain of `if (kind === 'image')` that every asset browser ends up
+producing is what this table exists to prevent.
 
-`describeResource()` est **pur** — entrée de manifeste et contexte en entrée, descripteurs
-en sortie — exactement comme `describeComponent()` (ADR-0007), et pour la même raison : la
-partie difficile du panneau se teste sous Node.
+`describeResource()` is **pure** — a manifest entry and a context in, descriptors out — exactly like
+`describeComponent()` (ADR-0007), and for the same reason: the hard part of the panel is testable
+under Node.
 
-### 10. Un `kind` peut déclarer qu'il lui faut un fichier
+### 10. A `kind` may declare that it needs a file
 
-La table de création (`editor/project/commands.js`) porte un `pick` optionnel. Le panneau
-lit **le drapeau**, jamais le kind : il demande un fichier, le lit, et le passe à `create`.
-C'est ce qui permet à un import d'image d'exister sans que la fenêtre apprenne ce qu'est
-une image.
+The creation table (`editor/project/commands.js`) carries an optional `pick`. The panel reads **the
+flag**, never the kind: it asks for a file, reads it, and passes it to `create`. That is what lets
+image import exist without the window learning what an image is.
 
-L'encodage retenu aujourd'hui — data URL dans le store mémoire — n'est **nommé nulle part
-dans le modèle** : un store IndexedDB gardera le Blob, et seuls le store et la fonction de
-lecture changeront. Rien n'entre en base64 dans le JSON d'une scène (ADR-0020).
+The encoding adopted today — a data URL in the in-memory store — is **named nowhere in the model**:
+an IndexedDB store will keep the Blob, and only the store and the reading function will change.
+Nothing enters a scene's JSON as base64 (ADR-0020).
 
-## Ce que cet ADR ne décide pas
+## What this ADR does not decide
 
-- ~~**L'ordre à l'intérieur d'un dossier.**~~ **Décidé le 2026-08-18 (ADR-0026) :**
-  `MOVE_RESOURCE` porte le dossier ET le rang, comme `REPARENT` pour les objets.
-- **Fermer un éditeur.** Tant qu'il n'existe pas, la ressource ouverte — et tout dossier
-  qui la contient — ne peut pas être supprimée : la commande est désactivée et dit
-  pourquoi.
-- **L'import de ressources venues d'un autre projet.** Inchangé depuis ADR-0020 : une passe
-  de remappage à l'import, non construite.
-- **Les vignettes, la recherche par type, les tags.** Rien ne les demande encore.
+- ~~**Ordering inside a folder.**~~ **Decided on 2026-08-18 (ADR-0026):** `MOVE_RESOURCE` carries
+  the folder AND the rank, like `REPARENT` for objects.
+- **Closing an editor.** Until it exists, the open resource — and any folder containing it — cannot
+  be deleted: the command is disabled and says why.
+- **Importing resources from another project.** Unchanged since ADR-0020: a remapping pass at
+  import time, not built.
+- **Thumbnails, search by type, tags.** Nothing asks for them yet.
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Le Project devient un vrai gestionnaire de ressources : créer, ranger, renommer,
-  déplacer, supprimer, inspecter — tout par des Operations existantes.
-- Renommer un dossier ne casse rien, parce que rien ne référence son nom.
-- Un `kind` nouveau apparaît dans le menu, la liste, les icônes et l'Inspector en ajoutant
-  deux lignes de table.
-- Undo/Redo couvre les ressources sans une ligne d'historique dédiée.
+- Project becomes a real resource manager: create, file, rename, move, delete, inspect — all through
+  existing Operations.
+- Renaming a folder breaks nothing, because nothing references its name.
+- A new `kind` appears in the menu, the list, the icons and the Inspector by adding two table lines.
+- Undo/Redo covers resources with no dedicated history code.
 
-### Négatives
+### Negative
 
-- `MANIFEST_VERSION` passe à 2 ; les projets au format 1 ne sont pas lus (il n'en existe
-  aucun).
-- Une exception à la propagation lettre par lettre existe désormais, et elle doit être
-  énoncée là où elle s'applique — c'est fait dans `<px-field>` et ici.
-- La possession d'un graphe par un Component est lue dans un payload, donc invisible dans
-  le manifeste. C'est le prix de ne pas avoir inventé un second lien.
+- `MANIFEST_VERSION` goes to 2; format-1 projects are not read (there are none).
+- An exception to letter-by-letter propagation now exists, and it has to be stated where it applies
+  — which is done in `<px-field>` and here.
+- A Component's ownership of a graph is read from a payload, and therefore invisible in the
+  manifest. That is the price of not having invented a second link.
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **Garder `path` et dériver l'arbre des chaînes** | Renommer un dossier réécrit chaque entrée ; deux entrées peuvent se contredire ; rien ne garantit qu'un dossier existe |
-| **Un type `Folder` à côté de `Resource`** | Deux identités, deux jeux d'Operations, deux piles d'undo — l'argument d'ADR-0020 contre `Asset` |
-| **`MOVE_RESOURCE` comme Operation** | Déplacer change un champ. `SET_PROPERTY` le fait déjà, et s'inverse déjà |
-| **Remonter les enfants d'un dossier supprimé** | Réarrange en silence un projet qu'on était en train de ranger |
-| **Renommer lettre par lettre comme dans la scène** | Onze opérations répliquées et onze entrées d'undo pour un mot |
-| **La sélection de ressource dans `<px-project>`** | L'Inspector devrait lire dans une autre fenêtre ; deux sources de vérité |
-| **Un Inspector par kind** | Deux panneaux à tenir en phase, et la chaîne de `if` revient par la porte de derrière |
+| **Keeping `path` and deriving the tree from strings** | Renaming a folder rewrites every entry; two entries can contradict each other; nothing guarantees a folder exists |
+| **A `Folder` type beside `Resource`** | Two identities, two sets of Operations, two undo stacks — ADR-0020's argument against `Asset` |
+| **`MOVE_RESOURCE` as an Operation** | Moving changes a field. `SET_PROPERTY` already does that, and already inverts |
+| **Moving the children of a deleted folder up** | It silently rearranges a project someone was tidying |
+| **Renaming letter by letter as in the scene** | Eleven replicated operations and eleven undo entries for one word |
+| **Resource selection inside `<px-project>`** | The Inspector would have to read from another window; two sources of truth |
+| **One Inspector per kind** | Two panels to keep in step, and the chain of `if`s comes back through the back door |

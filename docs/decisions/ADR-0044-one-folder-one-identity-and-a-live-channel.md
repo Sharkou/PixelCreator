@@ -1,188 +1,180 @@
-# ADR-0044 — Un dossier, une identité, et un canal vivant
+# ADR-0044 — One folder, one identity, and a live channel
 
-- **Statut :** **accepté** (2026-08-29)
-- **Décide :** où vit le Preview dans l'arborescence ; ce qui l'identifie ; comment une modification de l'éditeur atteint un Preview déjà ouvert
-- **Dépend de :** ADR-0011 (autorité et arbitrage), ADR-0016 §7 (relier un graphe remplace le comportement), ADR-0019 (réplication), ADR-0027 (un `Operation` est une intention d'auteur), ADR-0042 (le Preview est un client de runtime adressé par identifiant)
-- **Confirmé par :** ADR-0046 §1 (2026-08-29) — le mécanisme legacy (`window.open` + partage de références) a été retrouvé et analysé ; il n'est pas un transport et ne prépare rien. Le canal reste celui décidé ici.
-- **Amende :** ADR-0042 §2 (les deux dossiers deviennent un), §3 (le préfixe `prv_` disparaît), §4 (ce que le magasin garde), §7 (les contrats de couches)
-- **Ne décide pas :** le sens inverse (Preview → Editor), le multijoueur, la résolution de conflits, la persistance côté serveur. Voir §6.
+- **Status:** **accepted** (2026-08-29)
+- **Decides:** where the Preview lives in the tree; what identifies it; how a change in the editor reaches an already-open Preview
+- **Depends on:** ADR-0011 (authority and arbitration), ADR-0016 §7 (rebinding a graph replaces the behaviour), ADR-0019 (replication), ADR-0027 (an `Operation` is an authoring intent), ADR-0042 (the Preview is a runtime client addressed by identifier)
+- **Confirmed by:** ADR-0046 §1 (2026-08-29) — the legacy mechanism (`window.open` + shared references) was found and analysed; it is not a transport and prepares nothing. The channel stays the one decided here.
+- **Amends:** ADR-0042 §2 (the two directories become one), §3 (the `prv_` prefix disappears), §4 (what the store keeps), §7 (the layer contracts)
+- **Does not decide:** the reverse direction (Preview → Editor), multiplayer, conflict resolution, server-side persistence. See §6.
 
 ---
 
-## 1. Ce qui n'allait pas
+## 1. What was wrong
 
-Trois défauts, et ils sont le même : **le Preview n'avait pas d'identité stable**.
+Three defects, and they are the same one: **the Preview had no stable identity**.
 
-| Symptôme | Cause |
+| Symptom | Cause |
 |---|---|
-| Deux dossiers, `src/play/` et `src/preview/`, pour une seule application | ADR-0042 a séparé « le client » et « ce qui passe entre » avant de savoir que le second n'avait qu'un seul lecteur |
-| Ouvrir Preview deux fois donnait deux jeux sans rapport | l'identifiant était tiré à chaque ouverture (`prv_` + aléatoire) |
-| Une modification dans l'éditeur n'atteignait jamais une fenêtre ouverte | il fallait refermer, rappuyer, et retrouver où l'on en était |
+| Two directories, `src/play/` and `src/preview/`, for one application | ADR-0042 separated "the client" and "what passes between" before knowing the second had only one reader |
+| Opening Preview twice gave two unrelated games | the identifier was drawn on every opening (`prv_` + random) |
+| A change in the editor never reached an open window | you had to close it, press again, and find your place |
 
-Le troisième est celui qui coûte. Pixel Creator est orienté multijoueur : le geste normal
-d'un créateur est d'avoir **le jeu ouvert à côté de l'éditeur** et de régler pendant que ça
-tourne. Une fenêtre qu'il faut relancer à chaque essai n'est pas ce geste, c'est un
-compilateur.
+The third is the costly one. Pixel Creator is multiplayer-oriented: a creator's normal gesture is to
+have **the game open beside the editor** and to tune while it runs. A window you have to relaunch on
+every attempt is not that gesture, it is a compiler.
 
 ---
 
-## 2. Décision : un dossier, et l'identité du projet
+## 2. Decision: one directory, and the project's identity
 
-> **`src/preview/` est l'application Preview, entière. Un Preview est identifié par le
-> projet qu'il montre, et par rien d'autre.**
+> **`src/preview/` is the Preview application, whole. A Preview is identified by the project it
+> shows, and by nothing else.**
 
 ```
-  src/editor/    l'éditeur           →  project, runtime, core, preview
-  src/preview/   le client de jeu    →  runtime, core
+  src/editor/    the editor          →  project, runtime, core, preview
+  src/preview/   the game client     →  runtime, core
 ```
 
-`src/preview/` n'importe toujours rien de `src/editor/` — c'est la frontière d'ADR-0042 §2 et
-elle est intacte. Ce qui change est que le bundle, le magasin et le client habitent
-ensemble : il n'y a qu'une application, elle a un dossier.
+`src/preview/` still imports nothing from `src/editor/` — that is ADR-0042 §2's boundary and it is
+intact. What changes is that the bundle, the store and the client live together: there is one
+application, and it has one directory.
 
-**Aucun alias `play → preview` n'est laissé en place.** Un alias permanent est un deuxième
-nom pour une chose qui en a déjà un ; il survit aux réécritures, se glisse dans les imports
-neufs, et fait mentir `tools/layers` sur ce qui existe.
+**No `play → preview` alias is left in place.** A permanent alias is a second name for something that
+already has one; it survives rewrites, slips into fresh imports, and makes `tools/layers` lie about
+what exists.
 
-### 2.1 L'identifiant est celui du projet
+### 2.1 The identifier is the project's
 
-| | avant | maintenant |
+| | before | now |
 |---|---|---|
-| Forme | `prv_` + aléatoire | l'identifiant du projet |
-| Combien par projet | un par pression sur Preview | **un** |
-| Deux fenêtres | deux jeux étrangers | deux clients d'un jeu |
-| Le magasin | une entrée par pression | une entrée par projet, réécrite |
+| Shape | `prv_` + random | the project's identifier |
+| How many per project | one per press of Preview | **one** |
+| Two windows | two unrelated games | two clients of one game |
+| The store | one entry per press | one entry per project, rewritten |
 
-Le préfixe existait pour rendre « la nature de l'identifiant lisible » (ADR-0042 §3). Il
-répondait à une question que personne ne pose : ce que `resolve(id)` fait de l'identifiant
-est déjà la seule différence entre un preview et un jeu publié, et cette fonction n'a jamais
-lu le préfixe. Ce qu'il coûtait, en revanche, est réel — **rien ne pouvait nommer « le
-Preview de CE projet »**, ce qui est exactement ce qu'un canal vivant, et plus tard une URL
-publiée, doivent nommer.
+The prefix existed to make "the identifier's nature readable" (ADR-0042 §3). It answered a question
+nobody asks: what `resolve(id)` does with the identifier is already the only difference between a
+preview and a published game, and that function never read the prefix. What it cost, on the other
+hand, is real — **nothing could name "THIS project's Preview"**, which is exactly what a live channel,
+and later a published URL, have to name.
 
-Un `game id` attribué par un serveur reste possible et reste distinct : il est attribué par
-Publish, pas dérivé du projet. La colonne d'ADR-0042 §3 tient toujours, moins la ligne
-« Forme » du preview.
+A `game id` assigned by a server stays possible and stays distinct: it is assigned by Publish, not
+derived from the project. ADR-0042 §3's column still holds, minus the preview's "Shape" row.
 
 ---
 
-## 3. Décision : l'éditeur diffuse ses `Operation`, le Preview les applique
+## 3. Decision: the editor broadcasts its `Operation`s, the Preview applies them
 
-> **Ce qui traverse est un `Operation` — le même enregistrement que l'historique de
-> l'éditeur détient, et le même qu'un serveur transmettra un jour.**
+> **What crosses is an `Operation` — the same record the editor's history holds, and the same one a
+> server will one day transmit.**
 
-Aucun protocole n'est inventé ici, parce que le Core en a déjà un. ADR-0011 a séparé deux
-verbes, et la séparation existait précisément pour ce moment :
+No protocol is invented here, because the Core already has one. ADR-0011 separated two verbs, and the
+separation existed precisely for this moment:
 
 ```
-  submit()   arbitre, applique et ANNONCE      ← ce que fait un auteur
-  apply()    applique ce qui fait autorité      ← ce que fait un suiveur
-             et n'annonce rien
+  submit()   arbitrates, applies and ANNOUNCES      ← what an author does
+  apply()    applies what is authoritative          ← what a follower does
+             and announces nothing
 ```
 
-`apply()` n'annonce rien, « ce qui est la raison pour laquelle appliquer une opération
-distante ne renvoie rien » (`core/operations/operations.js`). Rien ne boucle, parce que
-rien ne peut boucler : un pipeline n'émet `operation` que depuis `submit()`.
+`apply()` announces nothing, "which is why applying a remote operation sends nothing back"
+(`core/operations/operations.js`). Nothing loops, because nothing can: a pipeline emits `operation`
+only from `submit()`.
 
-Il ne manquait qu'un **canal**. C'est un `BroadcastChannel` nommé `px.live.<projectId>` :
-la plus petite chose qui porte un message entre deux pages d'un navigateur. Le jour où
-c'est une WebSocket, `openLiveChannel()` change et **personne d'autre** — la promesse
-d'ADR-0042 §6, tenue une couche plus bas.
+All that was missing was a **channel**. It is a `BroadcastChannel` named `px.live.<projectId>`: the
+smallest thing that carries a message between two pages of a browser. The day it is a WebSocket,
+`openLiveChannel()` changes and **nobody else** — ADR-0042 §6's promise, kept one layer down.
 
-### 3.1 Deux sortes de message, et l'asymétrie est le sujet
+### 3.1 Two kinds of message, and the asymmetry is the point
 
 | | `operation` | `definition` |
 |---|---|---|
-| Porte | une modification de la **scène** | un `.px` **entier** |
-| Parce que | la scène est un **état que le Preview habite** : les objets ont bougé, les minuteurs ont tourné. La remplacer jetterait tout ce que la partie est devenue | un `.px` est une **définition que le Preview lit**. Relier un graphe remplace le comportement en cours, ce qu'ADR-0016 §7 dit déjà d'une modification de graphe |
-| Coût d'un déplacement de nœud | — | un envoi, pas quarante `SET_PROPERTY` |
+| Carries | a change to the **scene** | a whole `.px` |
+| Because | the scene is a **state the Preview inhabits**: the objects have moved, the timers have run. Replacing it would throw away everything the session has become | a `.px` is a **definition the Preview reads**. Rebinding a graph replaces the running behaviour, which ADR-0016 §7 already says about a graph change |
+| The cost of moving a node | — | one send, not forty `SET_PROPERTY`s |
 
-Un `.px` est donc envoyé **entier et au plus une fois par frame**. Une microtâche serait
-trop pressée — un lot d'opérations en contient plusieurs — donc l'envoi attend la frame où
-le geste du créateur se termine.
+A `.px` is therefore sent **whole and at most once per frame**. A microtask would be too eager — a
+batch of operations holds several — so the send waits for the frame in which the creator's gesture
+ends.
 
-### 3.2 Ce que l'éditeur suit
+### 3.2 What the editor tracks
 
-Le Workspace annonce `attached` au moment exact où une ressource gagne un modèle vivant
-(ADR-0043 §3). Suivre « tous les modèles qu'il y a » est donc **un abonnement**, et non un
-registre à tenir à jour. Les modèles déjà attachés au démarrage — la scène, notamment — sont
-ramassés au passage : sans cela, la ressource qui compte le plus serait la seule à n'être
-jamais suivie.
+The Workspace announces `attached` at the exact moment a resource gains a live model (ADR-0043 §3).
+Tracking "every model there is" is therefore **a subscription**, and not a registry to keep up to
+date. Models already attached at startup — the scene in particular — are picked up on the way:
+without that, the resource that matters most would be the only one never tracked.
 
-> **Amendé par ADR-0071 (2026-09-12).** « Tous les modèles qu'il y a » en oubliait un : le
-> **manifeste**, qui n'est attaché à rien et porte pourtant son propre pipeline. Une image
-> importée, un tileset recoupé, un prefab remplacé n'atteignaient donc aucune fenêtre déjà
-> ouverte. Il traverse maintenant le même canal, comme une Operation, sous l'identité du
-> projet — aucun genre de message n'a été ajouté — et seules les opérations `Origin.EDITOR`
-> traversent, la comptabilité d'une sauvegarde n'étant une intention pour personne
-> (ADR-0069 §2).
+> **Amended by ADR-0071 (2026-09-12).** "Every model there is" left one out: the **manifest**, which
+> is attached to nothing and yet carries its own pipeline. An imported image, a re-cut tileset, a
+> replaced prefab therefore reached no already-open window. It now crosses the same channel, as an
+> Operation, under the project's identity — no message kind was added — and only `Origin.EDITOR`
+> operations cross, a save's bookkeeping being nobody's intent (ADR-0069 §2).
 
 ---
 
-## 4. Ce qui n'est pas décidé, et pourquoi
+## 4. What is not decided, and why
 
-| Question | Réponse d'aujourd'hui |
+| Question | Today's answer |
 |---|---|
-| Preview → Editor | **non**. Le Preview n'a pas le vocabulaire d'une modification (ADR-0042 §5) et ne doit pas l'acquérir par un canal. |
-| Deux éditeurs sur un projet | hors sujet ici : un seul auteur émet. C'est l'arbitrage d'ADR-0011, et il se branchera au même endroit. |
-| Conflits, ordre, reprise après perte | rien. Un `BroadcastChannel` ne perd pas de message entre deux onglets d'un navigateur, et un Preview qui a raté quelque chose se rouvre. Sur une WebSocket, la question devient réelle et vaut son propre ADR. |
-| Rejouer l'historique à un Preview ouvert en retard | non. Le Preview ouvre le bundle du moment où il est ouvert, puis suit. |
+| Preview → Editor | **no**. The Preview does not have the vocabulary of a change (ADR-0042 §5) and must not acquire it through a channel. |
+| Two editors on one project | out of scope here: only one author emits. That is ADR-0011's arbitration, and it will plug into the same place. |
+| Conflicts, ordering, recovery after loss | nothing. A `BroadcastChannel` does not lose messages between two tabs of one browser, and a Preview that missed something is reopened. Over a WebSocket the question becomes real and deserves its own ADR. |
+| Replaying the history to a Preview opened late | no. The Preview opens the bundle of the moment it was opened, then follows. |
 
 ---
 
-## 5. Ce qu'un échec fait
+## 5. What a failure does
 
-Aucun de ces chemins n'est une erreur d'auteur, et aucun n'interrompt une édition :
+None of these paths is an authoring error, and none interrupts editing:
 
-- **Pas de `BroadcastChannel`** (navigateur ancien, contexte restreint) → `openLiveChannel()`
-  répond `null`, le Preview joue sans suivre. Un Preview qui ne peut pas suivre l'éditeur
-  reste un Preview.
-- **Canal fermé** (la fenêtre d'en face est partie) → l'envoi est avalé. Une modification ne
-  peut pas échouer parce que personne n'écoutait.
-- **Message pour une autre ressource** → ignoré. Le Preview n'applique que ce qui concerne la
-  scène qu'il joue.
+- **No `BroadcastChannel`** (an old browser, a restricted context) → `openLiveChannel()` answers
+  `null`, and the Preview plays without following. A Preview that cannot follow the editor is still a
+  Preview.
+- **A closed channel** (the window opposite has gone) → the send is swallowed. A change cannot fail
+  because nobody was listening.
+- **A message for another resource** → ignored. The Preview applies only what concerns the scene it
+  is playing.
 
 ---
 
-## 6. Comment cela devient du multijoueur
+## 6. How this becomes multiplayer
 
-C'est la même phrase qu'ADR-0042 §6, une couche plus bas et désormais vraie :
+It is the same sentence as ADR-0042 §6, one layer down and now true:
 
 ```
-  aujourd'hui   Editor ──BroadcastChannel──▶ Preview           (une machine, N fenêtres)
-  ensuite       Client ──WebSocket──▶ serveur ──▶ Clients      (N machines)
+  today   Editor ──BroadcastChannel──▶ Preview           (one machine, N windows)
+  next    Client ──WebSocket──▶ server ──▶ Clients       (N machines)
 ```
 
-Ce qui traverse ne change pas : un `Operation`. Ce qui change est `openLiveChannel()`, et
-l'arbitrage qu'ADR-0011 a déjà décrit s'installe côté serveur. **Deux fenêtres d'un projet
-sont déjà deux clients d'une partie** — la propriété qu'ADR-0042 nommait comme la totalité
-de la préparation au multijoueur.
+What crosses does not change: an `Operation`. What changes is `openLiveChannel()`, and the arbitration
+ADR-0011 already described settles on the server side. **Two windows of a project are already two
+clients of a match** — the property ADR-0042 named as the entirety of the preparation for multiplayer.
 
 ---
 
-## 7. Contrats observables
+## 7. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| `src/play/` n'existe plus, et aucun alias ne le remplace | l'arborescence, `tools/check-exports` |
-| `src/preview/` n'importe rien de `src/editor/` | `tools/layers` |
-| Deux ouvertures d'un projet donnent une entrée de magasin | `preview/store.test.js` |
-| Un `Operation` émis par l'éditeur arrive au Preview | `preview/live.test.js` |
-| Ce que le Preview applique ne repart pas | `apply()` n'émet rien — `operations.test.js` |
-| Un canal absent ne casse ni l'éditeur ni le Preview | `live.test.js`, les deux sens |
-| Un `.px` modifié arrive entier, une fois par frame | `live.test.js` |
-| Bouger un objet dans l'éditeur le bouge dans un Preview ouvert | deux fenêtres, à l'œil |
+| `src/play/` no longer exists, and no alias replaces it | the tree, `tools/check-exports` |
+| `src/preview/` imports nothing from `src/editor/` | `tools/layers` |
+| Two openings of a project give one store entry | `preview/store.test.js` |
+| An `Operation` emitted by the editor arrives at the Preview | `preview/live.test.js` |
+| What the Preview applies does not go back out | `apply()` emits nothing — `operations.test.js` |
+| An absent channel breaks neither the editor nor the Preview | `live.test.js`, both directions |
+| A modified `.px` arrives whole, once per frame | `live.test.js` |
+| Moving an object in the editor moves it in an open Preview | two windows, by eye |
 
 ---
 
-## 8. Alternatives écartées
+## 8. Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| Renvoyer le bundle entier à chaque modification | La scène est un état habité : le Preview perdrait la partie en cours à chaque frappe. C'est justement la distinction de §3.1. |
-| Un diff calculé entre deux états | Le Core produit déjà l'intention exacte, arbitrée et annoncée. Calculer après coup ce que l'on savait avant est du travail en double, et faux dès qu'une opération n'est pas idempotente. |
-| `postMessage` sur la fenêtre ouverte | Ne survit pas à un rafraîchissement du Preview et ne nomme que la fenêtre que l'on a ouverte soi-même — pas « les Previews de ce projet ». |
-| `storage` events sur `localStorage` | Il faudrait réécrire le bundle entier pour signaler une frappe, et l'événement ne porte pas d'intention. |
-| Un serveur local dès maintenant | Un processus à lancer pour une fonctionnalité que le navigateur rend déjà réelle. La couture est en place pour le jour où il apporte quelque chose. |
-| Garder `prv_` et ajouter un identifiant de projet à côté | Deux identités pour une chose : le magasin, le canal et l'URL devraient s'accorder sur laquelle est la vraie. |
-| Un alias `src/play/` réexportant `src/preview/` | Un second nom permanent pour une chose qui en a un. Il se glisse dans les imports neufs et fait mentir la vérification de couches. |
+| Resending the whole bundle on every change | The scene is an inhabited state: the Preview would lose the running session on every keystroke. That is exactly §3.1's distinction. |
+| A diff computed between two states | The Core already produces the exact intent, arbitrated and announced. Recomputing afterwards what you knew beforehand is duplicated work, and wrong as soon as an operation is not idempotent. |
+| `postMessage` on the opened window | It does not survive a Preview refresh and names only the window you opened yourself — not "this project's Previews". |
+| `storage` events on `localStorage` | You would have to rewrite the whole bundle to signal a keystroke, and the event carries no intent. |
+| A local server right now | A process to launch for a feature the browser already makes real. The seam is in place for the day it brings something. |
+| Keeping `prv_` and adding a project identifier beside it | Two identities for one thing: the store, the channel and the URL would have to agree on which is the real one. |
+| A `src/play/` alias re-exporting `src/preview/` | A second permanent name for something that has one. It slips into fresh imports and makes the layer check lie. |

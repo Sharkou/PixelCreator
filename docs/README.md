@@ -52,12 +52,13 @@ Contribution workflow lives in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ---
 
-## Project memory (internal, French)
+## Project memory (internal)
 
 The project keeps a second, deeper layer of documentation: the architecture specification,
 the **72 Architecture Decision Records**, the Legacy analysis and the migration history.
-It is written in French, it is addressed to whoever is implementing the engine, and it is
-authoritative on design intent.
+It is addressed to whoever is implementing the engine, and it is authoritative on design
+intent. *Internal* describes its audience, not its language: like every document in this
+repository, it is written in English.
 
 **→ [Project memory index](PROJECT_MEMORY.md)**
 

@@ -1,25 +1,24 @@
-# ADR-0069 — Un enregistrement n'est pas une intention
+# ADR-0069 — A save is not an intention
 
-- **Statut :** **accepté** (2026-09-12)
-- **Décide :** ce qu'une History enregistre ; ce qui dit quel document est en cours d'édition ; ce qu'un raccourci possède ; ce qu'un coup de pinceau coûte à l'historique ; ce que « Nouveau projet » veut dire
-- **Dépend de :** ADR-0003 (une Operation par intention), ADR-0008 (`previous` rend l'inverse possible), ADR-0019 (Operations), ADR-0024 (une pile par ressource), ADR-0044 (l'Editor est l'autorité), ADR-0065 (un projet survit à l'onglet), ADR-0068 (peindre une Tilemap)
-- **Ne décide pas :** la collaboration temps réel, un undo global inter-documents, un format d'Operation réseau — voir §7
-
----
-
-## 1. Le défaut
-
-`Ctrl Z` ne faisait **rien** dans l'Editor. Pas « rien pour la peinture » : rien pour une
-propriété d'Inspector, rien pour un redimensionnement, rien pour un déplacement d'objet — dans
-tout projet assez vieux pour s'être sauvegardé une fois, c'est-à-dire tous.
-
-Ce qui était déjà établi et qui était vrai : le keydown atteignait le handler, `History`
-passait ses tests, les Operations et les batches fonctionnaient. **La pile que le shell
-consultait était vide.**
+- **Status:** **accepted** (2026-09-12)
+- **Decides:** what a History records; what says which document is being edited; what a shortcut owns; what a brush stroke costs the history; what "New project" means
+- **Depends on:** ADR-0003 (one Operation per intention), ADR-0008 (`previous` makes the inverse possible), ADR-0019 (Operations), ADR-0024 (one stack per resource), ADR-0044 (the Editor is the authority), ADR-0065 (a project outlives the tab), ADR-0068 (painting a Tilemap)
+- **Does not decide:** real-time collaboration, a global cross-document undo, a network Operation format — see §7
 
 ---
 
-## 2. La cause : une écriture se faisait passer pour une intention
+## 1. The defect
+
+`Ctrl Z` did **nothing** in the Editor. Not "nothing for painting": nothing for an Inspector
+property, nothing for a resize, nothing for moving an object — in any project old enough to have
+saved itself once, which is all of them.
+
+What was already established and was true: the keydown reached the handler, `History` passed its
+tests, Operations and batches worked. **The stack the shell was consulting was empty.**
+
+---
+
+## 2. The cause: a write was passing itself off as an intention
 
 ```js
 // project.js, save()
@@ -28,169 +27,165 @@ this.setProperty(id, 'revision', resource.revision + 1);   // ← Origin.EDITOR
 this.setProperty(id, 'modified', Date.now());              // ← Origin.EDITOR
 ```
 
-`revision` et `modified` sont des faits **à propos** d'une écriture. Estampillés comme une
-intention d'Editor, ils faisaient deux choses, et la seconde était fatale :
+`revision` and `modified` are facts **about** a write. Stamped as an Editor intention, they did two
+things, and the second was fatal:
 
-1. ils s'empilaient dans l'historique du manifeste — « annule le fait que ceci a été
-   sauvegardé » n'est pas une phrase ;
-2. ils **déplaçaient le contexte** : `Workspace.#context` était « le pipeline qui a émis en
-   dernier », donc l'autosave annonçait, six cents millisecondes après chaque édition, que le
-   créateur travaillait maintenant dans le manifeste.
+1. they piled up in the manifest's history — "undo the fact that this was saved" is not a sentence;
+2. they **moved the context**: `Workspace.#context` was "the pipeline that emitted last", so six
+   hundred milliseconds after every edit the autosave announced that the creator was now working in
+   the manifest.
 
-`activeHistory` renvoyait alors la pile du manifeste, où la seule chose à reprendre était la
-comptabilité de la sauvegarde elle-même. Invisible, silencieux, et à chaque fois.
+`activeHistory` then returned the manifest's stack, where the only thing to take back was the
+bookkeeping of the save itself. Invisible, silent, and every single time.
 
-> **Le correctif est une phrase : seul ce que quelqu'un a voulu entre dans un historique.**
+> **The fix is one sentence: only what someone wanted enters a history.**
 
-| Où | Quoi |
+| Where | What |
 |---|---|
-| `project.js` | `save()` estampille sa comptabilité `Origin.LOCAL` — « personne n'a demandé ceci » |
-| `history.js` | une History n'enregistre que `Origin.EDITOR` |
-| `workspace.js` | seul un `Origin.EDITOR` dit quel document est travaillé |
+| `project.js` | `save()` stamps its bookkeeping `Origin.LOCAL` — "nobody asked for this" |
+| `history.js` | a History only records `Origin.EDITOR` |
+| `workspace.js` | only an `Origin.EDITOR` says which document is being worked on |
 
-Et le filtre par origine ferme du même geste la question d'ADR-0044 : une opération arrivée du
-réseau, déjà décidée ailleurs, n'entre pas dans la pile locale. `Ctrl Z` ne veut pas dire
-« annule la dernière chose faite par n'importe quel onglet » — il y a maintenant une
-contre-épreuve qui le dit.
+And the origin filter closes ADR-0044's question in the same gesture: an operation arriving from the
+network, already decided elsewhere, does not enter the local stack. `Ctrl Z` does not mean "undo the
+last thing done by any tab" — there is now a counter-test that says so.
 
 ---
 
-## 3. Le clavier demande, il ne possède pas
+## 3. The keyboard asks, it does not own
 
 ```
-shortcutFor(event)   →  'undo' | 'redo' | 'save' | null      une fonction, testable sans DOM
-applyShortcut(action, { workspace })                          demande au Workspace, à l'instant
+shortcutFor(event)   →  'undo' | 'redo' | 'save' | null      a function, testable without a DOM
+applyShortcut(action, { workspace })                          asks the Workspace, at that instant
 ```
 
-Aucune History n'est capturée nulle part : ni au boot, ni dans le handler, ni dans l'objet de
-session — qui expose désormais un **getter** plutôt qu'un instantané. Changer de document,
-fermer un éditeur, ouvrir un autre projet ne recâble rien.
+No History is captured anywhere: not at boot, not in the handler, not in the session object — which
+now exposes a **getter** rather than a snapshot. Changing document, closing an editor, opening
+another project rewires nothing.
 
-| Touche | |
+| Key | |
 |---|---|
-| `Ctrl Z` / `Cmd Z` | annuler |
-| `Ctrl Shift Z` / `Cmd Shift Z` | rétablir |
-| `Ctrl Y` | rétablir aussi — ce que la moitié des créateurs essaient d'abord, et rien d'autre ne l'utilise |
-| `Ctrl S` / `Cmd S` | enregistrer ce qui est travaillé |
+| `Ctrl Z` / `Cmd Z` | undo |
+| `Ctrl Shift Z` / `Cmd Shift Z` | redo |
+| `Ctrl Y` | redo as well — what half of all creators try first, and nothing else uses it |
+| `Ctrl S` / `Cmd S` | save what is being worked on |
 
-**La règle du champ de texte, dite et testée.** `applyShortcut` répond s'il a **fait** quelque
-chose, et `editor.js` n'appelle `preventDefault()` que dans ce cas. Un créateur qui tape un nom
-a une pile à lui : `Ctrl Z` reprend le renommage. Quand il n'y a rien à nous à reprendre, la
-touche est laissée au navigateur et son undo de texte a lieu. Voler la touche dans les deux cas
-ferait de l'édition d'un nom le seul endroit de l'Editor où l'annulation ment.
+**The text-field rule, stated and tested.** `applyShortcut` answers whether it **did** anything, and
+`editor.js` only calls `preventDefault()` in that case. A creator typing a name has a stack of their
+own: `Ctrl Z` takes back the rename. When there is nothing of ours to take back, the key is left to
+the browser and its text undo happens. Stealing the key in both cases would make editing a name the
+one place in the Editor where undo lies.
 
-**Entre projets.** Deux projets sont deux Workspaces : un undo dans l'un n'atteint jamais
-l'autre. Et **une scène à la fois** — la règle que le Workspace avait déjà : ouvrir la seconde
-ferme la première et **emporte sa pile**, listeners compris.
+**Between projects.** Two projects are two Workspaces: an undo in one never reaches the other. And
+**one scene at a time** — the rule the Workspace already had: opening the second closes the first and
+**takes its stack with it**, listeners included.
 
 ---
 
-## 4. Un coup de pinceau coûte le coup de pinceau
+## 4. A brush stroke costs the brush stroke
 
-`SET_PROPERTY` porte la valeur entière : juste pour un nombre, une couleur ou un nom, ruineux
-pour une grille. Peindre cent cellules d'une carte de 1000 × 1000 écrivait cent opérations
-portant chacune **deux copies d'un million de nombres**.
+`SET_PROPERTY` carries the whole value: fine for a number, a colour or a name, ruinous for a grid.
+Painting a hundred cells of a 1000 × 1000 map wrote a hundred operations each carrying **two copies
+of a million numbers**.
 
 ```
-map = 1 000 000 cellules, stroke = 100 cellules
-avant :  100 opérations × 2 × 1 000 000  =  200 000 000 valeurs retenues
-après :    1 entrée, 100 cellules × 2     =            200 valeurs retenues
+map = 1,000,000 cells, stroke = 100 cells
+before:  100 operations × 2 × 1,000,000  =  200,000,000 values retained
+after:     1 entry, 100 cells × 2         =            200 values retained
 ```
 
-> **`SET_CELLS` : des INDEX, avec la valeur qu'ils avaient et celle qu'ils prennent.**
+> **`SET_CELLS`: INDICES, with the value they had and the value they take.**
 
-| Décision | Raison |
+| Decision | Reason |
 |---|---|
-| une opération, pas un cadre générique | elle dit ce qu'elle fait : « mets ces cases de ce tableau à ces valeurs ». Assez générale pour le prochain gros tableau, et pas une abstraction inventée pour un usage unique |
-| **ce n'est pas une seconde vérité** | `Tilemap.tiles` reste le tableau réel ; un patch est la *description* d'une mutation. L'appliquer lit le tableau, le copie, change les index nommés et le réécrit **par la même écriture de propriété** que `SET_PROPERTY` — donc le même Change, les mêmes observateurs, le même fichier |
-| l'inverse échange les deux valeurs de chaque cellule | exactement ce que `SET_PROPERTY` fait, cellule par cellule |
-| une cellule déjà égale n'entre pas dans le patch | et un index n'y apparaît jamais deux fois |
-| le resize garde un instantané complet | changer 1000 × 1000 en 500 × 500 change structurellement toute la grille : une entrée, un tableau, et l'undo rend dimensions **et** contenu (ADR-0068 §6). L'optimiser serait compliquer un contrat correct |
+| one operation, not a generic framework | it says what it does: "set these squares of this array to these values". General enough for the next large array, and not an abstraction invented for a single use |
+| **it is not a second truth** | `Tilemap.tiles` is still the real array; a patch is the *description* of a mutation. Applying it reads the array, copies it, changes the named indices and writes it back **through the same property write** as `SET_PROPERTY` — so the same Change, the same observers, the same file |
+| the inverse swaps each cell's two values | exactly what `SET_PROPERTY` does, cell by cell |
+| a cell that already matches does not enter the patch | and an index never appears in it twice |
+| a resize keeps a full snapshot | changing 1000 × 1000 to 500 × 500 structurally changes the whole grid: one entry, one array, and undo gives back dimensions **and** contents (ADR-0068 §6). Optimising it would complicate a contract that is correct |
 
-**La persistance n'a pas bougé.** Le fichier de projet contient `tiles`, un tableau de nombres,
-et rien de l'historique n'y fuit — ce qui est aussi pourquoi une grille déclarée `n × m` est
-désormais **dense dès sa construction** : un patch qui remplit l'index 6 d'un tableau vide
-laissait cinq trous, et un trou devient `null` dans un fichier où un créateur attend un zéro.
+**Persistence has not moved.** The project file contains `tiles`, an array of numbers, and nothing of
+the history leaks into it — which is also why a grid declared `n × m` is now **dense from
+construction**: a patch filling index 6 of an empty array left five holes, and a hole becomes `null`
+in a file where a creator expects a zero.
 
 ---
 
-## 5. Ce que ça coûte, mesuré
+## 5. What it costs, measured
 
 `node tools/bench-tilemap.mjs`
 
-| carte | cellules | stroke | entrées d'historique | valeurs retenues |
+| map | cells | stroke | history entries | values retained |
 |---|---|---|---|---|
-| 100 × 100 | 10 000 | 100 | 1 | **200** |
-| 1000 × 1000 | 1 000 000 | 100 | 1 | **200** |
+| 100 × 100 | 10,000 | 100 | 1 | **200** |
+| 1000 × 1000 | 1,000,000 | 100 | 1 | **200** |
 
-La carte grandit cent fois ; le coût ne bouge pas. Compté en **valeurs** plutôt qu'en
-millisecondes parce que c'est le nombre qui est le même sur toutes les machines.
-
----
-
-## 6. « Nouveau projet » demandait d'oublier, pas de créer
-
-Le menu écrivait : `localStorage.removeItem(LAST_OPENED)`, puis rechargeait. Mais *ne rien se
-rappeler* veut dire « ouvre le projet le plus récemment modifié » (ADR-0065 §4) — qui est
-précisément celui qu'on venait de quitter. **Le bouton rouvrait le projet dans lequel il avait
-été pressé.**
-
-Oublier n'est pas demander : l'intention s'écrit (`NEW_PROJECT`), et `resume()` l'honore avant
-d'aller chercher quoi que ce soit. Sans rien de mémorisé, le repli sur le projet le plus récent
-reste le bon comportement — c'est un navigateur qui a perdu une commodité, pas un créateur qui
-a demandé une page blanche.
+The map grows a hundredfold; the cost does not move. Counted in **values** rather than milliseconds
+because that is the number that is the same on every machine.
 
 ---
 
-## 7. Ce que cet ADR ne décide pas
+## 6. "New project" asked to forget, not to create
 
-| Point ouvert | Pourquoi |
+The menu wrote `localStorage.removeItem(LAST_OPENED)`, then reloaded. But *remembering nothing* means
+"open the most recently modified project" (ADR-0065 §4) — which is precisely the one just left.
+**The button reopened the project it had been pressed in.**
+
+Forgetting is not asking: the intention is written (`NEW_PROJECT`), and `resume()` honours it before
+going to look for anything. With nothing remembered, falling back to the most recent project is still
+the right behaviour — that is a browser that has lost a convenience, not a creator who asked for a
+blank page.
+
+---
+
+## 7. What this ADR does not decide
+
+| Open point | Why |
 |---|---|
-| **Collaboration temps réel** | Le filtre d'origine dit ce qu'un undo local n'est pas ; ce qu'un undo *partagé* serait — annuler l'opération de quelqu'un d'autre, ou la sienne dans un document que deux personnes écrivent — est une décision de produit qui n'a pas encore de produit |
-| **Un undo global inter-documents** | ADR-0024 a tranché l'inverse, et la raison tient toujours : `Ctrl Z` dans la fenêtre Graph ne doit pas reprendre un déplacement dans la scène |
-| **Rouvrir une scène ressuscite sa pile** | Une pile vit avec son éditeur : rouvrir donne une pile vide. Conserver les piles des scènes fermées demanderait de décider combien de temps, et pour quelle mémoire |
-| **Un `SET_CELLS` pour d'autres tableaux** | L'opération est générale ; le deuxième usage n'existe pas encore, et on ne généralisera pas avant |
+| **Real-time collaboration** | The origin filter says what a local undo is not; what a *shared* undo would be — undoing someone else's operation, or your own in a document two people are writing — is a product decision with no product yet |
+| **A global cross-document undo** | ADR-0024 settled the opposite, and the reason still holds: `Ctrl Z` in the Graph window must not take back a move in the scene |
+| **Reopening a scene resurrecting its stack** | A stack lives with its editor: reopening gives an empty stack. Keeping the stacks of closed scenes would require deciding for how long, and at what memory cost |
+| **A `SET_CELLS` for other arrays** | The operation is general; the second use does not exist yet, and we will not generalise before it does |
 
 ---
 
-## 8. Contre-épreuves
+## 8. Counter-tests
 
-| Vérifié | Où |
+| Verified | Where |
 |---|---|
-| Sauver ne déplace pas l'undo hors du document édité | `editor/project/workspace.test.js` |
-| La comptabilité d'une sauvegarde n'entre dans aucun historique, et la révision bouge quand même | idem |
-| Une opération que personne n'a voulue n'est pas annulable | idem |
-| `Ctrl` et `Cmd`, `Shift Z` et `Y`, et ce qui n'est pas un raccourci | `editor/shortcuts.test.js` |
-| L'undo vise le document travaillé, demandé au moment de la frappe | idem |
-| Un autosave entre les deux ne change rien | idem |
-| **Sans rien à nous à reprendre, la touche est laissée au navigateur** | idem |
-| Un undo dans un projet n'atteint jamais l'autre | idem |
-| Ouvrir une autre scène ferme la première et emporte sa pile | idem |
-| Fermer un éditeur ne laisse aucun listener | idem |
-| Un stroke coûte les cellules peintes, pas les cellules de la carte | `editor/viewport/tools/tile-tool.test.js` |
-| **Contre-épreuve** : l'écriture du tableau entier coûtait un million de fois plus | idem |
-| Un patch nomme chaque cellule une fois, quoi que le pointeur ait fait | idem |
-| Ce qu'un patch laisse est un tableau ordinaire, exactement tel qu'il est sauvegardé | idem |
-| Un stroke = un undo ; deux strokes = deux undo ; redo remet tout | idem |
-| Le dernier projet ouvert revient ; **Nouveau projet en crée un** ; oublier rouvre le plus récent | `editor/project/library.test.js` |
+| Saving does not move undo out of the document being edited | `editor/project/workspace.test.js` |
+| A save's bookkeeping enters no history, and the revision still moves | the same |
+| An operation nobody wanted is not undoable | the same |
+| `Ctrl` and `Cmd`, `Shift Z` and `Y`, and what is not a shortcut | `editor/shortcuts.test.js` |
+| Undo targets the document being worked on, asked for at the moment of the keystroke | the same |
+| An autosave in between changes nothing | the same |
+| **With nothing of ours to take back, the key is left to the browser** | the same |
+| An undo in one project never reaches the other | the same |
+| Opening another scene closes the first and takes its stack with it | the same |
+| Closing an editor leaves no listener behind | the same |
+| A stroke costs the cells painted, not the cells of the map | `editor/viewport/tools/tile-tool.test.js` |
+| **Counter-test**: writing the whole array cost a million times more | the same |
+| A patch names each cell once, whatever the pointer did | the same |
+| What a patch leaves is an ordinary array, exactly as it is saved | the same |
+| One stroke = one undo; two strokes = two undos; redo restores everything | the same |
+| The last project opened comes back; **New project creates one**; forgetting reopens the most recent | `editor/project/library.test.js` |
 
 ---
 
-## 9. Conséquences
+## 9. Consequences
 
-### Positives
+### Positive
 
-- `Ctrl Z` fonctionne, pour tout, y compris dans un projet restauré depuis IndexedDB.
-- Un historique ne contient plus que des intentions : ni comptabilité, ni simulation, ni réseau.
-- Un stroke sur une carte d'un million de cellules coûte deux cents valeurs.
-- « Nouveau projet » crée un projet.
-- Aucun raccourci, aucune fenêtre, aucun test ne détient de pile : tout le monde demande.
+- `Ctrl Z` works, for everything, including in a project restored from IndexedDB.
+- A history now contains nothing but intentions: no bookkeeping, no simulation, no network.
+- A stroke on a million-cell map costs two hundred values.
+- "New project" creates a project.
+- No shortcut, no window and no test holds a stack: everyone asks.
 
-### Négatives
+### Negative
 
-- Une origine de plus à respecter : du code qui produirait des Operations sans l'estampiller
-  `EDITOR` se retrouverait non annulable, silencieusement. C'est le prix du filtre, et
-  `createOperation` exige déjà une origine, donc l'oubli est impossible — seule une valeur
-  *fausse* l'est.
-- `SET_CELLS` est un type d'opération de plus à connaître pour qui écrit un transport.
-- Rouvrir une scène fermée n'en rend pas l'historique.
+- One more origin to respect: code producing Operations without stamping them `EDITOR` would end up
+  silently non-undoable. That is the price of the filter, and `createOperation` already requires an
+  origin, so forgetting one is impossible — only a *wrong* value is.
+- `SET_CELLS` is one more operation type to know about for anyone writing a transport.
+- Reopening a closed scene does not give its history back.

@@ -1,320 +1,292 @@
-# ADR-0058 — Une exécution peut survivre au pas qui l'a commencée
+# ADR-0058 — An execution may outlive the step that began it
 
-- **Statut :** **accepté** (2026-09-11)
-- **Décide :** où vit l'état temporaire d'une exécution de graphe entre deux `Runtime.step()` ;
-  ce qu'est une continuation et ce qu'elle retient ; si un même nœud peut attendre deux fois à
-  la fois ; d'où vient le temps ; ce qu'il advient d'une attente quand ce à quoi elle
-  appartient disparaît
-- **Dépend de :** ADR-0004 (cycle de vie d'un Component), ADR-0011 (le serveur est
-  l'autorité), ADR-0012 (isolation des erreurs), ADR-0015 §3 (un graphe est lu une fois,
-  exécuté par instance), ADR-0027 (modèle de graphe et budget), ADR-0034 invariant 3 (un
-  handle n'est pas mémoïsé), ADR-0035 (ordre de `Runtime.step()`), ADR-0056 §4 (un nœud de
-  flux peut rendre une valeur), ADR-0057 (une graine, deux flux)
-- **Ferme :** le dernier point ouvert d'ADR-0045 §11.5 — `Delay`
-- **Étendu le 2026-09-11 :** §6 — un nœud peut demander à être **réexécuté** plutôt qu'à
-  différer ce qui le suit. `Wait Until` et `Every` en découlent sans autre mécanisme
-- **Étendu le 2026-09-11 :** §6.3 — une continuation transporte l'état **privé** du nœud
-  pendant cette exécution. C'est exactement l'extension que §10 avait consignée comme
-  manquante pour `Tween`, et rien de plus
-- **Ne décide pas :** la reprise d'une simulation à mi-partie — voir §10
-- **Amendé le 2026-09-12 (ADR-0072) :** la liste reste une liste — deux passages dans un même
-  `Delay` attendent toujours indépendamment — mais elle a un **plafond** (`MAX_PENDING`), et
-  une exécution reprise qui échoue n'emporte plus celles qui étaient dues avec elle
+- **Status:** **accepted** (2026-09-11)
+- **Decides:** where a graph execution's temporary state lives between two `Runtime.step()`s; what a continuation is and what it holds; whether one node can wait twice at once; where time comes from; what happens to a wait when what it belongs to disappears
+- **Depends on:** ADR-0004 (Component lifecycle), ADR-0011 (the server is the authority), ADR-0012 (error isolation), ADR-0015 §3 (a graph is read once, run per instance), ADR-0027 (the graph model and the budget), ADR-0034 invariant 3 (a handle is not memoized), ADR-0035 (`Runtime.step()`'s order), ADR-0056 §4 (a flow node may return a value), ADR-0057 (one seed, two streams)
+- **Closes:** ADR-0045 §11.5's last open point — `Delay`
+- **Extended on 2026-09-11:** §6 — a node may ask to be **re-run** rather than to defer what follows it. `Wait Until` and `Every` follow with no other mechanism
+- **Extended on 2026-09-11:** §6.3 — a continuation carries the node's **private** state for that execution. It is exactly the extension §10 had recorded as missing for `Tween`, and nothing more
+- **Does not decide:** resuming a simulation mid-match — see §10
+- **Amended on 2026-09-12 (ADR-0072):** the list stays a list — two passes through one `Delay` still wait independently — but it has a **ceiling** (`MAX_PENDING`), and a resumed execution that fails no longer takes the ones that were due with it
 
 ---
 
-## 1. Problème
+## 1. Problem
 
-`Delay` était le dernier nœud qu'ADR-0045 §11.5 refusait de coder, et sa difficulté n'a jamais
-été le temps :
+`Delay` was the last node ADR-0045 §11.5 refused to write, and its difficulty was never time:
 
-> « **une décision.** Où vit le minuteur en attente, survit-il à un `bind`, est-il sérialisé,
-> que fait un `undo` ? »
+> "**a decision.** Where does the pending timer live, does it survive a `bind`, is it serialized, what
+> does an `undo` do?"
 
-Le vrai sujet est plus large que ce nœud : **où vit l'état temporaire d'une exécution de
-graphe entre deux pas ?** Tant qu'aucun nœud ne s'arrêtait au milieu d'un flux, la question
-n'avait pas à être posée — une exécution naissait et mourait dans un `step()`, entièrement sur
-la pile JavaScript. Le premier nœud qui dit « pas encore » la pose entièrement, et la réponse
-décide du comportement de tous les nœuds temporels à venir.
+The real subject is wider than that node: **where does a graph execution's temporary state live between
+two steps?** As long as no node stopped in the middle of a flow, the question did not have to be asked
+— an execution was born and died inside a `step()`, entirely on the JavaScript stack. The first node
+that says "not yet" asks it in full, and the answer decides the behaviour of every temporal node to
+come.
 
 ---
 
-## 2. Trois choses, et le dépôt les distinguait déjà
+## 2. Three things, and the repository already told them apart
 
-Le vocabulaire manquait, le code ne manquait pas :
+The vocabulary was missing, the code was not:
 
-| Niveau | Ce que c'est | Où il vit aujourd'hui | Partagé par |
+| Level | What it is | Where it lives today | Shared by |
 |---|---|---|---|
-| **définition** | le graphe lu une fois, immuable | `compiled`, mémoïsé par `Behaviors.#factories` (WeakMap clé = graphe) | tous les Components du type |
-| **instance** | ce `.px` sur cet Object | la fermeture de `create(component)`, tenue par `Behaviors.#running` (WeakMap clé = component) | rien |
-| **exécution** | un déclenchement particulier d'un événement | `runFlow()` : une pile, un budget, une table `produced` — **sur la pile JS** | rien |
+| **definition** | the graph read once, immutable | `compiled`, memoized by `Behaviors.#factories` (a WeakMap keyed by graph) | every Component of the type |
+| **instance** | this `.px` on this Object | the closure of `create(component)`, held by `Behaviors.#running` (a WeakMap keyed by component) | nothing |
+| **execution** | one particular firing of an event | `runFlow()`: a stack, a budget, a `produced` table — **on the JS stack** | nothing |
 
-`started` vivait déjà au niveau 2, avec le commentaire qui dit pourquoi : « ONE EXECUTION
-STATE PER COMPONENT […] two Controllers must each get their own first step ».
+`started` already lived at level 2, with the comment that says why: "ONE EXECUTION STATE PER COMPONENT
+[…] two Controllers must each get their own first step".
 
-> **Une exécution suspendue est de l'état d'exécution, et l'état d'exécution appartient à
-> l'instance.** Elle se range à côté de `started`, dans la fermeture que `Behaviors` tient par
-> WeakMap.
+> **A suspended execution is execution state, and execution state belongs to the instance.** It is
+> filed beside `started`, in the closure `Behaviors` holds by WeakMap.
 
-### 2.1 Pourquoi pas ailleurs
+### 2.1 Why not elsewhere
 
-| Modèle | Rejet |
+| Model | Rejection |
 |---|---|
-| **B — l'interprète** | L'interprète est une lecture partagée par toutes les instances du type. Y mettre l'état d'attente ferait qu'un `Delay` sur un ennemi retiendrait le tir d'un autre. |
-| **C — le Runtime, comme file d'exécutions suspendues** | Le Runtime ne connaît ni nœud, ni port, ni table de valeurs produites : il connaît des Components. Lui apprendre tout cela pour porter une liste serait un scheduler générique — et il faudrait alors écrire une passe d'annulation pour chaque façon dont un Object peut disparaître. |
-| **Sur le Component, en propriété** | Ce serait de l'état de scène : sérialisé, répliqué, montré dans l'Inspector. Une attente n'est rien de tout cela (§8). |
-| **Sur le nœud** | Le graphe est immuable pour le Runtime (ADR-0016 §7) et partagé par toutes les instances. C'est le bug que §2.1 « B » décrit, une couche plus bas. |
+| **B — the interpreter** | The interpreter is one reading shared by every instance of the type. Putting the waiting state there would make a `Delay` on one enemy hold back another's shot. |
+| **C — the Runtime, as a queue of suspended executions** | The Runtime knows about no node, no port and no produced-value table: it knows Components. Teaching it all of that to carry a list would be a generic scheduler — and you would then have to write a cancellation pass for every way an Object can disappear. |
+| **On the Component, as a property** | It would be scene state: serialized, replicated, shown in the Inspector. A wait is none of those things (§8). |
+| **On the node** | The graph is immutable as far as the Runtime is concerned (ADR-0016 §7) and shared by every instance. It is the bug §2.1 "B" describes, one layer down. |
 
-### 2.2 Ce que le choix donne gratuitement
+### 2.2 What the choice gives for free
 
-**Tout le cycle de vie, sans une ligne d'annulation.** La fermeture n'est atteignable que
-depuis la WeakMap clé-component de `Behaviors`. Object détruit, Component retiré, Scene
-remplacée, Runtime abandonné : le component s'en va, la fermeture s'en va, et les exécutions
-suspendues s'en vont avec lui. Il n'y a pas de passe d'annulation **parce qu'il n'y a rien à
-annuler**.
+**The whole lifecycle, with no line of cancellation.** The closure is reachable only from `Behaviors`'
+component-keyed WeakMap. A destroyed Object, a removed Component, a replaced Scene, an abandoned
+Runtime: the component goes, the closure goes, and the suspended executions go with it. There is no
+cancellation pass **because there is nothing to cancel**.
 
-Et le Runtime pilote déjà la reprise sans le savoir : il appelle
-`behaviorFor(component).update(self, ctx)` à chaque pas, dans l'ordre canonique, pour les seuls
-Objects et Components actifs. Aucun nouveau point d'appel, aucun ordonnanceur.
+And the Runtime already drives the resumption without knowing it: it calls
+`behaviorFor(component).update(self, ctx)` on every step, in canonical order, for active Objects and
+Components only. No new call site, no scheduler.
 
 ---
 
-## 3. Ce qu'est une continuation
+## 3. What a continuation is
 
-Un nœud dit **quand**, jamais **s'il faut attendre** :
+A node says **when**, never **whether to wait**:
 
 ```text
 execute(io) -> { next, wait }
 ```
 
-`next` est lu par `continuationsOf()` comme dans les quatre autres formes ; `wait` est la
-cinquième et la seule qui ne continue pas tout de suite. L'interprète gare alors ce qu'il
-aurait empilé :
+`next` is read by `continuationsOf()` as in the four other shapes; `wait` is the fifth and the only one
+that does not continue immediately. The interpreter then parks what it would have pushed:
 
 ```text
 { remaining, to, produced }
 ```
 
-| Champ | Pourquoi il est là, et pas plus |
+| Field | Why it is there, and no more |
 |---|---|
-| `remaining` | le temps qui reste, décompté par `deltaTime` |
-| `to` | `{ node, port }` — où reprendre. Le graphe tient tout le reste |
-| `produced` | ce que cette exécution avait poussé hors de ses nœuds de flux |
+| `remaining` | the time left, counted down by `deltaTime` |
+| `to` | `{ node, port }` — where to resume. The graph holds all the rest |
+| `produced` | what this execution had pushed out of its flow nodes |
 
-**Aucune identité n'est frappée.** Une continuation est de l'état runtime éphémère : elle n'est
-ni adressée, ni référencée, ni persistée, donc elle n'a besoin d'aucun `ObjectId` ni
-`ResourceId` (ADR-0010 parle d'identités de contenu, et ce n'en est pas).
+**No identity is minted.** A continuation is ephemeral runtime state: it is neither addressed, nor
+referenced, nor persisted, so it needs no `ObjectId` and no `ResourceId` (ADR-0010 speaks of content
+identities, and this is not one).
 
-**`produced` traverse l'attente, et c'est sûr.** ADR-0056 §4.1 avait déjà étendu l'invariant 3
-d'ADR-0034 de « un pas de flux » à « une exécution », **à la condition que toute lecture d'un
-port `object` soit redemandée à la Scene**. Cette condition est tenue par `producedFrom()` et
-ne dépend pas de la durée : un `Spawn` avant un `Delay` et un `Set Position` après fonctionnent,
-et si la copie a été détruite entre-temps le port se lit `null` plutôt que de rendre un handle
-mort. Sans cela, un spawn suivi d'une attente serait inutilisable.
+**`produced` crosses the wait, and that is safe.** ADR-0056 §4.1 had already extended ADR-0034's
+invariant 3 from "a flow step" to "an execution", **on condition that every read of an `object` port be
+asked of the Scene again**. That condition is held by `producedFrom()` and does not depend on duration:
+a `Spawn` before a `Delay` and a `Set Position` after work, and if the copy has been destroyed in the
+meantime the port reads `null` rather than returning a dead handle. Without that, a spawn followed by a
+wait would be unusable.
 
 ---
 
-## 4. Deux passages dans un même `Delay` attendent séparément
+## 4. Two passes through one `Delay` wait separately
 
 ```text
 On Update → Delay(1) → Action
 ```
 
-démarre une exécution **à chaque pas**. La réponse est explicite :
+starts an execution **on every step**. The answer is explicit:
 
-> **Oui. Deux exécutions du même nœud attendent indépendamment.** Ce qui attend est une
-> exécution, pas un nœud.
+> **Yes. Two executions of the same node wait independently.** What waits is an execution, not a node.
 
-Techniquement c'est une **liste**, pas une table clé-nœud. Une table ferait que la seconde
-écrase la première : le graphe cesserait silencieusement d'être réentrant, et tous les nœuds
-temporels ultérieurs hériteraient du défaut sans qu'un ADR ne l'ait jamais décidé. C'est un
-test, pas une intention.
+Technically it is a **list**, not a node-keyed table. A table would make the second overwrite the
+first: the graph would silently stop being reentrant, and every later temporal node would inherit the
+defect without an ADR ever having decided it. It is a test, not an intention.
 
-### 4.1 L'ordre de reprise
+### 4.1 The resumption order
 
-**L'ordre dans lequel elles ont été suspendues**, et il est déjà canonique : il découle de
-l'ordre canonique de la Scene (ADR-0034 §3.1), puis de l'ordre des Components (ADR-0018), puis
-de l'ordre du payload, puis du parcours en profondeur d'un flux. Rien n'est trié ; l'ordre est
-lu là où il existe déjà.
+**The order in which they were suspended**, and it is already canonical: it follows from the Scene's
+canonical order (ADR-0034 §3.1), then the Components' order (ADR-0018), then the payload's order, then
+a flow's depth-first walk. Nothing is sorted; the order is read where it already exists.
 
-### 4.2 L'ordre dans un pas
+### 4.2 The order within a step
 
 ```text
-reprendre les attentes dues  →  On Start (au premier pas)  →  On Update
+resume the due waits  →  On Start (on the first step)  →  On Update
 ```
 
-Deux raisons, et la seconde est décisive :
+Two reasons, and the second is decisive:
 
-1. ce qui a été suspendu appartient à un moment **antérieur** à ce que ce pas soulève ;
-2. **le pas qui ATTEINT un `Delay` ne doit pas décompter son propre `deltaTime`.** Une attente
-   d'une seconde commencée à `t = 0` finit à `t = 1`, pas à `t = 1 − dt`. Reprendre en premier
-   garantit qu'une continuation garée par le `start` ou l'`update` de ce pas reste intacte
-   jusqu'au suivant — par construction, sans drapeau disant de quel pas elle date.
+1. what was suspended belongs to a moment **earlier** than what this step raises;
+2. **the step that REACHES a `Delay` must not count down its own `deltaTime`.** A one-second wait
+   begun at `t = 0` ends at `t = 1`, not at `t = 1 − dt`. Resuming first guarantees that a continuation
+   parked by this step's `start` or `update` stays intact until the next one — by construction, with no
+   flag saying which step it dates from.
 
-Les attentes dues sont par ailleurs **prélevées avant que l'une d'elles ne tourne** : une
-exécution reprise peut se suspendre à nouveau, et une entrée ajoutée pendant la boucle serait
-sinon décomptée deux fois dans un même pas.
-
----
-
-## 5. Ce qu'une durée qui n'en est pas une veut dire
-
-> **Une attente est un nombre fini strictement positif. Tout le reste n'est pas une autre
-> sorte d'attente : c'est aucune attente.**
-
-`0`, un négatif, `NaN`, `Infinity`, une chaîne : le flux continue **dans ce pas même**. Ce
-n'est pas une règle inventée ici — c'est la convention numérique que `number()` applique déjà
-dans `Clamp`, `Lerp`, `Translate` et partout ailleurs dans le catalogue.
-
-Et elle a une conséquence que le choix inverse n'aurait pas : **un `Delay(0)` dans une boucle
-est une boucle ordinaire**, bornée par le budget d'ADR-0027 et rapportée comme telle. Si
-`Delay(0)` se suspendait pour un pas, une boucle en tournerait indéfiniment, un tour par image,
-sans jamais rien déclencher — un graphe qui ne finit pas et que rien ne signale.
-
-La durée est **lue quand le `Delay` est atteint, puis capturée**. La relire pendant l'attente
-ferait qu'une attente alimentée par une propriété change de longueur en cours de route : une
-attente dont la fin bouge n'est pas une attente, et rien sur la toile ne le dirait.
+The due waits are moreover **taken out before any of them runs**: a resumed execution may suspend
+again, and an entry added during the loop would otherwise be counted down twice in one step.
 
 ---
 
-## 6. Deux mots, et le second est « redemande-moi »
+## 5. What a duration that is not one means
 
-`Delay` gare **ce qui suit** le nœud. Deux autres formes d'attente ne le peuvent pas : une
-condition doit être **relue**, et un pulse doit **repartir**. Ni l'une ni l'autre n'est un
-nœud qui a fini.
+> **A wait is a finite, strictly positive number. Everything else is not another kind of wait: it is no
+> wait at all.**
 
-> **`wait` retarde le flux que le nœud nomme. `again` ramène à CE nœud.**
+`0`, a negative, `NaN`, `Infinity`, a string: the flow continues **within that very step**. That is not
+a rule invented here — it is the numeric convention `number()` already applies in `Clamp`, `Lerp`,
+`Translate` and everywhere else in the catalogue.
 
-Une continuation `again` est garée **au nœud lui-même** plutôt qu'à ce qui le suit, donc la
-reprise ré-exécute son `execute`. C'est tout ce qu'il fallait, et cela n'ajoute **aucun état
-de nœud** nulle part :
+And it has a consequence the opposite choice would not: **a `Delay(0)` in a loop is an ordinary loop**,
+bounded by ADR-0027's budget and reported as such. If `Delay(0)` suspended for a step, a loop would run
+forever, one turn per frame, without ever triggering anything — a graph that does not finish and that
+nothing reports.
 
-| Nœud | Ce qu'il répond | Ce que cela veut dire |
+The duration is **read when the `Delay` is reached, then captured**. Re-reading it during the wait
+would make a wait fed by a property change length mid-flight: a wait whose end moves is not a wait, and
+nothing on the canvas would say so.
+
+---
+
+## 6. Two words, and the second is "ask me again"
+
+`Delay` parks **what follows** the node. Two other forms of waiting cannot: a condition has to be
+**re-read**, and a pulse has to **start again**. Neither is a node that has finished.
+
+> **`wait` delays the flow the node names. `again` comes back to THAT node.**
+
+An `again` continuation is parked **at the node itself** rather than at what follows it, so resuming
+re-runs its `execute`. That is all it took, and it adds **no node state** anywhere:
+
+| Node | What it answers | What that means |
 |---|---|---|
-| `Delay` | `{ wait: s, next: 'then' }` | j'ai fini ; prends `Then` dans `s` secondes |
-| `Wait Until` | `'then'` ou `{ again: true }` | vrai à l'arrivée, sinon redemande-moi au prochain pas |
-| `Every` | `{ again: i }` puis `{ next: 'then', again: i }` | arme l'horloge, puis pulse et réarme |
+| `Delay` | `{ wait: s, next: 'then' }` | I am done; take `Then` in `s` seconds |
+| `Wait Until` | `'then'` or `{ again: true }` | true on arrival, otherwise ask me again next step |
+| `Every` | `{ again: i }` then `{ next: 'then', again: i }` | arm the clock, then pulse and rearm |
 
-`again: 0` — ce que `true` veut dire — est **le prochain pas**, pas l'absence d'attente.
-C'est la seule différence de lecture avec `wait`, et la raison pour laquelle c'est un mot
-séparé plutôt qu'un drapeau sur le même.
+`again: 0` — what `true` means — is **the next step**, not the absence of a wait. It is the only
+reading difference from `wait`, and the reason it is a separate word rather than a flag on the same
+one.
 
-### 6.1 Une seule chose distingue les deux passages d'un nœud
+### 6.1 One thing tells a node's two passes apart
 
-`io.resumed`. Un booléen, **dérivé de la continuation** et stocké nulle part : arriver par le
-fil arme l'horloge d'`Every`, revenir la fait pulser. Sans lui il aurait fallu retenir
-« quand ai-je pulsé pour la dernière fois » quelque part — c'est-à-dire inventer l'état par
-nœud et par instance que §2.1 refuse.
+`io.resumed`. A boolean, **derived from the continuation** and stored nowhere: arriving through the
+wire arms `Every`'s clock, coming back makes it pulse. Without it you would have had to remember "when
+did I last pulse" somewhere — that is, invent the per-node, per-instance state §2.1 refuses.
 
-**L'overshoot est reporté, et borné à un intervalle.** Le pas qui franchit l'échéance la
-dépasse d'une fraction ; la perdre à chaque tour fait dériver un intervalle de 1 s à 1,2 s
-quand le pas vaut 0,3 s. Le report est plafonné à un intervalle, ce qui empêche un intervalle
-de zéro — « à chaque pas » — d'accumuler une dette qu'il ne rembourserait jamais.
+**The overshoot is carried over, and bounded to one interval.** The step that crosses the deadline
+overshoots it by a fraction; losing that on every turn makes a 1 s interval drift to 1.2 s when the step
+is 0.3 s. The carry-over is capped at one interval, which stops an interval of zero — "every step" —
+from accumulating a debt it would never repay.
 
-### 6.2 Pourquoi `Every` et pas un événement `On Timer`
+### 6.2 Why `Every` and not an `On Timer` event
 
-Un nœud d'entrée est exécuté par l'interprète à **chaque** update (`runEvent`). Un événement
-répétitif devrait donc retenir quand il a pulsé pour la dernière fois, et le seul endroit
-serait un état par nœud et par instance — une seconde sorte d'état que cet ADR n'a
-délibérément pas. `On Start → Every` dit la même phrase avec les pièces qui existent, et se
-lit comme une phrase.
+An input node is run by the interpreter on **every** update (`runEvent`). A repeating event would
+therefore have to remember when it last pulsed, and the only place would be per-node, per-instance
+state — a second kind of state this ADR deliberately does not have. `On Start → Every` says the same
+sentence with the pieces that exist, and it reads as a sentence.
 
-### 6.3 Une continuation transporte aussi ce que le nœud était en train de faire
+### 6.3 A continuation also carries what the node was in the middle of doing
 
-`§10` avait écrit le contrat manquant : *« une continuation retient où reprendre, jamais ce
-que le nœud était en train de faire »*. `Tween` a besoin des deux — il doit savoir de combien
-il a avancé — donc l'entrée garée gagne **un champ**, et `io` **un lecteur** :
+`§10` had written the missing contract: *"a continuation holds where to resume, never what the node was
+in the middle of doing"*. `Tween` needs both — it has to know how far it has got — so the parked entry
+gains **one field**, and `io` **one reader**:
 
 ```text
-{ remaining, to, produced, kept }        ◄── ce que le nœud avait demandé de garder
-io.kept                                  ◄── null à l'aller, ce qu'il a gardé au retour
+{ remaining, to, produced, kept }        ◄── what the node asked to keep
+io.kept                                  ◄── null on the way in, what it kept on the way back
 ```
 
-**Opaque, et c'est tout le contrat.** L'interprète ne lit jamais dedans, ne le copie pas, et
-ne le rend qu'au nœud qui l'a garé. Ce n'est donc ni une seconde sorte de valeur, ni un port,
-ni quoi que ce soit qu'un graphe ou un payload puisse voir.
+**Opaque, and that is the whole contract.** The interpreter never reads inside it, never copies it, and
+gives it back only to the node that parked it. It is therefore neither a second kind of value, nor a
+port, nor anything a graph or a payload can see.
 
-**Par EXÉCUTION, jamais par nœud.** Il voyage sur la continuation, donc deux passages dans un
-même `Tween` en portent deux et aucun ne voit l'autre — la même raison qui fait de `pending`
-une liste et non une table indexée par nœud (§4). Deux instances d'un `.px` sont
-indépendantes pour la raison d'avant : la fermeture est par Component.
+**Per EXECUTION, never per node.** It travels on the continuation, so two passes through one `Tween`
+carry two and neither sees the other — the same reason `pending` is a list and not a node-keyed table
+(§4). Two instances of a `.px` are independent for the earlier reason: the closure is per Component.
 
-**Et rien de plus n'a été ajouté.** Pas de durée de vie, pas d'identité, pas de sérialisation :
-l'état meurt avec la continuation, qui meurt avec le Component (§2.2).
-
----
-
-## 7. Déterminisme et budget
-
-Le temps vient de `ctx.deltaTime` et de rien d'autre : pas d'horloge murale, pas de `Promise`,
-pas de `setTimeout`, pas d'ordonnanceur du navigateur. Le pas est fixe et identique sur un
-serveur et sur chaque client (`Clock`), donc **deux Runtime nourris des mêmes pas reprennent
-les mêmes exécutions aux mêmes pas** — le contrat d'ADR-0057 étendu à ce qui attend.
-
-Le décompte emploie **la tolérance relative de `Clock.advance()`** : soustraire 1/60 soixante
-fois ne laisse pas exactement zéro, et un `<= 0` nu ferait finir une seconde d'attente un pas
-trop tard. Le défaut est celui que `Clock` documente déjà pour son accumulateur, rencontré une
-couche plus haut et réglé pareil.
-
-**Une exécution reprise est une exécution ordinaire** : même pile, mêmes nœuds, même budget.
-Ce qu'elle n'obtient pas, c'est le droit d'aller plus loin qu'un événement.
+**And nothing more was added.** No lifetime, no identity, no serialization: the state dies with the
+continuation, which dies with the Component (§2.2).
 
 ---
 
-## 8. Ce n'est pas de l'état de Scene
+## 7. Determinism and budget
 
-Une continuation vit dans une fermeture, tenue par une WeakMap. Rien n'en atteint le Component,
-donc `serializeScene()` n'en écrit rien et il n'y a pas de champ à ignorer.
+Time comes from `ctx.deltaTime` and from nothing else: no wall clock, no `Promise`, no `setTimeout`, no
+browser scheduler. The step is fixed and identical on a server and on every client (`Clock`), so **two
+Runtimes fed the same steps resume the same executions on the same steps** — ADR-0057's contract
+extended to what waits.
 
-Un rechargement **repart de l'état initial** : les attentes en cours ne reprennent pas. C'est
-exactement la position qu'ADR-0057 §8 a prise pour la position des flux aléatoires, et pour la
-même raison — reprendre une simulation à mi-course demanderait de sérialiser l'état
-d'exécution, donc d'en faire de l'état de scène, et personne n'en a besoin tant qu'un client
-qui rejoint reçoit un instantané.
+The countdown uses **`Clock.advance()`'s relative tolerance**: subtracting 1/60 sixty times does not
+leave exactly zero, and a bare `<= 0` would make a one-second wait finish a step late. The defect is the
+one `Clock` already documents for its accumulator, met one layer up and fixed the same way.
+
+**A resumed execution is an ordinary execution**: the same stack, the same nodes, the same budget. What
+it does not get is the right to go further than one event.
 
 ---
 
-## 9. Contrats observables
+## 8. This is not Scene state
 
-| Contrat | Vérifiable par |
+A continuation lives in a closure, held by a WeakMap. Nothing reaches the Component from it, so
+`serializeScene()` writes none of it and there is no field to ignore.
+
+A reload **starts from the initial state**: waits in progress do not resume. That is exactly the
+position ADR-0057 §8 took for the random streams' position, and for the same reason — resuming a
+simulation mid-flight would require serializing the execution state, and therefore making it scene
+state, and nobody needs it while a joining client receives a snapshot.
+
+---
+
+## 9. Observable contracts
+
+| Contract | Verifiable by |
 |---|---|
-| Rien avant l'échéance, une fois à l'échéance, jamais deux | `runtime/delay.test.js` |
-| Une attente est une durée, pas un nombre d'images | idem |
-| Le même temps écoulé donne le même résultat quel qu'en soit le découpage | idem |
-| La durée est capturée à l'entrée du nœud | idem |
-| `0`, négatif, `NaN`, `Infinity`, non-numérique : aucune attente | idem |
-| Un `Delay(0)` bouclé est borné par le budget et rapporté | idem |
-| Deux exécutions d'un même nœud attendent séparément | idem |
-| Deux instances d'un même `.px` ont leurs propres attentes | idem |
-| Deux échéances dans un pas reprennent dans l'ordre de suspension | idem |
-| Object détruit, Component retiré : rien ne reprend, rien n'est rapporté | idem |
-| Component éteint : l'attente tient, elle ne s'écoule pas | idem |
-| Rien d'une attente n'apparaît dans un payload de scène | idem |
-| Deux Runtime, mêmes pas : mêmes reprises, payload identique | idem |
-| Un handle produit avant l'attente est encore utilisable après | idem |
-| `Wait Until` relit sa condition à chaque pas, et passe une seule fois | idem |
-| Un `Tween` part de `From`, avance, et atterrit exactement sur `To` | `runtime/gameplay.test.js` |
-| Deux `Tween` dans un même nœud ne partagent jamais leur progression | idem |
-| Une durée nulle finit dans le pas même, sur `To` | idem |
-| Rien de ce qu'un `Tween` garde n'apparaît dans un payload de scène | idem |
-| Une condition déjà vraie ne suspend rien | idem |
-| Deux exécutions d'un `Wait Until` sont retenues séparément | idem |
-| `Every` pulse après son intervalle, pas à l'entrée, et ne dérive pas | idem |
-| Un intervalle de zéro pulse une fois par pas, jamais dans un pas | idem |
+| Nothing before the deadline, once at the deadline, never twice | `runtime/delay.test.js` |
+| A wait is a duration, not a frame count | the same |
+| The same elapsed time gives the same result however it is divided up | the same |
+| The duration is captured when the node is entered | the same |
+| `0`, negative, `NaN`, `Infinity`, non-numeric: no wait | the same |
+| A looped `Delay(0)` is bounded by the budget and reported | the same |
+| Two executions of one node wait separately | the same |
+| Two instances of one `.px` have their own waits | the same |
+| Two deadlines in one step resume in suspension order | the same |
+| Object destroyed, Component removed: nothing resumes, nothing is reported | the same |
+| Component turned off: the wait holds, it does not elapse | the same |
+| Nothing of a wait appears in a scene payload | the same |
+| Two Runtimes, the same steps: the same resumptions, an identical payload | the same |
+| A handle produced before the wait is still usable after | the same |
+| `Wait Until` re-reads its condition on every step, and passes once | the same |
+| A `Tween` starts from `From`, advances, and lands exactly on `To` | `runtime/gameplay.test.js` |
+| Two `Tween`s in one node never share their progress | the same |
+| A zero duration finishes within the step, on `To` | the same |
+| Nothing a `Tween` keeps appears in a scene payload | the same |
+| A condition that is already true suspends nothing | the same |
+| Two executions of a `Wait Until` are held separately | the same |
+| `Every` pulses after its interval, not on entry, and does not drift | the same |
+| An interval of zero pulses once per step, never within a step | the same |
 
 ---
 
-## 10. Ce que cet ADR ne décide pas, et ce qu'il rend possible
+## 10. What this ADR does not decide, and what it makes possible
 
-| Point ouvert | Pourquoi |
+| Open point | Why |
 |---|---|
-| **Reprendre une simulation à mi-partie** | §7. Même position qu'ADR-0057 §8 |
-| ~~`Tween`~~ | **Fait** (§6.3) : le champ de plus sur l'entrée garée et le lecteur de plus sur `io` sont exactement ce qui avait été consigné ici comme manquant |
-| **Annuler une attente depuis le graphe** | « arrêter ce qui attend » est un geste produit que personne n'a conçu ; rien ici ne l'empêche, et une continuation est déjà adressable par l'instance qui la tient |
-| **Un `undo` pendant une partie** | Sans objet : l'historique s'arrête à la porte du mode Play (ADR-0029 §5) |
+| **Resuming a simulation mid-match** | §7. The same position as ADR-0057 §8 |
+| ~~`Tween`~~ | **Done** (§6.3): the extra field on the parked entry and the extra reader on `io` are exactly what had been recorded here as missing |
+| **Cancelling a wait from the graph** | "stop what is waiting" is a product gesture nobody has designed; nothing here prevents it, and a continuation is already addressable by the instance holding it |
+| **An `undo` during a match** | Moot: history stops at Play mode's door (ADR-0029 §5) |
 
-**`Wait Until`, `Every` et `Tween` sont arrivés le jour même** (§6), et ils n'ont rien coûté d'autre que
-le mot `again` : c'est la mesure que cet ADR décrivait bien un mécanisme et non un nœud. Ce
-qui reste naturellement à portée, avec le contrat de §10 pour `Tween` : **`Tween`**, **`Debounce`**,
-**`Cooldown`**, **`Sequence With Pauses`** — tous la même structure avec une condition de reprise
-différente.
+**`Wait Until`, `Every` and `Tween` arrived the same day** (§6), and they cost nothing but the word
+`again`: that is the measure of this ADR describing a mechanism rather than a node. What stays
+naturally within reach, with §10's contract for `Tween`: **`Tween`**, **`Debounce`**, **`Cooldown`**,
+**`Sequence With Pauses`** — all the same structure with a different resumption condition.

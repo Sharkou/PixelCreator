@@ -16,16 +16,14 @@ Every ADR carries:
 
 | Field | Meaning |
 |---|---|
-| **Statut** | `accepté`, with the date |
-| **Décide** | Exactly which questions it settles |
-| **Dépend de** | The ADRs it builds on |
-| **Ne décide pas** | What it deliberately leaves open — often the most useful line |
-| **Amende** / **Révise** | When it changes an earlier decision or a written contract |
+| **Status** | `accepted`, with the date |
+| **Decides** | Exactly which questions it settles |
+| **Depends on** | The ADRs it builds on |
+| **Does not decide** | What it deliberately leaves open — often the most useful line |
+| **Amends** / **Revises** | When it changes an earlier decision or a written contract |
 
 The body is usually: the observed defect or context, the decision, the alternatives that were
 rejected and *why*, counter-examples, and the consequences — positive **and** negative.
-
-They are written in **French**, like the rest of the project's internal documentation.
 
 ## The register
 
@@ -47,7 +45,7 @@ You need an ADR when a change would:
   operation means, what a layer may import;
 - introduce a **new structural concept** — a new kind of resource, a new layer, a new identity
   scheme, a new lifecycle hook;
-- settle a question an existing ADR explicitly left open (its *"Ne décide pas"* section).
+- settle a question an existing ADR explicitly left open (its *"Does not decide"* section).
 
 You do **not** need one for: a bug fix, a new component, a new graph node, a new editor panel,
 a refactor inside one module, or wording and presentation changes — as long as they sit inside
@@ -58,11 +56,11 @@ justify a merged change is the failure mode this process exists to prevent.
 
 ## How to write one
 
-1. **Read the ADRs it touches**, including their *"Ne décide pas"* sections.
+1. **Read the ADRs it touches**, including their *"Does not decide"* sections.
 2. **Number it** with the next free number, four digits.
 3. **Name the file** `ADR-NNNN-a-short-kebab-case-title.md`. The title is a *sentence about the
-   decision*, not a topic label — look at the existing ones: *"Un prefab est une Resource,
-   résolue avant la simulation"*, *"Un avertissement n'arrête rien"*.
+   decision*, not a topic label — look at the existing ones: *"A prefab is a Resource,
+   resolved before the simulation"*, *"A warning stops nothing"*.
 4. **Copy the header shape** from a recent ADR.
 5. **State the observed defect or context first.** Decisions in this project are justified by
    something measured or observed, not by taste. If there is no observation, there may be no
@@ -89,5 +87,5 @@ records both the original acceptance date and the revision.
 - [PROJECT.md](../PROJECT.md) — the project's non-negotiable constraints
 - [ARCHITECTURE.md](../ARCHITECTURE.md) — the specification the ADRs feed
 - [CONVENTIONS.md](../CONVENTIONS.md) — how documents label what they assert
-  (`OBSERVÉ DANS LEGACY`, `DÉCISION HISTORIQUE`, `PROPOSITION V2`, `QUESTION À VALIDER`)
+  (`OBSERVED IN LEGACY`, `HISTORICAL DECISION`, `V2 PROPOSAL`, `OPEN QUESTION`)
 - [CONTRIBUTING.md](../../CONTRIBUTING.md) — where an ADR fits in a pull request

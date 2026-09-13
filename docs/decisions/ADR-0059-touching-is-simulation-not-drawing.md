@@ -1,56 +1,46 @@
-# ADR-0059 — Se toucher est un fait de simulation, pas une image
+# ADR-0059 — Touching is a fact of simulation, not a picture
 
-- **Statut :** **accepté** (2026-09-11)
-- **Décide :** où vit la détection de collision ; ce qu'un Collider déclare ; ce que la
-  première version mesure réellement ; quand un pas décide ses événements ; ce que veulent
-  dire `Enter`, `Stay` et `Exit` ; si l'événement est Object↔Object ou Collider↔Collider
-- **Dépend de :** ADR-0002 (Transform), ADR-0004 (cycle de vie d'un Component), ADR-0011 (le
-  serveur est l'autorité), ADR-0012 (isolation des erreurs), ADR-0013 (la caméra est un
-  Object), ADR-0014 §1 (`runtime/`, pas `core/`), ADR-0034 §3.1 et §3.4 (ordre canonique,
-  deux familles d'échec), ADR-0046 §6 (une carte, plusieurs moments), ADR-0056 §5 (ce qu'un
-  pas fait d'un Object créé ou détruit), ADR-0058 (une exécution peut survivre à un pas)
-- **Ne décide pas :** la résolution physique ; les couches de collision ; le collider
-  polygonal ; le broad phase — voir §7
+- **Status:** **accepted** (2026-09-11)
+- **Decides:** where collision detection lives; what a Collider declares; what the first version really measures; when a step decides its events; what `Enter`, `Stay` and `Exit` mean; whether the event is Object↔Object or Collider↔Collider
+- **Depends on:** ADR-0002 (Transform), ADR-0004 (Component lifecycle), ADR-0011 (the server is the authority), ADR-0012 (error isolation), ADR-0013 (the camera is an Object), ADR-0014 §1 (`runtime/`, not `core/`), ADR-0034 §3.1 and §3.4 (canonical order, two failure families), ADR-0046 §6 (one card, several moments), ADR-0056 §5 (what a step does with a created or destroyed Object), ADR-0058 (an execution may outlive a step)
+- **Does not decide:** physical resolution; collision layers; a polygon collider; a broad phase — see §7
 
 ---
 
-## 1. Problème
+## 1. Problem
 
-Un créateur peut faire apparaître, déplacer, animer et détruire un Object. Il ne peut pas
-savoir que **deux choses se touchent**, donc il ne peut écrire ni un tir qui touche, ni une
-pièce ramassée, ni une porte franchie, ni un dégât. C'est la dernière chose qui manque entre
-« des objets bougent » et « c'est un jeu ».
+A creator can spawn, move, animate and destroy an Object. They cannot know that **two things are
+touching**, so they can write neither a shot that hits, nor a coin picked up, nor a door walked
+through, nor damage. It is the last thing missing between "objects are moving" and "this is a game".
 
-Ce qui est demandé ici est **la détection, pas un moteur**. Pas de Box2D, pas de solveur, pas
-de corps rigide : savoir que deux objets se recouvrent, et déclencher un graphe.
+What is asked for here is **detection, not an engine**. No Box2D, no solver, no rigid body: knowing
+that two objects overlap, and firing a graph.
 
 ---
 
-## 2. `runtime/collision/`, pas `core/`, pas `rendering/`
+## 2. `runtime/collision/`, not `core/`, not `rendering/`
 
-L'argument est celui d'ADR-0014 §1, appliqué une troisième fois :
+The argument is ADR-0014 §1's, applied a third time:
 
-> « Le Core ne connaît aucun input. Un `Object` n'a pas d'entrées ; une simulation en a. »
+> "The Core knows about no input. An `Object` has no input; a simulation does."
 
-Un `Object` ne se cogne pas non plus. Ce qui se cogne est une **simulation**. Et ce n'est
-surtout pas du rendu : un overlap est une fonction des `Transform` que le pas vient de
-produire, il doit être **identique sur un serveur et sur chaque client**, et un serveur n'a
-pas d'écran. Le mettre à côté du `SceneRenderer` ferait dépendre la vérité du jeu de ce qui
-est dessiné.
+An `Object` does not bump into things either. What does is a **simulation**. And it is above all not
+rendering: an overlap is a function of the `Transform`s the step has just produced, it has to be
+**identical on a server and on every client**, and a server has no screen. Putting it next to the
+`SceneRenderer` would make the game's truth depend on what is drawn.
 
 ```text
-runtime/clock/      quand
-runtime/input/      ce qu'on a fait
-runtime/random/     la chance
-runtime/collision/  ce qui se touche
+runtime/clock/      when
+runtime/input/      what was done
+runtime/random/     the luck
+runtime/collision/  what is touching
 ```
 
-Quatre choses que l'environnement fournirait autrement, quatre dossiers, et le Runtime les
-tient toutes.
+Four things the environment would otherwise supply, four directories, and the Runtime holds them all.
 
 ---
 
-## 3. Ce qu'un Collider déclare, et ce qu'il mesure vraiment
+## 3. What a Collider declares, and what it really measures
 
 ```text
 Box Collider
@@ -60,97 +50,92 @@ Offset X      0
 Offset Y      0
 ```
 
-**Déclaré, jamais déduit du Sprite.** Une taille prise sur l'image serait une taille que
-personne n'a tapée, changeant quand l'image change, invisible dans l'Inspector — et
-« pourquoi ça n'a pas touché ? » n'aurait aucune réponse à l'écran. Un débutant doit pouvoir
-**lire** ce qui collisionne.
+**Declared, never inferred from the Sprite.** A size taken from the image would be a size nobody typed,
+changing when the image changes, invisible in the Inspector — and "why didn't it hit?" would have no
+answer on screen. A beginner has to be able to **read** what collides.
 
-**Une AABB des coins transformés, et elle le dit.** Les quatre coins passent par
-`worldMatrix()` — donc position, échelle et toute la chaîne de parents sont exactes — et la
-réponse est la plus petite boîte alignée sur les axes qui les contient. Sous **rotation**,
-cette boîte est plus grande que la forme dessinée : un carré tourné de 45° est rapporté ~1,41
-fois plus large. C'est une approximation réelle, **conservatrice** (elle ne rate jamais un
-vrai contact, elle peut en annoncer un un peu tôt), et l'appeler OBB serait un mensonge dès la
-première rotation.
+**An AABB of the transformed corners, and it says so.** The four corners go through `worldMatrix()` —
+so position, scale and the whole parent chain are exact — and the answer is the smallest axis-aligned
+box containing them. Under **rotation**, that box is larger than the drawn shape: a square rotated 45°
+is reported ~1.41 times wider. It is a real approximation, **conservative** (it never misses a true
+contact, it may announce one a little early), and calling it an OBB would be a lie from the first
+rotation.
 
-**Se toucher bord à bord n'est pas se recouvrir.** Deux boîtes qui partagent exactement une
-ligne ne partagent aucune aire ; compter cela comme un contact ferait qu'un mur posé au
-contact d'un autre collisionne pour toujours.
+**Touching edge to edge is not overlapping.** Two boxes sharing exactly one line share no area;
+counting that as contact would make a wall placed flush against another collide forever.
 
-**Pas de `trigger`, pas de `solid`.** Cette tranche ne résout rien : une collision est un
-**overlap** et un **événement**. Un booléen sans différence observable serait un mot copié
-d'un autre moteur pour promettre un comportement que ce moteur n'a pas.
+**No `trigger`, no `solid`.** This slice resolves nothing: a collision is an **overlap** and an
+**event**. A boolean with no observable difference would be a word copied from another engine to
+promise behaviour this one does not have.
 
 ---
 
-## 4. Un pas décide ses événements avant qu'un seul graphe ne tourne
+## 4. A step decides its events before a single graph runs
 
 ```text
-1.  détecter les overlaps          ← contre les Transform du pas précédent
-2.  en déduire Enter / Stay / Exit
-3.  exécuter les comportements     ← ordre canonique, Object par Object
-4.  clore l'input
+1.  detect the overlaps            ← against the previous step's Transforms
+2.  derive Enter / Stay / Exit
+3.  run the behaviours             ← canonical order, Object by Object
+4.  close out the input
 ```
 
-C'est l'ordre qui rend le cas dangereux correct. Deux balles touchant un ennemi au même pas :
-si la détection tournait **après** ou **pendant** les comportements, la seconde verrait un
-monde que la première a déjà démonté, et savoir si elle se déclenche dépendrait de l'ordre du
-parcours. Décider d'abord rend l'ensemble des événements **immuable pour la durée du pas** :
-un `Destroy` dans un callback ne peut pas effacer rétroactivement un événement déjà décidé.
+It is the order that makes the dangerous case correct. Two bullets hitting an enemy on the same step:
+if detection ran **after** or **during** the behaviours, the second would see a world the first has
+already dismantled, and whether it fires would depend on the traversal order. Deciding first makes the
+set of events **immutable for the duration of the step**: a `Destroy` inside a callback cannot
+retroactively erase an event already decided.
 
-C'est aussi exactement le geste qu'ADR-0056 §5 fait déjà pour l'ordre d'exécution — l'ordre
-est matérialisé avant la boucle — appliqué une couche plus haut.
+It is also exactly the gesture ADR-0056 §5 already makes for execution order — the order is
+materialized before the loop — applied one layer up.
 
-### 4.1 Ce qu'un Object détruit produit : rien
+### 4.1 What a destroyed Object produces: nothing
 
-Une paire dont l'un des deux n'est plus dans la Scene **ne produit aucune transition**, pas
-même un `Exit`. Deux raisons, chacune suffisante : cela rendrait un handle vers quelque chose
-que la Scene ne tient plus, et « ce que tu touchais a cessé de te toucher, parce qu'il a cessé
-d'exister » n'est pas une phrase sur laquelle un créateur peut agir. La disparition se lit par
-la référence qui meurt, ce qui est la famille qu'ADR-0034 §3.4 définit déjà.
+A pair one of whose members is no longer in the Scene **produces no transition**, not even an `Exit`.
+Two reasons, each sufficient: it would return a handle to something the Scene no longer holds, and
+"what you were touching has stopped touching you, because it has stopped existing" is not a sentence a
+creator can act on. The disappearance is read through the reference that dies, which is the family
+ADR-0034 §3.4 already defines.
 
-Un Object **créé** pendant un pas n'entre dans aucune paire de ce pas : les overlaps étaient
-décidés avant qu'il existe. Il collisionne au pas suivant — la même réponse que celle
-qu'ADR-0056 §5 donne déjà pour l'exécution.
+An Object **created** during a step enters no pair of that step: the overlaps were decided before it
+existed. It collides on the next step — the same answer ADR-0056 §5 already gives for execution.
 
 ---
 
-## 5. Une carte, trois moments, et ils sont disjoints
+## 5. One card, three moments, and they are disjoint
 
 ```text
 On Collision
-→ Enter     le pas où ils commencent à se toucher
-→ Stay      chaque pas SUIVANT, tant qu'ils se touchent
-→ Exit      le pas où ils cessent
-Other       l'autre Object
+→ Enter     the step where they start touching
+→ Stay      every FOLLOWING step, while they are touching
+→ Exit      the step where they stop
+Other       the other Object
 ```
 
-Une seule carte, comme `On Key` et pour la même raison (ADR-0046 §6) : un créateur doit
-distinguer « ça vient de toucher » de « ça touche encore » avant que son premier dégât
-fonctionne, et trois cartes presque identiques est le problème qu'une carte n'a pas.
+One card, like `On Key` and for the same reason (ADR-0046 §6): a creator has to tell "it has just
+touched" from "it is still touching" before their first damage works, and three nearly identical cards
+is the problem one card does not have.
 
-**`Enter` et `Stay` ne se chevauchent pas.** Le premier pas déclenche `Enter` et rien d'autre.
-Les déclencher tous les deux ferait de « un dégât » et « un dégât par pas » un seul fil, dont
-le créateur devrait soustraire l'autre.
+**`Enter` and `Stay` do not overlap.** The first step fires `Enter` and nothing else. Firing both would
+make "one damage" and "one damage per step" a single wire, from which the creator would have to
+subtract the other.
 
-**Object ↔ Object, et le modèle le tranche à notre place.** Un seul Component par type et par
-Object (ARCHITECTURE.md) : un second `BoxCollider` est **refusé**. « Un joueur à deux hitboxes
-touche un ennemi deux fois » n'est donc pas un cas constructible aujourd'hui. Le détecteur
-rassemble néanmoins toutes les formes qu'un Object porte, ce dont un futur `Circle Collider` à
-côté d'une boîte aura besoin, sans changer ce contrat.
+**Object ↔ Object, and the model settles it for us.** One Component per type and per Object
+(ARCHITECTURE.md): a second `BoxCollider` is **refused**. "A player with two hitboxes hits an enemy
+twice" is therefore not a constructible case today. The detector nevertheless gathers every shape an
+Object carries, which a future `Circle Collider` beside a box will need, without changing that
+contract.
 
-### 5.1 Un événement peut se produire plusieurs fois dans un pas
+### 5.1 An event may happen several times in one step
 
-Toucher deux ennemis à la fois, c'est **deux** événements avec deux `Other` différents — qu'un
-seul déclenchement ne pourrait pas porter. Un nœud d'entrée peut donc répondre une **liste de
-déclenchements**, chacun avec ses propres valeurs poussées, et l'interprète en exécute un flux
-par entrée. Une liste de **chaînes** reste un déclenchement vers plusieurs ports, ce que
-`On Key` répond quand une touche descend et est tenue dans le même pas ; les deux se
-distinguent par ce que la liste **contient**, sans drapeau.
+Touching two enemies at once is **two** events with two different `Other`s — which one firing could not
+carry. An input node may therefore answer a **list of firings**, each with its own pushed values, and
+the interpreter runs one flow per entry. A list of **strings** stays one firing toward several ports,
+which `On Key` answers when a key goes down and is held in the same step; the two are told apart by
+what the list **holds**, with no flag.
 
 ---
 
-## 6. Demander plutôt qu'attendre
+## 6. Asking rather than waiting
 
 ```text
 Is Overlapping
@@ -159,63 +144,63 @@ B  object
 →  boolean
 ```
 
-Il lit **l'instantané du pas**, jamais sa propre géométrie. Mesurer ici serait un second avis
-sur ce que « se toucher » veut dire, et répondrait à une autre question que l'événement qui
-se déclenche à côté dans le même pas. Rien à interroger — pas de collider, Object détruit,
-prise vide — vaut `false` : des états du jeu, pas des fautes (ADR-0034 §3.4).
+It reads **the step's snapshot**, never its own geometry. Measuring here would be a second opinion on
+what "touching" means, and would answer a different question from the event firing beside it in the
+same step. Nothing to query — no collider, a destroyed Object, an empty socket — is `false`: game
+states, not faults (ADR-0034 §3.4).
 
 ---
 
-## 7. O(n²), mesuré, et derrière une couture
+## 7. O(n²), measured, and behind a seam
 
-Toutes les paires sont testées. Mesuré sur ce dépôt, coût d'un pas de détection :
+Every pair is tested. Measured on this repository, the cost of one detection step:
 
-| Colliders | ms par pas | part d'une image à 60 Hz |
+| Colliders | ms per step | share of a 60 Hz frame |
 |---|---|---|
-| 10 | 0,07 | 0,4 % |
-| 100 | 0,61 | 3,7 % |
-| 500 | 3,9 | 23 % |
-| 1000 | 11,3 | 68 % |
+| 10 | 0.07 | 0.4 % |
+| 100 | 0.61 | 3.7 % |
+| 500 | 3.9 | 23 % |
+| 1000 | 11.3 | 68 % |
 
-**Gardé tel quel.** Jusqu'à quelques centaines de colliders — l'échelle d'un jeu 2D de
-débutant — ce n'est pas le problème du jeu. Un quadtree construit aujourd'hui serait une
-structure à maintenir correcte pour une échelle que personne n'a encore atteinte.
+**Kept as it is.** Up to a few hundred colliders — the scale of a beginner's 2D game — it is not the
+game's problem. A quadtree built today would be a structure to keep correct for a scale nobody has yet
+reached.
 
-La surface publique est `overlapping()` et `transitions()`. Un broad phase remplace le milieu
-d'`update()` sans qu'aucun contrat ne bouge, le jour où une mesure le demande — et la ligne où
-il commencera à le demander est écrite ci-dessus.
-
----
-
-## 8. Contrats observables
-
-| Contrat | Vérifiable par |
-|---|---|
-| Une boîte monde suit position, échelle et chaîne de parents | `runtime/collision/collisions.test.js` |
-| Une rotation donne l'AABB des coins, et elle est plus large | idem |
-| Bord à bord n'est pas se recouvrir | idem |
-| `Enter` une fois, puis `Stay`, puis `Exit` une fois, jamais ensemble | idem |
-| Les deux côtés sont prévenus, chacun de l'autre | idem |
-| Object inactif, Collider éteint, aucun Collider : rien | idem |
-| La même scène construite dans deux ordres rend les mêmes transitions **dans le même ordre** | idem |
-| Sauvegarde/rechargement rend les mêmes paires | idem |
-| Une paire dont un Object a disparu ne produit rien | idem |
-| Toucher deux choses à la fois est deux événements, chacun son `Other` | `runtime/gameplay.test.js` |
-| Deux Objects qui se détruisent au contact : un événement chacun, aucun plantage | idem |
-| Un Object détruit ne lève ensuite ni `Stay` ni `Exit` | idem |
-| Un Object spawné collisionne au pas SUIVANT | idem |
-| `Is Overlapping` répond le même instantané que les événements | idem |
-| Deux Runtime voient les mêmes transitions aux mêmes pas | idem |
+The public surface is `overlapping()` and `transitions()`. A broad phase replaces the middle of
+`update()` with no contract moving, the day a measurement asks for it — and the line at which it will
+start asking is written above.
 
 ---
 
-## 9. Ce que cet ADR ne décide pas
+## 8. Observable contracts
 
-| Point ouvert | Pourquoi |
+| Contract | Verifiable by |
 |---|---|
-| **La résolution physique** | Rien ici ne repousse quoi que ce soit. C'est une décision entière — restitution, masse, ordre de résolution, tunneling — et la prendre en passant serait exactement ce qu'ADR-0026 §11 range parmi « les décisions qu'une implémentation hâtive prend à la place de l'architecte » |
-| **Les couches de collision** | « qui peut toucher qui » est une fonctionnalité produit ; aujourd'hui un graphe filtre avec `Get Property ▸ Tag`, ce qui est lisible et suffit |
-| **Le collider polygonal** | Le modèle ne l'interdit pas ; il attend un besoin |
-| **La rotation exacte (OBB)** | §3 le dit plutôt que de le cacher. Un SAT sur deux boîtes orientées est une quinzaine de lignes avec les matrices existantes, et sera un raffinement de `boxesOverlap()` — pas une frontière nouvelle |
-| **Le gizmo de collider dans la Scene** | L'Inspector le rend éditable aujourd'hui ; le dessiner demande une couche de gizmos que l'Editor n'a pas |
-| **Le broad phase** | §7, avec le chiffre à partir duquel il se justifiera |
+| A world box follows position, scale and the parent chain | `runtime/collision/collisions.test.js` |
+| A rotation gives the corners' AABB, and it is wider | the same |
+| Edge to edge is not overlapping | the same |
+| `Enter` once, then `Stay`, then `Exit` once, never together | the same |
+| Both sides are told, each about the other | the same |
+| An inactive Object, a Collider turned off, no Collider: nothing | the same |
+| The same scene built in two orders gives the same transitions **in the same order** | the same |
+| Save/reload gives the same pairs | the same |
+| A pair one of whose Objects has vanished produces nothing | the same |
+| Touching two things at once is two events, each with its own `Other` | `runtime/gameplay.test.js` |
+| Two Objects that destroy each other on contact: one event each, no crash | the same |
+| A destroyed Object then raises neither `Stay` nor `Exit` | the same |
+| A spawned Object collides on the NEXT step | the same |
+| `Is Overlapping` answers from the same snapshot as the events | the same |
+| Two Runtimes see the same transitions on the same steps | the same |
+
+---
+
+## 9. What this ADR does not decide
+
+| Open point | Why |
+|---|---|
+| **Physical resolution** | Nothing here pushes anything back. That is a whole decision — restitution, mass, resolution order, tunnelling — and taking it in passing would be exactly what ADR-0026 §11 files among "the decisions a hasty implementation takes in the architect's place" |
+| **Collision layers** | "who can touch whom" is a product feature; today a graph filters with `Get Property ▸ Tag`, which is readable and enough |
+| **A polygon collider** | The model does not forbid it; it is waiting for a need |
+| **Exact rotation (OBB)** | §3 says it rather than hiding it. A SAT over two oriented boxes is fifteen lines with the existing matrices, and will be a refinement of `boxesOverlap()` — not a new boundary |
+| **The collider gizmo in the Scene** | The Inspector makes it editable today; drawing it needs a gizmo layer the Editor does not have |
+| **The broad phase** | §7, with the number at which it will justify itself |

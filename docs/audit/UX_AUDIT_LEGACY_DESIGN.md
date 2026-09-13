@@ -1,142 +1,175 @@
-# Audit UX/UI — `legacy/` + `design/` → recommandations pour la v2
+# UX/UI audit — `legacy/` + `design/` → recommendations for v2
 
-- **Date :** 2026-08-18
-- **Nature :** document d'analyse **non normatif**. Il ne modifie aucun ADR, aucune
-  architecture, aucun code. Il prépare des décisions.
-- **Sources lues :** `legacy/` (éditeur complet), `design/` (prototype UX-2.5),
-  `src/` (état réel du code v2), `docs/architecture/`, ADR-0001 → ADR-0027, tests.
-- **Destinataire :** l'agent d'implémentation. La section **K** est la seule à lire si
-  le temps manque.
+- **Date:** 2026-08-18
+- **Nature:** a **non-normative** analysis document. It modifies no ADR, no architecture and no
+  code. It prepares decisions.
+- **Sources read:** `legacy/` (the complete editor), `design/` (the UX-2.5 prototype), `src/`
+  (the real state of the v2 code), `docs/architecture/`, ADR-0001 → ADR-0027, the tests.
+- **Addressed to:** the implementing agent. Section **K** is the only one to read if time is
+  short.
 
-> **Avertissement de méthode.** Ce rapport a été écrit en lisant le code v2, pas
-> `MIGRATION_STATUS.md`. Quand ce rapport dit « absent », il veut dire : aucun appelant
-> dans `src/`. Chaque constat porte son fichier.
+> **A methodological warning.** This report was written by reading the v2 code, not
+> `MIGRATION_STATUS.md`. When this report says "absent", it means: no caller in `src/`. Every
+> finding carries its file.
 
 ---
 
-## A. Résumé exécutif — les 10 améliorations les plus importantes
+## A. Executive summary — the 10 most important improvements
 
-Classées par rapport bénéfice/risque, pas par difficulté.
+Ranked by benefit/risk ratio, not by difficulty.
 
-| # | Amélioration | Pourquoi elle est en tête | Priorité |
+| # | Improvement | Why it is at the top | Priority |
 |---|---|---|---|
-| 1 | **La grille du Graph ne bouge pas.** Le `<rect>` de fond est un frère de `#content`, pas un enfant : il ne reçoit ni le `translate` ni le `scale` de la vue (`src/editor/windows/graph.js`, `#build`). Les nœuds glissent sur une grille fixe. | C'est le seul défaut de la toile qui casse la perception du pan. Legacy le gérait explicitement (`updateGridBounds()`). Correction : `patternTransform`, une ligne. | **P0** |
-| 2 | **Un drag inter-fenêtres est aveugle.** `px-drag-start` mémorise le payload, et **rien ne se passe** jusqu'à `px-drag-end` (`src/editor/editor.js:548-569`) : pas de fantôme, pas de cible surlignée, pas de curseur, pas de refus visible. | Le geste central du produit — glisser un asset dans la scène — n'a aucun retour pendant son vol. Legacy, lui, en avait (fantôme `setDragImage`, `.drop_hover`). | **P0** |
-| 3 | **`describe()` et `refuses()` ne sont jamais affichés.** `dnd/rules.js` produit la phrase ; aucune fenêtre ne la lit. | ADR-0026 §6 dit « rien ne s'est passé est la pire réponse » — et c'est exactement ce que voit le créateur aujourd'hui. Le refus prefab est littéralement inatteignable. | **P0** |
-| 4 | **`PropertyType.RESOURCE` s'affiche en lecture seule.** `inspector/schema.js:81` → `FieldKind.READONLY`. La seule façon d'assigner `Sprite.source` est un drag ; aucun bouton, aucune vignette, aucun effacement. | Une propriété assignable uniquement par un geste sans affordance est une propriété invisible. Le code le documente lui-même comme un manque. | **P0** |
-| 5 | **La recherche de nœuds est un `includes()` sur le label** (`ui/menu.js`, `#renderList`), et le menu s'ouvre avec **tous** les nœuds dépliés. | La demande explicite : catégories d'abord, frappe immédiate, résultats pertinents. Rien de tout ça n'existe. Les catégories, elles, existent déjà côté Core et sont exactement les bonnes. | **P0** |
-| 6 | **Pas de transport Play / Pause / Stop.** Assumé et documenté (`editor.js`, commentaire « THERE IS NO TRANSPORT HERE »). Mais le `Runtime` existe déjà dans le Viewport, avec `running = false`. | Le mécanisme manquant est un instantané de scène — et `serializeScene()` / `deserializeScene()` existent. Le coût réel est bien plus faible que ce que le commentaire suppose. | **P1** |
-| 7 | **Deux tokens CSS n'existent pas** : `--px-surface-sunken` (`inspector.js:328`, `project.js:131`) et `--px-radius-md` (`project.js:110`). Les déclarations sont invalides et tombent. | Le damier de transparence du Project n'a donc pas sa couleur de fond, et les tuiles n'ont pas de rayon. Deux lignes dans `ui/styles.js`. | **P1** |
-| 8 | **Le reparentage par déplacement horizontal n'existe pas.** Legacy l'avait (`sorter.js`, `drag`, seuil de 20 px sur `clientX`) — c'est le geste WordPress. | C'est la seule idée UX du DnD legacy strictement supérieure à la v2, et elle se branche sur `dropTarget()` sans changer son contrat. | **P1** |
-| 9 | **On ne peut pas réordonner les propriétés d'un `.px`.** `addProperty` accepte un `index`, mais aucune opération ne déplace une propriété existante (`core/graph/definition.js`). | Demandé explicitement. C'est un ajout Core (`MOVE_PROPERTY`, ou un `index` sur un `SET_PROPERTY`) et donc un amendement d'ADR-0027 §5. | **P1** |
-| 10 | **`DragKind.OBJECT` et `DragKind.COMPONENT` sont morts.** `objectPayload` / `componentPayload` ne sont construits nulle part dans `src/`. | La table de règles décrit quatre sources ; deux n'ont pas d'émetteur. Soit on les branche, soit on le dit dans le code. | **P2** |
+| 1 | **The Graph's grid does not move.** The background `<rect>` is a sibling of `#content`, not a child: it receives neither the view's `translate` nor its `scale` (`src/editor/windows/graph.js`, `#build`). Nodes slide over a fixed grid. | It is the only canvas defect that breaks the perception of panning. Legacy handled it explicitly (`updateGridBounds()`). The fix: `patternTransform`, one line. | **P0** |
+| 2 | **A cross-window drag is blind.** `px-drag-start` remembers the payload, and **nothing happens** until `px-drag-end` (`src/editor/editor.js:548-569`): no ghost, no highlighted target, no cursor, no visible refusal. | The product's central gesture — dragging an asset into the scene — gets no feedback while in flight. Legacy had some (a `setDragImage` ghost, `.drop_hover`). | **P0** |
+| 3 | **`describe()` and `refuses()` are never displayed.** `dnd/rules.js` produces the sentence; no window reads it. | ADR-0026 §6 says "nothing happened is the worst answer" — and that is exactly what the creator sees today. The prefab refusal is literally unreachable. | **P0** |
+| 4 | **`PropertyType.RESOURCE` renders read-only.** `inspector/schema.js:81` → `FieldKind.READONLY`. The only way to assign `Sprite.source` is a drag; no button, no thumbnail, no way to clear it. | A property assignable only by a gesture with no affordance is an invisible property. The code documents it as a gap itself. | **P0** |
+| 5 | **Node search is an `includes()` on the label** (`ui/menu.js`, `#renderList`), and the menu opens with **every** node expanded. | The explicit request: categories first, immediate typing, relevant results. None of that exists. The categories, however, already exist in the Core and are exactly the right ones. | **P0** |
+| 6 | **No Play / Pause / Stop transport.** Deliberate and documented (`editor.js`, the comment "THERE IS NO TRANSPORT HERE"). But the `Runtime` already exists in the Viewport, with `running = false`. | The missing mechanism is a scene snapshot — and `serializeScene()` / `deserializeScene()` exist. The real cost is far lower than the comment assumes. | **P1** |
+| 7 | **Two CSS tokens do not exist**: `--px-surface-sunken` (`inspector.js:328`, `project.js:131`) and `--px-radius-md` (`project.js:110`). The declarations are invalid and are dropped. | The Project's transparency chequerboard therefore has no background colour, and the tiles have no radius. Two lines in `ui/styles.js`. | **P1** |
+| 8 | **Reparenting by horizontal movement does not exist.** Legacy had it (`sorter.js`, `drag`, a 20 px threshold on `clientX`) — it is the WordPress gesture. | It is the one Legacy DnD idea strictly better than v2's, and it plugs into `dropTarget()` without changing its contract. | **P1** |
+| 9 | **You cannot reorder a `.px`'s properties.** `addProperty` accepts an `index`, but no operation moves an existing property (`core/graph/definition.js`). | Explicitly requested. It is a Core addition (`MOVE_PROPERTY`, or an `index` on a `SET_PROPERTY`) and therefore an amendment to ADR-0027 §5. | **P1** |
+| 10 | **`DragKind.OBJECT` and `DragKind.COMPONENT` are dead.** `objectPayload` / `componentPayload` are built nowhere in `src/`. | The rule table describes four sources; two have no emitter. Either wire them up, or say so in the code. | **P2** |
 
 ---
 
-## B. Drag & Drop
+## B. Drag and drop
 
-### B.1 Ce que fait le legacy, mécanisme par mécanisme
+### B.1 What Legacy does, mechanism by mechanism
 
-#### Réordonnancement dans une liste — `legacy/editor/misc/sorter.js`
+#### Reordering inside a list — `legacy/editor/misc/sorter.js`
 
-C'est le morceau le plus intéressant du legacy, et c'est bien le comportement « WordPress ».
+This is the most interesting piece of Legacy, and it really is the "WordPress" behaviour.
 
-| Étape | Ce qui se passe |
+| Step | What happens |
 |---|---|
-| `dragstart` | mémorise l'élément, **et `clientX` de départ** (`x_t0`), et si l'élément était déjà enfant |
-| `dragenter` sur un autre `<li>` | **`insertBefore` immédiat** : le DOM se réorganise sous le pointeur, les voisins se décalent en temps réel |
-| `dragover` | ajoute `.hidden` à la ligne survolée |
-| `drag` (continu) | compare `clientX` au départ : **`> x_t0 + 20` → `wrap()`** (l'élément devient enfant du précédent), **`< x_t0` → `unwrap()`** |
-| `dragend` | nettoie toutes les classes `.hidden` |
+| `dragstart` | remembers the element, **and the starting `clientX`** (`x_t0`), and whether the element was already a child |
+| `dragenter` on another `<li>` | **an immediate `insertBefore`**: the DOM reorganizes under the pointer, the neighbours shift in real time |
+| `dragover` | adds `.hidden` to the hovered row |
+| `drag` (continuous) | compares `clientX` to the start: **`> x_t0 + 20` → `wrap()`** (the element becomes a child of the previous one), **`< x_t0` → `unwrap()`** |
+| `dragend` | clears every `.hidden` class |
 
-Le rendu de `.hidden` (`legacy/css/world.css`) : `color: transparent`, `border: 2px dashed var(--main)`, fond assombri, icônes masquées. Autrement dit **la ligne devient un trou pointillé** — c'est l'indicateur de position, et il est à la bonne place par construction puisque le DOM a déjà bougé.
+How `.hidden` renders (`legacy/css/world.css`): `color: transparent`, `border: 2px dashed var(--main)`, a darkened background, hidden icons. In other words **the row becomes a dashed hole** — that is the position indicator, and it is in the right place by construction since the DOM has already moved.
 
-L'indentation était rendue par `data-position` + une table de `padding-left` codée en dur de 1 à 5 (`world.css`). Au-delà de 5 niveaux, plus rien.
+Indentation was rendered by `data-position` plus a hard-coded `padding-left` table from 1 to 5 (`world.css`). Beyond 5 levels, nothing.
 
-**Ce qui est bon dans ce mécanisme :**
-- l'axe **horizontal** porte le niveau de profondeur. C'est le seul geste qui permet de dire « je veux insérer ici, mais à ce niveau-là » sans viser un tiers de ligne ;
-- le trou pointillé est lisible même sur une liste dense.
+**What is good in this mechanism:**
+- the **horizontal** axis carries the depth level. It is the only gesture that lets you say "I want to insert here, but at that level" without aiming at a third of a row;
+- the dashed hole is readable even on a dense list.
 
-**Ce qui est mauvais :**
-- le DOM **est** le modèle : `wrap()` appelle `parentObj.addChild()` en plein `drag`, donc **le modèle est muté à chaque frame de survol**, pas au dépôt. Une annulation de drag laisse le modèle dans l'état du dernier survol ;
-- la liste qui se réorganise sous le pointeur rend le geste imprécis dès que les hauteurs varient ;
-- `drop` est commenté ; `dragEnd` ne fait que du nettoyage visuel ;
-- le calcul `isBefore()` a un `return` mal indenté qui ne rend `false` que dans une branche.
+**What is bad:**
+- the DOM **is** the model: `wrap()` calls `parentObj.addChild()` in the middle of `drag`, so **the model is mutated on every hover frame**, not on the drop. Cancelling a drag leaves the model in the state of the last hover;
+- the list reorganizing under the pointer makes the gesture imprecise as soon as heights vary;
+- `drop` is commented out; `dragEnd` does nothing but visual cleanup;
+- the `isBefore()` computation has a badly indented `return` that only yields `false` in one branch.
 
-#### Drop externe (Explorer / fichiers)
+#### External drop (Explorer / files)
 
-- **Project** (`legacy/editor/windows/project.js`) : `dragover` → `.drop_hover` sur le conteneur ; `drop` → `Loader.uploadFiles(e.dataTransfer.files)` ; **et** si `Sorter.draggedElement` est posé, fabrique un prefab depuis l'objet glissé.
-- **Scene** (`legacy/editor/system/handler.js`) : `drop` sur le canvas construit un `Object` à la position souris. Le `switch` distingue les outils (`circle`, `rectangle`, `light`, `camera`, `particle`) du cas `default` = une ressource. **Le drop d'une image depuis Windows Explorer était un `TODO` jamais fait.**
-- **Inspector** (`legacy/editor/windows/properties.js`) : `drop` → instancie `Loader.files[id].component` et l'ajoute à l'objet courant. Un fichier `.js` déposé sur l'Inspector = ajouter un Component. Pas de validation, pas de refus.
-- Aucune fenêtre ne lit `dataTransfer.types` : le survol s'allume pour **n'importe quel** drag, y compris une sélection de texte.
+- **Project** (`legacy/editor/windows/project.js`): `dragover` → `.drop_hover` on the container;
+  `drop` → `Loader.uploadFiles(e.dataTransfer.files)`; **and** if `Sorter.draggedElement` is set,
+  builds a prefab from the dragged object.
+- **Scene** (`legacy/editor/system/handler.js`): a `drop` on the canvas builds an `Object` at the
+  mouse position. The `switch` distinguishes the tools (`circle`, `rectangle`, `light`, `camera`,
+  `particle`) from the `default` case = a resource. **Dropping an image from Windows Explorer was
+  a `TODO` never done.**
+- **Inspector** (`legacy/editor/windows/properties.js`): `drop` → instantiates
+  `Loader.files[id].component` and adds it to the current object. A `.js` file dropped on the
+  Inspector = adding a Component. No validation, no refusal.
+- No window reads `dataTransfer.types`: the hover lights up for **any** drag, including a text
+  selection.
 
-#### Drop interne
+#### Internal drop
 
-| Source → cible | Legacy | v2 |
+| Source → target | Legacy | v2 |
 |---|---|---|
-| Project → Scene | oui (`handler.js`, image/prefab) | oui (`rules.js`, `resource-to-scene`) |
-| Project → Hierarchy | non | oui (`resource-to-hierarchy`) |
-| Project → Inspector | oui, mais « déposer un `.js` = ajouter un Component » | oui, mais **seulement** vers une propriété `resource` |
-| Hierarchy → Project | oui — création de prefab | **refusé avec raison** (ADR-0026 §7), et le refus est inatteignable faute d'émetteur |
-| Ressource → propriété | non | oui (`resource-to-property`) |
-| Propriété → ailleurs | le **label** d'une propriété était `draggable` et portait `input.className` dans le `dataTransfer` (`properties.js:491`) — aucune cible ne le lisait | non, et ADR-0027 §11 le refuse explicitement |
-| Toolbar → Scene | oui, avec `setDragImage(obj.image)` — **le fantôme était le rendu réel de l'objet** | oui, `<px-toolbar>`, fantôme sur `document.body`, Pointer Events |
+| Project → Scene | yes (`handler.js`, image/prefab) | yes (`rules.js`, `resource-to-scene`) |
+| Project → Hierarchy | no | yes (`resource-to-hierarchy`) |
+| Project → Inspector | yes, but "dropping a `.js` = adding a Component" | yes, but **only** onto a `resource` property |
+| Hierarchy → Project | yes — prefab creation | **refused with a reason** (ADR-0026 §7), and the refusal is unreachable for want of an emitter |
+| Resource → property | no | yes (`resource-to-property`) |
+| Property → elsewhere | a property's **label** was `draggable` and carried `input.className` in the `dataTransfer` (`properties.js:491`) — no target read it | no, and ADR-0027 §11 explicitly refuses it |
+| Toolbar → Scene | yes, with `setDragImage(obj.image)` — **the ghost was the object's real rendering** | yes, `<px-toolbar>`, a ghost on `document.body`, Pointer Events |
 
-### B.2 Feedback visuel — les règles implicites du legacy
+### B.2 Visual feedback — Legacy's implicit rules
 
-En rassemblant `dnd.css`, `world.css`, `resources.css`, `overlay.css`, il n'y a que **quatre** règles, et elles sont cohérentes :
+Pulling together `dnd.css`, `world.css`, `resources.css` and `overlay.css`, there are only
+**four** rules, and they are coherent:
 
-1. **Zone qui accepte** → pseudo-élément `::before` en `position:absolute; inset:0; border: 2px dashed var(--main); pointer-events:none; transition: 200–300ms`. Toujours sur le **conteneur**, jamais sur l'élément.
-2. **Ligne survolée pendant un tri** → `.hidden` : texte transparent, même bordure pointillée, fond assombri.
-3. **Curseur** → `grab` au survol d'un déplaçable, `grabbing` pendant. Géré par `Dnd.setCursor()` qui écrit sur `document.body.style`.
-4. **Fantôme** → `setDragImage` avec l'image réelle de l'objet quand elle existe.
+1. **A zone that accepts** → a `::before` pseudo-element with
+   `position:absolute; inset:0; border: 2px dashed var(--main); pointer-events:none; transition: 200–300ms`.
+   Always on the **container**, never on the element.
+2. **A row hovered during a sort** → `.hidden`: transparent text, the same dashed border, a
+   darkened background.
+3. **Cursor** → `grab` when hovering something draggable, `grabbing` during. Handled by
+   `Dnd.setCursor()`, which writes to `document.body.style`.
+4. **Ghost** → `setDragImage` with the object's real image when it has one.
 
-Il n'y a **aucune** animation, aucun changement d'opacité, aucun indicateur d'insertion linéaire.
+There is **no** animation, no opacity change, and no linear insertion indicator.
 
-### B.3 Ce que fait déjà la v2 — et c'est mieux
+### B.3 What v2 already does — and it is better
 
-- `dnd/payload.js` + `dnd/rules.js` + `dnd/files.js` : le vocabulaire, la sémantique, le transport, séparés et testés sous Node. Aucun `handleDropX()` par fenêtre. **C'est très supérieur au legacy et il n'y a rien à en retirer.**
-- `windows/drop.js` : la géométrie tiers-haut / tiers-milieu / tiers-bas → `BEFORE` / `INTO` / `AFTER`, plus `insertionIndex()` qui corrige le décalage d'un déplacement vers le bas. Pur, testé.
-- Les marques : `.row.dragging { opacity: 0.4 }` (la ligne reste en place — décision explicite et **correcte**), `.row.into { inset 0 0 0 1px accent }`, `.row.before/after::after { 2px accent }`, `.tree.append`.
-- Project : mêmes trois états, mais **rail vertical** entre deux tuiles (une grille a des colonnes) — bonne dérivation.
-- `2px dashed var(--px-accent)` pour un import externe, aux **quatre** endroits (`hierarchy.js:208`, `project.js:205`, `editor.js:129`, `inspector.js:316`). La règle du legacy a survécu et c'est bien.
-- `carriesFiles()` lit `dataTransfer.types` : le survol ne s'allume plus pour un drag de texte. Corrige un défaut réel du legacy.
+- `dnd/payload.js` + `dnd/rules.js` + `dnd/files.js`: the vocabulary, the semantics and the
+  transport, separated and tested under Node. No per-window `handleDropX()`. **This is much
+  better than Legacy and there is nothing to take away from it.**
+- `windows/drop.js`: the top-third / middle-third / bottom-third geometry → `BEFORE` / `INTO` /
+  `AFTER`, plus `insertionIndex()`, which corrects the off-by-one of a downward move. Pure,
+  tested.
+- The marks: `.row.dragging { opacity: 0.4 }` (the row stays in place — an explicit and
+  **correct** decision), `.row.into { inset 0 0 0 1px accent }`, `.row.before/after::after { 2px accent }`,
+  `.tree.append`.
+- Project: the same three states, but a **vertical rail** between two tiles (a grid has columns)
+  — a good derivation.
+- `2px dashed var(--px-accent)` for an external import, in **all four** places
+  (`hierarchy.js:208`, `project.js:205`, `editor.js:129`, `inspector.js:316`). Legacy's rule
+  survived, and that is good.
+- `carriesFiles()` reads `dataTransfer.types`: the hover no longer lights up for a text drag. It
+  fixes a real Legacy defect.
 
-### B.4 Le système de feedback DnD v2 — proposition cohérente
+### B.4 The v2 DnD feedback system — a coherent proposal
 
-Le problème n'est pas le manque de CSS, c'est qu'**il n'existe pas de notion de « session de drag »**. Un drag natif (`DataTransfer`) et un drag pointeur (`px-drag-start`) n'ont aucun état commun, et le second n'a aucun retour.
+The problem is not a lack of CSS, it is that **there is no notion of a "drag session"**. A native
+drag (`DataTransfer`) and a pointer drag (`px-drag-start`) share no state, and the second has no
+feedback at all.
 
-**Proposition : un `DragSession`, au shell, sans modèle.**
+**Proposal: a `DragSession`, at the shell, with no model.**
 
 ```
-editor/dnd/session.js        (nouveau — vue seulement, aucun modèle)
-    begin(payload, { ghost })   ouvre la session, monte le fantôme sur document.body
-    move(clientX, clientY)      demande à chaque zone si elle accepte, marque UNE zone
-    end()                       exécute, ou annule, et nettoie
+editor/dnd/session.js        (new — view only, no model)
+    begin(payload, { ghost })   opens the session, mounts the ghost on document.body
+    move(clientX, clientY)      asks each zone whether it accepts, marks ONE zone
+    end()                       executes, or cancels, and cleans up
 ```
 
-Ce que la session porte, et rien de plus :
+What the session carries, and nothing more:
 
-| Élément | Règle |
+| Element | Rule |
 |---|---|
-| **Fantôme** | monté sur `document.body`, `pointer-events:none`, `z-index: var(--px-z-drag)` (le token existe déjà, il n'a **aucun** usage aujourd'hui). Contenu : la vignette de la ressource si elle en a une, sinon son glyphe + son nom. Opacité 0.85, décalage +12/+12 du pointeur. |
-| **Zone acceptante** | `2px dashed var(--px-accent)` en `outline`, `outline-offset: -4px`. **Une seule à la fois.** C'est la règle qui existe déjà — il faut juste l'appliquer au drag pointeur, pas seulement au drag natif. |
-| **Zone refusante** | `2px dashed var(--px-danger)` — **et rien d'autre** : pas de secouement, pas de croix. Aujourd'hui une zone qui refuse est identique à une zone qui ignore. |
-| **Point d'insertion** | inchangé : ligne 2px accent en liste, rail 2px vertical en grille, contour 1px pour `INTO`. Ne pas toucher. |
-| **Phrase** | `canDrop().reason` affichée dans une bande discrète — même primitive que `.status` de `windows/graph.js` (surface `--px-surface-overlay`, bordure, `--px-text-2xs`), ancrée en bas de la fenêtre survolée. Elle apparaît après ~250 ms de survol, pour ne pas clignoter en traversant. |
-| **Curseur** | via `dropEffect` pour le natif ; pour le pointeur, `cursor: grabbing` sur `document.body` **posé une fois au début et retiré une fois à la fin** — jamais dans un `mousemove`, ce qui est l'erreur du legacy. |
+| **Ghost** | mounted on `document.body`, `pointer-events:none`, `z-index: var(--px-z-drag)` (the token exists already and has **no** use today). Content: the resource's thumbnail if it has one, otherwise its glyph + its name. Opacity 0.85, offset +12/+12 from the pointer. |
+| **Accepting zone** | `2px dashed var(--px-accent)` as an `outline`, `outline-offset: -4px`. **One at a time.** That is the rule that already exists — it just has to apply to the pointer drag too, not only to the native one. |
+| **Refusing zone** | `2px dashed var(--px-danger)` — **and nothing else**: no shake, no cross. Today a zone that refuses is identical to a zone that ignores. |
+| **Insertion point** | unchanged: a 2px accent line in a list, a 2px vertical rail in a grid, a 1px outline for `INTO`. Do not touch. |
+| **Sentence** | `canDrop().reason` shown in a discreet strip — the same primitive as `.status` in `windows/graph.js` (surface `--px-surface-overlay`, a border, `--px-text-2xs`), anchored to the bottom of the hovered window. It appears after ~250 ms of hovering, so that it does not flicker as you cross. |
+| **Cursor** | through `dropEffect` for the native case; for the pointer case, `cursor: grabbing` on `document.body` **set once at the start and removed once at the end** — never inside a `mousemove`, which is Legacy's mistake. |
 
-**Trois règles à tenir :**
-- rien ne se déplace pendant un drag sauf le fantôme (contre le legacy) ;
-- un seul marquage à la fois, et il est toujours celui de la règle qui va s'exécuter — c'est déjà l'argument d'ADR-0026 §8 ;
-- une zone qui refuse le dit ; une zone qui ignore ne dit rien. Les deux ne sont pas le même état.
+**Three rules to hold:**
+- nothing moves during a drag except the ghost (against Legacy);
+- one mark at a time, and it is always the mark of the rule that is about to run — that is
+  already ADR-0026 §8's argument;
+- a zone that refuses says so; a zone that ignores says nothing. They are not the same state.
 
-**Le reparentage horizontal (idée legacy à reprendre).** Sur `BEFORE`/`AFTER` uniquement — le tiers du milieu reste `INTO` : si `dx` depuis le point de départ dépasse un multiple de `--indent`, remonter ou descendre le **niveau** d'insertion parmi les ancêtres légaux de la ligne visée. `dropTarget()` rend déjà `{ parent, index }` : c'est le même contrat, avec un `parent` choisi plus haut dans la chaîne. Aucun changement Core.
+**Horizontal reparenting (a Legacy idea worth taking back).** On `BEFORE`/`AFTER` only — the
+middle third stays `INTO`: if `dx` from the starting point exceeds a multiple of `--indent`,
+move the insertion **level** up or down among the target row's legal ancestors. `dropTarget()`
+already returns `{ parent, index }`: it is the same contract, with a `parent` chosen higher in
+the chain. No Core change.
 
-**Pièges :**
-- ne **jamais** muter le modèle pendant le survol (le péché du legacy) ; un drag annulé doit être un non-événement ;
-- le fantôme sur `document.body` échappe aux Shadow Roots — c'est pour ça que `<px-toolbar>` fait déjà exactement ça, réutiliser sa mécanique ;
-- `pointercancel` doit annuler la session, sinon un drag interrompu par le système laisse le fantôme à l'écran.
+**Traps:**
+- **never** mutate the model during the hover (Legacy's sin); a cancelled drag must be a
+  non-event;
+- the ghost on `document.body` escapes the Shadow Roots — that is why `<px-toolbar>` already
+  does exactly that; reuse its mechanics;
+- `pointercancel` must cancel the session, otherwise a drag interrupted by the system leaves the
+  ghost on screen.
 
 ---
 
@@ -144,526 +177,753 @@ Ce que la session porte, et rien de plus :
 
 ### C.1 Navigation
 
-| Geste | Legacy | v2 | Recommandation |
+| Gesture | Legacy | v2 | Recommendation |
 |---|---|---|---|
-| Pan | bouton droit maintenu, **depuis le fond seulement** ; `contextmenu` bloqué | bouton **milieu ou droit**, depuis n'importe où | Ajouter **espace + glisser gauche** (standard de fait) et libérer le clic droit — voir ci-dessous |
-| Zoom | molette, facteur 1.1, ancré au curseur, clamp `[0.25, 2]` | identique, clamp `[0.25, 2.5]`, `zoomAt()` pur | Rien à changer. Ajouter `Ctrl 0` = 100 %, `Ctrl 1` = cadrer tout (le bouton existe déjà) |
-| Clic gauche | sélection / drag de nœud / tirage de fil | idem, avec seuil de 3 px | Rien |
-| Clic droit | **rien** (réservé au pan) | pan | **Menu contextuel de création** — c'est l'usage attendu dans tout éditeur de nœuds |
-| Molette maintenue | non | pan | Garder |
-| Clavier | aucun | `Suppr` / `Retour arrière` sur le nœud sélectionné | Ajouter `F` (cadrer la sélection), `Échap` (désélectionner), `Ctrl A` quand la multi-sélection existera |
+| Pan | right button held, **from the background only**; `contextmenu` blocked | **middle or right** button, from anywhere | Add **space + left drag** (the de facto standard) and free the right click — see below |
+| Zoom | wheel, factor 1.1, anchored to the cursor, clamped to `[0.25, 2]` | the same, clamped to `[0.25, 2.5]`, a pure `zoomAt()` | Nothing to change. Add `Ctrl 0` = 100 %, `Ctrl 1` = frame everything (the button already exists) |
+| Left click | selection / node drag / wire pull | the same, with a 3 px threshold | Nothing |
+| Right click | **nothing** (reserved for panning) | pan | **A creation context menu** — that is the expected use in any node editor |
+| Middle button held | no | pan | Keep |
+| Keyboard | none | `Delete` / `Backspace` on the selected node | Add `F` (frame the selection), `Esc` (deselect), `Ctrl A` once multiple selection exists |
 
-**Le conflit clic droit.** Aujourd'hui : clic droit = pan. C'est inhabituel, et ça brûle le bouton qui, partout ailleurs (Blueprints, Blender, n8n, Node-RED), ouvre le menu de création. Le double-clic ouvre déjà ce menu, mais c'est une découverte, pas une convention.
+**The right-click conflict.** Today: right click = pan. That is unusual, and it burns the button
+that everywhere else (Blueprints, Blender, n8n, Node-RED) opens the creation menu. The
+double-click already opens that menu, but that is a discovery, not a convention.
 
-**Recommandation :** clic droit sur le **fond** = menu de création à la position du pointeur ; clic droit sur un **nœud** ou un **fil** = menu contextuel de cet élément (Supprimer, Dupliquer plus tard) ; pan = bouton du milieu **ou** espace + glisser. Le double-clic reste comme raccourci. C'est un déplacement, pas un ajout : `#openNodeMenu` accepte déjà un `event` et positionne le menu au pointeur.
+**Recommendation:** right click on the **background** = a creation menu at the pointer; right
+click on a **node** or a **wire** = that element's context menu (Delete, Duplicate later); pan =
+the middle button **or** space + drag. The double-click stays as a shortcut. It is a move, not an
+addition: `#openNodeMenu` already accepts an `event` and positions the menu at the pointer.
 
-### C.2 Grille — **le défaut à corriger en premier**
+### C.2 Grid — **the defect to fix first**
 
-**Legacy** : deux `<pattern>` imbriqués (mineur 10 px dans majeur 50 px), et un `#grid-rect` dont `x/y/width/height` sont **recalculés à chaque pan et chaque zoom** (`updateGridBounds()`) pour couvrir le viewport plus une marge d'un viewport. C'est laborieux mais **ça marche** : la grille suit la vue et se met à l'échelle.
+**Legacy**: two nested `<pattern>`s (a 10 px minor inside a 50 px major), and a `#grid-rect`
+whose `x/y/width/height` are **recomputed on every pan and every zoom** (`updateGridBounds()`) to
+cover the viewport plus a viewport of margin. It is laborious but **it works**: the grid follows
+the view and scales with it.
 
-**v2** : un seul `<pattern>` de `GRID * 4` (32 unités), et un `<rect width="100%" height="100%">` placé **en frère** de `#content`. `#content` porte `translate(...) scale(...)` ; le fond, non.
+**v2**: a single `<pattern>` of `GRID * 4` (32 units), and a `<rect width="100%" height="100%">`
+placed as a **sibling** of `#content`. `#content` carries `translate(...) scale(...)`; the
+background does not.
 
-**Conséquence mesurable : la grille est immobile et à l'échelle 1.** Les nœuds glissent dessus. Le pan n'a plus de repère, le zoom ment sur l'échelle.
+**A measurable consequence: the grid is immobile and at scale 1.** Nodes slide over it. Panning
+has no landmark left, and zoom lies about the scale.
 
-**Correction recommandée** (aucune restructuration) :
+**Recommended fix** (no restructuring):
 
 ```
-// à chaque #draw(), sur le <pattern> :
+// on every #draw(), on the <pattern>:
 patternTransform = `translate(${view.x} ${view.y}) scale(${view.zoom})`
 ```
 
-Le `<rect>` reste en coordonnées écran, le motif suit la vue. C'est l'inverse de la méthode legacy et c'est une ligne au lieu de vingt.
+The `<rect>` stays in screen coordinates, the pattern follows the view. It is the inverse of
+Legacy's method and it is one line instead of twenty.
 
-**Pendant qu'on y est**, deux améliorations gratuites, toutes deux déjà validées ailleurs dans le produit :
-- **deux niveaux** (mineur `GRID`, majeur `GRID * 4`), comme le legacy et comme `.vp-grid` du prototype (16 / 64) : c'est ce qui rend le zoom lisible ;
-- **atténuer le mineur sous ~0.5 de zoom** — sinon la grille devient un aplat.
+**While we are at it**, two free improvements, both already validated elsewhere in the product:
+- **two levels** (a minor `GRID`, a major `GRID * 4`), as in Legacy and as in the prototype's
+  `.vp-grid` (16 / 64): that is what makes zoom readable;
+- **fade the minor below ~0.5 zoom** — otherwise the grid becomes a flat wash.
 
-L'origine : `GRID = 8`, `snap()` arrondit les positions de nœud. Le motif doit être ancré sur **la même origine que `snap()`**, sinon un nœud accroché à la grille ne tombe pas sur une ligne. Avec `patternTransform` c'est automatique.
+The origin: `GRID = 8`, and `snap()` rounds node positions. The pattern must be anchored to **the
+same origin as `snap()`**, otherwise a node snapped to the grid does not land on a line. With
+`patternTransform` that is automatic.
 
-### C.3 Nœuds
+### C.3 Nodes
 
 | Aspect | Legacy | v2 | Verdict |
 |---|---|---|---|
-| Structure | `<div>` `contenteditable`, ports dérivés du **texte tapé** | `<g>` SVG, ports déclarés par le type | v2, sans appel |
-| Taille | `min-width: 81px; height: 31px` fixe | `NODE_WIDTH = 168`, hauteur calculée depuis les ports | v2 |
-| Titre | le texte tapé lui-même | `definition.label`, 11 px, gras | v2 |
-| **Icône** | icône par catégorie dans la *toolbox*, jamais sur le nœud | **aucune** | **Manque.** Le menu montre une icône, le nœud n'en a pas : c'est une rupture. Ajouter un glyphe 12 px à gauche du titre |
-| Ports | `4×8 px`, arrondis d'un côté, index numérique | triangle = flux, disque = donnée, cible invisible de 11 px | v2, et c'est une vraie idée |
-| Valeurs | tapées dans le nœud | aucune — une entrée libre rend le défaut du port | Point ouvert d'ADR-0027. Voir §C.6 |
-| Sélection | aucune | contour accent 2 px | v2 |
-| Survol | `cursor: grab` | rien sur le nœud, `stroke` accent sur le port | **Manque léger** : un nœud survolé devrait s'éclaircir d'un cran |
-| Erreur | connecteur `.error` en 3ᵉ port (rouge) | contour `--px-danger` + phrase du validateur en bas | v2 |
-| Actif/inactif | non | non | Rien à faire — un nœud désactivé n'est pas décidé |
+| Structure | a `contenteditable` `<div>`, ports derived from the **typed text** | an SVG `<g>`, ports declared by the type | v2, no contest |
+| Size | a fixed `min-width: 81px; height: 31px` | `NODE_WIDTH = 168`, height computed from the ports | v2 |
+| Title | the typed text itself | `definition.label`, 11 px, bold | v2 |
+| **Icon** | a per-category icon in the *toolbox*, never on the node | **none** | **A gap.** The menu shows an icon and the node does not: that is a break. Add a 12 px glyph to the left of the title |
+| Ports | `4×8 px`, rounded on one side, a numeric index | a triangle = flow, a disc = data, an invisible 11 px target | v2, and it is a real idea |
+| Values | typed into the node | none — a free input yields the port's default | An open point in ADR-0027. See §C.6 |
+| Selection | none | a 2 px accent outline | v2 |
+| Hover | `cursor: grab` | nothing on the node, an accent `stroke` on the port | **A slight gap**: a hovered node should lighten by one step |
+| Error | an `.error` connector as a 3rd port (red) | a `--px-danger` outline + the validator's sentence at the bottom | v2 |
+| Active/inactive | no | no | Nothing to do — a disabled node has not been decided |
 
-**Couleur par catégorie.** Le legacy teintait le fond de la *toolbox* : `event` rouge, `function` bleu, `structure` vert. Le prototype `design/` rejette explicitement les rails multicolores (README, décision D7). **Recommandation : une barre d'en-tête colorée par catégorie sur le nœud, et rien d'autre** — c'est le seul endroit où la famille aide vraiment (repérer les Events dans un graphe dense), et ça ne réintroduit pas de rail. Les quatre teintes de la direction B (`#45c8ff`, `#a98bff`, `#ffb648`, `#4ade80`) sont disponibles mais **non arrêtées en Modern Pixel** (README `design/`) : c'est une décision à prendre, pas à supposer.
+**Colour by category.** Legacy tinted the *toolbox* background: `event` red, `function` blue,
+`structure` green. The `design/` prototype explicitly rejects multicoloured rails (README,
+decision D7). **Recommendation: a header bar coloured by category on the node, and nothing else**
+— it is the one place where the family genuinely helps (spotting Events in a dense graph), and it
+does not reintroduce a rail. The four hues of direction B (`#45c8ff`, `#a98bff`, `#ffb648`,
+`#4ade80`) are available but **not settled in Modern Pixel** (the `design/` README): that is a
+decision to take, not to assume.
 
-### C.4 Connexions
+### C.4 Connections
 
-- **Courbe** : legacy `max(50, distance × 0.4)`, v2 `max(40, distance × 0.4)`. ADR-0027 dit « repris tel quel » — l'écart 50/40 est bénin, mais **c'est un écart non documenté** entre l'ADR et le code. À aligner ou à noter.
-- **Pendant la création** : v2 dessine un fil `pending` pointillé accent, orienté dans le sens final. Meilleur que le legacy.
-- **Suppression** : v2 = **un clic sur le fil supprime**. C'est rapide et c'est annulable, mais c'est destructeur au premier clic. Legacy exigeait un mousedown sur le connecteur. **Recommandation : garder, mais ajouter le survol rouge (déjà là) et un `title`** (déjà là : « Click to disconnect »). Acceptable.
-- **Sélection d'un fil** : n'existe pas. Pas nécessaire tant qu'il n'y a rien à faire d'un fil sélectionné.
-- **Couleur** : v2 distingue flux (`--px-text-muted`) et donnée (`--px-text-dim`). **Recommandation : colorer un fil de donnée selon son `PropertyType`** — le typage existe déjà (`typesCompatible`), c'est de l'information gratuite. Une palette de 8 (autant que `PropertyType`) est trop ; une palette de 4 familles (nombre, texte, booléen, autre) suffit.
+- **Curve**: Legacy `max(50, distance × 0.4)`, v2 `max(40, distance × 0.4)`. ADR-0027 says "taken
+  as is" — the 50/40 gap is benign, but **it is an undocumented divergence** between the ADR and
+  the code. To align or to note.
+- **While being created**: v2 draws a dashed accent `pending` wire, oriented the final way.
+  Better than Legacy.
+- **Deletion**: in v2 **one click on the wire deletes it**. That is fast and it is undoable, but
+  it is destructive on the first click. Legacy required a mousedown on the connector.
+  **Recommendation: keep it, but add the red hover (already there) and a `title`** (already
+  there: "Click to disconnect"). Acceptable.
+- **Selecting a wire**: does not exist. Not needed as long as there is nothing to do with a
+  selected wire.
+- **Colour**: v2 distinguishes flow (`--px-text-muted`) from data (`--px-text-dim`).
+  **Recommendation: colour a data wire by its `PropertyType`** — the typing already exists
+  (`typesCompatible`), so it is free information. A palette of 8 (as many as `PropertyType`) is
+  too many; a palette of 4 families (number, text, boolean, other) is enough.
 
-### C.5 Menu de création
+### C.5 Creation menu
 
-Voir la section **C.7 / recherche** ci-dessous : c'est le même sujet.
+See section **C.7 / search** below: it is the same subject.
 
-### C.6 Points ouverts d'ADR-0027 qui pèsent sur l'UX
+### C.6 Open points of ADR-0027 that weigh on UX
 
-- **Valeur en ligne sur une entrée non connectée.** ADR-0027 le laisse ouvert, et la conséquence est déclarée « surprenante » dans l'ADR lui-même (`Set Property` non connecté écrit le défaut à chaque pas). C'est la première chose qu'un créateur va vouloir. **Recommandation :** un champ à même le nœud pour les entrées `number` / `int` / `boolean` / `string` — trois types, un contrôle chacun, tous déjà existants (`px-field`). Le format ne change pas : la valeur va dans `node.params`, comme le reste.
-- **Multi-sélection, copier/coller** : d'accord pour reporter.
+- **An inline value on an unconnected input.** ADR-0027 leaves it open, and the consequence is
+  declared "surprising" in the ADR itself (an unconnected `Set Property` writes the default on
+  every step). It is the first thing a creator will want. **Recommendation:** a field on the node
+  itself for `number` / `int` / `boolean` / `string` inputs — three types, one control each, all
+  already existing (`px-field`). The format does not change: the value goes into `node.params`,
+  like the rest.
+- **Multiple selection, copy/paste**: fine to defer.
 
-### C.7 Moteur de recherche des nodes
+### C.7 The node search engine
 
-**État réel :**
-- les catégories existent déjà, dans le Core, et sont **exactement** celles demandées : `['Events', 'Properties', 'Flow', 'Values', 'Math', 'Compare', 'Logic', 'Debug']` (`core/graph/nodes.js`, `NODE_CATEGORIES`). Rien à inventer ;
-- `groupNodes()` produit les groupes non vides dans l'ordre ;
-- `ui/menu.js` reçoit une **liste plate** de `{ heading }` et `{ id, label, icon }`, **toutes catégories dépliées** ;
-- le filtre est `item.label.toLowerCase().includes(query)`. Pas de fuzzy, pas d'alias, pas de mots-clés, pas de score, pas de filtre par type de port ;
-- la navigation clavier ↑ ↓ ↵ Échap existe et est correcte ;
-- le legacy n'avait **aucune** recherche : une toolbox de 14 icônes fixes. Il n'y a rien à en tirer.
+**The real state:**
+- the categories already exist, in the Core, and are **exactly** the ones requested:
+  `['Events', 'Properties', 'Flow', 'Values', 'Math', 'Compare', 'Logic', 'Debug']`
+  (`core/graph/nodes.js`, `NODE_CATEGORIES`). Nothing to invent;
+- `groupNodes()` produces the non-empty groups in order;
+- `ui/menu.js` receives a **flat list** of `{ heading }` and `{ id, label, icon }`, with **every
+  category expanded**;
+- the filter is `item.label.toLowerCase().includes(query)`. No fuzzy matching, no aliases, no
+  keywords, no score, no filter by port type;
+- keyboard navigation ↑ ↓ ↵ Esc exists and is correct;
+- Legacy had **no** search at all: a toolbox of 14 fixed icons. There is nothing to take from it.
 
-**Recommandation d'architecture (aucun code ici, une forme) :**
+**Architecture recommendation (no code here, a shape):**
 
-Un module pur, testable sous Node, à côté de `groupNodes()` :
+A pure module, testable under Node, next to `groupNodes()`:
 
 ```
 searchNodes(registry, query, context) -> [{ definition, score, matched }]
 ```
 
-**Ce que la table de nœuds gagne** — deux champs, dans la même table, ce qui est exactement l'argument d'ADR-0027 §3 (une table, pas deux) :
+**What the node table gains** — two fields, in the same table, which is exactly ADR-0027 §3's
+argument (one table, not two):
 
-| Champ | Rôle | Exemple |
+| Field | Role | Example |
 |---|---|---|
-| `aliases: string[]` | les autres noms du même nœud | `'Add'` → `['+', 'plus', 'sum', 'addition']` |
-| `keywords: string[]` | ce à quoi il sert, pas ce qu'il est | `'property.set'` → `['health', 'variable', 'assign', 'write']` |
+| `aliases: string[]` | the other names of the same node | `'Add'` → `['+', 'plus', 'sum', 'addition']` |
+| `keywords: string[]` | what it is for, not what it is | `'property.set'` → `['health', 'variable', 'assign', 'write']` |
 
-`keywords` ne doit **pas** contenir les noms de propriétés du créateur — ils sont dynamiques. Voir « recherche contextuelle » plus bas.
+`keywords` must **not** hold the creator's property names — those are dynamic. See "contextual
+search" below.
 
-**Le classement (ordre strict, premier critère qui départage) :**
+**The ranking (strict order, the first criterion that separates wins):**
 
-1. égalité exacte du `label` ou d'un `alias` ;
-2. préfixe du `label` (`add` → `Add`) ;
-3. préfixe d'un mot du `label` (`prop` → `Set Property`) ;
-4. préfixe d'un `alias` ;
-5. sous-séquence du `label` (`stprp` → `Set Property`) — c'est le « fuzzy », et il suffit ;
-6. correspondance dans `keywords` ou dans la `category` ;
-7. à score égal : ordre des catégories, puis ordre d'enregistrement.
+1. an exact match of the `label` or of an `alias`;
+2. a prefix of the `label` (`add` → `Add`);
+3. a prefix of a word of the `label` (`prop` → `Set Property`);
+4. a prefix of an `alias`;
+5. a subsequence of the `label` (`stprp` → `Set Property`) — that is the "fuzzy", and it is
+   enough;
+6. a match in `keywords` or in the `category`;
+7. at equal score: category order, then registration order.
 
-**Ne pas** utiliser une distance de Levenshtein : elle classe mal les identifiants courts et elle est lente à taper vite.
+**Do not** use a Levenshtein distance: it ranks short identifiers badly and it is slow when
+typing fast.
 
-**Recherche contextuelle — le vrai gain.** Quand le menu est ouvert **en tirant un fil depuis un port** (geste qui n'existe pas encore : lâcher un fil dans le vide devrait ouvrir le menu), passer le port d'origine dans `context`. Alors :
-- les nœuds ayant un port compatible (`typesCompatible`) remontent ;
-- ceux qui n'en ont aucun descendent, ou disparaissent derrière un « Tout afficher ».
+**Contextual search — the real gain.** When the menu is opened **by dragging a wire from a port**
+(a gesture that does not exist yet: releasing a wire into empty space should open the menu), pass
+the origin port in `context`. Then:
+- nodes with a compatible port (`typesCompatible`) rise;
+- those with none sink, or disappear behind a "Show all".
 
-C'est ce qui transforme « chercher un nœud » en « continuer un câblage ». C'est le comportement qui manque le plus, et il ne demande aucun changement de format.
+That is what turns "search for a node" into "continue wiring". It is the behaviour that is missed
+most, and it requires no format change.
 
-**La recherche par nom de propriété** (`health`) : quand le menu est ouvert dans le contexte d'un `.px`, injecter des entrées **synthétiques** `Get health` / `Set health` — un `property.get` avec `params.property` pré-rempli. Ça répond directement à l'exemple demandé, et c'est une ligne de génération d'items, pas un type de nœud de plus.
+**Search by property name** (`health`): when the menu is opened in the context of a `.px`, inject
+**synthetic** entries `Get health` / `Set health` — a `property.get` with `params.property`
+pre-filled. That answers the requested example directly, and it is one line of item generation,
+not one more node type.
 
-**État initial du menu.** Demandé : montrer les catégories, pas une liste énorme. Trois options, par ordre de préférence :
+**The menu's initial state.** Requested: show the categories, not a huge list. Three options, in
+order of preference:
 
-1. **Catégories repliées** (recommandé) : `Events`, `Properties`, `Flow`… avec un compteur. `→` ou clic déplie, `←` replie, ↑↓ traversent tout ce qui est visible. Dès qu'un caractère est tapé, tout se déplie et le classement s'applique. Coût : un état `expanded: Set` dans `ui/menu.js`, plus deux touches. **C'est la seule option qui répond littéralement à la demande.**
-2. Garder tout déplié mais **limiter à 3 entrées par catégorie** avec un « +7 autres ». Moins bon : arbitraire.
-3. Ne rien changer et compter sur la recherche. Rejeté : la découverte compte autant que la vitesse.
+1. **Collapsed categories** (recommended): `Events`, `Properties`, `Flow`… with a counter. `→` or
+   a click expands, `←` collapses, ↑↓ traverse everything visible. As soon as a character is
+   typed, everything expands and the ranking applies. Cost: an `expanded: Set` state in
+   `ui/menu.js`, plus two keys. **It is the only option that literally answers the request.**
+2. Keep everything expanded but **limit to 3 entries per category** with a "+7 more". Less good:
+   arbitrary.
+3. Change nothing and rely on search. Rejected: discovery counts as much as speed.
 
-**Contrainte architecturale.** `ui/menu.js` est **partagé** par Add Object, Add Component, le `+` du Project et les nœuds (ADR-0026 §10 en fait un principe). Le repliement et le score doivent donc être **optionnels** (`{ collapsed: true, rank }`) et non imposés : un menu de 3 entrées ne doit pas gagner un pli. Ne pas dupliquer le composant.
+**An architectural constraint.** `ui/menu.js` is **shared** by Add Object, Add Component, the
+Project's `+` and the nodes (ADR-0026 §10 makes it a principle). Collapsing and scoring must
+therefore be **optional** (`{ collapsed: true, rank }`) and not imposed: a menu of 3 entries must
+not gain a fold. Do not duplicate the component.
 
 ---
 
 ## D. Project
 
-### D.1 Ce que `design/` veut
+### D.1 What `design/` wants
 
-Lu dans `design/prototype.js` (`ASSETS`, `project()`) et `prototype.css` (`.assets`, `.asset`, `.thumb`, `.empty`) :
+Read in `design/prototype.js` (`ASSETS`, `project()`) and `prototype.css` (`.assets`, `.asset`,
+`.thumb`, `.empty`):
 
-- **grille auto-remplie**, tuiles de 62 px minimum, gap 5 px, padding 8 px ;
-- **vignette carrée en damier** (8 px, deux tons) — présente même quand il n'y a pas d'image : le damier dit « c'est ici que va une image » ;
-- **aperçu réel** pour une image, **glyphe** sinon ;
-- nom centré, une ligne, ellipse ; il passe en `--px-text-strong` au survol et en sélection ;
-- survol = fond `--s2` + bordure `--line-soft` ; sélection = fond accent-soft + bordure accent-line ;
-- `cursor: grab` sur la tuile ;
-- **onglets `Project` / `Prefabs`** dans l'en-tête du panneau, pas un fil d'Ariane ;
-- champ de recherche **toujours visible** en haut, plus une loupe dans les outils qui lui donne le focus ;
-- **état vide centré** quand la recherche ne rend rien, avec le terme cherché dans la phrase.
+- an **auto-filled grid**, tiles of at least 62 px, a 5 px gap, 8 px padding;
+- a **square chequerboard thumbnail** (8 px, two tones) — present even when there is no image:
+  the chequerboard says "this is where an image goes";
+- a **real preview** for an image, a **glyph** otherwise;
+- a centred name, one line, ellipsized; it goes to `--px-text-strong` on hover and on selection;
+- hover = a `--s2` background + a `--line-soft` border; selection = an accent-soft background + an
+  accent-line border;
+- `cursor: grab` on the tile;
+- **`Project` / `Prefabs` tabs** in the panel's header, not a breadcrumb;
+- a search field **always visible** at the top, plus a magnifier in the tools that focuses it;
+- a **centred empty state** when the search returns nothing, with the search term in the
+  sentence.
 
-Le fil d'Ariane, dans le prototype, est dans le **titlebar** (`Medieval Arena / Arena 01`), pas dans le Project.
+The breadcrumb, in the prototype, is in the **titlebar** (`Medieval Arena / Arena 01`), not in
+Project.
 
-### D.2 Ce que fait la v2
+### D.2 What v2 does
 
-Conforme, et souvent au-delà : grille 64 px, damier, `image-rendering: pixelated` (le prototype ne le fait pas, et c'est **mieux** pour du pixel art), fil d'Ariane par dossier, sélection, `F2`, second clic + pause de 400 ms pour renommer, double-clic pour ouvrir, pastille « non enregistré », réordonnancement par glisser, import de fichiers, menu `+` catégorisé, état vide.
+Conformant, and often beyond: a 64 px grid, the chequerboard, `image-rendering: pixelated` (the
+prototype does not do it, and it is **better** for pixel art), a per-folder breadcrumb, selection,
+`F2`, a second click plus a 400 ms pause to rename, double-click to open, an "unsaved" dot,
+reordering by dragging, file import, a categorized `+` menu, an empty state.
 
-### D.3 Écarts
+### D.3 Divergences
 
-| Écart | Constat | Recommandation |
+| Divergence | Finding | Recommendation |
 |---|---|---|
-| **`--px-surface-sunken` n'existe pas** (`project.js:131`) | la couleur de fond du damier tombe ; le damier est donc dessiné sur le fond de la tuile | Définir le token dans `ui/styles.js` — c'est manifestement une surface plus sombre que `--px-surface-input` ou son alias |
-| **`--px-radius-md` n'existe pas** (`project.js:110`) | les tuiles n'ont pas de rayon | Utiliser `--px-radius`, ou définir `md` |
-| Onglet **Prefabs** | dessiné par `design/`, absent de la v2 | **Correct de l'omettre.** ADR-0026 §7 reporte le prefab, et un onglet vide est le genre de mensonge que cet Editor refuse. À ne pas ajouter avant la décision prefab |
-| **Vue liste** | n'existe **nulle part** : ni legacy, ni design, ni v2 | Ne pas l'inventer. Une grille est le bon défaut pour des assets. Si un projet dépasse ~200 ressources, ce sera un vrai besoin — pas avant |
-| **Tri** | aucun | P2. Nom / type / date de modification, dans le menu `…` |
-| Vignette d'une **`.scene`** | glyphe seulement | P2 — une scène pourrait rendre une miniature ; ça demande un rendu hors écran, donc plus tard |
-| **Multi-sélection** | aucune | P2, cohérent avec le reste (le graphe non plus) |
-| **Menu contextuel** (clic droit) | aucun, ni dans le Project ni ailleurs en v2 | **P1.** Le legacy en avait un (bancal). Le `+` et le `…` couvrent la création, mais « clic droit sur une tuile → Renommer / Supprimer / Ouvrir » est attendu. Réutiliser `openMenu` avec un ancre-point (le helper `pointAnchor` existe déjà dans `windows/graph.js`) |
+| **`--px-surface-sunken` does not exist** (`project.js:131`) | the chequerboard's background colour is dropped; the chequerboard is therefore drawn on the tile's background | Define the token in `ui/styles.js` — it is clearly a darker surface than `--px-surface-input` or its alias |
+| **`--px-radius-md` does not exist** (`project.js:110`) | the tiles have no radius | Use `--px-radius`, or define `md` |
+| The **Prefabs** tab | drawn by `design/`, absent from v2 | **Correct to leave out.** ADR-0026 §7 defers the prefab, and an empty tab is the kind of lie this Editor refuses. Not to be added before the prefab decision |
+| **A list view** | exists **nowhere**: not in Legacy, not in design, not in v2 | Do not invent it. A grid is the right default for assets. If a project exceeds ~200 resources it will be a real need — not before |
+| **Sorting** | none | P2. Name / type / modification date, in the `…` menu |
+| A **`.scene`** thumbnail | a glyph only | P2 — a scene could render a miniature; that requires offscreen rendering, so later |
+| **Multiple selection** | none | P2, consistent with the rest (the graph has none either) |
+| **A context menu** (right click) | none, neither in Project nor anywhere else in v2 | **P1.** Legacy had one (shaky). `+` and `…` cover creation, but "right click on a tile → Rename / Delete / Open" is expected. Reuse `openMenu` with an anchor point (the `pointAnchor` helper already exists in `windows/graph.js`) |
 
 ---
 
 ## E. Inspector
 
-### E.1 Structure — conforme au design, et bien au-delà
+### E.1 Structure — conformant to the design, and well beyond
 
-`design/prototype.css` `.sect-head` : poignée · caret · glyphe · libellé · outils. La v2 fait exactement ça, avec en plus :
-- le libellé de section **est** typographiquement l'en-tête de groupe du dropdown — décision explicite, et c'est la bonne (elle donne au panneau une seule échelle de titres) ;
-- la poignée est **toujours présente**, invisible quand la section n'est pas déplaçable (le prototype le fait aussi, `.grip.fixed`) : sans ça, les carets ne s'alignent pas d'une section à l'autre ;
-- le geste de réordonnancement est pris sur la poignée seule (ADR-0026 §8), l'en-tête restant un bouton de repli.
+`design/prototype.css` `.sect-head`: grip · caret · glyph · label · tools. v2 does exactly that,
+plus:
+- the section label **is** typographically the dropdown's group header — an explicit decision, and
+  the right one (it gives the panel a single scale of titles);
+- the grip is **always present**, invisible when the section is not movable (the prototype does it
+  too, `.grip.fixed`): without it, the carets do not line up from one section to the next;
+- the reordering gesture is taken on the grip alone (ADR-0026 §8), the header staying a collapse
+  button.
 
-Les champs : `px-field` + `px-number` implémentent **tout** ce que le prototype demande — préfixe `X`/`Y` comme poignée de scrub (4 px = 1 pas), steppers empilés de 11 px révélés au survol, **répétition automatique après 320 ms**, `↑`/`↓` = ±1, `Shift` ×10, police mono à chasse tabulaire. Le prototype disait « le comportement que `px-number` n'a pas » ; il l'a maintenant.
+The fields: `px-field` + `px-number` implement **everything** the prototype asks for — an `X`/`Y`
+prefix as a scrub handle (4 px = 1 step), stacked 11 px steppers revealed on hover, **auto-repeat
+after 320 ms**, `↑`/`↓` = ±1, `Shift` ×10, a monospace font with tabular figures. The prototype
+said "the behaviour `px-number` does not have"; it has it now.
 
-### E.2 Écarts et généralisations
+### E.2 Divergences and generalizations
 
-| Sujet | Constat | Recommandation |
+| Subject | Finding | Recommendation |
 |---|---|---|
-| **`PropertyType.RESOURCE` = `READONLY`** (`inspector/schema.js:81`) | une propriété `resource` s'affiche mais ne s'édite pas ; seul un drag l'assigne, et rien ne le dit | **P0. Un `<px-resource-field>`**, réutilisable partout : vignette 20 px + nom + `…` (ouvre un sélecteur filtré par `kind`/`mime` du schéma) + `×` (efface). Il est **la** cible de drop `PROPERTY`, avec le contour pointillé. `acceptsResource()` donne déjà le filtre — le sélecteur et le drop partagent donc la même règle |
-| **`PropertyType.ARRAY` = `READONLY`** | affiche un compte | P2. Un contrôle de liste est un vrai chantier |
-| **Aperçu** | l'Inspector d'une ressource montre un aperçu (`.preview`), l'Inspector d'un Object non | Généraliser : toute propriété `resource` assignée montre sa vignette. Même primitive que ci-dessus |
-| **Cible de drop** | `outline: 2px dashed` sur `px-field.drop`, `.preview.drop`, `.none.drop`, `.add.drop` — quatre sélecteurs | Une seule classe `.drop-target` dans la feuille partagée, comme `.line` et `.twisty` l'ont été. C'est exactement le raisonnement déjà tenu dans `ui/styles.js` |
-| **`--px-surface-sunken`** (`inspector.js:328`) | même bug que dans Project | même correction |
-| **Réinitialiser une propriété** | absent | P2. `descriptor.default` est connu ; un `↺` au survol de la ligne suffit |
-| **Tooltip** | les descripteurs portent `tooltip` (ADR-0027 les remplit soigneusement) | Vérifier qu'ils sont rendus. S'ils ne le sont pas, c'est de l'information écrite et jetée |
+| **`PropertyType.RESOURCE` = `READONLY`** (`inspector/schema.js:81`) | a `resource` property displays but does not edit; only a drag assigns it, and nothing says so | **P0. A `<px-resource-field>`**, reusable everywhere: a 20 px thumbnail + the name + `…` (opens a picker filtered by the schema's `kind`/`mime`) + `×` (clears). It is **the** `PROPERTY` drop target, with the dashed outline. `acceptsResource()` already provides the filter — so the picker and the drop share the same rule |
+| **`PropertyType.ARRAY` = `READONLY`** | displays a count | P2. A list control is a real piece of work |
+| **Preview** | a resource's Inspector shows a preview (`.preview`), an Object's does not | Generalize: any assigned `resource` property shows its thumbnail. The same primitive as above |
+| **Drop target** | `outline: 2px dashed` on `px-field.drop`, `.preview.drop`, `.none.drop`, `.add.drop` — four selectors | A single `.drop-target` class in the shared sheet, as `.line` and `.twisty` became. That is exactly the reasoning already followed in `ui/styles.js` |
+| **`--px-surface-sunken`** (`inspector.js:328`) | the same bug as in Project | the same fix |
+| **Resetting a property** | absent | P2. `descriptor.default` is known; a `↺` on row hover is enough |
+| **Tooltip** | the descriptors carry `tooltip` (ADR-0027 fills them carefully) | Check that they are rendered. If they are not, that is information written and thrown away |
 
-### E.3 Ce qui devrait être généralisé à tout l'Inspector
+### E.3 What should be generalized across the Inspector
 
-Trois primitives, et elles couvrent tout ce que le panneau fera dans les deux prochaines passes :
+Three primitives, and they cover everything the panel will do in the next two passes:
 
-1. **`.drop-target`** — une classe, une règle, tous les champs.
-2. **`<px-resource-field>`** — vignette + nom + choisir + effacer + drop. Sert : `Sprite.source`, un futur `AudioSource.clip`, un futur `Tilemap.atlas`, et le défaut d'une propriété `resource` déclarée dans un `.px`. Quatre usages avant même d'exister.
-3. **`section()`** — poignée/caret/glyphe/libellé/outils est déjà écrit trois fois dans `windows/inspector.js` (Object, Component, Properties d'un `.px`). L'extraire quand le quatrième arrive, pas avant.
+1. **`.drop-target`** — one class, one rule, every field.
+2. **`<px-resource-field>`** — thumbnail + name + pick + clear + drop. It serves: `Sprite.source`,
+   a future `AudioSource.clip`, a future `Tilemap.atlas`, and the default of a `resource` property
+   declared in a `.px`. Four uses before it even exists.
+3. **`section()`** — grip/caret/glyph/label/tools is already written three times in
+   `windows/inspector.js` (Object, Component, a `.px`'s Properties). Extract it when the fourth
+   arrives, not before.
 
 ---
 
 ## F. Runtime — Play / Pause / Stop
 
-### F.1 Ce qu'était le comportement historique
+### F.1 What the historical behaviour was
 
-- **Legacy `play.js`** : `window.open('/build/', …)` — Play ouvre **une autre fenêtre**, dimensionnée à la caméra, centrée sur l'écran, et lui passe `{ host, port, online, objects }` par `app.data`. Le jeu ne tourne **jamais** dans l'éditeur.
-- **Legacy `pause.js`** : `Renderer.main.pause = !pause`, événement `pause`, classe `.active` sur le bouton, `title` qui bascule Pause/Resume. **La pause est celle du renderer, pas de la simulation.**
-- **Stop** : **n'existe pas** dans le legacy. Fermer la fenêtre est l'arrêt.
-- **`design/`** : trois boutons dans un groupe `.transport` au centre du titlebar — Play en `--ok` (vert), Pause et Stop **désactivés** tant que rien ne tourne (`disabled`, opacité 0.32). La direction C en fait un gros disque vert de 34 px, et le README `design/` dit que cet emprunt est **retenu** (« le gros bouton Play vert »).
+- **Legacy `play.js`**: `window.open('/build/', …)` — Play opens **another window**, sized to the
+  camera, centred on screen, and passes it `{ host, port, online, objects }` through `app.data`.
+  The game **never** runs inside the editor.
+- **Legacy `pause.js`**: `Renderer.main.pause = !pause`, a `pause` event, an `.active` class on
+  the button, a `title` toggling Pause/Resume. **The pause is the renderer's, not the
+  simulation's.**
+- **Stop**: **does not exist** in Legacy. Closing the window is the stop.
+- **`design/`**: three buttons in a `.transport` group at the centre of the titlebar, Play in
+  `--ok` (green), Pause and Stop **disabled** while nothing is running (`disabled`, opacity 0.32).
+  Direction C makes it a big 34 px green disc, and the `design/` README says that borrowing is
+  **adopted** ("the big green Play button").
 
-### F.2 Ce que dit le code v2
+### F.2 What the v2 code says
 
-- `editor.js` (~ligne 420) : « THERE IS NO TRANSPORT HERE, AND THAT IS DELIBERATE… Play needs a scene snapshot restored on stop, which does not exist yet ». Décision assumée, et la règle « pas de bouton qui ment » est bonne.
-- **Mais le mécanisme est plus près qu'annoncé :**
-  - `viewport.js` construit déjà un `Runtime` avec `running = false` (« Edit mode: the scene is drawn every frame but never stepped ») ;
-  - `Runtime.running` est un setter public ; `advance()` ne fait rien quand il est faux ;
-  - `Input` existe (`runtime/input/input.js`) et est **passé**, jamais global ;
-  - `serializeScene()` / `deserializeScene()` existent (`core/serialize.js`) ;
-  - `interpretGraph()` et `behaviors` sont branchés (ADR-0027 §6, testé dans `editor/project/graph-runtime.test.js`).
+- `editor.js` (~line 420): "THERE IS NO TRANSPORT HERE, AND THAT IS DELIBERATE… Play needs a scene
+  snapshot restored on stop, which does not exist yet". A deliberate decision, and the "no button
+  that lies" rule is a good one.
+- **But the mechanism is closer than announced:**
+  - `viewport.js` already builds a `Runtime` with `running = false` ("Edit mode: the scene is drawn
+    every frame but never stepped");
+  - `Runtime.running` is a public setter; `advance()` does nothing when it is false;
+  - `Input` exists (`runtime/input/input.js`) and is **passed**, never global;
+  - `serializeScene()` / `deserializeScene()` exist (`core/serialize.js`);
+  - `interpretGraph()` and `behaviors` are wired up (ADR-0027 §6, tested in
+    `editor/project/graph-runtime.test.js`).
 
-### F.3 Recommandation
+### F.3 Recommendation
 
-**Ne pas concevoir un runtime.** Assembler ce qui est là :
+**Do not design a runtime.** Assemble what is there:
 
-| Bouton | Ce qu'il fait | Ce qu'il faut d'abord |
+| Button | What it does | What is needed first |
 |---|---|---|
-| **Play** | `snapshot = serializeScene(scene)` ; brancher l'`Input` du viewport ; `runtime.running = true` | rien de neuf |
-| **Pause** | `runtime.running = false`, le rendu continue (c'est déjà le contrat documenté de `running`) | rien |
-| **Stop** | `runtime.running = false` ; restaurer la scène depuis `snapshot` ; vider l'historique **de la session de jeu** | la restauration |
+| **Play** | `snapshot = serializeScene(scene)`; wire up the viewport's `Input`; `runtime.running = true` | nothing new |
+| **Pause** | `runtime.running = false`, rendering continues (that is already `running`'s documented contract) | nothing |
+| **Stop** | `runtime.running = false`; restore the scene from `snapshot`; clear the history **of the play session** | the restoration |
 
-**Les questions à trancher avant d'écrire une ligne**, et elles sont pour l'agent principal :
+**The questions to settle before writing a line**, and they are for the main agent:
 
-1. **Où le snapshot vit-il ?** Pas dans le `Workspace` (ce n'est pas du projet), pas dans la `Scene` (elle est la vérité). Probablement dans le contrôleur du transport, en mémoire, jeté au Stop.
-2. **Que devient l'undo pendant le Play ?** La simulation écrit à travers le Proxy réactif, donc **elle produit des Changes**. Si ces Changes entrent dans l'`Operations`, le Play remplit la pile d'undo de bruit. ADR-0003 dit qu'un Component n'appelle jamais `setProperty()` — donc une écriture de simulation n'est pas une intention. **Il faut vérifier que la pipeline le respecte réellement**, et c'est le seul vrai risque de cette fonctionnalité.
-3. **La sélection et l'Inspector pendant le Play ?** Proposition : rester vivants et en lecture seule, avec le panneau grisé. Éditer une valeur pendant que la simulation l'écrit est un conflit sans gagnant.
-4. **Où tourne le jeu ?** Le legacy ouvrait une fenêtre ; `design/` met le transport dans le titlebar, donc **dans le viewport**. Suivre `design/` : ouvrir une fenêtre casse le multijoueur local et rend la boucle édition→test coûteuse.
-5. **Le focus clavier.** Pendant le Play, les touches vont au jeu, pas aux raccourcis de l'éditeur — sauf `Échap` (= Stop) et `F5`/`Ctrl P` (= Play/Pause). À dire explicitement, sinon `Suppr` supprimera un objet pendant une partie.
+1. **Where does the snapshot live?** Not in the `Workspace` (it is not project data), not in the
+   `Scene` (it is the truth). Probably in the transport controller, in memory, discarded on Stop.
+2. **What happens to undo during Play?** The simulation writes through the reactive Proxy, so **it
+   produces Changes**. If those Changes enter the `Operations`, Play fills the undo stack with
+   noise. ADR-0003 says a Component never calls `setProperty()` — so a simulation write is not an
+   intent. **It must be verified that the pipeline actually honours that**, and it is the only
+   real risk in this feature.
+3. **Selection and the Inspector during Play?** Proposal: stay alive and read-only, with the panel
+   greyed out. Editing a value while the simulation writes it is a conflict with no winner.
+4. **Where does the game run?** Legacy opened a window; `design/` puts the transport in the
+   titlebar, therefore **in the viewport**. Follow `design/`: opening a window breaks local
+   multiplayer and makes the edit→test loop expensive.
+5. **Keyboard focus.** During Play, keys go to the game, not to the editor's shortcuts — except
+   `Esc` (= Stop) and `F5`/`Ctrl P` (= Play/Pause). To state explicitly, otherwise `Delete` will
+   delete an object mid-game.
 
-**Retour visuel demandé** : un liseré accent autour du viewport pendant le Play, et l'onglet de scène marqué. C'est la convention Unity/Godot et elle évite l'erreur classique « j'ai édité pendant le Play et tout a disparu au Stop ».
+**The visual feedback requested**: an accent border around the viewport during Play, and the scene
+tab marked. It is the Unity/Godot convention and it avoids the classic mistake "I edited during
+Play and everything vanished at Stop".
 
 ---
 
 ## G. Docking / Tabs / Timeline
 
-### G.1 Les trois organisations
+### G.1 The three organizations
 
-- **Legacy** : deux zones fixes. Le Graph est un `tab-content` **dans la zone centrale**, à la place du canvas (`#overlay` vs `#wrapper`, `tabs.js`) ; le Project et la Timeline partagent la zone du bas (`#resources`). Le Graph a en plus une `#toolbox` de 200 px à sa droite.
-- **`design/`** : L4 retenu. Timeline **conditionnelle**, en bande couvrant colonne gauche + centre, s'arrêtant avant l'Inspector qui garde une colonne ininterrompue. Le prototype **ne dessine pas de fenêtre Graph du tout**.
-- **v2** : L4 implémenté. Le Graph **remplace** le viewport dans la scène (`.stage`), sélectionné par une bande d'onglets qui n'apparaît qu'à partir de deux éditeurs ouverts (`editor.js`, `stageTabs`). La Timeline est un `<px-timeline>` sous la scène, masqué par défaut, avec un état vide honnête.
+- **Legacy**: two fixed zones. The Graph is a `tab-content` **in the centre zone**, in place of the
+  canvas (`#overlay` vs `#wrapper`, `tabs.js`); Project and Timeline share the bottom zone
+  (`#resources`). The Graph additionally has a 200 px `#toolbox` on its right.
+- **`design/`**: L4 adopted. A **conditional** Timeline, in a strip covering the left column plus
+  the centre, stopping before the Inspector, which keeps an unbroken column. The prototype **draws
+  no Graph window at all**.
+- **v2**: L4 implemented. The Graph **replaces** the viewport in the stage (`.stage`), selected by
+  a tab strip that only appears once two editors are open (`editor.js`, `stageTabs`). The Timeline
+  is a `<px-timeline>` under the stage, hidden by default, with an honest empty state.
 
-### G.2 « Faut-il mettre le Graph dans la zone basse, avec la Timeline, ouverte par défaut ? »
+### G.2 "Should the Graph go in the bottom zone, with the Timeline, open by default?"
 
-**Recommandation : non.** Argumentée :
+**Recommendation: no.** The argument:
 
-**Contre.**
-1. **Un graphe a besoin de surface.** Un nœud fait 168 × ~90 px ; une bande de 192 px de haut affiche **deux** nœuds l'un sous l'autre. La bande est dimensionnée pour des pistes de 24 px, pas pour une toile 2D.
-2. **La Timeline anime la scène ; le Graph édite une *autre* ressource.** La bande basse est, dans L4, ce qui est **subordonné à la scène affichée** — c'est même l'argument de D8 (l'Inspector garde sa colonne parce qu'il commente ce qui est au centre). Un `.px` n'est pas subordonné à la scène : c'est un document ouvert, avec sa propre pile d'undo (ADR-0027 §10). Il appartient à la zone des documents, c'est-à-dire la scène.
-3. **Le mécanisme existe déjà et est correct.** `Workspace` + `stageTabs` = un modèle de documents ouverts. Le déplacer vers le bas demanderait soit deux systèmes d'onglets, soit de mettre la Timeline dans les onglets — et une Timeline n'est pas un document.
-4. **« Ouverte par défaut »** contredit frontalement D8 : « quand rien n'est animé, la bande n'est pas là du tout ». Ouvrir par défaut une bande vide est du chrome sans contenu.
+**Against.**
+1. **A graph needs surface area.** A node is 168 × ~90 px; a 192 px-high strip shows **two** nodes
+   stacked. The strip is dimensioned for 24 px tracks, not for a 2D canvas.
+2. **The Timeline animates the scene; the Graph edits *another* resource.** In L4, the bottom
+   strip is what is **subordinate to the displayed scene** — that is D8's very argument (the
+   Inspector keeps its column because it comments on what is in the centre). A `.px` is not
+   subordinate to the scene: it is an open document, with its own undo stack (ADR-0027 §10). It
+   belongs to the document zone, that is, the stage.
+3. **The mechanism already exists and is correct.** `Workspace` + `stageTabs` = a model of open
+   documents. Moving it down would require either two tab systems, or putting the Timeline in the
+   tabs — and a Timeline is not a document.
+4. **"Open by default"** flatly contradicts D8: "when nothing is animated, the strip is not there
+   at all". Opening an empty strip by default is chrome with no content.
 
-**Pour (et ce que ça révèle de vrai).**
-Le besoin derrière la question est réel : **on ne peut pas voir la scène et le graphe en même temps.** Câbler un `.px` en regardant le personnage bouger est un usage évident. Mais la réponse à ce besoin n'est pas « mettre le graphe en bas », c'est **une vue partagée**.
+**For (and what it reveals that is true).**
+The need behind the question is real: **you cannot see the scene and the graph at the same time.**
+Wiring a `.px` while watching the character move is an obvious use. But the answer to that need is
+not "put the graph at the bottom", it is **a split view**.
 
-**Recommandation concrète, par ordre de coût :**
+**A concrete recommendation, in order of cost:**
 
-1. **P1 — Rendre l'onglet Graph découvrable.** Aujourd'hui la bande d'onglets n'apparaît qu'à deux éditeurs ouverts, donc ouvrir son premier `.px` fait **disparaître la scène sans onglet visible pour revenir**. C'est le vrai problème d'ergonomie de la zone centrale, et il est indépendant de la question posée. → la scène ouverte doit **toujours** compter comme un onglet, ou la bande doit s'afficher dès qu'un `.px` est ouvert.
-2. **P1 — Un partage horizontal de la scène** : `Viewport | Graph`, seam déplaçable, activé par un bouton « côte à côte » sur l'onglet. `<px-splitter>` existe, `.stage` est déjà un flex.
-3. **P2 — Détachement de fenêtre.** Déjà listé comme non fait dans `EDITOR.md`. Ne pas l'aborder maintenant.
+1. **P1 — Make the Graph tab discoverable.** Today the tab strip only appears with two editors
+   open, so opening your first `.px` makes **the scene disappear with no visible tab to go back**.
+   That is the real ergonomic problem of the centre zone, and it is independent of the question
+   asked. → the open scene must **always** count as a tab, or the strip must show as soon as a
+   `.px` is open.
+2. **P1 — A horizontal split of the stage**: `Viewport | Graph`, a movable seam, enabled by a
+   "side by side" button on the tab. `<px-splitter>` exists, `.stage` is already a flex.
+3. **P2 — Window detachment.** Already listed as not done in `EDITOR.md`. Not to be tackled now.
 
-**Ce qu'il faut faire de la Timeline :** rien, jusqu'à ce que le système d'animation existe. L'état vide actuel est correct et honnête.
+**What to do about the Timeline:** nothing, until the animation system exists. The current empty
+state is correct and honest.
 
 ---
 
 ## H. Design system
 
-### H.1 Constat central
+### H.1 The central finding
 
-**Un design system cohérent existe déjà**, dans `src/editor/ui/styles.js`, et il est meilleur que ce que ce rapport pourrait proposer : tokens par **rôle** et non par position dans une rampe, contrastes mesurés et annotés, densité qui bascule sous `pointer: coarse`, deux feuilles (document + shadow) pour une raison énoncée, primitives partagées (`.ghost`, `.line`, `.twisty`, `.searchbar`, `.empty-state`, scrollbars).
+**A coherent design system already exists**, in `src/editor/ui/styles.js`, and it is better than
+anything this report could propose: tokens by **role** rather than by position in a ramp, measured
+and annotated contrasts, density that switches under `pointer: coarse`, two sheets (document +
+shadow) for a stated reason, shared primitives (`.ghost`, `.line`, `.twisty`, `.searchbar`,
+`.empty-state`, scrollbars).
 
-**Il ne faut donc pas proposer un design system. Il faut fermer ses trous.**
+**So do not propose a design system. Close its gaps.**
 
-### H.2 Le système, résumé (pour référence)
+### H.2 The system, summarized (for reference)
 
-| Famille | Tokens | Note |
+| Family | Tokens | Note |
 |---|---|---|
-| Surfaces | `background` `surface` `surface-raised` `surface-overlay` `surface-input`, + `surface-hover` `surface-active` | rampe de 5 + 2 états. Pas d'ombre : la profondeur est une marche de surface, sauf le menu et le tiroir |
-| Bordures | `border` (quasi noir, structure) · `border-subtle` (interne) | **deux, et il n'y en a pas de troisième** |
-| Texte | `text-strong` `text` `text-muted` `text-dim` | contrastes annotés, le plus faible à 4,6:1 |
-| Accent | `accent` `accent-hover` `accent-active` `accent-muted` `accent-border` | **un seul accent**, corail `#ff7a45` |
-| Statut | `success` (Play) `danger` (destructif) `warning` (runtime) | sens, jamais décoration |
-| Type | `font-sans` + `font-mono` (valeurs seulement, `tabular-nums`) ; `text-2xs` 10 → `text-md` 13 | **jamais de police bitmap** : raison donnée (DPI fractionnaires) |
-| Espace | `space-0` 2 → `space-8` 32, multiples de 4 | `space-0` est le demi-pas documenté |
-| Densité | `row` 26 · `control` 22 · `hit` 28 · `grip` 8 | le visuel et la cible sont **séparés** — c'est ce qui rend compact et tactile à la fois |
-| Rayon | `radius-sm` 3 · `radius` 4 · `radius-lg` 6 | « 4 px se lit comme du soin, 8 px comme une web app » |
-| Mouvement | `duration-fast` 90 · `duration` 140 · `ease` | **sur la couleur seulement** ; rien ne se déplace |
-| Couches | `z-content` `z-splitter` `z-drawer` `z-overlay` `z-drag` | nommées |
+| Surfaces | `background` `surface` `surface-raised` `surface-overlay` `surface-input`, + `surface-hover` `surface-active` | a ramp of 5 + 2 states. No shadow: depth is a step of surface, except for the menu and the drawer |
+| Borders | `border` (near-black, structure) · `border-subtle` (internal) | **two, and there is no third** |
+| Text | `text-strong` `text` `text-muted` `text-dim` | annotated contrasts, the weakest at 4.6:1 |
+| Accent | `accent` `accent-hover` `accent-active` `accent-muted` `accent-border` | **one accent only**, coral `#ff7a45` |
+| Status | `success` (Play) `danger` (destructive) `warning` (runtime) | meaning, never decoration |
+| Type | `font-sans` + `font-mono` (values only, `tabular-nums`); `text-2xs` 10 → `text-md` 13 | **never a bitmap font**: the reason is given (fractional DPI) |
+| Space | `space-0` 2 → `space-8` 32, multiples of 4 | `space-0` is the documented half-step |
+| Density | `row` 26 · `control` 22 · `hit` 28 · `grip` 8 | the visual and the target are **separate** — that is what makes it compact and touch-friendly at once |
+| Radius | `radius-sm` 3 · `radius` 4 · `radius-lg` 6 | "4 px reads as care, 8 px as a web app" |
+| Motion | `duration-fast` 90 · `duration` 140 · `ease` | **on colour only**; nothing moves |
+| Layers | `z-content` `z-splitter` `z-drawer` `z-overlay` `z-drag` | named |
 
-### H.3 Trous à combler
+### H.3 Gaps to close
 
-| # | Trou | Correction |
+| # | Gap | Fix |
 |---|---|---|
-| 1 | `--px-surface-sunken` utilisé, non défini (2 sites) | Le définir. C'est le fond du damier : une valeur sous `--px-background`, autour de `#111216` |
-| 2 | `--px-radius-md` utilisé, non défini (1 site) | Remplacer par `--px-radius`, ou définir |
-| 3 | `--px-z-drag` défini, **jamais utilisé** | Il servira au fantôme de la session de drag (§B.4). Ne pas le retirer |
-| 4 | Pas de token pour **l'état drag-over** | `--px-drop-line` et `--px-drop-outline` ne sont pas nécessaires : `--px-accent` suffit. Ce qui manque est **la classe partagée** `.drop-target`, pas un token |
-| 5 | Pas de token de **famille** (Hierarchy/Inspector/Project/Timeline) | `design/README.md` le dit lui-même : les teintes n'existent qu'en direction B, rejetée. **Décision à prendre, pas à supposer.** Recommandation : ne pas introduire de famille pour les fenêtres, mais oui pour les **catégories de nœuds** (§C.3), où l'information est réellement utile |
-| 6 | Pas de token pour les **types de données** (ports, fils) | À introduire **si et seulement si** on colore les fils par type (§C.4). 4 valeurs max |
-| 7 | `focus` | `outline: 2px solid var(--px-accent); outline-offset: -1px` sur `:focus-visible`, partout, déjà fait. Rien à faire |
-| 8 | `disabled` | `opacity: 0.35` sur `.ghost[disabled]`. Cohérent avec le prototype (0.32). Rien à faire |
-| 9 | Icônes | 30 glyphes, deux tailles (16, 20), épaisseur **constante à l'écran** (calculée depuis la taille). Excellent. Manquants : voir §H.4 |
+| 1 | `--px-surface-sunken` used, not defined (2 sites) | Define it. It is the chequerboard's background: a value below `--px-background`, around `#111216` |
+| 2 | `--px-radius-md` used, not defined (1 site) | Replace it with `--px-radius`, or define it |
+| 3 | `--px-z-drag` defined, **never used** | It will serve the drag session's ghost (§B.4). Do not remove it |
+| 4 | No token for the **drag-over state** | `--px-drop-line` and `--px-drop-outline` are not needed: `--px-accent` is enough. What is missing is **the shared class** `.drop-target`, not a token |
+| 5 | No **family** token (Hierarchy/Inspector/Project/Timeline) | `design/README.md` says it itself: the hues exist only in direction B, which was rejected. **A decision to take, not to assume.** Recommendation: do not introduce a family for windows, but yes for **node categories** (§C.3), where the information is genuinely useful |
+| 6 | No token for **data types** (ports, wires) | To introduce **if and only if** wires are coloured by type (§C.4). 4 values max |
+| 7 | `focus` | `outline: 2px solid var(--px-accent); outline-offset: -1px` on `:focus-visible`, everywhere, already done. Nothing to do |
+| 8 | `disabled` | `opacity: 0.35` on `.ghost[disabled]`. Consistent with the prototype (0.32). Nothing to do |
+| 9 | Icons | 30 glyphs, two sizes (16, 20), a stroke weight **constant on screen** (computed from the size). Excellent. Missing ones: see §H.4 |
 
-### H.4 Icônes — inventaire et décisions
+### H.4 Icons — inventory and decisions
 
-**Ce que la v2 a (30)** : object, rectangle, circle, camera, sprite, particles, tilemap, component, graph, scene, image, hierarchy, inspector, folder, timeline, chevron, plus, more, share, sound, minus, grip, trash, close, search, focus, grid, eye, eye-off, lock, unlock.
+**What v2 has (30)**: object, rectangle, circle, camera, sprite, particles, tilemap, component,
+graph, scene, image, hierarchy, inspector, folder, timeline, chevron, plus, more, share, sound,
+minus, grip, trash, close, search, focus, grid, eye, eye-off, lock, unlock.
 
-**Ce que `design/icons.js` ajoute (17, dessinés aux mêmes règles, donc copiables tels quels)** : play, pause, stop, step, light, audio, script, graph *(autre dessin)*, physics, layers, drag *(= grip)*, check, ruler, magnet, frame, more, share.
+**What `design/icons.js` adds (17, drawn to the same rules, so copyable as is)**: play, pause,
+stop, step, light, audio, script, graph *(a different drawing)*, physics, layers, drag (= grip),
+check, ruler, magnet, frame, more, share.
 
-**À reprendre, par besoin réel :**
+**To take, by real need:**
 
-| Glyphe | Pour quoi | Priorité |
+| Glyph | For what | Priority |
 |---|---|---|
-| `play` `pause` `stop` | le transport (§F) | P1 |
-| `check` | validation, états | P2 |
-| `magnet` `ruler` `frame` | outils du viewport (snap, règles, cadrer) | P2 |
-| `light` `physics` `script` | types de Components à venir | à l'arrivée du Component |
-| `step` `layers` | pas d'usage identifié | **ne pas ajouter** |
+| `play` `pause` `stop` | the transport (§F) | P1 |
+| `check` | validation, states | P2 |
+| `magnet` `ruler` `frame` | viewport tools (snap, rulers, frame) | P2 |
+| `light` `physics` `script` | upcoming Component types | when the Component arrives |
+| `step` `layers` | no identified use | **do not add** |
 
-**Icônes communes vs spécifiques :**
-- **communes** (une seule définition, jamais dupliquée) : chevron, plus, minus, close, search, trash, more, grip, eye/eye-off, lock/unlock, check, focus, grid ;
-- **spécifiques** : les types d'Object (object, rectangle, circle, sprite, camera, particles, tilemap), les types de ressource (folder, scene, component, image, sound), les fenêtres (hierarchy, inspector, timeline) ;
-- **règle déjà en place et à défendre** : `hierarchy` (la fenêtre) et `scene` (la ressource) sont **deux glyphes différents** — c'est un constat d'ADR-0025 et il est juste.
+**Common vs specific icons:**
+- **common** (one definition, never duplicated): chevron, plus, minus, close, search, trash, more,
+  grip, eye/eye-off, lock/unlock, check, focus, grid;
+- **specific**: the Object types (object, rectangle, circle, sprite, camera, particles, tilemap),
+  the resource types (folder, scene, component, image, sound), the windows (hierarchy, inspector,
+  timeline);
+- **a rule already in place and worth defending**: `hierarchy` (the window) and `scene` (the
+  resource) are **two different glyphs** — that is an ADR-0025 finding and it is right.
 
-**Le cas `walk.px` — un désaccord explicite entre `design/` et ADR-0026.**
+**The `walk.px` case — an explicit disagreement between `design/` and ADR-0026.**
 
-`design/prototype.js` (`ASSETS`) donne à `walk.px` le glyphe **`graph`** (des nœuds et des fils). En v2, `iconForResource()` mappe `ResourceKind.COMPONENT` → `'component'` (l'hexagone), et `ResourceKind.GRAPH` → `'graph'` — mais **plus rien ne crée de ressource `GRAPH`** (ADR-0026 §1).
+`design/prototype.js` (`ASSETS`) gives `walk.px` the **`graph`** glyph (nodes and wires). In v2,
+`iconForResource()` maps `ResourceKind.COMPONENT` → `'component'` (the hexagon), and
+`ResourceKind.GRAPH` → `'graph'` — but **nothing creates a `GRAPH` resource any more**
+(ADR-0026 §1).
 
-Donc aujourd'hui un `.px` dans le Project montre **l'hexagone**, pas le graphe. Le prototype montre l'inverse.
+So today a `.px` in the Project shows **the hexagon**, not the graph. The prototype shows the
+opposite.
 
-**Recommandation : garder l'hexagone, et considérer que `design/` a tort ici** — il précède l'unification d'ADR-0026. L'argument : ADR-0026 dit qu'un créateur qui fabrique un Component obtient **une** chose appelée Component. L'icône doit dire « Component », pas « graphe » — le graphe est *ce qu'il y a dedans*, et il se découvre en l'ouvrant.
+**Recommendation: keep the hexagon, and treat `design/` as wrong here** — it predates ADR-0026's
+unification. The argument: ADR-0026 says a creator who makes a Component gets **one** thing called
+a Component. The icon must say "Component", not "graph" — the graph is *what is inside it*, and it
+is discovered by opening it.
 
-**Deux conséquences à traiter :**
-- l'entrée `graph` de `RESOURCE_ICONS` est morte tant que rien ne crée ce `kind` — la laisser est sans danger, mais elle mérite un commentaire, sinon quelqu'un « corrigera » le mapping du `.px` vers elle ;
-- le glyphe `graph` **doit** rester : il sert à l'onglet de scène du `.px` ouvert, à l'état vide de la toile, et à l'entrée « Behavior Graph » du menu Add Component. C'est l'icône du **canevas**, pas de la ressource. Cette distinction est exactement la même que hierarchy/scene, et elle est saine.
+**Two consequences to handle:**
+- the `graph` entry of `RESOURCE_ICONS` is dead as long as nothing creates that `kind` — leaving
+  it is harmless, but it deserves a comment, otherwise someone will "fix" the `.px` mapping to
+  point at it;
+- the `graph` glyph **must** stay: it serves the scene tab of an open `.px`, the canvas's empty
+  state, and the "Behavior Graph" entry of the Add Component menu. It is the **canvas**'s icon,
+  not the resource's. That distinction is exactly the hierarchy/scene one, and it is sound.
 
-**À ne pas copier du legacy :** tout. Font Awesome (5 graisses, 20 fichiers webfont) et Material Icons par ligature (`<i class="material-icons">description</i>`). ADR-0006 et `ui/icons.js` ont déjà tranché : une police d'icônes traverse mal une Shadow Root et coûte des requêtes. `legacy/webfonts/` ne doit jamais être touché.
+**Not to copy from Legacy: anything.** Font Awesome (5 weights, 20 webfont files) and Material
+Icons by ligature (`<i class="material-icons">description</i>`). ADR-0006 and `ui/icons.js` have
+already settled it: an icon font crosses a Shadow Root badly and costs requests. `legacy/webfonts/`
+must never be touched.
 
 ---
 
-## I. `LEGACY ONLY` — ce qui ne doit pas être recopié
+## I. `LEGACY ONLY` — what must not be copied over
 
-Format demandé : comportement → pourquoi il est intéressant → pourquoi l'implémentation est à jeter → architecture v2.
+The requested format: the behaviour → why it is interesting → why the implementation is to be
+thrown away → the v2 architecture.
 
-### I.1 `Sorter` — le tri par mutation du DOM
+### I.1 `Sorter` — sorting by mutating the DOM
 
-- **Intéressant :** l'axe horizontal qui donne le niveau de profondeur ; le trou pointillé.
-- **À jeter :** `dragEnter` fait `insertBefore` (le DOM devient le modèle), `drag` appelle `Scene.main.objects[...].addChild()` **pendant le survol** (le modèle est muté avant le dépôt), `data-position` porte la profondeur dans le DOM avec un `padding-left` codé en dur de 1 à 5 niveaux, `drop` est commenté.
-- **v2 :** `windows/drop.js` (géométrie pure) + `REPARENT { parent, index }` (ADR-0019) au **dépôt seulement**. Ajouter l'axe horizontal comme **lecture**, jamais comme mutation.
+- **Interesting:** the horizontal axis giving the depth level; the dashed hole.
+- **To throw away:** `dragEnter` does an `insertBefore` (the DOM becomes the model), `drag` calls
+  `Scene.main.objects[...].addChild()` **during the hover** (the model is mutated before the
+  drop), `data-position` carries depth in the DOM with a `padding-left` hard-coded for 1 to 5
+  levels, `drop` is commented out.
+- **v2:** `windows/drop.js` (pure geometry) + `REPARENT { parent, index }` (ADR-0019) on the
+  **drop only**. Add the horizontal axis as a **reading**, never as a mutation.
 
-### I.2 `Node` — le nœud `contenteditable` et les ports par index
+### I.2 `Node` — the `contenteditable` node and ports by index
 
-- **Intéressant :** taper `move $x $y` et voir les ports apparaître est une idée séduisante.
-- **À jeter :** le type d'un nœud n'est pas une chaîne tapée ; `this.inputs[i]` / `this.outputs[i + 1]` adressent les ports par **index** — un type qui gagne un port recâble tous les graphes existants ; les ports sont recréés à chaque frappe ; la position du caret est reconstruite à la main ; `connector.other` est une référence DOM ↔ DOM qui n'existe qu'à l'écran.
-- **v2 :** ADR-0027 §2 et §3 — identité stable pour nœud, port et connexion ; ports déclarés par le type ; un seul SVG.
+- **Interesting:** typing `move $x $y` and watching the ports appear is a seductive idea.
+- **To throw away:** a node's type is not a typed string; `this.inputs[i]` / `this.outputs[i + 1]`
+  address ports by **index** — a type that gains a port rewires every existing graph; the ports are
+  recreated on every keystroke; the caret position is rebuilt by hand; `connector.other` is a
+  DOM ↔ DOM reference that exists only on screen.
+- **v2:** ADR-0027 §2 and §3 — a stable identity for node, port and connection; ports declared by
+  the type; a single SVG.
 
-### I.3 `Graph.main` statique et `updateScript()` qui `console.log`
+### I.3 A static `Graph.main` and an `updateScript()` that `console.log`s
 
-- **Intéressant :** rien.
-- **À jeter :** aucun modèle, aucune sérialisation, aucune exécution. Fermer l'onglet perdait le travail.
-- **v2 :** `ComponentDefinition` + `Operations` + `validateGraph()` + `interpretGraph()`.
+- **Interesting:** nothing.
+- **To throw away:** no model, no serialization, no execution. Closing the tab lost the work.
+- **v2:** `ComponentDefinition` + `Operations` + `validateGraph()` + `interpretGraph()`.
 
-### I.4 `editor/graph/compiler.js` — le lexer d'un langage textuel
+### I.4 `editor/graph/compiler.js` — the lexer for a textual language
 
-- **À jeter :** déjà abandonné par ADR-0009. `.px` est **interprété**, pas compilé, et sans `eval`.
+- **To throw away:** already abandoned by ADR-0009. `.px` is **interpreted**, not compiled, and
+  without `eval`.
 
-### I.5 `Properties` — l'Inspector par réflexion sur `typeof` et liaison par classe CSS
+### I.5 `Properties` — an Inspector by reflection on `typeof`, and binding by CSS class
 
-- **Intéressant :** l'idée d'un Inspector piloté par les données, pas par des `if` par type.
-- **À jeter :** le type d'un contrôle est deviné par `typeof value` (et une couleur est détectée par `value[0] === '#'`) ; la liaison champ ↔ modèle passe par `document.getElementsByClassName(obj.id + '-' + prop)` ; une liste noire codée en dur (`case 'id': break; case 'uid': break; …`) décide ce qui s'affiche ; les propriétés sont préfixées `_` et `$` pour signaler la réactivité.
-- **v2 :** `componentSchema()` (ADR-0007), `PropertyType` (ADR-0023), `px-field` lié à sa propre propriété, aucune classe CSS porteuse d'identité.
+- **Interesting:** the idea of an Inspector driven by data, not by per-type `if`s.
+- **To throw away:** a control's type is guessed from `typeof value` (and a colour is detected by
+  `value[0] === '#'`); the field ↔ model binding goes through
+  `document.getElementsByClassName(obj.id + '-' + prop)`; a hard-coded blacklist
+  (`case 'id': break; case 'uid': break; …`) decides what is shown; properties are prefixed `_`
+  and `$` to signal reactivity.
+- **v2:** `componentSchema()` (ADR-0007), `PropertyType` (ADR-0023), a `px-field` bound to its own
+  property, no CSS class carrying identity.
 
-### I.6 `Dnd` — l'état de drag statique et global
+### I.6 `Dnd` — static, global drag state
 
-- **Intéressant :** le curseur qui suit l'état (grab / grabbing / resize directionnel).
-- **À jeter :** `Dnd.hovering`, `Dnd.drag`, `Dnd.resize` sont des statiques lues **par le renderer lui-même** — c'est la violation d'architecture que `tools/layers/run.js` rapporte encore. `setCursor()` écrit sur `document.body.style` à chaque frame. `applyDropEvents()` **clone le nœud DOM** et supprime l'original : le modèle n'est jamais consulté.
-- **v2 :** `dnd/payload.js` (une valeur), `dnd/rules.js` (la sémantique), curseur par CSS et par `dropEffect`.
+- **Interesting:** the cursor following the state (grab / grabbing / directional resize).
+- **To throw away:** `Dnd.hovering`, `Dnd.drag` and `Dnd.resize` are statics read **by the renderer
+  itself** — that is the architecture violation `tools/layers/run.js` still reports. `setCursor()`
+  writes to `document.body.style` every frame. `applyDropEvents()` **clones the DOM node** and
+  deletes the original: the model is never consulted.
+- **v2:** `dnd/payload.js` (a value), `dnd/rules.js` (the semantics), the cursor through CSS and
+  `dropEffect`.
 
-### I.7 Le renommage par `contenteditable` partout
+### I.7 Renaming by `contenteditable`, everywhere
 
-- **Intéressant :** l'édition en place, sans boîte de dialogue.
-- **À jeter :** `div[contenteditable]` sur chaque ligne, `input` → `scene.updateName(this)`, `keypress` → `System.validate`, `focusout` → `window.getSelection().removeAllRanges()`. Aucune annulation, aucun `batch`, le DOM porte le texte.
-- **v2 :** ADR-0026 §3 — second clic + pause, ou `F2`, `Entrée` valide, `Échap` annule, un `batch` frappé au focus donc **une** entrée d'undo.
+- **Interesting:** in-place editing, with no dialog.
+- **To throw away:** a `div[contenteditable]` on every row, `input` → `scene.updateName(this)`,
+  `keypress` → `System.validate`, `focusout` → `window.getSelection().removeAllRanges()`. No undo,
+  no `batch`, and the DOM carries the text.
+- **v2:** ADR-0026 §3 — a second click + a pause, or `F2`, `Enter` commits, `Esc` cancels, one
+  `batch` opened at focus and therefore **one** undo entry.
 
-### I.8 `filter.js` — le filtre par `style.display = 'none'`
+### I.8 `filter.js` — filtering by `style.display = 'none'`
 
-- **À jeter :** cache une ligne à la fois, donc en arbre il cache un enfant qui correspond avec son parent qui ne correspond pas.
-- **v2 :** `windows/search.js`, `visibleObjects()` — **une correspondance emmène ses ancêtres**, pur, testé.
+- **To throw away:** it hides one row at a time, so in a tree it hides a matching child whose
+  parent does not match.
+- **v2:** `windows/search.js`, `visibleObjects()` — **a match brings its ancestors along**, pure,
+  tested.
 
-### I.9 `select.js` — le `<select>` réimplémenté en `<div>`
+### I.9 `select.js` — a `<select>` reimplemented as `<div>`s
 
-- **À jeter :** copié-collé de W3Schools, variables globales `var x, i, j`, `arrNo.indexOf(i)` utilisé comme booléen (bug : l'index 0 est faux).
-- **v2 :** `<select>` natif, `appearance: none` + flèche en dégradé (`ui/styles.js`).
+- **To throw away:** copy-pasted from W3Schools, global `var x, i, j`, `arrNo.indexOf(i)` used as a
+  boolean (a bug: index 0 is falsy).
+- **v2:** a native `<select>`, `appearance: none` + a gradient arrow (`ui/styles.js`).
 
-### I.10 La création de prefab au drop Hierarchy → Project
+### I.10 Prefab creation on a Hierarchy → Project drop
 
-- **Intéressant :** le geste est le bon.
-- **À jeter :** `prefab.copy(instance)` + copie de composants par `new window[Name]()` — instanciation par nom global.
-- **v2 :** **refusé avec sa raison** (ADR-0026 §7), en attendant la décision prefab. Correct.
+- **Interesting:** the gesture is the right one.
+- **To throw away:** `prefab.copy(instance)` + copying components with `new window[Name]()` —
+  instantiation by global name.
+- **v2:** **refused with its reason** (ADR-0026 §7), pending the prefab decision. Correct.
 
-### I.11 `play.js` — Play ouvre une autre fenêtre
+### I.11 `play.js` — Play opens another window
 
-- **Intéressant :** un jeu dimensionné à la caméra.
-- **À jeter :** `window.open` + `app.data = { objects: scene.objects }` — passage d'objets vivants entre contextes, aucune sérialisation, bloqué par les bloqueurs de popups.
-- **v2 :** voir §F — le `Runtime` du viewport, avec instantané.
+- **Interesting:** a game sized to the camera.
+- **To throw away:** `window.open` + `app.data = { objects: scene.objects }` — passing live objects
+  between contexts, no serialization, blocked by popup blockers.
+- **v2:** see §F — the viewport's `Runtime`, with a snapshot.
 
 ---
 
-## J. Priorités
+## J. Priorities
 
-### P0 — ergonomie générale, à faire avant tout le reste
+### P0 — general ergonomics, to do before anything else
 
-1. **Grille du Graph solidaire de la vue** (`patternTransform`), plus deux niveaux mineur/majeur.
-2. **Session de drag au shell** : fantôme, zone marquée, curseur, annulation propre (§B.4).
-3. **Afficher `describe()` / `refuses()`** — la phrase du refus et celle de l'action.
-4. **`<px-resource-field>`** : `PropertyType.RESOURCE` devient éditable (sélecteur + vignette + effacer + drop).
-5. **Recherche de nœuds** : catégories repliées à l'ouverture, score, `aliases` + `keywords` dans la table de nœuds.
-6. **La bande d'onglets doit apparaître dès qu'un `.px` est ouvert** — sinon ouvrir un `.px` fait disparaître la scène sans retour visible.
+1. **The Graph's grid bound to the view** (`patternTransform`), plus two minor/major levels.
+2. **A drag session at the shell**: ghost, marked zone, cursor, clean cancellation (§B.4).
+3. **Display `describe()` / `refuses()`** — the sentence of the refusal and of the action.
+4. **`<px-resource-field>`**: `PropertyType.RESOURCE` becomes editable (picker + thumbnail + clear
+   + drop).
+5. **Node search**: categories collapsed on open, scoring, `aliases` + `keywords` in the node
+   table.
+6. **The tab strip must appear as soon as a `.px` is open** — otherwise opening a `.px` makes the
+   scene disappear with no way back in sight.
 
-### P1 — améliorations significatives
+### P1 — significant improvements
 
-7. Transport **Play / Pause / Stop** sur le `Runtime` existant, avec instantané (§F).
-8. Les **deux tokens manquants** (`--px-surface-sunken`, `--px-radius-md`).
-9. **Clic droit sur le fond de la toile = menu de création** ; pan sur milieu + espace-glisser.
-10. **Reparentage par déplacement horizontal** dans la Hierarchy (l'idée du legacy).
-11. **Menu contextuel** dans Project et Hierarchy (`openMenu` + `pointAnchor`).
-12. **Icône sur le nœud** + **barre d'en-tête colorée par catégorie**.
-13. **Vue partagée `Viewport | Graph`** (`<px-splitter>` dans `.stage`).
-14. **Réordonner les propriétés d'un `.px`** — demande une opération Core, donc un amendement d'ADR-0027 §5.
-15. **Valeur en ligne** sur une entrée de nœud non connectée (`number`/`int`/`boolean`/`string`).
+7. A **Play / Pause / Stop** transport on the existing `Runtime`, with a snapshot (§F).
+8. The **two missing tokens** (`--px-surface-sunken`, `--px-radius-md`).
+9. **Right click on the canvas background = the creation menu**; pan on middle + space-drag.
+10. **Reparenting by horizontal movement** in the Hierarchy (Legacy's idea).
+11. A **context menu** in Project and Hierarchy (`openMenu` + `pointAnchor`).
+12. **An icon on the node** + **a header bar coloured by category**.
+13. **A split `Viewport | Graph` view** (`<px-splitter>` inside `.stage`).
+14. **Reordering a `.px`'s properties** — needs a Core operation, therefore an amendment to
+    ADR-0027 §5.
+15. **An inline value** on an unconnected node input (`number`/`int`/`boolean`/`string`).
 
 ### P2 — polish
 
-16. Classe partagée `.drop-target`, en remplacement des quatre sélecteurs de l'Inspector.
-17. Survol d'un nœud (un cran d'éclaircissement).
-18. Couleur de fil par famille de type (4 familles maximum).
-19. Recherche de nœuds **contextuelle** : lâcher un fil dans le vide ouvre le menu filtré par compatibilité de port.
-20. Tri du Project (nom / type / date), dans le menu `…`.
-21. Réinitialiser une propriété à son défaut.
-22. Icônes `check`, `magnet`, `ruler`, `frame`.
-23. Vignette de scène, contrôle de liste pour `PropertyType.ARRAY`, multi-sélection.
+16. A shared `.drop-target` class, replacing the Inspector's four selectors.
+17. Node hover (one step of lightening).
+18. Wire colour by type family (4 families maximum).
+19. **Contextual** node search: releasing a wire into empty space opens the menu filtered by port
+    compatibility.
+20. Project sorting (name / type / date), in the `…` menu.
+21. Resetting a property to its default.
+22. The `check`, `magnet`, `ruler` and `frame` icons.
+23. A scene thumbnail, a list control for `PropertyType.ARRAY`, multiple selection.
 
-**Explicitement non planifié :** prefab (décision ouverte), détachement de fenêtre, vue liste du Project, onglet Prefabs, minimap, `Ctrl K`.
+**Explicitly not planned:** prefabs (an open decision), window detachment, a Project list view, a
+Prefabs tab, a minimap, `Ctrl K`.
 
 ---
 
-## K. Instructions à transmettre à l'agent d'implémentation
+## K. Instructions for the implementing agent
 
-Concrètes, ordonnées, chacune vérifiable.
+Concrete, ordered, each one verifiable.
 
-### K.1 — Grille du Graph (1 fichier, ~10 lignes)
+### K.1 — The Graph's grid (1 file, ~10 lines)
 
-Dans `src/editor/windows/graph.js` :
-- garder la `<rect>` de fond hors du `<g>` transformé, mais poser sur le `<pattern>` (à chaque `#draw()`) :
-  `patternTransform = translate(view.x, view.y) scale(view.zoom)` ;
-- ajouter un second `<pattern>` mineur de `GRID` imbriqué dans le majeur de `GRID * 4`, comme le faisait `legacy/index.html` (`#smallGrid` dans `#grid`) ;
-- atténuer le mineur sous `zoom < 0.5`.
-- **Vérification :** panner de 500 px doit déplacer la grille de 500 px ; zoomer à 200 % doit doubler l'espacement des lignes.
+In `src/editor/windows/graph.js`:
+- keep the background `<rect>` outside the transformed `<g>`, but set on the `<pattern>` (on every
+  `#draw()`): `patternTransform = translate(view.x, view.y) scale(view.zoom)`;
+- add a second minor `<pattern>` of `GRID` nested inside the major one of `GRID * 4`, as
+  `legacy/index.html` did (`#smallGrid` inside `#grid`);
+- fade the minor below `zoom < 0.5`.
+- **Verification:** panning by 500 px must move the grid by 500 px; zooming to 200 % must double
+  the line spacing.
 
-### K.2 — Session de drag (1 module neuf, 4 fenêtres à brancher)
+### K.2 — The drag session (1 new module, 4 windows to wire)
 
-Créer `src/editor/dnd/session.js` — **vue seulement, aucun modèle, aucune règle**. Il ne fait qu'orchestrer ce qui existe :
-- `begin(payload, ghost)` : monte le fantôme sur `document.body`, `z-index: var(--px-z-drag)` (le token attend), `cursor: grabbing` sur `document.body` ;
-- `move(x, y)` : demande à chaque fenêtre `dropZoneAt(payload, x, y)` (l'Inspector expose déjà cette forme), appelle `canDrop()`, marque **une seule** zone (`.drop-target` acceptée, ou refusée en `--px-danger`), affiche la phrase après 250 ms ;
-- `end()` / `cancel()` : `performDrop()` ou rien, puis nettoyage intégral. **`pointercancel` doit passer par `cancel()`.**
+Create `src/editor/dnd/session.js` — **view only, no model, no rules**. It only orchestrates what
+exists:
+- `begin(payload, ghost)`: mounts the ghost on `document.body`,
+  `z-index: var(--px-z-drag)` (the token is waiting), `cursor: grabbing` on `document.body`;
+- `move(x, y)`: asks each window `dropZoneAt(payload, x, y)` (the Inspector already exposes that
+  shape), calls `canDrop()`, marks **a single** zone (`.drop-target` when accepted, or refused in
+  `--px-danger`), shows the sentence after 250 ms;
+- `end()` / `cancel()`: `performDrop()` or nothing, then a complete cleanup. **`pointercancel` must
+  go through `cancel()`.**
 
-Brancher : `windows/project.js` émet déjà `px-drag-start` / `px-drag-end` — remplacer le `carried` de `editor.js:548-569` par la session. Ajouter l'émission dans `windows/hierarchy.js` (avec `objectPayload`) pour que le refus prefab devienne atteignable.
+Wiring: `windows/project.js` already emits `px-drag-start` / `px-drag-end` — replace the `carried`
+of `editor.js:548-569` with the session. Add the emission in `windows/hierarchy.js` (with
+`objectPayload`) so that the prefab refusal becomes reachable.
 
-**Interdits :** ne pas muter le modèle pendant le survol ; ne rien déplacer sauf le fantôme ; ne pas écrire le curseur dans un handler de `move`.
+**Forbidden:** do not mutate the model during the hover; do not move anything but the ghost; do not
+write the cursor inside a `move` handler.
 
-### K.3 — Champ ressource
+### K.3 — The resource field
 
-Créer `src/editor/ui/resource-field.js` : vignette 20 px (damier + image ou glyphe) · nom · `…` · `×`. Le `…` ouvre `openMenu` avec les ressources filtrées par `acceptsResource()` — **la même fonction que la règle de drop**, pas une seconde. Puis `inspector/schema.js` : `[PropertyType.RESOURCE]: FieldKind.RESOURCE`. Ne pas laisser `READONLY` avec un contournement.
+Create `src/editor/ui/resource-field.js`: a 20 px thumbnail (chequerboard + image, or a glyph) ·
+the name · `…` · `×`. The `…` opens `openMenu` with the resources filtered by `acceptsResource()` —
+**the same function as the drop rule**, not a second one. Then `inspector/schema.js`:
+`[PropertyType.RESOURCE]: FieldKind.RESOURCE`. Do not leave it `READONLY` with a workaround.
 
-### K.4 — Recherche de nœuds
+### K.4 — Node search
 
-- Ajouter `aliases?: string[]` et `keywords?: string[]` au `@typedef NodeDefinition` de `core/graph/nodes.js`, et les remplir dans `core/graph/standard.js`. C'est **la même table** — l'argument d'ADR-0027 §3 s'applique tel quel, aucun ADR à amender.
-- Créer `searchNodes(registry, query, context)`, **pur**, testé sous Node, avec le classement en 6 niveaux de §C.7. Pas de Levenshtein.
-- `ui/menu.js` : ajouter des options `{ collapsed, rank }`. **Ne pas dupliquer le composant** — il est partagé par quatre appelants (ADR-0026 §10). Un menu sans `collapsed` doit se comporter exactement comme aujourd'hui.
-- Ajouter `←` / `→` pour replier/déplier une catégorie ; une frappe déplie tout.
+- Add `aliases?: string[]` and `keywords?: string[]` to the `@typedef NodeDefinition` in
+  `core/graph/nodes.js`, and fill them in `core/graph/standard.js`. It is **the same table** —
+  ADR-0027 §3's argument applies as is, and no ADR needs amending.
+- Create `searchNodes(registry, query, context)`, **pure**, tested under Node, with the 6-level
+  ranking from §C.7. No Levenshtein.
+- `ui/menu.js`: add `{ collapsed, rank }` options. **Do not duplicate the component** — it is
+  shared by four callers (ADR-0026 §10). A menu without `collapsed` must behave exactly as it does
+  today.
+- Add `←` / `→` to collapse/expand a category; typing expands everything.
 
 ### K.5 — Transport
 
-Avant d'écrire quoi que ce soit, **répondre à la question 2 de §F.3** : une écriture de simulation entre-t-elle dans la pile d'undo ? Si oui, aucun bouton Play ne doit être posé avant que ce soit corrigé. Ensuite : instantané par `serializeScene()`, `runtime.running`, restauration au Stop, liseré accent autour du viewport pendant l'exécution, `Échap` = Stop, les autres raccourcis d'éditeur suspendus.
+Before writing anything, **answer question 2 of §F.3**: does a simulation write enter the undo
+stack? If it does, no Play button must be placed before that is fixed. Then: a snapshot through
+`serializeScene()`, `runtime.running`, restoration on Stop, an accent border around the viewport
+while running, `Esc` = Stop, the other editor shortcuts suspended.
 
-### K.6 — Onglets
+### K.6 — Tabs
 
-Dans `stageTabs` (`editor.js`), la condition `element.hidden = open.length < 2` fait disparaître la scène sans onglet de retour quand un `.px` s'ouvre. Compter la scène comme un onglet, ou afficher la bande dès qu'un `.px` est ouvert. **C'est un P0 déguisé en détail.**
+In `stageTabs` (`editor.js`), the condition `element.hidden = open.length < 2` makes the scene
+disappear with no tab to come back to when a `.px` opens. Count the scene as a tab, or show the
+strip as soon as a `.px` is open. **It is a P0 disguised as a detail.**
 
 ### K.7 — Tokens
 
-`ui/styles.js` : définir `--px-surface-sunken` (autour de `#111216`, sous `--px-background`) ; remplacer `--px-radius-md` par `--px-radius` aux appels, ou le définir. Trois sites : `inspector.js:328`, `project.js:110`, `project.js:131`.
+`ui/styles.js`: define `--px-surface-sunken` (around `#111216`, below `--px-background`); replace
+`--px-radius-md` with `--px-radius` at the call sites, or define it. Three sites:
+`inspector.js:328`, `project.js:110`, `project.js:131`.
 
-### K.8 — Ce qu'il ne faut PAS faire
+### K.8 — What NOT to do
 
-- **Ne pas** réintroduire les rails ou les tampons multicolores de la direction B : `design/README.md` les a rejetés, seule la couleur d'icône d'en-tête était retenue, et même celle-là n'a pas de valeur arrêtée en Modern Pixel.
-- **Ne pas** ajouter d'onglet Prefabs, de vue liste, de minimap, de `Ctrl K` — chacun est soit reporté par un ADR, soit dessiné par un prototype qui se déclare lui-même non normatif sur la densité et les fonctionnalités.
-- **Ne pas** faire réagir la liste sous le pointeur pendant un drag. Le commentaire de `hierarchy.js` (« a list that reflows under the pointer is a list you cannot aim at ») est juste ; le legacy prouve le contraire par l'exemple.
-- **Ne pas** suivre `design/` sur l'icône de `walk.px` : le prototype précède l'unification `.px` d'ADR-0026 (§H.4).
-- **Ne pas** mettre le Graph dans la bande basse (§G.2). Le besoin réel est la **vue partagée**.
-- **Ne pas** toucher à `legacy/`. Il est une source de lecture, pas de code.
+- **Do not** reintroduce direction B's multicoloured rails or badges: `design/README.md` rejected
+  them, only the header icon colour was kept, and even that has no settled value in Modern Pixel.
+- **Do not** add a Prefabs tab, a list view, a minimap or `Ctrl K` — each is either deferred by an
+  ADR, or drawn by a prototype that declares itself non-normative on density and features.
+- **Do not** make the list reflow under the pointer during a drag. The comment in `hierarchy.js`
+  ("a list that reflows under the pointer is a list you cannot aim at") is right; Legacy proves the
+  converse by example.
+- **Do not** follow `design/` on the `walk.px` icon: the prototype predates ADR-0026's `.px`
+  unification (§H.4).
+- **Do not** put the Graph in the bottom strip (§G.2). The real need is the **split view**.
+- **Do not** touch `legacy/`. It is a source to read, not a source of code.
 
-### K.9 — Trois questions qui ne sont pas les miennes à trancher
+### K.9 — Three questions that are not mine to settle
 
-1. **Couleur de famille pour les catégories de nœuds** — oui/non, et quelles teintes. `design/README.md` laisse la question ouverte pour Modern Pixel.
-2. **Clic droit = pan ou = menu de création** dans la toile. J'argumente pour le menu ; c'est un changement de convention et ça se décide, pas se déduit.
-3. **`MOVE_PROPERTY`** pour réordonner les propriétés d'un `.px` : c'est une opération Core, donc un amendement d'ADR-0027 §5 — et cet ADR argumente explicitement contre les opérations dédiées quand `SET_PROPERTY` suffit. Ici il ne suffit pas (un rang n'est pas un champ), ce qui est exactement l'argument qui a justifié `MOVE_RESOURCE` dans ADR-0026 §5. Le parallèle est fort, la décision reste à prendre.
+1. **A family colour for node categories** — yes/no, and which hues. `design/README.md` leaves the
+   question open for Modern Pixel.
+2. **Right click = pan or = creation menu** in the canvas. I argue for the menu; it is a change of
+   convention and it is decided, not deduced.
+3. **`MOVE_PROPERTY`** to reorder a `.px`'s properties: it is a Core operation, therefore an
+   amendment to ADR-0027 §5 — and that ADR argues explicitly against dedicated operations when
+   `SET_PROPERTY` suffices. Here it does not (a rank is not a field), which is exactly the argument
+   that justified `MOVE_RESOURCE` in ADR-0026 §5. The parallel is strong; the decision remains to
+   be taken.
 
 ---
 
-## Annexe — inventaire des fichiers lus
+## Appendix — inventory of files read
 
-**`design/`** : `README.md`, `index.html`, `prototype.css` (1483 l.), `prototype.js` (1124 l.), `icons.js` (151 l.) — intégralement.
+**`design/`**: `README.md`, `index.html`, `prototype.css` (1483 l.), `prototype.js` (1124 l.),
+`icons.js` (151 l.) — in full.
 
-**`legacy/`** : `editor/system/dnd.js`, `editor/system/handler.js`, `editor/misc/sorter.js`, `editor/misc/{grid,filter,tabs,select,shortcut,play,pause,context-menu}.js`, `editor/windows/{hierarchy,project,properties,toolbar}.js`, `editor/graph/{graph,node,component}.js`, `index.html`, `css/{variables,world,resources,overlay,code,dnd,context-menu}.css`.
+**`legacy/`**: `editor/system/dnd.js`, `editor/system/handler.js`, `editor/misc/sorter.js`,
+`editor/misc/{grid,filter,tabs,select,shortcut,play,pause,context-menu}.js`,
+`editor/windows/{hierarchy,project,properties,toolbar}.js`, `editor/graph/{graph,node,component}.js`,
+`index.html`, `css/{variables,world,resources,overlay,code,dnd,context-menu}.css`.
 
-**`src/`** : `editor/ui/{styles,icons,menu}.js`, `editor/dnd/{payload,rules,files}.js`, `editor/windows/{drop,graph,hierarchy,project,inspector,timeline,toolbar,search}.js`, `editor/inspector/{schema,definition,node}.js`, `editor/graph/view.js`, `editor/{editor,commands}.js`, `editor/project/commands.js`, `editor/viewport/viewport.js`, `core/graph/{nodes,standard,definition}.js`, `core/serialize.js`, `project/resource.js`, `runtime/runtime.js`, `runtime/rendering/components/sprite.js`.
+**`src/`**: `editor/ui/{styles,icons,menu}.js`, `editor/dnd/{payload,rules,files}.js`,
+`editor/windows/{drop,graph,hierarchy,project,inspector,timeline,toolbar,search}.js`,
+`editor/inspector/{schema,definition,node}.js`, `editor/graph/view.js`, `editor/{editor,commands}.js`,
+`editor/project/commands.js`, `editor/viewport/viewport.js`, `core/graph/{nodes,standard,definition}.js`,
+`core/serialize.js`, `project/resource.js`, `runtime/runtime.js`,
+`runtime/rendering/components/sprite.js`.
 
-**`docs/`** : `ARCHITECTURE.md`, `architecture/EDITOR.md`, ADR-0026, ADR-0027 (intégralement), index des ADR-0001 → 0025.
+**`docs/`**: `ARCHITECTURE.md`, `architecture/EDITOR.md`, ADR-0026, ADR-0027 (in full), the index
+of ADR-0001 → 0025.

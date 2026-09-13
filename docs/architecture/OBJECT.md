@@ -1,8 +1,8 @@
 # Object
 
-> `Object` — jamais `Entity` (ADR-0001).
+> `Object` — never `Entity` (ADR-0001).
 
-## OBSERVÉ — état actuel
+## OBSERVED — the current state
 
 ```js
 class Object {
@@ -11,52 +11,51 @@ class Object {
 }
 ```
 
-680 lignes. Mélange trois responsabilités : modèle de données, hiérarchie de
-transformation, et outillage d'éditeur.
+680 lines. It mixes three responsibilities: the data model, the transform hierarchy, and
+editor tooling.
 
-### Champs à connaître
+### Fields worth knowing
 
-| Champ | Réalité |
+| Field | Reality |
 |---|---|
-| `id` | identité de l'objet — `Math.random().toString(36).substr(2,9)` |
-| `uid` | **identifiant du joueur propriétaire**, pas de l'objet. Nommage piégeux. |
-| `type` | chaîne libre (`'object'`, `'image'`, `'camera'`, `'prefab'`…) pilotant l'icône |
-| `image` | `HTMLImageElement` de vignette pour la Hierarchy — **du DOM dans le Core** |
-| `childs` | anglais incorrect, mais présent dans le protocole réseau et les sauvegardes |
-| `static` | déclaré, jamais lu |
-| `lock` | empêche la sélection dans l'éditeur |
+| `id` | the object's identity — `Math.random().toString(36).substr(2,9)` |
+| `uid` | **the owning player's identifier**, not the object's. A trap of a name. |
+| `type` | a free-form string (`'object'`, `'image'`, `'camera'`, `'prefab'`…) driving the icon |
+| `image` | the `HTMLImageElement` thumbnail for the Hierarchy — **DOM inside the Core** |
+| `childs` | incorrect English, but present in the network protocol and in saved files |
+| `static` | declared, never read |
+| `lock` | prevents selection in the editor |
 
-### Méthodes d'éditeur portées par le Core
+### Editor methods carried by the Core
 
 `detectMouse(x, y)`, `detectSide(x, y)`, `select(ctx)`, `createImage(ctx)`, `preview()`.
 
-`createImage()` appelle `document.createElement()` : **`Object` ne peut pas être chargé
-proprement côté serveur.** Cela fonctionne aujourd'hui uniquement parce que le serveur
-n'appelle jamais ces méthodes.
+`createImage()` calls `document.createElement()`: **`Object` cannot be loaded cleanly on the
+server.** It works today only because the server never calls those methods.
 
-### `copy()` — le point le plus fragile
+### `copy()` — the most fragile point
 
 ```js
 copy(obj) {
     for (let prop in obj) {
         if (typeof obj[prop] !== 'object') this[prop] = obj[prop];
-        else { /* TODO: Gérer les objets */ }        // ← les enfants ne sont pas copiés
+        else { /* TODO: Gérer les objets */ }        // ← children are not copied
     }
     for (let name in obj.components) {
-        this.addComponent(new components[name], false);   // ← recherche par nom dans mod.js
+        this.addComponent(new components[name], false);   // ← lookup by name in mod.js
         for (let prop in component) this.components[name][prop] = component[prop];
     }
 }
 ```
 
-- Les propriétés objet ne sont pas copiées → `Scene.init()` doit refaire les liens
-  parent/enfant dans une seconde passe.
-- `new components[name]` : un composant absent de `mod.js` fait échouer la
-  désérialisation, silencieusement.
-- `for (let prop in obj)` voit `_x`, `$x`… donc la copie réassigne les doublons ;
-  `this['_x'] = …` atteint l'accesseur de prototype `set _x` et **déclenche la
-  propagation aux enfants pendant une copie réseau**.
-- `copy()` est appelé **par objet et par heartbeat** : recopie complète, jamais un patch.
+- Object-valued properties are not copied → `Scene.init()` has to rebuild the parent/child
+  links in a second pass.
+- `new components[name]`: a component missing from `mod.js` makes deserialization fail,
+  silently.
+- `for (let prop in obj)` sees `_x`, `$x`… so the copy reassigns the duplicates;
+  `this['_x'] = …` reaches the prototype accessor `set _x` and **triggers propagation to the
+  children during a network copy**.
+- `copy()` is called **per object and per heartbeat**: a full re-copy, never a patch.
 
 ### `update()` / `draw()`
 
@@ -65,24 +64,24 @@ try { this.components[i].update(this); }
 catch (err) { console.error(err); }
 ```
 
-Le `try/catch` par composant et par frame isole les scripts utilisateur cassés —
-**intention légitime, à conserver**. Mais il masque aussi les pannes systématiques :
-c'est lui qui cache que le mode solo hors ligne ne fonctionne pas
-(`MIGRATION.md` §4.1) et que `Collider.update()` référence un `Scene` non importé.
+The per-component, per-frame `try/catch` isolates broken user scripts — **a legitimate intent,
+worth keeping**. But it also hides systematic failures: it is what conceals that offline
+single-player does not work (`MIGRATION.md` §4.1) and that `Collider.update()` references a
+`Scene` it never imported.
 
 ---
 
-## PROPOSITION V2
+## V2 PROPOSAL
 
-`Object` redevient un conteneur.
+`Object` becomes a container again.
 
 ```js
 class Object {
-    id             // identité de l'objet
-    owner          // ex-`uid` : joueur propriétaire
+    id             // the object's identity
+    owner          // formerly `uid`: the owning player
     name, tag, layer
     active, visible, lock
-    components     // Map<string, Component>  — un seul par type
+    components     // Map<string, Component>  — one per type
     parent, children
 
     addComponent / removeComponent / getComponent / hasComponent
@@ -91,68 +90,67 @@ class Object {
 }
 ```
 
-**Renommages retenus.** Ils n'étaient bloqués que par la compatibilité des données ;
-la décision « aucun projet v1 à migrer » lève ce blocage.
+**Renames adopted.** They were blocked only by data compatibility; the decision "no v1 projects
+to migrate" removes that block.
 
-| Legacy | v2 | Raison |
+| Legacy | v2 | Reason |
 |---|---|---|
-| `childs` | `children` | anglais correct |
-| `uid` | `owner` | désigne le joueur propriétaire, pas l'objet |
-| `static` | *supprimé* | déclaré, jamais lu |
+| `childs` | `children` | correct English |
+| `uid` | `owner` | designates the owning player, not the object |
+| `static` | *removed* | declared, never read |
 
-### Ce qui sort
+### What leaves
 
-| Sort de `Object` | Vers | Raison |
+| Leaves `Object` | For | Reason |
 |---|---|---|
-| `x`, `y`, `rotation`, `scaleX`, `scaleY` | composant `Transform` | ADR-0002 |
-| `width`, `height` | composants de rendu / collision | une taille n'est pas une transformation |
-| `_x` / `__x` et la propagation en delta aux enfants | supprimés | remplacés par une composition de matrices, valeurs locales préservées |
-| `detectMouse`, `detectSide`, `select` | `editor/viewport/` | outillage d'IDE |
-| `createImage` | `editor/` (rendu hors écran) | supprime le DOM du Core |
-| `preview` | `editor/viewport/` | surcouche d'IDE ; retirée du contrat de Component (ADR-0004) |
-| `image` | `editor/` (cache de vignettes) | ce n'est pas une donnée de jeu |
-| `type` | `editor/` (affichage) ou supprimé | dupliqué par la présence des composants |
-| `static` | supprimé | jamais lu |
+| `x`, `y`, `rotation`, `scaleX`, `scaleY` | the `Transform` component | ADR-0002 |
+| `width`, `height` | rendering / collision components | a size is not a transform |
+| `_x` / `__x` and delta propagation to children | removed | replaced by matrix composition, with local values preserved |
+| `detectMouse`, `detectSide`, `select` | `editor/viewport/` | IDE tooling |
+| `createImage` | `editor/` (offscreen rendering) | removes the DOM from the Core |
+| `preview` | `editor/viewport/` | an IDE overlay; removed from the Component contract (ADR-0004) |
+| `image` | `editor/` (thumbnail cache) | it is not game data |
+| `type` | `editor/` (display) or removed | duplicated by the presence of components |
+| `static` | removed | never read |
 
-### Ce qui reste et ne bouge pas
+### What stays and does not move
 
-- Le nom `Object`.
-- L'identité par id court et opaque.
-- `components` indexé par nom de classe, et la hiérarchie parent/enfant.
-- `update()` / `draw()` qui itèrent sur les composants et passent `self` en argument
+- The name `Object`.
+- Identity by a short, opaque id.
+- `components` keyed by class name, and the parent/child hierarchy.
+- `update()` / `draw()`, iterating over the components and passing `self` as an argument
   (ADR-0004).
-- Le `try/catch` par composant — mais avec un compteur : un composant qui échoue N fois
-  d'affilée est désactivé et signalé, au lieu d'échouer en silence pour toujours.
+- The per-component `try/catch` — but with a counter: a component that fails N times in a row
+  is disabled and reported, instead of failing silently forever.
 
-### Façade Transform
+### The Transform façade
 
 ```js
-object.x = 100;                          // ces trois lignes sont
-object.getComponent('Transform').x = 100; // strictement le même
-object.components.Transform.x = 100;      // chemin d'écriture
+object.x = 100;                           // these three lines are
+object.getComponent('Transform').x = 100; // strictly the same
+object.components.Transform.x = 100;      // write path
 ```
 
-Aucune valeur n'est stockée sur `Object`. Il n'existe pas de `Object._x` (ADR-0002).
+No value is stored on `Object`. There is no `Object._x` (ADR-0002).
 
-### `copy()` et instanciation
+### `copy()` and instantiation
 
-Remplacés par `serialize()` / `deserialize()` explicites :
+Replaced by explicit `serialize()` / `deserialize()`:
 
-- les composants sont résolus via un **registre** explicite, pas par recherche de nom
-  dans `mod.js` ;
-- les enfants sont référencés par id, et les liens rétablis en une passe déterministe ;
-- aucun doublon `_`/`$` à filtrer, puisqu'il n'y en a plus.
+- components are resolved through an explicit **registry**, not by name lookup in `mod.js`;
+- children are referenced by id, and the links are restored in one deterministic pass;
+- no `_`/`$` duplicates to filter out, since there are none left.
 
 ---
 
-## Décisions tranchées (2026-08-12)
+## Decisions settled (2026-08-12)
 
-| # | Question | Décision |
+| # | Question | Decision |
 |---|---|---|
-| Q1 | `childs` → `children` ? | **Oui** |
-| Q2 | `uid` → `owner` ? | **Oui** |
-| Q4 | Deux composants du même type sur un objet ? | **Non** — un seul par type, comme dans Legacy |
-| Q6 | Compatibilité des projets Legacy ? | **Aucune** — pas de projets v1 à migrer |
+| Q1 | `childs` → `children`? | **Yes** |
+| Q2 | `uid` → `owner`? | **Yes** |
+| Q4 | Two components of the same type on one object? | **No** — one per type, as in Legacy |
+| Q6 | Compatibility with Legacy projects? | **None** — no v1 projects to migrate |
 
-Point mineur restant, tranchable à l'implémentation : `Transform` est-il ajouté par
-défaut à la construction d'un `Object` ?
+One minor point remains, decidable at implementation time: is `Transform` added by default when
+an `Object` is constructed?

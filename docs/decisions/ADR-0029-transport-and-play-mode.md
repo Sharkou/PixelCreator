@@ -1,36 +1,36 @@
-# ADR-0029 — Play travaille sur la scène vivante, Stop restaure un instantané, et l'historique s'arrête à la porte
+# ADR-0029 — Play works on the live scene, Stop restores a snapshot, and history stops at the door
 
-- **Statut :** **accepté** (2026-08-18)
-- **Dépend de :** ADR-0003 (Property System), ADR-0005 (modules de runtime), ADR-0008 (Operations), ADR-0011 (autorité), ADR-0012 (isolation des erreurs), ADR-0013 (caméra), ADR-0015 (graphe et Component), ADR-0024 (Undo/Redo)
-- **Amende :** rien. Il comble le manque que `editor.js` signalait en refusant de dessiner un transport décoratif.
+- **Status:** **accepted** (2026-08-18)
+- **Depends on:** ADR-0003 (Property System), ADR-0005 (runtime modules), ADR-0008 (Operations), ADR-0011 (authority), ADR-0012 (error isolation), ADR-0013 (camera), ADR-0015 (a graph and a Component), ADR-0024 (Undo/Redo)
+- **Amends:** nothing. It fills the gap `editor.js` flagged by refusing to draw a decorative transport.
 
-## Contexte observé
+## Observed context
 
-`editor.js` portait ceci, et c'était la bonne réponse à l'époque :
+`editor.js` carried this, and it was the right answer at the time:
 
-> « THERE IS NO TRANSPORT HERE, AND THAT IS DELIBERATE. Play needs a scene snapshot
-> restored on stop, which does not exist yet. A green button that does nothing would be the
-> one kind of lie this Editor has consistently refused. »
+> "THERE IS NO TRANSPORT HERE, AND THAT IS DELIBERATE. Play needs a scene snapshot restored on stop,
+> which does not exist yet. A green button that does nothing would be the one kind of lie this Editor
+> has consistently refused."
 
-Ce qui existe aujourd'hui et rend la décision possible :
+What exists today, and makes the decision possible:
 
-| Brique | État |
+| Brick | State |
 |---|---|
-| `Runtime.running`, `advance(dt, input)`, `render({ view })` | en place, et le Viewport tient déjà la boucle |
-| `serializeScene()` / `deserializeScene()` | en place, testés, sans dépendance DOM |
-| `History` par ressource, entrées groupées par `batch` | en place (ADR-0024) |
-| `Behaviors` : état d'exécution d'un graphe dans une WeakMap | en place, déjà déclaré non restauré par ADR-0024 §5 |
-| `Clock` : `time`, `fixedStep`, accumulateur | en place, mais sans `reset()` |
+| `Runtime.running`, `advance(dt, input)`, `render({ view })` | in place, and the Viewport already holds the loop |
+| `serializeScene()` / `deserializeScene()` | in place, tested, with no DOM dependency |
+| A `History` per resource, entries grouped by `batch` | in place (ADR-0024) |
+| `Behaviors`: a graph's execution state in a WeakMap | in place, already declared not restored by ADR-0024 §5 |
+| `Clock`: `time`, `fixedStep`, an accumulator | in place, but with no `reset()` |
 
-Le Viewport construit un `Runtime` avec `running = false` : il dessine chaque frame et ne
-simule jamais. Le transport n'a donc pas à créer un moteur — il a à décider qui possède
-l'état de la scène pendant qu'elle tourne.
+The Viewport builds a `Runtime` with `running = false`: it draws every frame and never simulates. The
+transport therefore does not have to create an engine — it has to decide who owns the scene's state
+while it runs.
 
-## Décision
+## Decision
 
-### 1. Trois états, et un seul objet de scène
+### 1. Three states, and one scene object
 
-**VALIDÉ.** Le transport est une machine à trois états portée par l'Editor :
+**SETTLED.** The transport is a three-state machine carried by the Editor:
 
 ```
         Play              Pause              Play
@@ -40,140 +40,135 @@ EDITING -----> PLAYING ---------> PAUSED ---------> PLAYING
                 Stop
 ```
 
-| État | `Runtime.running` | La boucle avance | La scène est éditable |
+| State | `Runtime.running` | The loop advances | The scene is editable |
 |---|---|---|---|
-| `EDITING` | `false` | non | oui |
-| `PLAYING` | `true` | oui | oui, et c'est délibéré (§4) |
-| `PAUSED` | `false` | non | oui |
+| `EDITING` | `false` | no | yes |
+| `PLAYING` | `true` | yes | yes, and that is deliberate (§4) |
+| `PAUSED` | `false` | no | yes |
 
-**Il n'y a pas de second Runtime, et pas de copie de scène pendant l'exécution.** Le
-Runtime de l'Editor est celui qui joue. C'est la raison d'être du produit : « une vue
-administrateur sur un runtime vivant » (`docs/PROJECT.md` §4) — modifier un objet pendant
-que le jeu tourne et voir l'effet immédiatement. Faire tourner Play sur une copie
-détruirait précisément cela.
+**There is no second Runtime, and no copy of the scene while it runs.** The Editor's Runtime is the
+one that plays. It is the product's reason for being: "an administrator view onto a live runtime"
+(`docs/PROJECT.md` §4) — modify an object while the game runs and see the effect immediately. Running
+Play on a copy would destroy precisely that.
 
-### 2. Play prend un instantané avant de démarrer
+### 2. Play takes a snapshot before starting
 
-**VALIDÉ.** `Play` depuis `EDITING` :
+**SETTLED.** `Play` from `EDITING`:
 
-1. `serializeScene(scene)` produit un instantané JSON, gardé par l'Editor ;
+1. `serializeScene(scene)` produces a JSON snapshot, kept by the Editor;
 2. `runtime.running = true`.
 
-L'instantané est une valeur, pas un objet vivant : il ne peut pas dériver, et il coûte une
-sérialisation déjà écrite et déjà testée. `Play` depuis `PAUSED` ne reprend pas
-d'instantané — la reprise n'est pas un départ.
+The snapshot is a value, not a live object: it cannot drift, and it costs a serialization that is
+already written and already tested. `Play` from `PAUSED` takes no new snapshot — resuming is not
+starting.
 
-### 3. Stop restaure exactement l'instantané, et rien d'autre
+### 3. Stop restores exactly the snapshot, and nothing else
 
-**VALIDÉ.** `Stop` :
+**SETTLED.** `Stop`:
 
-1. `runtime.running = false` ;
-2. la scène est ramenée à l'instantané pris au dernier `Play` ;
-3. l'horloge de simulation repart de zéro ;
-4. l'état d'exécution des graphes est abandonné ;
-5. l'état d'entrée est vidé ;
-6. l'état passe à `EDITING`.
+1. `runtime.running = false`;
+2. the scene is brought back to the snapshot taken at the last `Play`;
+3. the simulation clock restarts from zero;
+4. the graphs' execution state is discarded;
+5. the input state is cleared;
+6. the state goes to `EDITING`.
 
-**Ce que Stop ne restaure pas, et qui doit être dit :** la caméra de l'Editor (c'est un
-point de vue, pas un contenu — ADR-0013), la sélection, le pli des sections, la fenêtre
-ouverte, la position du Graph. Rien de tout cela n'est dans la scène, donc rien de tout
-cela ne bouge.
+**What Stop does not restore, and must be said:** the Editor's camera (it is a point of view, not
+content — ADR-0013), the selection, the collapse state of sections, the open window, the Graph's
+position. None of that is in the scene, so none of it moves.
 
-### 4. Ce qui arrive aux modifications faites pendant Play : elles sont perdues, et l'Editor le dit
+### 4. What happens to changes made during Play: they are lost, and the Editor says so
 
-**VALIDÉ.** C'est la conséquence directe de §2 et §3, et le seul point qui doit être
-visible plutôt que découvert : tout ce qu'un créateur change pendant `PLAYING` ou `PAUSED`
-disparaît au `Stop`.
+**SETTLED.** It is the direct consequence of §2 and §3, and the one point that must be visible rather
+than discovered: everything a creator changes during `PLAYING` or `PAUSED` disappears at `Stop`.
 
-C'est le comportement d'Unity et de Godot, et il est correct : jouer sert à observer, et
-une session de jeu ne doit pas modifier le projet par accident. Ce qui manquerait serait
-l'avertissement, donc l'Editor marque l'état — le transport est visiblement actif, et la
-scène est visiblement en cours d'exécution.
+It is Unity's and Godot's behaviour, and it is correct: playing is for observing, and a play session
+must not modify the project by accident. What would be missing is the warning, so the Editor marks
+the state — the transport is visibly active, and the scene is visibly running.
 
-> **Non décidé ici :** proposer de garder les changements au Stop (le « apply play mode
-> changes » que réclament les utilisateurs d'Unity depuis quinze ans). Cela demande de
-> diffuser l'instantané et l'état courant, donc un modèle de diff de scène qui n'existe pas.
+> **Not decided here:** offering to keep the changes at Stop (the "apply play mode changes" Unity
+> users have been asking for for fifteen years). It requires diffing the snapshot against the current
+> state, and therefore a scene diff model that does not exist.
 
-### 5. L'historique s'arrête à la porte
+### 5. History stops at the door
 
-**VALIDÉ. Quitter `EDITING` vide les piles d'undo, et rien n'est enregistré pendant Play.**
+**SETTLED. Leaving `EDITING` clears the undo stacks, and nothing is recorded during Play.**
 
-Le raisonnement est celui d'ADR-0024 §5, poussé d'un cran : annuler ne remonte pas le temps
-de la simulation. Une pile qui traverserait un `Play` proposerait d'inverser une opération
-dont la cible a été détruite par un graphe, ou de rendre une valeur qu'un `update()` a déjà
-réécrite trois cents fois. `invert()` produirait une opération valide vers un état qui n'a
-jamais existé.
+The reasoning is ADR-0024 §5, pushed one step further: undoing does not rewind the simulation. A
+stack that crossed a `Play` would offer to invert an operation whose target has been destroyed by a
+graph, or to give back a value an `update()` has already rewritten three hundred times. `invert()`
+would produce a valid operation toward a state that never existed.
 
-Vider est brutal et honnête ; mélanger serait souple et faux.
+Clearing is brutal and honest; mixing would be flexible and wrong.
 
-### 6. Modifier pendant PAUSED est autorisé
+### 6. Editing during PAUSED is allowed
 
-**VALIDÉ.** `PAUSED` n'est pas un état protégé : c'est `PLAYING` sans le temps qui passe.
-Les écritures suivent le chemin normal (`setProperty` puis Operation), les vues se mettent
-à jour, et le rendu continue — c'est exactement ce que `Runtime` documente déjà : « Whether
-the simulation advances. Rendering continues while paused. »
+**SETTLED.** `PAUSED` is not a protected state: it is `PLAYING` without time passing. Writes follow
+the normal path (`setProperty` then an Operation), the views update, and rendering continues — which
+is exactly what `Runtime` already documents: "Whether the simulation advances. Rendering continues
+while paused."
 
-Ces modifications tombent sous §4 comme les autres : le `Stop` les emporte.
+Those changes fall under §4 like the others: `Stop` takes them away.
 
-### 7. Ce que le Runtime doit gagner, et c'est tout
+### 7. What the Runtime must gain, and that is all
 
-**VALIDÉ.** Une seule addition, dans `runtime/clock/clock.js` :
+**SETTLED.** One addition, in `runtime/clock/clock.js`:
 
 ```js
 /** Put the simulation clock back to zero. */
 reset()
 ```
 
-`Clock` accumule `#time` et un reliquat de pas ; sans `reset()`, un second `Play`
-repartirait avec le temps du premier, et un graphe qui lit `time` observerait un saut. Ce
-n'est pas une fonctionnalité, c'est le pendant de `Stop`.
+`Clock` accumulates `#time` and a step remainder; without `reset()`, a second `Play` would restart
+with the first one's time, and a graph reading `time` would observe a jump. It is not a feature, it
+is `Stop`'s counterpart.
 
-**Rien d'autre ne change dans `runtime/`.** Pas d'état de transport dans le Runtime : il ne
-sait pas ce qu'est un bouton Play, et il ne doit pas l'apprendre (ADR-0005). La machine à
-trois états vit dans l'Editor, qui possède déjà la boucle.
+**Nothing else changes in `runtime/`.** No transport state in the Runtime: it does not know what a
+Play button is, and it must not learn (ADR-0005). The three-state machine lives in the Editor, which
+already owns the loop.
 
-### 8. Multijoueur et headless : ce qui est prévu, ce qui attend
+### 8. Multiplayer and headless: what is anticipated, what waits
 
-**VALIDÉ pour maintenant : le transport est local.**
+**SETTLED for now: the transport is local.**
 
-Ce que la décision préserve pour la suite :
+What the decision preserves for later:
 
-- le serveur exécute `advance()` sur la même `Scene` et le même Core (`PROJECT.md` §3.2) ;
-  rien ici n'ajoute de chemin d'exécution parallèle ;
-- l'instantané est du JSON produit par `serializeScene()` — le format qu'un serveur
-  enverrait déjà pour amorcer un client ;
-- `Play` n'émet aucune Operation : il ne se réplique pas, et ne peut donc pas démarrer la
-  partie de quelqu'un d'autre par accident.
+- the server runs `advance()` on the same `Scene` and the same Core (`PROJECT.md` §3.2); nothing
+  here adds a parallel execution path;
+- the snapshot is JSON produced by `serializeScene()` — the format a server would already send to
+  bootstrap a client;
+- `Play` emits no Operation: it does not replicate, and therefore cannot start somebody else's game
+  by accident.
 
-Ce qui attend explicitement le runtime multijoueur :
+What explicitly waits for the multiplayer runtime:
 
-| Question | Pourquoi elle ne peut pas être tranchée ici |
+| Question | Why it cannot be settled here |
 |---|---|
-| Qui a le droit d'appuyer sur Play dans une session partagée | Demande le modèle d'autorité en session (ADR-0011 couvre les mutations, pas le cycle de vie) |
-| Ce que Stop signifie pour les autres joueurs | Demande de savoir si une session est un objet du modèle |
-| Si l'instantané vient du client ou du serveur | Demande le chargement de projet côté serveur |
+| Who is allowed to press Play in a shared session | It needs the session authority model (ADR-0011 covers mutations, not lifecycle) |
+| What Stop means for the other players | It needs to know whether a session is an object of the model |
+| Whether the snapshot comes from the client or the server | It needs server-side project loading |
 
-## Ce que cet ADR ne décide pas
+## What this ADR does not decide
 
-- **Le pas à pas** (avancer d'une frame) : trivial une fois `PAUSED` en place, mais aucun
-  contrôle ne le demande encore.
-- **La vitesse de lecture.**
-- **Un mode « jouer depuis ici »** (caméra de jeu contre caméra d'éditeur) : demande de
-  décider quelle `Camera` de la scène est active, ce qu'ADR-0013 laisse ouvert.
-- **Conserver les changements au Stop** (§4).
+- **Stepping** (advancing by one frame): trivial once `PAUSED` exists, but no control asks for it
+  yet.
+- **Playback speed.**
+- **A "play from here" mode** (game camera versus editor camera): it requires deciding which of the
+  scene's `Camera`s is active, which ADR-0013 leaves open.
+- **Keeping the changes at Stop** (§4).
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Trois boutons dont chacun a une définition écrite, et un `Stop` qui restaure vraiment.
-- Aucun second runtime, aucune copie de scène : la promesse « éditer pendant que ça tourne »
-  est tenue au lieu d'être contournée.
-- Le coût pour `runtime/` est d'une méthode, et elle a un sens hors du transport.
+- Three buttons each with a written definition, and a `Stop` that really restores.
+- No second runtime, no copy of the scene: the "edit while it runs" promise is kept instead of
+  worked around.
+- The cost to `runtime/` is one method, and it has a meaning outside the transport.
 
-### Négatives
+### Negative
 
-- Les modifications faites pendant Play sont perdues (§4) — comportement standard, mais il
-  faut le rendre visible plutôt que de le documenter seulement ici.
-- L'historique est vidé au démarrage (§5) : un créateur perd son undo en jouant. Le choix
-  inverse serait un undo qui ment.
+- Changes made during Play are lost (§4) — standard behaviour, but it must be made visible rather
+  than only documented here.
+- History is cleared at start (§5): a creator loses their undo by playing. The opposite choice would
+  be an undo that lies.

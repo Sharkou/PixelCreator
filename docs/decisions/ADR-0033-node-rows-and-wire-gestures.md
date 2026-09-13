@@ -1,187 +1,175 @@
-# ADR-0033 — Un nœud est une suite de rangées, un fil se dessine sans se pointer, et une couleur dit ce qui circule
+# ADR-0033 — A node is a sequence of rows, a wire is drawn without being aimed at, and a colour says what flows
 
-- **Statut :** **accepté** (2026-08-19)
-- **Décide :** la géométrie d'un nœud, les gestes qui portent un fil, et ce qu'une teinte
-  affirme sur la toile
-- **Dépend de :** ADR-0006 (Web Components), ADR-0023 (types de propriétés), ADR-0024
-  (Undo/Redo), ADR-0027 (modèle de graphe et rendu SVG), ADR-0028 (feedback de dépôt et
-  prévisualisation), ADR-0030 (palette de six teintes), ADR-0031 (valeur d'instance sur un
-  port)
-- **Amende :** ADR-0030 §4 (une catégorie donnait sa teinte, y compris quand le nœud *est*
-  une valeur), ADR-0028 §2 (le principe « la prévisualisation ne touche pas le modèle »
-  n'avait pas été appliqué à la toile)
+- **Status:** **accepted** (2026-08-19)
+- **Decides:** a node's geometry, the gestures that carry a wire, and what a hue asserts on the canvas
+- **Depends on:** ADR-0006 (Web Components), ADR-0023 (property types), ADR-0024 (Undo/Redo),
+  ADR-0027 (the graph model and SVG rendering), ADR-0028 (drop feedback and preview), ADR-0030 (a
+  six-hue palette), ADR-0031 (an instance value on a port)
+- **Amends:** ADR-0030 §4 (a category gave its hue, including when the node *is* a value), ADR-0028
+  §2 (the principle "the preview does not touch the model" had not been applied to the canvas)
 
 ---
 
-## Contexte observé
+## Observed context
 
-ADR-0031 a donné une valeur d'instance à un port, et l'Editor l'a dessinée. En s'en
-servant, quatre constats — trois de géométrie, un d'interaction, et tous du même genre :
-**une décision de rendu prise deux fois, à deux endroits, sans que rien ne dise laquelle
-gagne.**
+ADR-0031 gave a port an instance value, and the Editor drew it. Using it produced four findings —
+three about geometry, one about interaction, and all of the same kind: **a rendering decision taken
+twice, in two places, with nothing saying which one wins.**
 
-| Constat mesuré | Cause |
+| Measured finding | Cause |
 |---|---|
-| Un nœud `Number` affichait son slot de sortie sur une ligne et la valeur qui en sort sur une autre | un nœud avait **deux zones** empilées : les rangées de ports, puis une bande de params |
-| `Set Property` mettait le port `value` à quatre pixels du champ qui l'alimente | même cause |
-| `Add` dessinait son champ **à travers** le mot « Result », qui n'affichait plus qu'un `t` | la largeur d'un champ ne tenait pas compte des libellés qu'il ne remplace pas |
-| Couper un fil marchait sur les bords de la bande et pas sur le trait | le trait **visible** est dessiné au-dessus de sa propre cible de clic |
+| A `Number` node showed its output slot on one line and the value coming out of it on another | a node had **two zones** stacked: the port rows, then a strip of params |
+| `Set Property` put the `value` port four pixels away from the field that feeds it | the same cause |
+| `Add` drew its field **through** the word "Result", which was reduced to a `t` | a field's width did not account for the labels it does not replace |
+| Cutting a wire worked at the edges of the band and not on the stroke | the **visible** stroke is drawn above its own click target |
 
-Et un cinquième, de vocabulaire : un nœud `Number` portait le vert de la catégorie `Values`
-tandis que son port portait le bleu de `number`. Deux couleurs, un seul objet.
+And a fifth, about vocabulary: a `Number` node carried the green of the `Values` category while its
+port carried the blue of `number`. Two colours, one object.
 
-Aucun n'est un réglage de pixels. Chacun est le symptôme d'un modèle de rendu qui décrit un
-nœud comme un empilement de zones alors qu'un créateur le lit **ligne par ligne**.
+None of these is a pixel adjustment. Each is the symptom of a rendering model that describes a node
+as a stack of zones when a creator reads it **row by row**.
 
 ---
 
-## Décision
+## Decision
 
-### 1. Un nœud est une suite de rangées, et une règle les remplit
+### 1. A node is a sequence of rows, and one rule fills them
 
-**VALIDÉ.** `editor/graph/view.js` ne connaît plus « les ports » et « les params » comme
-deux listes à empiler. Il connaît des **rangées**, chacune portant au plus un port d'entrée,
-un port de sortie, et un contrôle :
+**SETTLED.** `editor/graph/view.js` no longer knows "the ports" and "the params" as two lists to
+stack. It knows **rows**, each carrying at most one input port, one output port, and one control:
 
-> **Un contrôle appartient à la rangée du port qu'il édite ; un contrôle qui n'édite aucun
-> port prend la première rangée qui n'en a pas, et en crée une quand il n'en reste plus.**
+> **A control belongs to the row of the port it edits; a control that edits no port takes the first
+> row that has none, and creates one when there are none left.**
 
-C'est toute l'algèbre. Ce qu'elle produit, sans un seul cas particulier :
+That is the whole algebra. What it produces, with not a single special case:
 
-| Nœud | Rangées |
+| Node | Rows |
 |---|---|
-| `Number`, `Boolean`, `Text` | **une** — le champ et le slot de sortie, côte à côte |
-| `Get Property` | **une** — le sélecteur de propriété, et le slot qui porte sa valeur |
-| `Set Property` | flux entrant / sélecteur / flux sortant, puis le slot `value` **à côté** de son champ |
-| `Add` | `A` avec son champ et `Result`, puis `B` avec le sien |
-| `Branch` | flux entrant / `True`, puis la condition à côté de sa case / `False` |
+| `Number`, `Boolean`, `Text` | **one** — the field and the output slot, side by side |
+| `Get Property` | **one** — the property picker, and the slot carrying its value |
+| `Set Property` | flow in / picker / flow out, then the `value` slot **next to** its field |
+| `Add` | `A` with its field and `Result`, then `B` with its own |
+| `Branch` | flow in / `True`, then the condition next to its checkbox / `False` |
 
-**Pourquoi c'est plus qu'un rangement.** Un créateur lit un graphe en suivant une valeur
-jusqu'à un slot. Quand la valeur est sur une ligne et le slot sur une autre, le nœud cesse
-de dire **dans quel slot** cette valeur entre — c'est-à-dire exactement ce qu'un langage
-visuel sert à dire. Deux zones empilées rendaient cela impossible à corriger en déplaçant
-des pixels.
+**Why this is more than tidying.** A creator reads a graph by following a value to a slot. When the
+value is on one line and the slot on another, the node stops saying **which slot** that value enters
+— that is, exactly what a visual language is for. Two stacked zones made that impossible to fix by
+moving pixels.
 
-**Un contrôle est le libellé de sa rangée**, et une rangée dit une chose une fois :
+**A control is its row's label**, and a row says one thing once:
 
-- un contrôle qui édite un port remplace **le libellé de ce port** — le champ *est* ce que
-  le slot transporte, et `A [0] A` écrit le même mot deux fois sur une carte de 176 px ;
-- un contrôle qui n'édite aucun port remplace les libellés des ports de **sa** rangée : un
-  nœud `Number` est un champ et le slot par lequel son contenu sort.
+- a control that edits a port replaces **that port's label** — the field *is* what the slot carries,
+  and `A [0] A` writes the same word twice on a 176 px card;
+- a control that edits no port replaces the labels of the ports in **its** row: a `Number` node is a
+  field and the slot through which its contents leave.
 
-Cette règle vit dans la **géométrie** (`silencedPorts()`), pas dans le renderer, parce que
-la réponse décide deux choses qui doivent être d'accord : si un libellé est dessiné, et
-combien de place le champ lui laisse. Un renderer qui déciderait seul finirait par écrire un
-libellé dans un champ — ce qu'il faisait.
+That rule lives in the **geometry** (`silencedPorts()`), not in the renderer, because the answer
+decides two things that must agree: whether a label is drawn, and how much room the field leaves it.
+A renderer deciding on its own would end up writing a label inside a field — which is what it was
+doing.
 
-### 2. Un fil se dessine ; c'est la cible sous lui qu'on pointe
+### 2. A wire is drawn; what you point at is the target underneath it
 
-**VALIDÉ.** Le trait visible d'un fil est désormais **inerte** (`pointer-events: none`).
+**SETTLED.** A wire's visible stroke is now **inert** (`pointer-events: none`).
 
-C'est la correction d'un défaut qui se lisait comme de l'imprécision et qui était une
-inversion : le trait est dessiné **au-dessus** de sa propre cible large, donc à l'endroit
-exact où un créateur vise — le trait lui-même — c'était lui l'élément le plus haut. Ses
-événements partaient vers la toile, qui les lisait comme un clic dans le vide. Couper un
-fil ne marchait **que** sur la frange de la bande, de part et d'autre du trait visé.
+It is the fix for a defect that read as imprecision and was an inversion: the stroke is drawn
+**above** its own wide target, so at the exact spot a creator aims at — the stroke itself — it was
+the topmost element. Its events went to the canvas, which read them as a click in empty space.
+Cutting a wire worked **only** on the fringe of the band, on either side of the aimed-at stroke.
 
-Deux conséquences, dans le même sens :
+Two consequences, in the same direction:
 
-- **couper est un clic, pas une pression.** Trancher au `pointerdown` faisait disparaître un
-  fil sous une main qui n'avait pas fini de décider ;
-- **les traits sont mesurés à l'écran** (`vector-effect: non-scaling-stroke`). Un fil de
-  2 px dans un groupe mis à l'échelle 0,25 fait un demi-pixel de couleur, et sa cible de
-  14 px en fait trois et demi : plus un créateur dézoomait, moins la toile était utilisable,
-  précisément au moment où il en voyait le plus.
+- **cutting is a click, not a press.** Cutting on `pointerdown` made a wire disappear under a hand
+  that had not finished deciding;
+- **strokes are measured on screen** (`vector-effect: non-scaling-stroke`). A 2 px wire inside a
+  group scaled to 0.25 is half a pixel of colour, and its 14 px target is three and a half: the more
+  a creator zoomed out, the less usable the canvas became, precisely when they were seeing the most
+  of it.
 
-### 3. Reprendre un fil ne détruit rien avant le lâcher — étend ADR-0028 §2
+### 3. Picking a wire back up destroys nothing before the release — extends ADR-0028 §2
 
-**VALIDÉ.** Presser un port d'entrée **connecté** reprend le fil qui l'alimente, par son
-autre bout. C'est le geste qu'ont tous les éditeurs nodaux, et la seule façon de déplacer
-une connexion sans d'abord la détruire en espérant se souvenir d'où elle venait.
+**SETTLED.** Pressing a **connected** input port picks up the wire feeding it, by its other end. It
+is the gesture every node editor has, and the only way to move a connection without first destroying
+it and hoping to remember where it came from.
 
-ADR-0028 §2 dit qu'une prévisualisation est pure et réversible ; il l'écrivait pour les
-listes, et la toile n'avait pas été relue à cette lumière. Donc :
+ADR-0028 §2 says a preview is pure and reversible; it wrote that for lists, and the canvas had not
+been reread in that light. So:
 
-- l'ancienne connexion **reste dans le modèle** pendant tout le geste, dessinée en pointillé
-  effacé ;
-- le lâcher la remplace en **un** `batch` — déplacer une connexion est **un** `Ctrl Z`, pas
-  une suppression qu'il faut annuler deux fois (ADR-0024 §4) ;
-- abandonner le geste ne défait rien, parce que rien n'a été écrit. C'est ce qui rend
-  l'essai gratuit.
+- the old connection **stays in the model** for the whole gesture, drawn as a faded dashed line;
+- releasing replaces it in **one** `batch` — moving a connection is **one** `Ctrl Z`, not a deletion
+  you have to undo twice (ADR-0024 §4);
+- abandoning the gesture undoes nothing, because nothing was written. That is what makes trying
+  free.
 
-**Un fil lâché dans le vide reste une question** (ADR-0027) : le sélecteur s'ouvre et ne
-propose que les types compatibles. Un fil *repris* et lâché dans le vide pose la même
-question, et sa connexion d'origine part dans le même `batch` que la nouvelle.
+**A wire released into empty space stays a question** (ADR-0027): the picker opens and offers only
+compatible types. A wire that was *picked up* and released into empty space asks the same question,
+and its original connection leaves in the same `batch` as the new one.
 
-### 4. Un nœud qui **est** une valeur porte la teinte de cette valeur — amende ADR-0030 §4
+### 4. A node that **is** a value carries that value's hue — amends ADR-0030 §4
 
-**VALIDÉ.** ADR-0030 §4 a tranché que six teintes répondent à deux questions — *qu'est-ce
-que ce nœud* et *que transporte ce fil* — et que la catégorie donne la première. C'est juste
-partout sauf pour une catégorie : `Values`.
+**SETTLED.** ADR-0030 §4 settled that six hues answer two questions — *what is this node* and *what
+does this wire carry* — and that the category gives the first. That is right everywhere except for
+one category: `Values`.
 
-Un nœud `Number` **est** un nombre. Lui donner le vert de `Values` pendant que son port
-porte le bleu de `number`, c'est la seule endroit de la palette où le même objet reçoit deux
-couleurs, et c'est celui où le créateur apprend le vocabulaire.
+A `Number` node **is** a number. Giving it the green of `Values` while its port carries the blue of
+`number` is the one place in the palette where the same object gets two colours, and it is the place
+where the creator learns the vocabulary.
 
-> **La catégorie `Values` ne donne pas de teinte : un nœud littéral porte celle du type
-> qu'il produit.** Toutes les autres catégories restent celles d'ADR-0030 §4.
+> **The `Values` category gives no hue: a literal node carries the hue of the type it produces.**
+> Every other category stays as in ADR-0030 §4.
 
-Ce n'est pas une exception commode, c'est l'application de la règle d'ADR-0030 à un cas
-qu'elle n'avait pas distingué : la teinte dit *ce que c'est*, et pour un littéral, ce que
-c'est **est** son type.
+It is not a convenient exception, it is ADR-0030's rule applied to a case it had not distinguished:
+the hue says *what it is*, and for a literal, what it is **is** its type.
 
-**Et la prévisualisation d'un fil porte sa teinte**, plus l'accent du produit. Un fil en vol
-est le moment où un créateur a le plus besoin de savoir ce qui circule ; le corail ne disait
-que « il se passe quelque chose ».
+**And a wire's preview carries its hue**, plus the product's accent. A wire in flight is the moment a
+creator most needs to know what is flowing; coral only said "something is happening".
 
 ---
 
-## Ce que cet ADR ne décide pas
+## What this ADR does not decide
 
-- **Les références à un Object ou à un Component dans le graphe** : c'est un problème de
-  **modèle**, pas de rendu, et il touche la réplication. Il reste ouvert et mérite son
-  propre ADR.
-- **Les nœuds de commentaire, la sélection multiple, la minimap** : ADR-0027 les laisse
-  ouverts et rien ici ne les ferme.
-- **Le repliement d'un nœud** (masquer ses rangées) : la question ne se pose que sur des
-  nœuds beaucoup plus grands que ceux du catalogue actuel.
-- **Une console d'erreurs** : le bandeau existe, et ce qu'il lui manquait — être cliquable,
-  compter par sévérité — n'est pas une fenêtre.
-
----
-
-## Conséquences
-
-### Positives
-
-- `Number`, `Boolean` et `Text` tiennent sur **une** ligne, sans que rien ne soit codé en
-  dur pour eux : c'est la règle des rangées qui le produit.
-- Le slot de `Set Property` est en face de la valeur qu'il reçoit, et celui de
-  `Get Property` en face de la propriété qu'il rend.
-- Couper un fil marche là où on vise, et à tous les niveaux de zoom.
-- Déplacer une connexion est un geste réversible et une seule entrée d'historique.
-- Un `number` est bleu du champ jusqu'au fil, en passant par le nœud qui le porte.
-
-### Négatives
-
-- Une rangée fait 22 px au lieu de 20 : un nœud à quatre ports est huit pixels plus haut.
-  Assumé — une rangée doit pouvoir contenir un champ, et 20 px n'est pas une boîte de saisie.
-- La largeur réservée à un libellé (`CONTROL_LABEL_INSET`) est une constante choisie à la
-  main, comme le carré de préhension d'ADR-0017. Elle est correcte tant qu'elle correspond à
-  la fonte des libellés de ports.
-- Le trait visible ne réagit plus au survol par lui-même ; c'est la cible qui le colore. Une
-  règle CSS de moins, mais elle dépend d'un sélecteur de frère.
+- **References to an Object or a Component inside the graph**: that is a **model** problem, not a
+  rendering one, and it touches replication. It stays open and deserves its own ADR.
+- **Comment nodes, multiple selection, a minimap**: ADR-0027 leaves them open and nothing here
+  closes them.
+- **Collapsing a node** (hiding its rows): the question only arises for nodes much larger than the
+  current catalogue's.
+- **An error console**: the strip exists, and what it was missing — being clickable, counting by
+  severity — is not a window.
 
 ---
 
-## Alternatives écartées
+## Consequences
 
-| Alternative | Pourquoi non |
+### Positive
+
+- `Number`, `Boolean` and `Text` fit on **one** line, with nothing hard-coded for them: the row rule
+  produces it.
+- `Set Property`'s slot faces the value it receives, and `Get Property`'s faces the property it
+  returns.
+- Cutting a wire works where you aim, at every zoom level.
+- Moving a connection is a reversible gesture and a single history entry.
+- A `number` is blue from the field to the wire, by way of the node that carries it.
+
+### Negative
+
+- A row is 22 px instead of 20: a four-port node is eight pixels taller. Accepted — a row has to be
+  able to hold a field, and 20 px is not an input box.
+- The width reserved for a label (`CONTROL_LABEL_INSET`) is a hand-picked constant, like ADR-0017's
+  grab square. It is correct as long as it matches the port labels' font.
+- The visible stroke no longer reacts to hover by itself; the target colours it. One CSS rule fewer,
+  but it depends on a sibling selector.
+
+---
+
+## Rejected alternatives
+
+| Alternative | Why not |
 |---|---|
-| **Garder deux zones et rapprocher la bande des ports** | La valeur reste sur une autre ligne que son slot ; le nœud continue de ne pas dire ce qui entre où |
-| **Un cas particulier « nœud de valeur » dans le renderer** | Trois nœuds aujourd'hui, dix demain, et une règle que rien ne peut vérifier |
-| **Décider les libellés masqués dans le renderer** | Deux avis sur la même question, et le jour où ils diffèrent un libellé est dessiné dans un champ |
-| **Déclarer `label: ''` dans le catalogue pour les nœuds de valeur** | Le modèle perdrait une information vraie pour une raison d'affichage ; le validateur et les tests lisent ces libellés |
-| **Élargir la cible de clic d'un fil** | Le problème n'était pas la largeur, c'était que le trait visé était au-dessus de la cible |
-| **Débrancher au moment de la pression pour reprendre un fil** | « Lâcher là où on a pris » deviendrait un acte destructeur |
-| **Une septième teinte pour les littéraux** | Une couleur de plus pour dire ce que la palette dit déjà |
+| **Keeping two zones and moving the strip closer to the ports** | The value stays on a different line from its slot; the node still does not say what enters where |
+| **A "value node" special case in the renderer** | Three nodes today, ten tomorrow, and a rule nothing can check |
+| **Deciding hidden labels in the renderer** | Two opinions on the same question, and the day they differ a label is drawn inside a field |
+| **Declaring `label: ''` in the catalogue for value nodes** | The model would lose true information for a display reason; the validator and the tests read those labels |
+| **Widening a wire's click target** | The problem was not the width, it was that the aimed-at stroke sat above the target |
+| **Disconnecting on press to pick a wire up** | "Release where you grabbed" would become a destructive act |
+| **A seventh hue for literals** | One more colour to say what the palette already says |

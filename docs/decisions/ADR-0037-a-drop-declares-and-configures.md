@@ -1,174 +1,170 @@
-# ADR-0037 — Un dépôt déclare, configure, et ne devine jamais
+# ADR-0037 — A drop declares, configures, and never guesses
 
-- **Statut :** **accepté** (2026-08-22)
-- **Amendé par :** ADR-0039 (2026-08-27) — §2.4 (un dépôt produit un nœud fini), §2.3 (la Resource est déposable)
-- **Amendé par :** ADR-0040 (2026-08-28) — §2.4 : le dépôt d'un **Component** dans un graphe est retiré ; un Component a une signification, et elle est de se donner à un Object
-- **Amendé par :** ADR-0043 (2026-08-29) — §2.4 : le dépôt d'un **Object** n'écrit plus seulement dans le `.px`. Il déclare toujours la prise `objectref` — aucune identité de scène n'entre dans le fichier — et il pointe en plus les exemplaires de la scène ouverte sur cet Object, là où rien n'est encore répondu. La phrase « une seule ressource est écrite » servait à écarter la question d'annulation inter-ressources, qui a depuis reçu sa réponse (ADR-0041 §6.2)
-- **Décide :** ce qu'un glisser-déposer venu de l'Editor peut faire dans un graphe `.px`
-- **Dépend de :** ADR-0010 (identité par ID), ADR-0016 / ADR-0026 (un `.px` est **une** ressource), ADR-0021 (identité de Component), ADR-0023 (`PropertyType`), ADR-0024 (undo par ressource), ADR-0027 (modèle de graphe), ADR-0034 (références d'Object), ADR-0036 (frontière `objectref` ↔ `object`)
-- **Amende :** ADR-0027 §11 ; ADR-0034 §3.7 (ligne *Object*) et son tableau « ne décide pas »
-- **Ne décide pas :** le préremplissage de la valeur d'instance ; le geste de drag d'une ligne de propriété dans l'Inspector ; un type de port `component`, qui reste refusé par ADR-0034 §3.2
-
----
-
-## 1. Le fait qui décide, et qu'aucun ADR n'avait écrit
-
-Un `.px` **est un type de Component**, de portée projet. La fenêtre Graph le lie comme tel :
-`graph.bind(workspace.attached(id))` rend une `ComponentDefinition`, jamais un exemplaire.
-
-> **Quand un `.px` est ouvert, il n'existe aucune instance courante.** Il peut être attaché à
-> zéro Object de la scène ouverte, ou à cinquante, et la sélection d'Object est indépendante
-> — ADR-0032 les rend même mutuellement exclusives.
-
-Déposer *Player* dans le graphe de *Door.px* : **sur laquelle des cinq portes écrirait-on
-`target = Player` ?** La question n'a pas de réponse. Ce n'est donc pas une contrainte d'ADR
-qu'il faudrait assouplir, c'est l'absence d'un destinataire.
-
-Ce fait invalide l'idée qu'un nœud puisse porter la cible, et il désigne du même coup la
-seule forme que le geste peut prendre.
+- **Status:** **accepted** (2026-08-22)
+- **Amended by:** ADR-0039 (2026-08-27) — §2.4 (a drop produces a finished node), §2.3 (a Resource is droppable)
+- **Amended by:** ADR-0040 (2026-08-28) — §2.4: dropping a **Component** into a graph is withdrawn; a Component has a meaning, and it is to give itself to an Object
+- **Amended by:** ADR-0043 (2026-08-29) — §2.4: dropping an **Object** no longer writes only into the `.px`. It still declares the `objectref` socket — no scene identity enters the file — and it additionally points the open scene's instances at that Object, where nothing has been answered yet. The sentence "a single resource is written" served to set aside the cross-resource undo question, which has since been answered (ADR-0041 §6.2)
+- **Decides:** what a drag and drop coming from the Editor can do inside a `.px` graph
+- **Depends on:** ADR-0010 (identity by ID), ADR-0016 / ADR-0026 (a `.px` is **one** resource), ADR-0021 (Component identity), ADR-0023 (`PropertyType`), ADR-0024 (undo per resource), ADR-0027 (the graph model), ADR-0034 (Object references), ADR-0036 (the `objectref` ↔ `object` boundary)
+- **Amends:** ADR-0027 §11; ADR-0034 §3.7 (the *Object* row) and its "does not decide" table
+- **Does not decide:** pre-filling the instance value; the drag gesture on an Inspector property row; a `component` port type, which stays refused by ADR-0034 §3.2
 
 ---
 
-## 2. Décision
+## 1. The fact that decides, and that no ADR had written
 
-### 2.1 Le dépôt déclare une **prise**, pas une cible
+A `.px` **is a Component type**, of project scope. The Graph window binds it as such:
+`graph.bind(workspace.attached(id))` returns a `ComponentDefinition`, never an instance.
 
-> **Déposer un Object dans un graphe déclare sur le `.px` une propriété `objectref` nommée
-> d'après cet Object, et un nœud qui la lit. L'identité de l'Object n'entre nulle part.**
+> **When a `.px` is open, there is no current instance.** It may be attached to zero Objects of the
+> open scene, or to fifty, and the Object selection is independent — ADR-0032 even makes them
+> mutually exclusive.
 
-Le créateur voit `[Player]`. Le fichier contient « une prise appelée Player ». Chaque Object
-portant le Component dit dans l'Inspector où **sa** prise pointe (ADR-0034 §3.5).
+Dropping *Player* into *Door.px*'s graph: **on which of the five doors would you write
+`target = Player`?** The question has no answer. This is therefore not an ADR constraint to be
+loosened, it is the absence of a recipient.
+
+That fact invalidates the idea of a node carrying the target, and at the same time it designates the
+only shape the gesture can take.
+
+---
+
+## 2. Decision
+
+### 2.1 The drop declares a **socket**, not a target
+
+> **Dropping an Object into a graph declares on the `.px` an `objectref` property named after that
+> Object, and a node that reads it. The Object's identity enters nowhere.**
+
+The creator sees `[Player]`. The file holds "a socket called Player". Every Object carrying the
+Component says in the Inspector where **its** socket points (ADR-0034 §3.5).
 
 ```json
-// dans le .px — portée PROJET
+// in the .px — PROJECT scope
 "properties": { "Player": { "id": "p_a1", "type": "objectref", "default": null } }
 
-// dans la scène — portée SCÈNE, une valeur par instance
+// in the scene — SCENE scope, one value per instance
 { "type": "res_door", "values": { "Player": "obj_7f3a" } }
 ```
 
-C'est ce qui rend un `.px` **réutilisable** plutôt que verrouillé sur une scène — et le
-créateur le lit : une prise nommée se remplit, un identifiant gravé ne se remplit pas.
+That is what makes a `.px` **reusable** rather than locked onto a scene — and the creator reads it: a
+named socket gets filled, an engraved identifier does not.
 
-### 2.2 Un dépôt écrit dans **une** ressource, celle qui est ouverte
+### 2.2 A drop writes into **one** resource, the one that is open
 
-Les propriétés et le graphe d'un `.px` partagent **une** pipeline et **une** pile
-(ADR-0027 §5). Déclarer la propriété, ajouter le nœud et poser le fil se font sous **un
-batch** : un `Ctrl Z` reprend tout le geste.
+A `.px`'s properties and its graph share **one** pipeline and **one** stack (ADR-0027 §5). Declaring
+the property, adding the node and laying the wire happen under **one batch**: a single `Ctrl Z` takes
+the whole gesture back.
 
-> **Aucun dépôt ne modifie la Scene.** La question de la portée d'undo inter-ressources
-> qu'ADR-0034 §3.7 attendait **ne se pose pas** : rien hors du `.px` n'est touché.
+> **No drop modifies the Scene.** The cross-resource undo scope question ADR-0034 §3.7 was waiting on
+> **does not arise**: nothing outside the `.px` is touched.
 
-### 2.3 Ce qui entre dans un `.px` est toujours de portée projet
+### 2.3 What enters a `.px` is always project-scoped
 
-| Ce qui est déposé | Ce qui entre dans le `.px` | Portée |
+| What is dropped | What enters the `.px` | Scope |
 |---|---|---|
-| Object | un **nom** de propriété, et son type `objectref` | projet |
-| Component | son `componentType` dans un param | projet |
-| Property | `componentType` + `property.id` dans deux params | projet |
-| Resource | sa `ResourceId` dans un param — **ajouté par ADR-0039** | projet |
+| Object | a property **name**, and its `objectref` type | project |
+| Component | its `componentType`, in a param | project |
+| Property | `componentType` + `property.id`, in two params | project |
+| Resource | its `ResourceId`, in a param — **added by ADR-0039** | project |
 
-L'invariant 1 d'ADR-0034 est tenu à la lettre : **aucune identité de scène**. Un nom
-d'affichage sert à nommer une propriété — dont le lien reste porté par son `id`, insensible
-au renommage (ADR-0027 §4) — et non à désigner quoi que ce soit.
+ADR-0034's invariant 1 is kept to the letter: **no scene identity**. A display name is used to name a
+property — whose link is still carried by its `id`, immune to renaming (ADR-0027 §4) — and not to
+designate anything.
 
-### 2.4 Là où le geste serait ambigu, le créateur tranche au point du dépôt
+### 2.4 Where the gesture would be ambiguous, the creator decides at the drop point
 
-ADR-0027 §11 refusait le dépôt d'une propriété parce que lire et écrire sont deux intentions
-et qu'en choisir une serait magique. Il annonçait lui-même la levée : « la règle pourra être
-ajoutée le jour où **un geste non ambigu** sera conçu ».
+ADR-0027 §11 refused a property drop because reading and writing are two intentions and choosing one
+would be magical. It announced the lifting itself: "the rule can be added the day **an unambiguous
+gesture** is designed".
 
-> **Ce geste est un menu ouvert à l'endroit où le pointeur a lâché.** Le choix est explicite,
-> local, et fait par le créateur.
+> **That gesture is a menu opened where the pointer released.** The choice is explicit, local, and
+> made by the creator.
 
-C'est le menu que toute création ouvre déjà dans cet Editor (ADR-0026 §10) ; il n'en est pas
-créé un second.
+It is the menu every creation already opens in this Editor (ADR-0026 §10); no second one is created.
 
-**Atterrir sur un nœud existant n'ouvre aucun menu** : poser ce nœud *était* le choix. Un
-dépôt sur un nœud **configure** ses params ; un dépôt sur toile nue **crée**, après la
-question.
+**Landing on an existing node opens no menu**: placing that node *was* the choice. A drop on a node
+**configures** its params; a drop on bare canvas **creates**, after the question.
 
-> **Étendu par ADR-0039 §3 — le dépôt crée un nœud FINI, pas un nœud à moitié rempli.**
-> Le dépôt d'une propriété écrivait `component` et `property` et laissait la cible vide : le
-> créateur devait ensuite draguer l'Object depuis la Hierarchy et tirer un fil vers `Target`,
-> alors que l'Inspector affichait déjà cet Object au moment du geste. Le dépôt déclare
-> désormais (ou réutilise) la prise `objectref` de cet Object et vise le nœud dessus, sous
-> **un seul batch**. Ce qui entre dans le `.px` est inchangé : un NOM de prise et deux
-> identités de portée projet — l'`ObjectId` voyage avec le glissement et n'est écrit nulle
-> part (invariant 1 d'ADR-0034).
+> **Extended by ADR-0039 §3 — the drop creates a FINISHED node, not a half-filled one.**
+> A property drop wrote `component` and `property` and left the target empty: the creator then had to
+> drag the Object from the Hierarchy and pull a wire to `Target`, when the Inspector was already
+> showing that Object at the moment of the gesture. The drop now declares (or reuses) that Object's
+> `objectref` socket and points the node at it, under **one single batch**. What enters the `.px` is
+> unchanged: a socket NAME and two project-scoped identities — the `ObjectId` travels with the drag
+> and is written nowhere (ADR-0034's invariant 1).
 
-### 2.5 Le typage reste la chaîne existante
+### 2.5 Typing stays the existing chain
 
 ```
 Reference → Object → Component → Property → PropertyType
 ```
 
-Le type d'un port vient de `(componentType, propertyId)` par `portTypeOf()` — **jamais de
-l'Object**, qui n'y contribue rien et ne le peut pas (aucune Scene dans le contexte de port).
-Une propriété `objectref` est portée comme `object` (ADR-0036). Aucune table de types
-parallèle, `typesCompatible()` intact, aucune famille de ports nouvelle.
+A port's type comes from `(componentType, propertyId)` through `portTypeOf()` — **never from the
+Object**, which contributes nothing to it and cannot (there is no Scene in the port context). An
+`objectref` property is carried as `object` (ADR-0036). No parallel type table, `typesCompatible()`
+untouched, no new port family.
 
-### 2.6 Les références invalides restent visibles
+### 2.6 Invalid references stay visible
 
-Rien n'est réécrit pour masquer un problème. Object supprimé → la valeur d'instance est
-conservée, résout vers `null`, l'Inspector l'affiche en rouge (ADR-0034 §3.4, ADR-0036).
-Component ou propriété disparus → `MISSING_PROPERTY`, nœud cerné, graphe non réécrit
-(ADR-0027 §8).
+Nothing is rewritten to hide a problem. A deleted Object → the instance value is kept, resolves to
+`null`, and the Inspector shows it in red (ADR-0034 §3.4, ADR-0036). A vanished Component or property
+→ `MISSING_PROPERTY`, the node ringed, the graph not rewritten (ADR-0027 §8).
 
 ---
 
-## 3. Ce que cet ADR amende
+## 3. What this ADR amends
 
-| ADR | Section | Ce qui change |
+| ADR | Section | What changes |
 |---|---|---|
-| **0034** | §3.7, ligne *Object* | l'argument **(b)** — « un geste écrirait dans deux ressources ayant deux piles d'undo » — supposait un encodage par **tag**, donc une écriture dans la scène. La prise n'écrit qu'une ressource : l'argument tombe. L'argument **(a)** — pas de nom d'affichage servant d'identité — **reste, et est respecté** : le nom nomme une propriété, l'`id` porte le lien |
-| **0034** | « ne décide pas » | « le dépôt d'un Object préremplissant un nœud » cesse d'attendre ADR-0024 |
-| **0027** | §11 | le refus du dépôt d'une propriété est levé, par le geste non ambigu que §11 appelait |
+| **0034** | §3.7, the *Object* row | argument **(b)** — "a gesture would write into two resources with two undo stacks" — assumed an encoding by **tag**, and therefore a write into the scene. The socket writes one resource only: the argument falls. Argument **(a)** — no display name serving as an identity — **stands, and is honoured**: the name names a property, the `id` carries the link |
+| **0034** | "does not decide" | "an Object drop pre-filling a node" stops waiting on ADR-0024 |
+| **0027** | §11 | the refusal of a property drop is lifted, by the unambiguous gesture §11 called for |
 
-**Restent valides et intouchés :** ADR-0034 invariants 1-7, §3.1 à §3.6 ; ADR-0023 ;
-ADR-0027 §3, §5, §8, §9 ; ADR-0036 ; ADR-0024. **Reste refusé :** le port `component`
-(ADR-0034 §3.2) — rien ne le consomme dans ce modèle.
+**Still valid and untouched:** ADR-0034 invariants 1-7, §3.1 to §3.6; ADR-0023; ADR-0027 §3, §5, §8,
+§9; ADR-0036; ADR-0024. **Still refused:** the `component` port (ADR-0034 §3.2) — nothing consumes it
+in this model.
 
 ---
 
-## 4. Contrats observables
+## 4. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| Aucune identité de scène dans un `.px` | le payload sérialisé ne contient aucun `ObjectId`, l'Object déposé fût-il réel |
-| Un dépôt d'Object est un seul geste | un `undo` retire la propriété **et** le nœud ; un `redo` les remet |
-| Un dépôt ne touche pas la Scene | aucune Operation sur la pipeline de la scène ; sérialisation identique |
-| Un nom de prise n'écrase rien | deux dépôts du même Object déclarent `Player` puis `Player 2` |
-| Le choix Get/Set est explicite | sans réponse du menu, aucun nœud n'est créé |
-| Un dépôt sur un nœud configure, ne crée pas | le nombre de nœuds ne change pas |
-| Le type est celui de la propriété | le port d'un nœud configuré porte le type déclaré, `objectref` excepté (ADR-0036) |
+| No scene identity in a `.px` | the serialized payload contains no `ObjectId`, even when the dropped Object is real |
+| An Object drop is a single gesture | an `undo` removes the property **and** the node; a `redo` puts them back |
+| A drop does not touch the Scene | no Operation on the scene's pipeline; identical serialization |
+| A socket name overwrites nothing | two drops of the same Object declare `Player` and then `Player 2` |
+| The Get/Set choice is explicit | with no answer from the menu, no node is created |
+| A drop on a node configures, it does not create | the node count does not change |
+| The type is the property's | a configured node's port carries the declared type, `objectref` excepted (ADR-0036) |
 
 ---
 
-## 5. Conséquences
+## 5. Consequences
 
-### Positives
+### Positive
 
-- Un créateur prend ce qu'il voit et le dépose ; il n'a plus à connaître `Get Property On`
-  avant d'avoir commencé.
-- Un `.px` reste réutilisable, et la prise nommée le **montre**.
-- Un nœud configuré se lit : `Get Health.hp`, `Player`.
-- Aucun geste ne franchit deux piles d'undo.
+- A creator takes what they see and drops it; they no longer have to know `Get Property On` before
+  they can start.
+- A `.px` stays reusable, and the named socket **shows** it.
+- A configured node reads: `Get Health.hp`, `Player`.
+- No gesture crosses two undo stacks.
 
-### Négatives
+### Negative
 
-- La valeur d'instance reste à renseigner : déposer *Player* ne fait pas pointer la prise
-  vers Player, il déclare la prise. C'est le prix de la réutilisabilité, et il est
-  volontairement payé (voir §6).
-- Le `.px` gagne une propriété par Object déposé. Un créateur qui en dépose cinq déclare cinq
-  prises, ce qui est ce qu'il a demandé mais qu'il peut ne pas avoir voulu.
+- The instance value still has to be filled in: dropping *Player* does not point the socket at
+  Player, it declares the socket. That is the price of reusability, and it is deliberately paid (see
+  §6).
+- The `.px` gains one property per dropped Object. A creator who drops five declares five sockets,
+  which is what they asked for but may not be what they wanted.
 
 ---
 
-## 6. Ce que cet ADR laisse ouvert
+## 6. What this ADR leaves open
 
-| Point | Pourquoi |
+| Point | Why |
 |---|---|
-| **Préremplir la valeur d'instance** quand le `.px` n'est attaché qu'à un seul Object | seul endroit où une écriture inter-ressources réapparaîtrait ; à décider avec ADR-0024, pas au détour d'un dépôt |
-| ~~**Le geste de drag d'une ligne de propriété dans l'Inspector**~~ | **Tranché (ADR-0039) :** la poignée dédiée que ce point appelait existe — six points sur la ligne, qui arrêtent le `pointerdown` pour que le scrub du libellé ne voie jamais les événements d'un glissement. Une ligne appariée (`Position`) n'en a pas : c'est deux propriétés, et le Core n'a pas de type vecteur (ADR-0023 §2) |
-| **Un type de port `component`** | refusé par ADR-0034 §3.2 ; rien ne le consomme |
+| **Pre-filling the instance value** when the `.px` is attached to a single Object | the one place where a cross-resource write would reappear; to be decided with ADR-0024, not in passing during a drop |
+| ~~**The drag gesture on an Inspector property row**~~ | **Settled (ADR-0039):** the dedicated handle this point called for exists — six dots on the row, which stop the `pointerdown` so that the label's scrub never sees a drag's events. A paired row (`Position`) has none: that is two properties, and the Core has no vector type (ADR-0023 §2) |
+| **A `component` port type** | refused by ADR-0034 §3.2; nothing consumes it |

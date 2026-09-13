@@ -1,57 +1,56 @@
-# ADR-0053 — Un chemin, un décodeur
+# ADR-0053 — One path, one decoder
 
-- **Statut :** **accepté** (2026-08-31)
-- **Décide :** ce qu'un lâcher de propriété écrit dans un nœud
-- **Dépend de :** ADR-0040 §2 (une propriété du `.px` courant est stockée sans type), ADR-0043 (le namespace Object), ADR-0047 §1 (une seule question, une valeur composite dans le picker)
-- **Ne décide pas :** le geste Component → canvas nu ; la suppression d'une ressource `.px` ; `Random`, `Delay`, `Timer`, `Destroy`, `Spawn`, `On Collision`
+- **Status:** **accepted** (2026-08-31)
+- **Decides:** what a property drop writes into a node
+- **Depends on:** ADR-0040 §2 (a property of the current `.px` is stored with no type), ADR-0043 (the Object namespace), ADR-0047 §1 (one question, a composite value in the picker)
+- **Does not decide:** the Component → bare canvas gesture; deleting a `.px` resource; `Random`, `Delay`, `Timer`, `Destroy`, `Spawn`, `On Collision`
 
 ---
 
-## 1. Le défaut
+## 1. The defect
 
-Lâcher `Active` — une propriété du namespace `Object` — sur un `Get Property` laissait le nœud
-lisant **`/active`** : la moitié gauche du chemin disparue. Le nœud résolvait alors contre les
-champs du `.px` courant, où aucune propriété de ce nom n'existe.
+Dropping `Active` — a property of the `Object` namespace — onto a `Get Property` left the node reading
+**`/active`**: the left half of the path gone. The node then resolved against the current `.px`'s
+fields, where no property of that name exists.
 
-La cause est une collision entre deux écritures qui étaient correctes séparément :
+The cause is a collision between two writes that were each correct on their own:
 
 ```
   setNodeParams(node, { component: 'Object', property: 'active' })
-        ↓ une écriture par entrée, dans un lot
-  #writeParam(node, 'component', 'Object')      → écrit
-  #writeParam(node, 'property',  'active')      → paramWrites() lit un CHEMIN
-        ↓ splitPropertyPath('active') → pas de '/'
-  { component: null, property: 'active' }       → le Component est écrasé
+        ↓ one write per entry, in a batch
+  #writeParam(node, 'component', 'Object')      → written
+  #writeParam(node, 'property',  'active')      → paramWrites() reads a PATH
+        ↓ splitPropertyPath('active') → no '/'
+  { component: null, property: 'active' }       → the Component is overwritten
 ```
 
-`property-to-node` écrivait les deux moitiés séparément, ce qui marchait — jusqu'au jour où
-un seul picker s'est mis à poser toute la question (ADR-0047 §1) et où `paramWrites()` a
-commencé à lire toute écriture sur `property` **comme un chemin**.
+`property-to-node` wrote the two halves separately, which worked — until the day one picker started
+asking the whole question (ADR-0047 §1) and `paramWrites()` began reading every write on `property`
+**as a path**.
 
-## 2. La décision
+## 2. The decision
 
-> **Un lâcher de propriété écrit un seul param : le chemin.**
+> **A property drop writes a single param: the path.**
 
-C'est ce que le contrôle écrit. Il y a donc **un encodage et un décodeur**, et non deux
-producteurs dont l'un ignore la grammaire de l'autre.
+That is what the control writes. There is therefore **one encoding and one decoder**, and not two
+producers one of which ignores the other's grammar.
 
-La moitié Component vide n'est plus un cas à traiter : `'/p_speed'` dit « une propriété de ce
-Component » par construction, et remplace celle que le nœud nommait avant au lieu de la
-laisser traîner.
+An empty Component half is no longer a case to handle: `'/p_speed'` says "a property of this
+Component" by construction, and replaces the one the node named before instead of leaving it lying
+around.
 
-## 3. Pourquoi le namespace Object l'a révélé
+## 3. Why the Object namespace revealed it
 
-Une propriété d'un vrai Component perdait aussi sa moitié gauche, mais le nœud continuait
-souvent de fonctionner : `null` signifie « ce Component » et un `.px` déclare parfois une
-propriété du même identifiant. `Object` n'a pas cette chance — aucun `.px` ne déclare `active`
-— donc le nœud cassait visiblement. Le défaut était général ; c'est le namespace qui l'a
-rendu lisible.
+A property of a real Component also lost its left half, but the node often kept working: `null` means
+"this Component" and a `.px` sometimes declares a property with the same identifier. `Object` does not
+have that luck — no `.px` declares `active` — so the node broke visibly. The defect was general; it is
+the namespace that made it readable.
 
-## 4. Contrats observables
+## 4. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| Un lâcher sur un nœud écrit un seul param, le chemin | `dnd.test.js` |
-| Une propriété du `.px` courant s'écrit avec une moitié gauche vide | idem |
-| Une propriété du namespace `Object` garde son namespace | idem |
-| Les quatre propriétés système produisent des nœuds justes | **exécuté dans Chrome** |
+| A drop on a node writes a single param, the path | `dnd.test.js` |
+| A property of the current `.px` is written with an empty left half | the same |
+| A property of the `Object` namespace keeps its namespace | the same |
+| The four system properties produce correct nodes | **run in Chrome** |

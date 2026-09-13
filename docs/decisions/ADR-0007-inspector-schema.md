@@ -1,46 +1,44 @@
-# ADR-0007 — Inspector piloté par schéma, réflexif en repli
+# ADR-0007 — A schema-driven Inspector, reflective as a fallback
 
-- **Statut :** **accepté** (2026-08-12)
+- **Status:** **accepted** (2026-08-12)
 
-## Contexte observé
+## Observed context
 
-**L'Inspector de Legacy est déjà générique.** Contrairement à ce qu'on pourrait craindre,
-`editor/windows/properties.js` ne contient **aucun** `if (component === 'Health')`.
-Il réfléchit sur l'objet et déduit le widget du type de la valeur :
+**Legacy's Inspector is already generic.** Contrary to what you might fear,
+`editor/windows/properties.js` contains **no** `if (component === 'Health')`. It reflects over
+the object and derives the widget from the value's type:
 
-| Valeur | Widget produit |
+| Value | Widget produced |
 |---|---|
 | `number` | `<input type="text">` |
 | `boolean` | `<input type="checkbox">` |
-| `string` commençant par `#` | `<input type="color">` |
-| `string` | `<input type="text">` |
-| instance de `Color` | `<input type="color">` |
-| autre objet | `<input type="text">` |
+| a `string` starting with `#` | `<input type="color">` |
+| a `string` | `<input type="text">` |
+| a `Color` instance | `<input type="color">` |
+| any other object | `<input type="text">` |
 
-Le schéma est donc **implicite, inféré de la valeur à l'instant T**. C'est élégant et
-cela couvre les cas courants sans configuration.
+The schema is therefore **implicit, inferred from the value at that instant**. It is elegant and
+it covers the common cases with no configuration.
 
-### Limites mesurées
+### Measured limits
 
-1. **Liste noire codée en dur** : `id`, `uid`, `scale`, `static`, `type`, `active`,
-   `visible`, `lock`, `image`, `parent`, `components`, `childs` — un `switch` que tout
-   nouveau champ oblige à modifier.
-2. **Décimales tronquées** : `parseInt(value, 10)` à l'affichage d'un `number`.
-   Une vitesse de `0.4` s'affiche `0`.
-3. **Détection de couleur par la valeur** : une couleur initialisée à `''` devient un
-   champ texte ; un texte commençant par `#` devient un sélecteur de couleur.
-4. **Aucune contrainte** : ni min, ni max, ni pas, ni unité, ni infobulle.
-5. **Branches mortes** : `case 'TODO Range'`, `'TODO Array'`, `'TODO Enumeration'`,
-   `'TODO Image'`, `'TODO Button'` sont comparées à `value.constructor.name` et ne
-   peuvent jamais correspondre.
-6. Les champs `#privés` sont invisibles (voir ADR-0003).
-7. Le seul endroit réellement spécifique par composant est le `switch` d'icônes dans
-   `appendName()`.
+1. **A hard-coded blacklist**: `id`, `uid`, `scale`, `static`, `type`, `active`, `visible`,
+   `lock`, `image`, `parent`, `components`, `childs` — a `switch` that every new field forces you
+   to edit.
+2. **Truncated decimals**: `parseInt(value, 10)` when displaying a `number`. A speed of `0.4`
+   displays as `0`.
+3. **Colour detection by value**: a colour initialized to `''` becomes a text field; a text
+   starting with `#` becomes a colour picker.
+4. **No constraints**: no min, no max, no step, no unit, no tooltip.
+5. **Dead branches**: `case 'TODO Range'`, `'TODO Array'`, `'TODO Enumeration'`, `'TODO Image'`,
+   `'TODO Button'` are compared against `value.constructor.name` and can never match.
+6. `#private` fields are invisible (see ADR-0003).
+7. The only genuinely per-component place is the icon `switch` in `appendName()`.
 
-## Décision
+## Decision
 
-Un composant **peut** déclarer un schéma statique. L'Inspector l'utilise s'il existe et
-retombe sinon sur l'inférence actuelle.
+A component **may** declare a static schema. The Inspector uses it if it exists and falls back on
+the current inference otherwise.
 
 ```js
 export class Health {
@@ -52,81 +50,79 @@ export class Health {
 }
 ```
 
-Types envisagés : `number`, `int`, `boolean`, `string`, `color`, `enum`, `range`,
-`vector2`, `resource` (image, son, script, graphe), `object`, `array`, `action` (bouton).
+Contemplated types: `number`, `int`, `boolean`, `string`, `color`, `enum`, `range`, `vector2`,
+`resource` (image, sound, script, graph), `object`, `array`, `action` (a button).
 
-Attributs : `default`, `min`, `max`, `step`, `label`, `tooltip`, `unit`, `hidden`,
-`readonly`, `group`.
+Attributes: `default`, `min`, `max`, `step`, `label`, `tooltip`, `unit`, `hidden`, `readonly`,
+`group`.
 
-> **Tranché par ADR-0023 (2026-08-14).** Cette liste posait deux questions avec un seul mot.
-> Elle est scindée : le Core possède **`PropertyType`** — huit membres, la forme de la
-> valeur : `number`, `int`, `boolean`, `string`, `color`, `enum`, `resource`, `array` — et
-> l'Editor en **dérive** `FieldKind`, la question du contrôle.
+> **Settled by ADR-0023 (2026-08-14).** That list asked two questions with one word. It is split:
+> the Core owns **`PropertyType`** — eight members, the shape of the value: `number`, `int`,
+> `boolean`, `string`, `color`, `enum`, `resource`, `array` — and the Editor **derives**
+> `FieldKind` from it, the question of the control.
 >
-> `range` est **dérivé** d'un `number` borné aux deux bouts, donc aucun composant n'a besoin
-> de le déclarer. `readonly` est un repli d'affichage, pas une forme de valeur. `object` est
-> **retiré** (aucun consommateur, aucune validation, aucun sens pour la réplication),
-> `vector2` est inutile — l'Inspector apparie déjà `x`/`y` — et `action` n'est pas une
-> propriété : un bouton est une commande.
+> `range` is **derived** from a `number` bounded at both ends, so no component needs to declare
+> it. `readonly` is a display fallback, not a shape of value. `object` is **removed** (no
+> consumer, no validation, no meaning for replication), `vector2` is unnecessary — the Inspector
+> already pairs `x`/`y` — and `action` is not a property: a button is a command.
 
-## La section `Object` de l'Inspector
+## The Inspector's `Object` section
 
-**Consigné le 2026-08-14** — le comportement existait dans le code sans qu'aucun ADR ne le
-documente.
+**Recorded on 2026-08-14** — the behaviour existed in the code without any ADR documenting it.
 
-L'Inspector rend, **au-dessus des Components**, une section `Object` intrinsèque, alimentée
-par une liste écrite à la main (`editor/inspector/schema.js`, `objectFields()`) : `name`,
-`tag`, `layer`, `active`.
+The Inspector renders, **above the Components**, an intrinsic `Object` section, fed by a
+hand-written list (`editor/inspector/schema.js`, `objectFields()`): `name`, `tag`, `layer`,
+`active`.
 
-> **`Object` n'est pas un Component**, et `name` / `tag` ne deviennent jamais des Components
-> stockés dans `object.components` (ADR-0001, ADR-0002). Faire des Components une collection
-> ordonnée (ADR-0018) **ne touche pas** cette section : elle n'est pas dans cette collection.
+> **`Object` is not a Component**, and `name` / `tag` never become Components stored in
+> `object.components` (ADR-0001, ADR-0002). Making Components an ordered collection (ADR-0018)
+> **does not touch** that section: it is not in that collection.
 
-- `visible` et `lock` en sont absents à dessein : la ligne de Hierarchy les porte, où ils
-  sont à un clic pour tous les objets à la fois plutôt qu'un par un ;
-- `id` est absent parce qu'un créateur n'en a pas l'usage, et qu'un panneau qui s'ouvre sur
-  une chaîne aléatoire ressemble à un débogueur ;
-- l'édition passe par `Object.setProperty()`, qui produit une Operation dont la cible est
-  `{ object: id, component: null }`. **Ce `component: null` est la façon dont le format
-  exprime « propriété intrinsèque de l'Object »**, et c'est ce qui rend l'édition de `name`
-  répliquable et annulable comme le reste.
+- `visible` and `lock` are absent by design: the Hierarchy row carries them, where they are one
+  click away for every object at once rather than one at a time;
+- `id` is absent because a creator has no use for it, and a panel that opens on a random string
+  looks like a debugger;
+- editing goes through `Object.setProperty()`, which produces an Operation whose target is
+  `{ object: id, component: null }`. **That `component: null` is how the format expresses "an
+  intrinsic property of the Object"**, and it is what makes editing `name` replicable and
+  undoable like the rest.
 
-### Le repli réflexif est conservé, pas déprécié
+### The reflective fallback is kept, not deprecated
 
-Un composant écrit par un utilisateur débutant, sans `schema`, doit continuer à
-s'afficher correctement. **C'est une exigence, pas une tolérance.** Le schéma sert à
-enrichir (contraintes, énumérations, ressources), jamais à autoriser.
+A component written by a beginner, with no `schema`, must keep displaying correctly. **That is a
+requirement, not a tolerance.** The schema is there to enrich (constraints, enumerations,
+resources), never to authorize.
 
-### Ce qui est corrigé au passage
+### What is fixed along the way
 
-- `parseInt` → formatage préservant les décimales ;
-- la liste noire devient `hidden: true` dans le schéma des propriétés concernées, ou une
-  convention explicite pour les champs système ;
-- les branches `TODO *` sont remplacées par de vrais types ;
-- le `switch` d'icônes devient `static icon = 'far fa-heart'` sur le composant.
+- `parseInt` → formatting that preserves decimals;
+- the blacklist becomes `hidden: true` in the schema of the properties concerned, or an explicit
+  convention for system fields;
+- the `TODO *` branches are replaced by real types;
+- the icon `switch` becomes `static icon = 'far fa-heart'` on the component.
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Un composant décrit son interface là où il est défini — un seul endroit à lire.
-- L'Inspector n'a plus aucune connaissance des composants concrets.
-- Le schéma sert aussi à la validation, aux valeurs par défaut, à la sérialisation, et
-  plus tard à une IA qui voudrait comprendre un composant.
+- A component describes its interface where it is defined — one place to read.
+- The Inspector has no knowledge of concrete components any more.
+- The schema also serves validation, default values, serialization, and later an AI trying to
+  understand a component.
 
-### Négatives
+### Negative
 
-- Deux chemins de code à maintenir (schéma et réflexion). Accepté : le repli est court
-  et il existe déjà.
-- Le schéma peut diverger de l'implémentation (`static schema` déclare `speed`, le
-  constructeur l'a renommé). Mitigation : un test de développement compare les clés du
-  schéma aux propriétés d'une instance neuve.
+- Two code paths to maintain (schema and reflection). Accepted: the fallback is short and it
+  already exists.
+- The schema can drift from the implementation (`static schema` declares `speed`, the constructor
+  renamed it). Mitigation: a development test compares the schema's keys against a fresh
+  instance's properties.
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **Rester en réflexion pure** | Ne permet ni contraintes, ni énumérations, ni champs ressource. Les `TODO` de Legacy montrent que le besoin était déjà identifié. |
-| **Schéma obligatoire** | Casse tous les composants existants et alourdit l'écriture d'un composant simple — contraire à l'objectif débutant. |
-| **Décorateurs** | Pas de support natif stable, imposerait un build. |
-| **Inférence par types TypeScript** | Le projet est en JavaScript pur ; les types disparaissent à l'exécution, l'Inspector est un outil d'exécution. |
+| **Stay with pure reflection** | It allows neither constraints, nor enumerations, nor resource fields. Legacy's `TODO`s show the need had already been identified. |
+| **A mandatory schema** | It breaks every existing component and makes writing a simple component heavier — against the beginner goal. |
+| **Decorators** | No stable native support; it would force a build. |
+| **Inference from TypeScript types** | The project is plain JavaScript; types disappear at runtime, and the Inspector is a runtime tool. |

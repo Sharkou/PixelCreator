@@ -1,110 +1,107 @@
-# ADR-0050 — Tourner hors du plan
+# ADR-0050 — Turning out of the plane
 
-- **Statut :** **accepté** (2026-08-31)
-- **Remplacé par :** ADR-0051 (2026-08-31) — la rotation devient une PAIRE `rotationX` / `rotationY` appariée comme Position et Scale. `Rotation.X` est l'ancienne rotation dans le plan ; `Rotation.Y` prend le rôle que §3 donnait à `rotationX`. Les deux sont en radians, plus en degrés.
-- **Décide :** comment un objet 2D dit qu'il est tourné hors du plan de l'écran
-- **Dépend de :** ADR-0002 (espaces et Transform), ADR-0003 (Property System), ADR-0007 (schéma)
-- **Remplace :** ADR-0047 §3 — `flipX` / `flipY` sont retirés
-- **Ne décide pas :** l'unité de `rotation`, qui reste en radians ; une quelconque profondeur, caméra 3D ou z-order
-
----
-
-## 1. Le problème avec le flip
-
-ADR-0047 §3 avait raison sur le diagnostic — « une orientation n'est pas une rotation, et pas
-non plus une échelle négative » — et tort sur la réponse. Un booléen ne peut dire que deux
-choses : **face** ou **dos**. Ce qu'une carte saisie en plein retournement demande, c'est
-`45`.
-
-Le flip n'était donc pas un modèle, c'était **un cas particulier promu au rang de propriété**.
+- **Status:** **accepted** (2026-08-31)
+- **Superseded by:** ADR-0051 (2026-08-31) — rotation becomes a `rotationX` / `rotationY` PAIR, paired like Position and Scale. `Rotation.X` is the old in-plane rotation; `Rotation.Y` takes the role §3 gives `rotationX`. Both are in radians, no longer in degrees.
+- **Decides:** how a 2D object says it is turned out of the plane of the screen
+- **Depends on:** ADR-0002 (spaces and Transform), ADR-0003 (Property System), ADR-0007 (schema)
+- **Supersedes:** ADR-0047 §3 — `flipX` / `flipY` are removed
+- **Does not decide:** the unit of `rotation`, which stays radians; any notion of depth, a 3D camera or z-order
 
 ---
 
-## 2. La décision
+## 1. The problem with the flip
 
-> **`rotationX` et `rotationY`, deux nombres en degrés, à côté de `rotation`.**
+ADR-0047 §3 was right about the diagnosis — "a facing is not a rotation, and not a negative scale
+either" — and wrong about the answer. A boolean can say only two things: **front** or **back**. What a
+card caught mid-flip asks for is `45`.
+
+The flip was therefore not a model, it was **a special case promoted to a property**.
+
+---
+
+## 2. The decision
+
+> **`rotationX` and `rotationY`, two numbers in degrees, beside `rotation`.**
 
 ```
   Transform
     Position X    Position Y
-    Rotation                  ← dans le plan, comme toujours
+    Rotation                  ← in the plane, as always
     Scale X       Scale Y
-    Rotation X    Rotation Y  ← hors du plan
+    Rotation X    Rotation Y  ← out of the plane
 ```
 
-Pas de `Rotation Z` : la rotation dans le plan s'appelle `Rotation` parce que c'est celle
-qu'un créateur de jeu 2D veut dire quand il dit « rotation ». Nommer les axes des deux
-nouvelles suffit à lever l'ambiguïté sans importer un troisième axe dans le vocabulaire.
+No `Rotation Z`: in-plane rotation is called `Rotation` because that is what a 2D game creator means
+when they say "rotation". Naming the axes of the two new ones is enough to remove the ambiguity
+without importing a third axis into the vocabulary.
 
 ---
 
-## 3. Ce n'est pas une approximation
+## 3. This is not an approximation
 
-Le renderer projette déjà orthographiquement : `worldMatrix()` produit une affine 2×3 que
-`context.setTransform` consomme, sans profondeur. Sous cette projection, une rotation de θ
-autour de l'axe X envoie `(x, y, 0)` sur `(x, y·cos θ, y·sin θ)` ; laisser tomber `z` laisse
-`(x, y·cos θ)`.
+The renderer already projects orthographically: `worldMatrix()` produces a 2×3 affine that
+`context.setTransform` consumes, with no depth. Under that projection, a rotation of θ about the X
+axis sends `(x, y, 0)` to `(x, y·cos θ, y·sin θ)`; dropping `z` leaves `(x, y·cos θ)`.
 
-> **Une mise à l'échelle verticale par `cos θ` EST la rotation autour de X, exactement.**
+> **A vertical scaling by `cos θ` IS the rotation about X, exactly.**
 
-Il n'y a donc rien à simuler et rien à approcher. Le pipeline ne bouge pas : ce qui en sort
-est la même affine qu'avant.
+There is therefore nothing to simulate and nothing to approximate. The pipeline does not move: what
+comes out of it is the same affine as before.
 
-| Rotation X | Effet |
+| Rotation X | Effect |
 |---|---|
-| 0° | au repos |
-| 45° | une carte saisie en plein retournement (×0,707) |
-| 90° | sa tranche (×0) |
-| 180° | son dos (×−1) |
+| 0° | at rest |
+| 45° | a card caught mid-flip (×0.707) |
+| 90° | its edge (×0) |
+| 180° | its back (×−1) |
 
-**Que 180° ressemble à un miroir est une conséquence du cosinus, pas un cas écrit.** C'est
-précisément ce qui distingue ce modèle d'un flip renommé.
+**That 180° looks like a mirror is a consequence of the cosine, not a written case.** That is exactly
+what distinguishes this model from a renamed flip.
 
-**L'axe autour duquel on tourne garde sa longueur** — `rotationX` raccourcit l'axe vertical,
-`rotationY` l'horizontal. L'appariement ressemble à une transposition et n'en est pas une.
+**The axis you turn about keeps its length** — `rotationX` shortens the vertical axis, `rotationY` the
+horizontal one. The pairing looks like a transposition and is not one.
 
 ---
 
-## 4. Ce que cela coûte
+## 4. What it costs
 
 | | |
 |---|---|
-| Schéma | deux `number`, défaut 0 |
-| `localMatrix()` | deux `cos`, multipliés dans les termes d'échelle que la composition portait déjà |
-| Renderer, picking, caméra | **rien** — tout passe par `worldMatrix()` |
-| Sérialisation | deux nombres, comme toute propriété déclarée |
-| Inspector | deux lignes numériques avec le suffixe `°`, à la largeur courte, avec leur poignée |
-| Graph | `Transform ▸ Rotation X` dans le picker, `Get`/`Set` gratuits |
-| DnD, undo, live sync | gratuits : ce sont des propriétés du Property System |
-| Hiérarchie | un enfant tourne avec son parent, par composition |
+| Schema | two `number`s, default 0 |
+| `localMatrix()` | two `cos`, multiplied into the scale terms the composition already carried |
+| Renderer, picking, camera | **nothing** — everything goes through `worldMatrix()` |
+| Serialization | two numbers, like any declared property |
+| Inspector | two numeric rows with the `°` suffix, at short width, with their handle |
+| Graph | `Transform ▸ Rotation X` in the picker, `Get`/`Set` for free |
+| DnD, undo, live sync | free: they are Property System properties |
+| Hierarchy | a child turns with its parent, by composition |
 
-**Degrés, stockés tels quels.** `rotation` reste en radians parce qu'elle l'a toujours été et
-que migrer réécrirait toutes les scènes ; celles-ci sont neuves, donc elles tiennent le nombre
-que le créateur a écrit. L'unité est déclarée pour le seul suffixe : `DISPLAY_UNITS` n'a pas
-d'entrée pour `°`, donc l'échelle reste 1 et rien n'est converti.
+**Degrees, stored as such.** `rotation` stays in radians because it always has been and because
+migrating would rewrite every scene; these are new, so they hold the number the creator wrote. The
+unit is declared for the suffix alone: `DISPLAY_UNITS` has no entry for `°`, so the scale stays 1 and
+nothing is converted.
 
-## 5. Le piège, nommé
+## 5. The trap, named
 
-**Un objet disparaît à 90° et à 270°**, parce que `cos` y vaut zéro. C'est géométriquement
-juste et visuellement déroutant pour un débutant qui fait glisser le champ. Ce n'est pas un
-défaut du code : c'est ce que tourner une feuille de papier jusqu'à sa tranche fait. Aucun
-garde-fou n'est ajouté — en poser un mentirait sur la géométrie — mais le fait est consigné
-ici pour que personne ne le retrouve comme un bug.
+**An object disappears at 90° and 270°**, because `cos` is zero there. That is geometrically right and
+visually confusing for a beginner dragging the field. It is not a defect in the code: it is what
+turning a sheet of paper to its edge does. No guard is added — adding one would lie about the geometry
+— but the fact is recorded here so that nobody rediscovers it as a bug.
 
-De même, `cos` est paire : `+45°` et `−45°` sont visuellement identiques.
+Likewise, `cos` is even: `+45°` and `−45°` are visually identical.
 
 ---
 
-## 6. Contrats observables
+## 6. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| `flipX` / `flipY` n'existent nulle part | `transform.test.js` |
-| `rotationX` / `rotationY` sont des nombres, en degrés, défaut 0 | idem |
-| L'axe perpendiculaire mesure `cos θ` à 0°, 45°, 90°, 180° | idem |
-| L'axe de rotation garde sa longueur | idem |
-| Le turn multiplie l'échelle plutôt que de la remplacer | idem |
-| `rotation` compose exactement comme avant | idem |
-| Les deux se sérialisent et se relisent | idem |
-| Ils composent dans la hiérarchie | idem |
-| Ils apparaissent dans l'Inspector et le picker sans mécanisme spécial | à l'écran |
+| `flipX` / `flipY` exist nowhere | `transform.test.js` |
+| `rotationX` / `rotationY` are numbers, in degrees, default 0 | the same |
+| The perpendicular axis measures `cos θ` at 0°, 45°, 90°, 180° | the same |
+| The axis of rotation keeps its length | the same |
+| The turn multiplies the scale rather than replacing it | the same |
+| `rotation` composes exactly as before | the same |
+| Both serialize and read back | the same |
+| They compose through the hierarchy | the same |
+| They appear in the Inspector and the picker with no special mechanism | on screen |

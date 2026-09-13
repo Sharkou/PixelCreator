@@ -1,209 +1,194 @@
-# ADR-0057 — Une graine, deux flux, et une identité d'édition n'est pas une identité de simulation
+# ADR-0057 — One seed, two streams, and an editing identity is not a simulation identity
 
-- **Statut :** **accepté** (2026-09-11)
-- **Décide :** où vit la graine d'une simulation ; qui possède l'état aléatoire ; comment une
-  identité créée par un pas est produite ; ce qui est déterministe et ce qui ne l'est
-  volontairement pas
-- **Dépend de :** ADR-0010 (une identité est un ID opaque), ADR-0011 (le serveur est
-  l'autorité), ADR-0014 (l'input est passé au runtime), ADR-0034 §3.1 (ordre canonique),
-  ADR-0035 (ordre de `Runtime.step()`), ADR-0049 (un identifiant se lit à voix haute),
-  ADR-0056 (une copie est le modèle)
-- **Ferme :** le point ouvert d'ADR-0045 §11.5 pour `Random` ; le point ouvert d'ADR-0056 §8
-  sur le déterminisme des identités sous réplication
-- **Complété par :** ADR-0058 (2026-09-11) — `Delay`, laissé ouvert ci-dessous, est tranché : l'état d'exécution par instance, et un temps qui ne vient que de `deltaTime`
-- **Ne décide pas :** `Delay` (état d'exécution par instance, question distincte) ; le
-  transport qui porterait la graine d'un serveur à ses clients ; la reprise d'une simulation
-  en cours de route — voir §7
+- **Status:** **accepted** (2026-09-11)
+- **Decides:** where a simulation's seed lives; who owns the random state; how an identity created by a step is produced; what is deterministic and what deliberately is not
+- **Depends on:** ADR-0010 (an identity is an opaque ID), ADR-0011 (the server is the authority), ADR-0014 (input is passed into the runtime), ADR-0034 §3.1 (canonical order), ADR-0035 (`Runtime.step()`'s order), ADR-0049 (an identifier is read aloud), ADR-0056 (a copy is the model)
+- **Closes:** ADR-0045 §11.5's open point for `Random`; ADR-0056 §8's open point about the determinism of identities under replication
+- **Completed by:** ADR-0058 (2026-09-11) — `Delay`, left open below, is settled: per-instance execution state, and a time that comes only from `deltaTime`
+- **Does not decide:** `Delay` (per-instance execution state, a separate question); the transport that would carry the seed from a server to its clients; resuming a simulation mid-flight — see §7
 
 ---
 
-## 1. Problème
+## 1. Problem
 
-ADR-0011 fait du serveur l'autorité d'une simulation que **chaque client exécute aussi**.
-Cela ne vaut quelque chose que si la même simulation, exécutée deux fois, arrive au même
-endroit. Deux moitiés de cette promesse étaient déjà tenues :
+ADR-0011 makes the server the authority over a simulation that **every client also runs**. That is
+worth something only if the same simulation, run twice, arrives at the same place. Two halves of that
+promise were already kept:
 
-| Déjà résolu | Par |
+| Already solved | By |
 |---|---|
-| le temps | `Clock` — pas fixe, jamais la cadence de l'écran |
-| l'entrée | ADR-0014 — passée à `step()`, jamais un global |
+| time | `Clock` — a fixed step, never the screen's cadence |
+| input | ADR-0014 — passed to `step()`, never a global |
 
-Et il restait une exception que personne n'avait écrite : **un graphe qui crée un Object
-atteint une source que les deux machines ne partagent pas.** `duplicateObject()` tirait ses
-identités de `createId()`, donc du CSPRNG de la plateforme. Deux clients exécutant le même
-`Spawn` au même pas créaient deux objets dont ils ne pouvaient plus jamais convenir — et
-toute référence stockée ensuite pointait, chez l'un, vers quelque chose que l'autre n'avait
-jamais eu.
+And one exception remained that nobody had written down: **a graph that creates an Object reaches a
+source the two machines do not share.** `duplicateObject()` drew its identities from `createId()`, and
+therefore from the platform's CSPRNG. Two clients running the same `Spawn` on the same step created two
+objects they could never again agree on — and any reference stored afterwards pointed, for one of
+them, at something the other had never had.
 
-La même classe de problème attendait `Random`, que ADR-0045 §11.5 refusait de coder pour
-cette raison exacte : « Un `Math.random()` non semé désynchronise. Il faut décider où vit la
-graine et qui l'attribue. »
+The same class of problem was waiting for `Random`, which ADR-0045 §11.5 refused to write for exactly
+that reason: "An unseeded `Math.random()` desynchronizes. You have to decide where the seed lives and
+who assigns it."
 
-### 1.1 Inventaire, et il est court
+### 1.1 Inventory, and it is short
 
-Mesuré sur tout `src/`, hors tests :
+Measured over all of `src/`, tests excluded:
 
-| Source | Où | Classe |
+| Source | Where | Class |
 |---|---|---|
-| `createId()` dans `duplicateObject()` | `core/duplicate.js` | **A — à corriger** : conséquence d'un pas |
-| `Math.random()` | **nulle part** dans du code exécuté | — |
-| `createId()` — batches d'undo, `ResourceId`, `ProjectId`, ids de nœuds, `SceneId`, `new Object()` | `editor/`, `project/`, `core/graph/` | **B — identité d'édition**, hors simulation |
-| `Date.now()` | `project/project.js`, `project/resource.js` (`created`, `modified`) | **B** — métadonnée de ressource, jamais lue par la simulation |
-| `performance.now()` | `editor/viewport/viewport.js` | **C — temps réel volontaire** : cadence d'affichage |
-| LCG de `ParticleSystem` | `runtime/rendering/components/` | **D** — déjà déterministe, graine d'instance fixée à la construction |
-| Itération de `Map`/`Set` | `input/`, `behaviors/`, `scene-renderer` | **D** — tous triés ou contractuels ; `Runtime.step()` lit l'ordre canonique (ADR-0034 §3.1) |
+| `createId()` inside `duplicateObject()` | `core/duplicate.js` | **A — to fix**: a consequence of a step |
+| `Math.random()` | **nowhere** in executed code | — |
+| `createId()` — undo batches, `ResourceId`, `ProjectId`, node ids, `SceneId`, `new Object()` | `editor/`, `project/`, `core/graph/` | **B — an editing identity**, outside the simulation |
+| `Date.now()` | `project/project.js`, `project/resource.js` (`created`, `modified`) | **B** — resource metadata, never read by the simulation |
+| `performance.now()` | `editor/viewport/viewport.js` | **C — deliberate real time**: display cadence |
+| `ParticleSystem`'s LCG | `runtime/rendering/components/` | **D** — already deterministic, an instance seed fixed at construction |
+| `Map`/`Set` iteration | `input/`, `behaviors/`, `scene-renderer` | **D** — all sorted or contractual; `Runtime.step()` reads the canonical order (ADR-0034 §3.1) |
 
-**Une seule entrée en A.** Le correctif n'avait donc pas à être grand : il avait à être au
-bon endroit.
+**One single entry in A.** The fix therefore did not have to be big: it had to be in the right place.
 
 ---
 
-## 2. Le Runtime possède le hasard, parce qu'une simulation est ce qu'il est
+## 2. The Runtime owns randomness, because a simulation is what it is
 
-`runtime/random/`, **pas** `core/random/`. L'argument est celui d'ADR-0014 §1, mot pour mot :
+`runtime/random/`, **not** `core/random/`. The argument is ADR-0014 §1's, word for word:
 
-> « Le Core ne connaît aucun input. Un `Object` n'a pas d'entrées ; une simulation en a. »
+> "The Core knows about no input. An `Object` has no input; a simulation does."
 
-Un `Object` n'a pas de chance non plus. Ce qui en a est une **simulation**, et une simulation
-est ce que le Runtime est. Les trois choses que l'environnement fournirait autrement à un jeu
-deviennent trois dossiers côte à côte, et c'est la structure qui décide, pas une préférence :
-
-```text
-runtime/clock/    quand              pas fixe
-runtime/input/    ce qu'on a fait    passé à step() (ADR-0014)
-runtime/random/   la chance          semé (ici)
-```
-
-### 2.1 Une graine, deux flux nommés
+An `Object` has no luck either. What does is a **simulation**, and a simulation is what the Runtime is.
+The three things the environment would otherwise supply a game become three directories side by side,
+and it is the structure that decides, not a preference:
 
 ```text
-seed ──┬── "seed:random"  ──►  ctx.random         ce qu'un graphe tire
-       └── "seed:ids"     ──►  ctx.createObjectId  ce qu'un pas crée
+runtime/clock/    when              a fixed step
+runtime/input/    what was done     passed to step() (ADR-0014)
+runtime/random/   the luck          seeded (here)
 ```
 
-**Deux flux et non un compteur**, et la raison est mesurable sur un graphe réel : avec un
-seul compteur, « combien de dés ont été lancés » devient une entrée de toute identité frappée
-ensuite. Ajouter un `Random` **n'importe où** renumérote alors la partie entière, et ajouter
-un `Spawn` change toutes les valeurs aléatoires suivantes. Un créateur n'a aucun moyen de
-lire ce couplage sur la toile.
+### 2.1 One seed, two named streams
 
-**Dérivés par NOM, pas par alternance de tirages.** Un troisième flux coûte une ligne et ne
-décale ni l'un ni l'autre — alors que « un tirage sur deux pour les ids » fige le nombre de
-flux pour toujours.
+```text
+seed ──┬── "seed:random"  ──►  ctx.random          what a graph draws
+       └── "seed:ids"     ──►  ctx.createObjectId   what a step creates
+```
 
-### 2.2 Ce n'est pas un framework
+**Two streams and not one counter**, and the reason is measurable on a real graph: with a single
+counter, "how many dice have been rolled" becomes an input to every identity minted afterwards. Adding
+a `Random` **anywhere** then renumbers the whole match, and adding a `Spawn` changes every subsequent
+random value. A creator has no way of reading that coupling off the canvas.
 
-Deux `Random` et une chaîne. Pas de registre de flux, pas de hiérarchie, pas de sérialisation
-de position. `Random` expose `next()`, `between()`, `fill()` et rien d'autre.
+**Derived by NAME, not by alternating draws.** A third stream costs one line and shifts neither of the
+others — whereas "every other draw is for ids" freezes the number of streams forever.
+
+### 2.2 This is not a framework
+
+Two `Random`s and a string. No stream registry, no hierarchy, no serialization of position. `Random`
+exposes `next()`, `between()`, `fill()` and nothing else.
 
 ---
 
-## 3. Une identité d'édition n'est pas une identité de simulation
+## 3. An editing identity is not a simulation identity
 
-C'est la distinction qui empêche la correction d'être une généralisation naïve.
+It is the distinction that stops the fix from being a naive generalization.
 
-| | identité d'**édition** | identité de **simulation** |
+| | an **editing** identity | a **simulation** identity |
 |---|---|---|
-| Exemple | l'Object qu'un créateur pose dans la Hierarchy ; une `ResourceId` ; un batch d'undo | l'Object qu'un `Spawn` crée au pas 37 |
-| Ce que c'est | du **contenu**, frappé une fois et jamais refrappé | une **conséquence** d'un pas, que deux machines doivent frapper pareil |
-| Tirée de | le CSPRNG de la plateforme | le flux `seed:ids` |
-| Rejouable | non, et il n'y a rien à rejouer | oui, et il le faut |
+| Example | the Object a creator places in the Hierarchy; a `ResourceId`; an undo batch | the Object a `Spawn` creates at step 37 |
+| What it is | **content**, minted once and never re-minted | a **consequence** of a step, which two machines must mint identically |
+| Drawn from | the platform's CSPRNG | the `seed:ids` stream |
+| Replayable | no, and there is nothing to replay | yes, and it has to be |
 
-> **`createId()` ne devient pas un générateur semé. C'est le chemin du Runtime qui fournit
-> l'identité au moment de la duplication.**
+> **`createId()` does not become a seeded generator. It is the Runtime's path that supplies the
+> identity at duplication time.**
 
-Concrètement, le seam est un paramètre et rien d'autre :
+Concretely, the seam is a parameter and nothing else:
 
 ```text
-duplicateObject(scene, source, { createId })   ◄── défaut : core/id.js
+duplicateObject(scene, source, { createId })   ◄── default: core/id.js
         ▲
-        └── le nœud Spawn passe ctx.createObjectId
+        └── the Spawn node passes ctx.createObjectId
 ```
 
-L'Editor n'apprend rien, ne dépend d'aucun Runtime, et continue de frapper ses identités
-comme avant. Le Core ne sait pas ce qu'est une simulation : il prend une fabrique.
+The Editor learns nothing, depends on no Runtime, and keeps minting its identities as before. The Core
+does not know what a simulation is: it takes a factory.
 
 ---
 
-## 4. Un identifiant de simulation est un identifiant ordinaire
+## 4. A simulation identifier is an ordinary identifier
 
-`createId(length, { randomBytes })`. Le seam descend jusqu'aux **octets**, et pas plus haut :
+`createId(length, { randomBytes })`. The seam goes down to the **bytes**, and no higher:
 
-| Ce qui ne bouge pas | Pourquoi |
+| What does not move | Why |
 |---|---|
-| l'alphabet de 22 lettres sans chiffres ambigus | ADR-0049 — un identifiant se lit à voix haute |
-| la longueur de 14 | 62 bits, la garantie d'ADR-0010 |
-| le rejet à 242 | 22 ne divise pas 256 ; masquer biaiserait les premières lettres |
+| the 22-letter alphabet with no ambiguous digits | ADR-0049 — an identifier is read aloud |
+| the length of 14 | 62 bits, ADR-0010's guarantee |
+| the rejection at 242 | 22 does not divide 256; masking would bias the first letters |
 
-Une seconde fonction d'identité pour le Runtime aurait été une **seconde réponse** à « qu'est-ce
-qu'une identité ». Il n'y en a qu'une, et ce qui change est d'où viennent les octets.
+A second identity function for the Runtime would have been a **second answer** to "what is an
+identity". There is only one, and what changes is where the bytes come from.
 
-> **Un identifiant tiré d'un flux semé est reproductible, donc devinable.** C'est exactement
-> ce qu'on veut d'une identité de simulation et exactement ce qu'on ne veut pas d'un
-> `ProjectId` dans une URL. La distinction de §3 est aussi ce qui garde le CSPRNG là où il
-> compte.
-
----
-
-## 5. Un seul générateur dans le dépôt
-
-`ParticleSystem` embarquait déjà un LCG déterministe, avec déjà ce commentaire — il avait
-raison avant tout le monde. Il passe par `advance()` plutôt que par une seconde copie des
-constantes.
-
-**Il garde sa propre position dans le flux, et ce n'est pas un oubli.** Un émetteur repart au
-même endroit à chaque construction, donc ses particules sont fonction de la scène et de rien
-d'autre : elles ne se décalent pas parce qu'un graphe a lancé un dé plus tôt dans l'image, et
-elles ne font pas partie de ce que la graine décide. Une seule chose est partagée : la
-définition du générateur.
-
-`unitOf()` **jette l'octet de poids faible**, et c'est visible là où un créateur le rencontre
-en premier : les bits bas d'un LCG ont une période courte, donc `next() < 0.5` lu sur l'état
-entier donne pile-face-pile-face. Un test le dit.
+> **An identifier drawn from a seeded stream is reproducible, and therefore guessable.** That is
+> exactly what you want of a simulation identity and exactly what you do not want of a `ProjectId` in a
+> URL. §3's distinction is also what keeps the CSPRNG where it matters.
 
 ---
 
-## 6. La graine est tirée, et elle est dite
+## 5. One generator in the repository
 
-`new Runtime(scene, { seed })`. Sans graine, le Runtime **en tire une** et l'expose comme
+`ParticleSystem` already carried a deterministic LCG, with that very comment — it was right before
+everyone else. It goes through `advance()` rather than a second copy of the constants.
+
+**It keeps its own position in the stream, and that is not an oversight.** An emitter restarts in the
+same place on every construction, so its particles are a function of the scene and of nothing else:
+they do not shift because a graph rolled a die earlier in the frame, and they are not part of what the
+seed decides. One thing is shared: the generator's definition.
+
+`unitOf()` **throws away the low-order byte**, and it is visible where a creator meets it first: an
+LCG's low bits have a short period, so `next() < 0.5` read on the whole state gives
+heads-tails-heads-tails. A test says so.
+
+---
+
+## 6. The seed is drawn, and it is said
+
+`new Runtime(scene, { seed })`. With no seed, the Runtime **draws one** and exposes it as
 `runtime.seed`.
 
-| Refusé | Pourquoi |
+| Refused | Why |
 |---|---|
-| Une graine constante par défaut | Chaque partie serait identique à la précédente — l'inverse de ce qu'un créateur attend de `Random` |
-| Un tirage caché | Un bug ne serait pas reproductible ; « quelle graine ? » n'aurait pas de réponse |
+| A constant default seed | Every match would be identical to the last — the opposite of what a creator expects from `Random` |
+| A hidden draw | A bug would not be reproducible; "which seed?" would have no answer |
 
-**Contrôlé veut dire dit.** La différence entre deux parties fait une chaîne de long, et cette
-chaîne est lisible sur l'objet. C'est ce qui rend un rejeu possible sans transport : le payload
-de départ plus la graine sont tout ce qu'il faut.
+**Controlled means said.** The difference between two matches is one string long, and that string is
+readable on the object. It is what makes a replay possible with no transport: the starting payload plus
+the seed are all you need.
 
 ---
 
-## 7. Contrats observables
+## 7. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| Deux Runtime, une graine : mêmes identités créées par `Spawn` | `runtime/determinism.test.js` |
-| Deux Runtime, une graine : mêmes tirages de `Random` | idem |
-| Deux Runtime, une graine : même payload sérialisé après N pas | idem |
-| Les références internes d'un sous-arbre spawné sont les mêmes des deux côtés | idem |
-| Graines différentes : tirages et identités divergent | idem |
-| Ajouter un `Random` ne change pas ce qu'un `Spawn` crée | idem |
-| Ajouter un `Spawn` ne change pas ce qu'un `Random` tire | idem |
-| Payload de départ + graine rejoués : même état d'arrivée | idem |
-| Une identité frappée hors simulation reste tirée de la machine | idem |
-| Une graine est un run, deux graines sont deux runs | `runtime/random/random.test.js` |
-| Un tirage est dans [0, 1), et une pièce n'alterne pas | idem |
-| Aucun nœud livré ne nomme `Math.random` | `core/graph/nodes.test.js` |
+| Two Runtimes, one seed: the same identities created by `Spawn` | `runtime/determinism.test.js` |
+| Two Runtimes, one seed: the same `Random` draws | the same |
+| Two Runtimes, one seed: the same serialized payload after N steps | the same |
+| The internal references of a spawned subtree are the same on both sides | the same |
+| Different seeds: draws and identities diverge | the same |
+| Adding a `Random` does not change what a `Spawn` creates | the same |
+| Adding a `Spawn` does not change what a `Random` draws | the same |
+| The starting payload + the seed replayed: the same final state | the same |
+| An identity minted outside the simulation is still drawn from the machine | the same |
+| One seed is one run, two seeds are two runs | `runtime/random/random.test.js` |
+| A draw is in [0, 1), and a coin does not alternate | the same |
+| No shipped node names `Math.random` | `core/graph/nodes.test.js` |
 
 ---
 
-## 8. Ce que cet ADR ne décide pas
+## 8. What this ADR does not decide
 
-| Point ouvert | Pourquoi |
+| Open point | Why |
 |---|---|
-| **Qui envoie la graine** | Le transport n'existe pas (ADR-0042 §6 : deux fenêtres sont déjà deux clients, il leur manque un canal). Quand il existera, la graine est une chaîne de plus dans le message d'ouverture — rien ici ne bouge |
-| **Reprendre une simulation en cours** | Le contrat est « même départ + même graine + mêmes pas ». Reprendre à mi-course demanderait de sérialiser la POSITION des flux, donc d'en faire de l'état de scène. Personne n'en a besoin tant qu'un client rejoint en recevant un instantané |
-| ~~`Delay`~~ | **Tranché par ADR-0058** : l'état d'exécution par instance, à côté de `started` ; le temps vient de `deltaTime` et le déterminisme de ce même contrat |
-| **Les particules d'une copie** | Deux `ParticleSystem` copiés émettent le même motif, puisque la graine d'un émetteur est fixée à la construction (§5). C'est trop de déterminisme plutôt que pas assez, et c'est une question de rendu |
-| **La caméra choisie par `preview/client.js`** | `scene.objects().find(…)` lit l'ordre d'insertion : classe D, cela ne touche pas la simulation, mais deux clients pourraient regarder par deux caméras si une scène en portait deux |
+| **Who sends the seed** | The transport does not exist (ADR-0042 §6: two windows are already two clients, what they lack is a channel). When it does, the seed is one more string in the opening message — nothing here moves |
+| **Resuming a simulation mid-flight** | The contract is "same start + same seed + same steps". Resuming halfway would require serializing the streams' POSITION, and therefore making it scene state. Nobody needs it while a client joins by receiving a snapshot |
+| ~~`Delay`~~ | **Settled by ADR-0058**: per-instance execution state, beside `started`; time comes from `deltaTime` and determinism from that same contract |
+| **A copy's particles** | Two copied `ParticleSystem`s emit the same pattern, since an emitter's seed is fixed at construction (§5). That is too much determinism rather than too little, and it is a rendering question |
+| **The camera `preview/client.js` chooses** | `scene.objects().find(…)` reads insertion order: class D, it does not touch the simulation, but two clients could look through two cameras if a scene carried two |

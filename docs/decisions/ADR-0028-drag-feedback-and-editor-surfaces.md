@@ -1,108 +1,105 @@
-# ADR-0028 — Le reflow live appartient aux listes plates, jamais à l'arbre ; le Graph reste dans le stage
+# ADR-0028 — Live reflow belongs to flat lists, never to the tree; the Graph stays inside the stage
 
-- **Statut :** **accepté** (2026-08-18)
-- **Dépend de :** ADR-0006 (Web Components), ADR-0018 (ordre structurel), ADR-0019 (Operations structurelles), ADR-0024 (Undo/Redo), ADR-0026 (drag & drop transverse)
-- **Amende :** ADR-0026 §6 (le feedback de dépôt n'était pas décrit), et la décision non écrite portée par un commentaire de `windows/hierarchy.js`
+- **Status:** **accepted** (2026-08-18)
+- **Depends on:** ADR-0006 (Web Components), ADR-0018 (structural order), ADR-0019 (structural Operations), ADR-0024 (Undo/Redo), ADR-0026 (cross-cutting drag and drop)
+- **Amends:** ADR-0026 §6 (drop feedback was not described), and the unwritten decision carried by a comment in `windows/hierarchy.js`
 
-## Contexte observé
+## Observed context
 
-`windows/hierarchy.js` portait, en commentaire, une décision jamais versée dans un ADR :
+`windows/hierarchy.js` carried, in a comment, a decision that was never recorded in an ADR:
 
-> *« The row being carried stays in place and goes quiet: a list that reflows under the
-> pointer is a list you cannot aim at. »*
+> *"The row being carried stays in place and goes quiet: a list that reflows under the pointer is a
+> list you cannot aim at."*
 
-Elle était juste — pour un arbre — et fausse partout ailleurs, et rien ne disait laquelle
-des deux situations on regardait. Une décision de ce poids ne peut pas vivre dans un
-commentaire d'implémentation : elle est invisible depuis les autres fenêtres, qui ont
-ensuite hérité d'un feedback statique sans que personne ait tranché.
+It was right — for a tree — and wrong everywhere else, and nothing said which of the two situations
+you were looking at. A decision of that weight cannot live in an implementation comment: it is
+invisible from the other windows, which then inherited a static feedback without anyone having
+decided.
 
-Trois faits mesurés ont motivé la révision :
+Three measured facts motivated the revision:
 
-| Constat | Où |
+| Finding | Where |
 |---|---|
-| `legacy/editor/misc/sorter.js` réorganisait bien la liste **sous** le pointeur (`dragEnter` → `insertBefore`) | Legacy, et c'était son meilleur geste |
-| L'Editor n'affiche qu'un trait de 2 px, identique quelle que soit la liste | Hierarchy, Inspector, Project |
-| La géométrie du dépôt est déjà pure et testée (`windows/drop.js`) | Rien à réécrire pour changer le feedback |
+| `legacy/editor/misc/sorter.js` did reorganize the list **under** the pointer (`dragEnter` → `insertBefore`) | Legacy, and it was its best gesture |
+| The Editor shows only a 2 px line, identical whatever the list | Hierarchy, Inspector, Project |
+| The drop geometry is already pure and tested (`windows/drop.js`) | Nothing to rewrite to change the feedback |
 
-Le legacy prouve l'ergonomie ; son architecture ne se recopie pas (Drag & Drop HTML5,
-mutation du DOM réel pendant `dragenter`, état statique partagé entre fenêtres).
+Legacy proves the ergonomics; its architecture is not to be copied (HTML5 Drag & Drop, mutating the
+real DOM during `dragenter`, static state shared between windows).
 
-## Décision
+## Decision
 
-### 1. Deux feedbacks, et c'est la **forme de la collection** qui choisit
+### 1. Two feedbacks, and it is the **shape of the collection** that chooses
 
-**VALIDÉ.**
+**SETTLED.**
 
-| Collection | Feedback | Pourquoi |
+| Collection | Feedback | Why |
 |---|---|---|
-| **Liste plate** — Components, propriétés d'un `.px`, tuiles du Project | **Reflow live** : l'élément suit le pointeur, les autres se réorganisent avant le drop | Une seule question — *à quel rang ?* — et la réponse est visible à l'endroit exact où elle s'appliquera |
-| **Arbre** — Hierarchy | **Pas de reflow** : la ligne portée s'estompe, un indicateur dit *avant / dedans / après* | Deux questions — *quel parent ?* **et** *quel rang ?* — et une liste qui bouge déplace la cible pendant qu'on vise |
+| **A flat list** — Components, a `.px`'s properties, Project tiles | **Live reflow**: the element follows the pointer, the others reorganize before the drop | One question — *at which rank?* — and the answer is visible exactly where it will apply |
+| **A tree** — Hierarchy | **No reflow**: the carried row fades, an indicator says *before / into / after* | Two questions — *which parent?* **and** *which rank?* — and a list that moves shifts the target while you are aiming |
 
-Ce n'est pas une préférence esthétique : dans un arbre, déposer *dedans* change le parent,
-donc la place de l'objet dans le monde (ADR-0022). Une cible qui se dérobe pendant le geste
-rend cette erreur facile et coûteuse. Dans une liste plate, il n'existe pas de « dedans » :
-le seul risque est un rang voisin, corrigeable d'un pixel.
+This is not an aesthetic preference: in a tree, dropping *into* changes the parent, and therefore
+the object's place in the world (ADR-0022). A target that slips away during the gesture makes that
+mistake easy and expensive. In a flat list there is no "into": the only risk is a neighbouring rank,
+correctable by one pixel.
 
-### 2. La prévisualisation ne touche jamais le modèle
+### 2. The preview never touches the model
 
-**VALIDÉ.** Elle est **pure et réversible** :
+**SETTLED.** It is **pure and reversible**:
 
-- aucun `setProperty`, aucune Operation, aucune entrée d'historique pendant le geste ;
-- l'ordre prévisualisé est **dérivé** de l'ordre réel et d'un rang candidat, jamais stocké ;
-- annuler le geste (Échap, `pointercancel`, dépôt refusé) restitue l'ordre réel sans rien
-  défaire — il n'y a rien à défaire ;
-- **une seule** Operation est produite, au drop, exactement comme aujourd'hui.
+- no `setProperty`, no Operation, no history entry during the gesture;
+- the previewed order is **derived** from the real order and a candidate rank, never stored;
+- cancelling the gesture (Esc, `pointercancel`, a refused drop) restores the real order without
+  undoing anything — there is nothing to undo;
+- **one** Operation is produced, at the drop, exactly as today.
 
-C'est la même frontière qu'ADR-0026 trace entre `rules.js` (ce qu'un dépôt signifie) et les
-fenêtres (le DOM) : le feedback est une vue, pas une mutation.
+It is the same boundary ADR-0026 draws between `rules.js` (what a drop means) and the windows (the
+DOM): feedback is a view, not a mutation.
 
-### 3. Un dépôt possible se **voit**, un dépôt refusé aussi
+### 3. A possible drop is **seen**, and so is a refused one
 
-**VALIDÉ.** Partout — Project, Hierarchy, Inspector, Graph, propriété acceptant une
-ressource :
+**SETTLED.** Everywhere — Project, Hierarchy, Inspector, Graph, a property that accepts a resource:
 
-- la zone qui accepte porte un état `drag-over` explicite ;
-- une cible refusée est marquée comme refusée, pas laissée muette ;
-- le curseur suit la même convention (`grab` / `grabbing` / `copy` / `no-drop`) ;
-- `rules.describe()` fournit déjà la phrase du refus (ADR-0026 §6) : elle est affichée,
-  pas devinée.
+- the zone that accepts carries an explicit `drag-over` state;
+- a refused target is marked as refused, not left silent;
+- the cursor follows the same convention (`grab` / `grabbing` / `copy` / `no-drop`);
+- `rules.describe()` already provides the refusal's sentence (ADR-0026 §6): it is displayed, not
+  guessed.
 
-« Rien ne s'est passé » reste la pire réponse à un geste.
+"Nothing happened" remains the worst answer to a gesture.
 
-### 4. Le Graph reste dans le **stage**
+### 4. The Graph stays inside the **stage**
 
-**VALIDÉ.** Le `stage-tabs` actuel est conservé : viewport et Graph s'échangent au centre.
+**SETTLED.** The current `stage-tabs` is kept: the viewport and the Graph swap in the centre.
 
-Le stage veut dire *« ce que le créateur est en train d'éditer »*, et un éditeur nodal a
-besoin de surface. La bande basse — Timeline — est une piste temporelle : la mettre en
-concurrence avec un graphe donnerait 200 px de haut à un canevas qui se parcourt en deux
-dimensions.
+The stage means *"what the creator is editing"*, and a node editor needs surface area. The bottom
+strip — Timeline — is a temporal track: putting it in competition with a graph would give 200 px of
+height to a canvas you traverse in two dimensions.
 
-**Ce que cette décision ne ferme pas.** `px-graph` ne connaît ni sa taille ni sa place :
-il s'attache à une définition et se dessine. Le jour où un système de panneaux
-redimensionnables existera, le déplacer sera un changement de `editor.js` et de `layout.js`,
-et d'aucun autre fichier. La décision est donc réversible par construction, et c'est ce qui
-la rend acceptable maintenant.
+**What this decision does not close.** `px-graph` knows neither its size nor its place: it attaches
+to a definition and draws itself. The day a resizable panel system exists, moving it will be a change
+to `editor.js` and `layout.js`, and to no other file. The decision is therefore reversible by
+construction, and that is what makes it acceptable now.
 
-## Ce que cet ADR ne décide pas
+## What this ADR does not decide
 
-- **La sémantique du transport** — Play / Pause / Stop : ADR-0029.
-- **Le prefab** : toujours reporté (ADR-0026 §7).
-- **Un système de docking** : rien ici ne le conçoit ; §4 se contente de ne pas l'empêcher.
+- **The transport's semantics** — Play / Pause / Stop: ADR-0029.
+- **The prefab**: still deferred (ADR-0026 §7).
+- **A docking system**: nothing here designs one; §4 merely refrains from preventing it.
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- La règle est écrite une fois et vaut pour toute liste future ; le commentaire de
-  `hierarchy.js` renvoie désormais ici au lieu de trancher seul.
-- Le reflow ne peut pas corrompre le modèle : il n'y accède pas.
-- Un créateur voit où son élément atterrira avant de lâcher, dans les listes où c'est la
-  seule question posée.
+- The rule is written once and holds for every future list; `hierarchy.js`'s comment now points
+  here instead of deciding on its own.
+- The reflow cannot corrupt the model: it does not reach it.
+- A creator sees where their element will land before releasing, in the lists where that is the only
+  question being asked.
 
-### Négatives
+### Negative
 
-- Deux feedbacks à maintenir au lieu d'un. Assumé : ils répondent à deux questions
-  différentes, et les confondre est précisément ce qui rendait l'arbre difficile à viser.
-- Le reflow demande de mesurer les rangs avant le geste et de les tenir à jour pendant :
-  un coût de calcul par déplacement de pointeur, borné par le nombre d'éléments visibles.
+- Two feedbacks to maintain instead of one. Accepted: they answer two different questions, and
+  conflating them is precisely what made the tree hard to aim at.
+- The reflow requires measuring the ranks before the gesture and keeping them up to date during it:
+  a computation cost per pointer move, bounded by the number of visible elements.

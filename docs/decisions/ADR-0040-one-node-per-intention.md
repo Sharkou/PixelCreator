@@ -1,192 +1,190 @@
-# ADR-0040 — Un nœud par intention : le Component se range, la cible se désigne, le nom ne bouge pas
+# ADR-0040 — One node per intention: the Component is filed, the target is designated, the name does not move
 
-- **Statut :** **accepté** (2026-08-28)
-- **Amendé par :** ADR-0045 (2026-08-29) — §2 : `Component` redevient une ligne à part, mais une question **déjà répondue** (`This Component`), parce que le prix qu'ADR-0040 §8 avait lui-même mesuré — « la liste de propriétés contient tous les Components du projet » — a grossi avec les projets. §4 (le dépôt d'un Component dans un graphe) est **réactivé** : la prémisse du refus, un picker qui écrivait les deux moitiés, n'existe plus — voir ADR-0045 §12.
-- **Amendé par :** ADR-0041 (2026-08-28) — §2 : le Component redevient visible dans le contrôle fermé (`Transform ▸ Rotation`), comme contexte de la propriété et non comme seconde question. §4 (le dépôt d'un Component dans un graphe) est **confirmé** : réactivé puis retiré une seconde fois, cette fois sur mesure — voir ADR-0041 §6.1
-- **Décide :** combien de nœuds de propriété existent ; si `Component` est une question posée au créateur ; comment un nœud désigne l'Object sur lequel il agit ; ce qu'un Component déposé sur un graphe veut dire ; si un nom de nœud peut changer
-- **Dépend de :** ADR-0007 (schéma d'Inspector), ADR-0021 (identité de Component), ADR-0023 (`PropertyType`), ADR-0024 (undo par ressource), ADR-0027 (modèle de graphe), ADR-0034 (références d'Object), ADR-0036 (frontière `objectref` ↔ `object`), ADR-0037 (un dépôt déclare), ADR-0039 (taxonomie, portée, titres)
-- **Amende :** ADR-0034 §3.2 et §3.3 (deux paires de nœuds deviennent une) ; ADR-0034 §3.2 (l'avertissement « prise Object vide ») ; ADR-0037 §2.4 et ADR-0034 §3.2 (le dépôt d'un **Component** dans un graphe est retiré) ; ADR-0039 §5 (la règle du nom devient absolue : le mécanisme disparaît)
-- **Ne décide pas :** un type de port `component` ou `property`, toujours refusés (ADR-0039 §4) ; la forme du sélecteur groupé, qui est de l'UI et non un contrat
+- **Status:** **accepted** (2026-08-28)
+- **Amended by:** ADR-0045 (2026-08-29) — §2: `Component` becomes a separate row again, but a question that is **already answered** (`This Component`), because the price ADR-0040 §8 had itself measured — "the property list holds every Component in the project" — grew with the projects. §4 (dropping a Component into a graph) is **reactivated**: the premise of the refusal, a picker that wrote both halves, no longer exists — see ADR-0045 §12.
+- **Amended by:** ADR-0041 (2026-08-28) — §2: the Component becomes visible again in the closed control (`Transform ▸ Rotation`), as the property's context and not as a second question. §4 (dropping a Component into a graph) is **confirmed**: reactivated and then withdrawn a second time, this time on measurement — see ADR-0041 §6.1
+- **Decides:** how many property nodes exist; whether `Component` is a question asked of the creator; how a node designates the Object it acts on; what a Component dropped on a graph means; whether a node's name can change
+- **Depends on:** ADR-0007 (Inspector schema), ADR-0021 (Component identity), ADR-0023 (`PropertyType`), ADR-0024 (undo per resource), ADR-0027 (the graph model), ADR-0034 (Object references), ADR-0036 (the `objectref` ↔ `object` boundary), ADR-0037 (a drop declares), ADR-0039 (taxonomy, scope, titles)
+- **Amends:** ADR-0034 §3.2 and §3.3 (two pairs of nodes become one); ADR-0034 §3.2 (the "empty Object socket" warning); ADR-0037 §2.4 and ADR-0034 §3.2 (dropping a **Component** into a graph is withdrawn); ADR-0039 §5 (the name rule becomes absolute: the mechanism disappears)
+- **Does not decide:** a `component` or `property` port type, still refused (ADR-0039 §4); the shape of the grouped picker, which is UI and not a contract
 
 ---
 
-## 1. Le défaut : quatre nœuds pour deux intentions
+## 1. The defect: four nodes for two intentions
 
-Le catalogue offrait :
+The catalogue offered:
 
-| Nœud | Ce qu'il lisait | Pourquoi il existait |
+| Node | What it read | Why it existed |
 |---|---|---|
-| `Get Property` | une propriété de **ce** Component | le cas local |
-| `Get Property On` | une propriété d'un Component d'**un autre** Object | le cas distant |
-| `Set Property` | idem, en écriture | |
-| `Set Property On` | idem, en écriture | |
+| `Get Property` | a property of **this** Component | the local case |
+| `Get Property On` | a property of a Component of **another** Object | the remote case |
+| `Set Property` | the same, writing | |
+| `Set Property On` | the same, writing | |
 
-Un créateur qui veut « la vitesse » doit d'abord répondre à une question qu'il ne s'est pas
-posée : **où cette propriété est-elle rangée ?** Il choisit un nœud d'après une distinction
-du moteur — deux endroits où le Core va chercher une déclaration — et il le choisit **avant**
-de savoir ce qu'il cherche, puisque le nœud vient avant le sélecteur.
+A creator who wants "the speed" first has to answer a question they never asked: **where is that
+property filed?** They pick a node from an engine distinction — two places where the Core goes
+looking for a declaration — and they pick it **before** knowing what they are looking for, since the
+node comes before the picker.
 
-Le prix se paie deux fois :
+The price is paid twice:
 
-- **au dépôt.** Faire glisser `Transform.rotation` sur un `Get Property` était **refusé** :
-  ce nœud-là ne lisait que ses propres propriétés. Le geste juste, sur le nœud qui portait le
-  bon nom, ne marchait pas ;
-- **à la reprise.** Passer de « ma vitesse » à « la vitesse du joueur » demandait de supprimer
-  le nœud, d'en créer un autre et de refaire les fils. Le changement dans la tête du créateur
-  était minuscule ; le changement dans le graphe ne l'était pas.
+- **at the drop.** Dragging `Transform.rotation` onto a `Get Property` was **refused**: that node
+  only read its own properties. The right gesture, on the node that carried the right name, did not
+  work;
+- **on revisiting.** Going from "my speed" to "the player's speed" meant deleting the node, creating
+  another one and redoing the wires. The change in the creator's head was tiny; the change in the
+  graph was not.
 
-Le fait qu'un moteur cherche à deux endroits n'est **pas** une raison de garder deux nœuds.
-C'est une raison de le cacher.
+The fact that an engine looks in two places is **not** a reason to keep two nodes. It is a reason to
+hide it.
 
 ---
 
-## 2. Décision : deux nœuds, et le `Component` cesse d'être une question
+## 2. Decision: two nodes, and `Component` stops being a question
 
-> **Il existe `Get Property` et `Set Property`, et rien d'autre. Le créateur choisit
-> UNE propriété dans une liste groupée par Component (`Transform ▸ Rotation`). Le Core
-> continue de stocker le couple `component` + `property` ; l'UI ne le demande jamais.**
+> **There is `Get Property` and `Set Property`, and nothing else. The creator picks ONE property from
+> a list grouped by Component (`Transform ▸ Rotation`). The Core still stores the `component` +
+> `property` pair; the UI never asks for it.**
 
 | | |
 |---|---|
-| **Ancienne décision** | ADR-0034 §3.3 : `Get Property On` / `Set Property On` sont des nœuds distincts, portant deux paramètres — un type de Component, puis une de ses propriétés — présentés comme deux listes déroulantes. |
-| **Problème** | Le créateur choisit un **nœud** d'après une distinction interne (où le Core cherche la déclaration), puis un **Component** d'après une abstraction du moteur, avant d'atteindre ce qu'il voulait : une propriété. Trois décisions pour une intention, dont deux ne parlent pas de son jeu. |
-| **Nouvelle décision** | Un seul nœud par intention (lire / écrire). Un seul sélecteur, groupé : le groupe **This Component** d'abord, puis un groupe par type de Component. La valeur choisie porte les deux identités ; l'Editor les sépare en deux paramètres à l'écriture. |
-| **Justification UX** | La question posée est celle que le créateur se pose (« quelle propriété ? »). Le Component reste **visible** — c'est le nom du groupe — mais comme structure de la réponse, jamais comme question préalable. Le nombre de décisions passe de 3 à 1, et le nœud cesse d'être un choix qu'on peut rater. |
-| **Impact Core** | `property.getOn` / `property.setOn` disparaissent du catalogue. `property.get` / `property.set` portent `{ target, component, property }`, exposent **toujours** une prise `object`, et résolvent par un unique `resolvedProperty(node, context)` : `component` absent → les propriétés de ce `.px` ; `component` présent → celles du type nommé. Les deux genres de référence `PROPERTY_REFERENCE` et `COMPONENT_PROPERTY_REFERENCE` fusionnent en `PROPERTY_REFERENCE` : une question, un genre. |
-| **Impact runtime** | Aucun changement de sémantique. `targetObject()` / `targetComponent()` répondaient déjà aux deux cas ; ils répondent maintenant depuis un seul nœud. Le Runtime reste sans DOM et le graphe reste exécutable sans Editor. |
-| **Sérialisation** | Inchangée. Les paramètres stockés sont exactement ceux qu'écrivaient les quatre nœuds — `component` est un type de **portée projet** (`ResourceId` ou nom de classe), `property` une identité stable. Aucune `ObjectId` n'entre dans un `.px` (ADR-0034 invariant 1). |
-| **Migration** | Un renommage, appliqué **aux deux portes** : `Graph.deserialize()` pour l'Editor et `compile()` pour le Runtime, qui ne construit jamais de `Graph` et compile la charge brute. `{ 'property.getOn': 'property.get', 'property.setOn': 'property.set' }` — les paramètres ne sont pas touchés, donc un graphe publié avant la fusion rend la même valeur après. Un type inconnu reste refusé : la migration est une table, pas un haussement d'épaules. |
+| **The old decision** | ADR-0034 §3.3: `Get Property On` / `Set Property On` are distinct nodes carrying two parameters — a Component type, then one of its properties — presented as two dropdowns. |
+| **The problem** | The creator picks a **node** from an internal distinction (where the Core looks for the declaration), then a **Component** from an engine abstraction, before reaching what they wanted: a property. Three decisions for one intention, two of which do not talk about their game. |
+| **The new decision** | One node per intention (read / write). One picker, grouped: the **This Component** group first, then one group per Component type. The chosen value carries both identities; the Editor splits them into two parameters on write. |
+| **UX rationale** | The question asked is the one the creator asks ("which property?"). The Component stays **visible** — it is the group's name — but as the shape of the answer, never as a prior question. The number of decisions goes from 3 to 1, and the node stops being a choice you can get wrong. |
+| **Core impact** | `property.getOn` / `property.setOn` disappear from the catalogue. `property.get` / `property.set` carry `{ target, component, property }`, **always** expose an `object` socket, and resolve through a single `resolvedProperty(node, context)`: `component` absent → this `.px`'s properties; `component` present → those of the named type. The two reference kinds `PROPERTY_REFERENCE` and `COMPONENT_PROPERTY_REFERENCE` merge into `PROPERTY_REFERENCE`: one question, one kind. |
+| **Runtime impact** | No change of semantics. `targetObject()` / `targetComponent()` already answered both cases; they now answer from one node. The Runtime stays DOM-free and the graph stays runnable without an Editor. |
+| **Serialization** | Unchanged. The stored parameters are exactly the ones the four nodes wrote — `component` is a **project**-scoped type (a `ResourceId` or a class name), `property` a stable identity. No `ObjectId` enters a `.px` (ADR-0034 invariant 1). |
+| **Migration** | A rename, applied **at both doors**: `Graph.deserialize()` for the Editor and `compile()` for the Runtime, which never builds a `Graph` and compiles the raw payload. `{ 'property.getOn': 'property.get', 'property.setOn': 'property.set' }` — the parameters are untouched, so a graph published before the merge returns the same value after. An unknown type stays refused: the migration is a table, not a shrug. |
 
-### 2.1 Pourquoi `Component` reste stocké
+### 2.1 Why `Component` is still stored
 
-Cacher une abstraction n'est pas la supprimer. Le Core a besoin de savoir **de quel type**
-la propriété est déclarée pour la résoudre au run time, et ce type est une identité de
-portée projet, légale dans un `.px`. Ce qui était faux, c'est de faire porter ce besoin au
-créateur sous forme d'une seconde liste déroulante.
+Hiding an abstraction is not removing it. The Core needs to know **which type** the property is
+declared on to resolve it at run time, and that type is a project-scoped identity, legal in a `.px`.
+What was wrong was making the creator carry that need as a second dropdown.
 
-Le paramètre est donc déclaré `hidden: true` — le mot d'ADR-0007 pour « stocké, jamais
-dessiné » — et l'Inspector le saute. Un seul contrôle écrit les deux moitiés.
+The parameter is therefore declared `hidden: true` — ADR-0007's word for "stored, never drawn" — and
+the Inspector skips it. One control writes both halves.
 
 ---
 
-## 3. Décision : l'absence de cible est `Self`, et ce n'est pas un vide
+## 3. Decision: the absence of a target is `Self`, and it is not a blank
 
-> **Un nœud de propriété a trois façons de répondre à « sur quel Object ? » : un fil, un
-> sélecteur, ou rien — et *rien* veut dire l'Object auquel ce Component est attaché.**
+> **A property node has three ways of answering "on which Object?": a wire, a picker, or nothing —
+> and *nothing* means the Object this Component is attached to.**
 
 | | |
 |---|---|
-| **Ancienne décision** | ADR-0034 §3.2 : une prise `object` non connectée rend `null`, et le validateur émet un avertissement — « aucun Object n'est choisi ni connecté ». |
-| **Problème** | La règle a été écrite quand `Get Property On` était un nœud **distinct** dont la cible ne pouvait venir que d'un fil. Sur le nœud fusionné, elle avertit sur le graphe le plus courant qui soit : « fais tourner **moi** ». Un défaut signalé comme une erreur cesse d'être lisible comme un défaut. |
-| **Nouvelle décision** | Un port `object` **que le nœud sait lui-même remplir** — c'est-à-dire portant un sélecteur de cible sur sa ligne — n'est jamais signalé vide. Un port `object` **nu** (`Is Valid`, `Parent`), qui n'a pas d'autre réponse possible, l'est toujours. La distinction se lit dans la définition du nœud, pas dans une liste de types de nœuds. |
-| **Justification UX** | `Self` est le cas par défaut d'un débutant, et un défaut ne se déclare pas : il se constate. Le sélecteur **le montre** — il affiche `Self` tant que rien n'est choisi — de sorte que le créateur voit sur quoi le nœud agit sans avoir à connaître une convention. Rien ne se cache derrière le vide. |
-| **Impact Core** | `checkObjectInputs()` saute les ports nommés par un paramètre `OBJECT_SOCKET_REFERENCE`. Le genre `COMPONENT_REFERENCE` perd son message `empty` : un nœud qui ne nomme aucun type lit **ce** Component, ce qui est le cas ordinaire et non un manque. |
-| **Impact runtime** | Aucun. `targetObject()` retournait déjà `io.self` en dernier recours ; le validateur cesse simplement de contredire l'interpréteur. |
-| **Sérialisation** | Aucune. « Rien » est l'absence de paramètre, ce que porte déjà tout graphe écrit avant cette décision. |
-| **Migration** | Aucune. Un graphe qui portait l'avertissement ne le porte plus ; son comportement n'a jamais changé. |
+| **The old decision** | ADR-0034 §3.2: an unconnected `object` socket returns `null`, and the validator emits a warning — "no Object is chosen or connected". |
+| **The problem** | The rule was written when `Get Property On` was a **distinct** node whose target could only come from a wire. On the merged node, it warns about the most common graph there is: "rotate **me**". A defect reported as an error stops reading as a defect. |
+| **The new decision** | An `object` port **the node can fill itself** — that is, one carrying a target picker on its row — is never reported empty. A **bare** `object` port (`Is Valid`, `Parent`), which has no other possible answer, always is. The distinction is read from the node's definition, not from a list of node types. |
+| **UX rationale** | `Self` is a beginner's default case, and a default is not declared: it is observed. The picker **shows it** — it displays `Self` while nothing is chosen — so the creator sees what the node acts on without having to know a convention. Nothing hides behind the blank. |
+| **Core impact** | `checkObjectInputs()` skips the ports named by an `OBJECT_SOCKET_REFERENCE` parameter. The `COMPONENT_REFERENCE` kind loses its `empty` message: a node naming no type reads **this** Component, which is the ordinary case and not a gap. |
+| **Runtime impact** | None. `targetObject()` already returned `io.self` as a last resort; the validator simply stops contradicting the interpreter. |
+| **Serialization** | None. "Nothing" is the absence of a parameter, which every graph written before this decision already carries. |
+| **Migration** | None. A graph that carried the warning no longer carries it; its behaviour never changed. |
 
 ---
 
-## 4. Décision : un Component ne se dépose pas dans un graphe
+## 4. Decision: a Component is not dropped into a graph
 
-> **Un glisser-déposer a une signification par famille : un Object est un endroit où agir,
-> une propriété est quelque chose à lire ou écrire, une ressource est une valeur — et un
-> Component est une chose qu'on donne à un Object. Ce n'est pas une chose qu'on met dans un
-> graphe.**
+> **A drag and drop has a meaning per family: an Object is a place to act, a property is something to
+> read or write, a resource is a value — and a Component is a thing you give to an Object. It is not
+> a thing you put into a graph.**
 
 | | |
 |---|---|
-| **Ancienne décision** | ADR-0034 §3.2 / ADR-0037 §2.4 : un Component déposé sur un nœud écrit son type dans le paramètre `component` ; déposé sur le canevas, il crée un `Get`/`Set Property On` déjà pointé. |
-| **Problème** | Le paramètre `component` est maintenant écrit par le sélecteur de propriété — qui écrit **les deux moitiés à la fois**. Un dépôt qui n'écrit que la moitié `component` produit un état que rien ne peut lire : le nœud ne fait rien tant que `property` est vide, et la première interaction du créateur écrase la valeur déposée. Le geste ne change rien de visible et rien de lisible. |
-| **Nouvelle décision** | Les règles `component-to-canvas` et `component-to-node` sont retirées. Un Component lâché sur un graphe est refusé, avec la phrase qui dit quoi faire : « un graphe travaille sur des propriétés, pas sur des Components — faites glisser l'une de ses propriétés, ou déposez-le sur un Object pour l'ajouter ». `component-to-object` est inchangé. |
-| **Justification UX** | Un geste qui semble ne rien faire est pire qu'un geste refusé : le créateur ne sait pas s'il a raté la cible, si le produit est cassé, ou si rien n'était prévu. Une famille de drag, une signification — la promesse que le vocabulaire faisait déjà partout ailleurs. |
-| **Impact Core** | Aucun : les règles de drag vivent dans l'Editor. |
-| **Impact runtime** | Aucun. |
-| **Sérialisation** | Aucune. |
-| **Migration** | Aucune : rien de ce qui a été déposé auparavant n'est relu différemment. Un `.px` portant `component` sans `property` se comportait déjà comme un nœud non configuré. |
+| **The old decision** | ADR-0034 §3.2 / ADR-0037 §2.4: a Component dropped on a node writes its type into the `component` parameter; dropped on the canvas, it creates an already-pointed `Get`/`Set Property On`. |
+| **The problem** | The `component` parameter is now written by the property picker — which writes **both halves at once**. A drop that writes only the `component` half produces a state nothing can read: the node does nothing while `property` is empty, and the creator's first interaction overwrites the dropped value. The gesture changes nothing visible and nothing readable. |
+| **The new decision** | The `component-to-canvas` and `component-to-node` rules are withdrawn. A Component released on a graph is refused, with the sentence that says what to do: "a graph works on properties, not on Components — drag one of its properties, or drop it on an Object to add it". `component-to-object` is unchanged. |
+| **UX rationale** | A gesture that seems to do nothing is worse than a refused one: the creator does not know whether they missed the target, whether the product is broken, or whether nothing was ever planned. One drag family, one meaning — the promise the vocabulary already made everywhere else. |
+| **Core impact** | None: the drag rules live in the Editor. |
+| **Runtime impact** | None. |
+| **Serialization** | None. |
+| **Migration** | None: nothing dropped previously is read differently. A `.px` carrying `component` without `property` already behaved like an unconfigured node. |
 
 ---
 
-## 5. Décision : le nom d'un nœud ne peut pas changer — le mécanisme disparaît
+## 5. Decision: a node's name cannot change — the mechanism disappears
 
 | | |
 |---|---|
-| **Ancienne décision** | ADR-0039 §5 : le catalogue ne déclare plus aucun `title()`, mais `NodeDefinition.title` reste disponible et `shapeDependsOnNode()` en tient compte. |
-| **Problème** | Une règle absolue tenue par la discipline n'est pas une règle : le prochain nœud qui aurait « une bonne raison » de se renommer le pourrait, et `Get Ground` reviendrait par ajout plutôt que par argument. |
-| **Nouvelle décision** | `title` disparaît du contrat `NodeDefinition`, de `shapeDependsOnNode()` et de `describeNode()`. Un type de nœud a un `label` et **aucun autre moyen** de dire comment il s'appelle. Un test parcourt tout le catalogue et échoue si une définition déclare un `title`. |
-| **Justification UX** | « Ajoutez un `Set Property` » doit désigner le même nœud une heure plus tard, dans un autre projet, dans un tutoriel et dans le menu de création. Ce avec quoi le nœud est configuré se lit **à l'intérieur**, sur les lignes où cela se change. |
-| **Impact Core** | `shapeDependsOnNode()` ne regarde plus que `inputs` / `outputs`. Ce qu'un créateur voit bouger quand il configure un nœud, ce sont ses **ports** ; son nom est la seule chose qui tient. |
-| **Impact runtime** | Aucun : un titre était de la présentation, jamais vu par l'interpréteur. |
-| **Sérialisation** | Aucune. |
-| **Migration** | Aucune. |
+| **The old decision** | ADR-0039 §5: the catalogue declares no `title()` any more, but `NodeDefinition.title` stays available and `shapeDependsOnNode()` takes it into account. |
+| **The problem** | An absolute rule held by discipline is not a rule: the next node with "a good reason" to rename itself could, and `Get Ground` would come back by addition rather than by argument. |
+| **The new decision** | `title` disappears from the `NodeDefinition` contract, from `shapeDependsOnNode()` and from `describeNode()`. A node type has a `label` and **no other way** of saying what it is called. A test walks the whole catalogue and fails if a definition declares a `title`. |
+| **UX rationale** | "Add a `Set Property`" has to designate the same node an hour later, in another project, in a tutorial and in the creation menu. What the node is configured with is read **inside**, on the rows where it is changed. |
+| **Core impact** | `shapeDependsOnNode()` now looks only at `inputs` / `outputs`. What a creator sees move when they configure a node is its **ports**; its name is the one thing that holds. |
+| **Runtime impact** | None: a title was presentation, never seen by the interpreter. |
+| **Serialization** | None. |
+| **Migration** | None. |
 
 ---
 
-## 6. Ce que ça change pour un débutant, mesuré
+## 6. What it changes for a beginner, measured
 
-Cinq tâches, comptées en **décisions** (un nœud choisi, une liste déroulante ouverte, un fil
-tiré, un concept qu'il faut avoir compris pour avancer).
+Five tasks, counted in **decisions** (a node chosen, a dropdown opened, a wire pulled, a concept you
+have to have understood to move forward).
 
-| Tâche | Avant | Après |
+| Task | Before | After |
 |---|---|---|
-| Lire ma propre vitesse | 1 nœud + 1 liste | 1 nœud + 1 liste |
-| Faire tourner mon Object | 1 nœud (`Set Property On`) + `Self` + 1 fil + 2 listes | 1 nœud + 1 liste |
-| Écrire dans la vitesse du joueur | 1 nœud + 1 glisser d'Object + 1 fil + 2 listes | **1 glisser** (le nœud arrive fini) |
-| Passer de « ma vitesse » à « celle du joueur » | supprimer, recréer, recâbler | 1 liste |
-| Lire une propriété d'un Object trouvé par tag | 2 nœuds + 1 fil + 2 listes | 2 nœuds + 1 fil + 1 liste |
+| Read my own speed | 1 node + 1 list | 1 node + 1 list |
+| Rotate my Object | 1 node (`Set Property On`) + `Self` + 1 wire + 2 lists | 1 node + 1 list |
+| Write into the player's speed | 1 node + 1 Object drag + 1 wire + 2 lists | **1 drag** (the node arrives finished) |
+| Go from "my speed" to "the player's" | delete, recreate, rewire | 1 list |
+| Read a property of an Object found by tag | 2 nodes + 1 wire + 2 lists | 2 nodes + 1 wire + 1 list |
 
-Concepts qu'il faut avoir compris pour écrire ces cinq phrases : **Object**, **propriété**,
-**événement**, **fil**. `Component` n'y figure plus ; « où le moteur range une déclaration »
-non plus.
+Concepts you have to have understood to write those five sentences: **Object**, **property**,
+**event**, **wire**. `Component` is no longer among them; neither is "where the engine files a
+declaration".
 
 ---
 
-## 7. Contrats observables
+## 7. Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| Le catalogue ne contient que `property.get` et `property.set` | `registry.types()` |
-| Un graphe nommant `property.getOn` se charge comme `property.get` | `graph.test.js`, les deux portes |
-| Un `.px` publié avant la fusion s'exécute encore | `interpreter.test.js`, sur la charge brute |
-| Aucun nœud n'expose de champ `component` | `describeNode().fields`, sur le catalogue réel |
-| `Set Property` dit Object, Property, Value — une fois chacun | `nodeRows()`, sur les vrais descripteurs |
-| Une prise Object vide n'est signalée que si le nœud n'a pas d'autre réponse | `validate.test.js` |
-| Un nœud de propriété sans cible agit sur son propre Object | `interpreter.test.js` |
-| Aucun type de nœud ne peut se renommer | `nodes.test.js`, sur tout le catalogue |
-| Un Component lâché sur un graphe est refusé avec une phrase | `dnd.test.js` |
-| Chaque famille de drag a une règle et une seule | `ruleFor()`, par zone |
+| The catalogue holds only `property.get` and `property.set` | `registry.types()` |
+| A graph naming `property.getOn` loads as `property.get` | `graph.test.js`, at both doors |
+| A `.px` published before the merge still runs | `interpreter.test.js`, on the raw payload |
+| No node exposes a `component` field | `describeNode().fields`, on the real catalogue |
+| `Set Property` says Object, Property, Value — once each | `nodeRows()`, on the real descriptors |
+| An empty Object socket is reported only when the node has no other answer | `validate.test.js` |
+| A property node with no target acts on its own Object | `interpreter.test.js` |
+| No node type can rename itself | `nodes.test.js`, over the whole catalogue |
+| A Component released on a graph is refused with a sentence | `dnd.test.js` |
+| Every drag family has one rule and only one | `ruleFor()`, per zone |
 
 ---
 
-## 8. Conséquences
+## 8. Consequences
 
-### Positives
+### Positive
 
-- Deux nœuds au lieu de quatre, et le bon nœud est celui dont le nom correspond à l'intention.
-- Le mot `Component` sort du langage visuel du graphe sans sortir du modèle.
-- Changer de cible est un changement de liste, plus une reconstruction.
-- Le glisser-déposer d'une propriété fonctionne sur le nœud qui porte le nom attendu.
-- Une famille de drag, une signification.
+- Two nodes instead of four, and the right node is the one whose name matches the intention.
+- The word `Component` leaves the graph's visual language without leaving the model.
+- Changing the target is a change of list, not a rebuild.
+- Dragging and dropping a property works on the node that carries the expected name.
+- One drag family, one meaning.
 
-### Négatives
+### Negative
 
-- La liste de propriétés est plus longue : elle contient tous les Components du projet.
-  Elle est groupée et filtrable, ce que ne serait pas une liste plate — mais sur un projet
-  très large, elle devra gagner une recherche, ce que cet ADR ne décide pas.
-- Le geste « déposer un Component sur le canevas » disparaît. Il ne produisait rien de
-  lisible ; le geste équivalent est de déposer une **propriété**, qui produit un nœud fini.
-- `component` est stocké et jamais montré : un état invisible, assumé, dont la seule
-  écriture possible passe par le sélecteur qui écrit aussi `property`.
+- The property list is longer: it holds every Component in the project. It is grouped and filterable,
+  which a flat list would not be — but on a very large project it will need a search, which this ADR
+  does not decide.
+- The "drop a Component on the canvas" gesture disappears. It produced nothing readable; the
+  equivalent gesture is dropping a **property**, which produces a finished node.
+- `component` is stored and never shown: invisible state, accepted, whose only possible write goes
+  through the picker that also writes `property`.
 
 ---
 
-## 9. Alternatives écartées
+## 9. Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| Garder les quatre nœuds « puisque le Core distingue les deux cas » | Une distinction interne n'est pas une raison d'exposer un choix. C'est la raison de le cacher. |
-| Garder deux listes (`Component`, puis `Property`) | Deux questions pour une intention, dont la première parle du moteur. |
-| Un mode sur le nœud (`Local` / `On Object`) | ADR-0039 §0.1 : un mode est un mot sur l'implémentation. Le geste dit déjà l'intention. |
-| Montrer `Self` comme une **valeur** du sélecteur, à choisir | Un défaut ne se choisit pas. Il s'affiche, et une autre réponse le remplace. |
-| Un dépôt de Component qui pré-filtre la liste | L'état ne serait toujours pas lisible sur le nœud, et serait écrasé au premier clic. |
-| Laisser `title` au contrat « au cas où » | Une règle absolue tenue par la discipline finit par être négociée. |
+| Keeping the four nodes "since the Core distinguishes the two cases" | An internal distinction is not a reason to expose a choice. It is the reason to hide it. |
+| Keeping two lists (`Component`, then `Property`) | Two questions for one intention, the first of which talks about the engine. |
+| A mode on the node (`Local` / `On Object`) | ADR-0039 §0.1: a mode is a word about the implementation. The gesture already states the intention. |
+| Showing `Self` as a **value** of the picker, to be chosen | A default is not chosen. It is displayed, and another answer replaces it. |
+| A Component drop that pre-filters the list | The state would still not be readable on the node, and would be overwritten on the first click. |
+| Leaving `title` in the contract "just in case" | An absolute rule held by discipline ends up being negotiated. |

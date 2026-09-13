@@ -1,190 +1,186 @@
-# ADR-0038 — Le pointeur existe dans deux espaces, et c'est le viewport qui remplit le second
+# ADR-0038 — The pointer exists in two spaces, and it is the viewport that fills in the second
 
-- **Statut :** **accepté** (2026-08-27)
-- **Décide :** quelles coordonnées de pointeur un graphe `.px` lit, et qui les calcule
-- **Dépend de :** ADR-0013 (caméra et viewport), ADR-0014 (l'input est passé au runtime), ADR-0027 (catalogue de nœuds)
-- **Amende :** ADR-0014 §2 — la ligne « Position du pointeur en coordonnées monde » de ses alternatives écartées
+- **Status:** **accepted** (2026-08-27)
+- **Decides:** which pointer coordinates a `.px` graph reads, and who computes them
+- **Depends on:** ADR-0013 (camera and viewport), ADR-0014 (input is passed into the runtime), ADR-0027 (the node catalogue)
+- **Amends:** ADR-0014 §2 — the "the pointer position in world coordinates" line of its rejected alternatives
 
 ---
 
-## Contexte observé
+## Observed context
 
-ADR-0014 a donné au pointeur une place dans `InputState` et a tranché son espace :
+ADR-0014 gave the pointer a place in `InputState` and settled its space:
 
-> La position du pointeur est **en espace écran**. La convertir en coordonnées monde est le
-> rôle de la caméra (`screenToWorld`, ADR-0013) […] le figer dans l'état d'entrée le rendrait
-> dépendant de la façon dont on regarde la scène.
+> The pointer position is **in screen space**. Converting it to world coordinates is the camera's job
+> (`screenToWorld`, ADR-0013) […] freezing it into the input state would make it depend on how you
+> are looking at the scene.
 
-**Mesuré avant d'écrire une ligne :** `movePointer()`, `pointerX` et `pointerY` n'ont
-**aucun lecteur** dans le dépôt. Un `grep` sur `src/` ne les trouve qu'à l'endroit où ils sont
-définis. La décision de 2026-08-12 a donc fixé un espace de coordonnées **avant** que quoi que
-ce soit ait à le lire, et cette tranche est le premier consommateur.
+**Measured before writing a line:** `movePointer()`, `pointerX` and `pointerY` have **no reader** in
+the repository. A `grep` over `src/` finds them only where they are defined. The decision of
+2026-08-12 therefore fixed a coordinate space **before** anything had to read it, and this slice is
+the first consumer.
 
-Or ce premier consommateur ne peut pas s'en servir :
+And that first consumer cannot use it:
 
-| Ce qu'un nœud lirait | Ce qu'il pourrait en faire |
+| What a node would read | What it could do with it |
 |---|---|
-| `pointerX = 400`, `pointerY = 300` | rien — c'est le centre d'une surface dont il ignore la taille |
-| pour en tirer le monde | il lui faudrait la caméra, le zoom, le pan et le viewport |
+| `pointerX = 400`, `pointerY = 300` | nothing — it is the centre of a surface whose size it does not know |
+| to derive the world from it | it would need the camera, the zoom, the pan and the viewport |
 
-Et le contexte de pas ne porte **ni caméra ni viewport**, délibérément : `Runtime.step()`
-reçoit `time`, `deltaTime`, `scene`, `runtime` et `input`. Y ajouter la vue rendrait la
-simulation dépendante de la façon dont on la regarde — exactement ce qu'ADR-0014 protège, et
-ce qui casserait le headless.
+And the step context carries **neither a camera nor a viewport**, deliberately: `Runtime.step()`
+receives `time`, `deltaTime`, `scene`, `runtime` and `input`. Adding the view to it would make the
+simulation depend on how you are looking at it — exactly what ADR-0014 protects, and what would break
+headless execution.
 
-Le chemin était donc fermé aux deux bouts : le nœud ne peut pas convertir, et on ne peut pas
-lui donner de quoi convertir.
+The path was therefore closed at both ends: the node cannot convert, and it cannot be given what it
+would take to convert.
 
 ---
 
-## Décision
+## Decision
 
-### 1. Les deux espaces coexistent ; aucun ne remplace l'autre
+### 1. The two spaces coexist; neither replaces the other
 
-**VALIDÉ.** `InputState` garde `movePointer()` / `pointerX` / `pointerY` **inchangés**, en
-espace écran, et gagne `movePointerInWorld()` / `pointerWorldX` / `pointerWorldY`.
+**SETTLED.** `InputState` keeps `movePointer()` / `pointerX` / `pointerY` **unchanged**, in screen
+space, and gains `movePointerInWorld()` / `pointerWorldX` / `pointerWorldY`.
 
-Ce ne sont pas deux vues d'une même donnée :
+They are not two views of one datum:
 
 ```
-écran   « où le pointeur est sur la surface »   fait brut du périphérique
-monde   « ce que le pointeur désigne »          fait de jeu
+screen   "where the pointer is on the surface"   a raw device fact
+world    "what the pointer designates"           a game fact
 ```
 
-**Aucune arithmétique ne relie les deux dans `InputState`**, et aucune ne le pourrait : la
-correspondance appartient à un viewport que ce fichier ne doit jamais connaître. L'objection
-d'ADR-0014 — « ne pas figer la conversion dans l'état d'entrée » — est donc tenue : rien n'y
-est converti. Ce qui y est **écrit**, c'est un résultat, par celui qui avait de quoi le
-calculer.
+**No arithmetic links the two inside `InputState`**, and none could: the correspondence belongs to a
+viewport that file must never know about. ADR-0014's objection — "do not freeze the conversion into
+the input state" — is therefore honoured: nothing is converted there. What is **written** there is a
+result, by whoever had the means to compute it.
 
-### 2. Le nœud lit le monde, parce que c'est le seul des deux qui soit jouable
+### 2. The node reads the world, because it is the only one of the two that is playable
 
-**VALIDÉ.** `input.pointer` sort `x` et `y` en coordonnées monde.
+**SETTLED.** `input.pointer` outputs `x` and `y` in world coordinates.
 
-Un `.px` doit pouvoir viser, suivre, poser quelque chose là où on a cliqué. Toutes ces
-phrases parlent de la scène. Aucune ne parle de pixels.
+A `.px` must be able to aim, to follow, to place something where you clicked. All those sentences
+speak about the scene. None speaks about pixels.
 
-> **Ce que cela coûte, et pourquoi c'est le bon prix.** La valeur écrite dépend de la caméra
-> au moment où elle a été écrite. C'est le reproche qu'ADR-0014 faisait à cette voie — et
-> c'est le **contenu même** de la donnée : « ce que le joueur vise » ne veut rien dire sans le
-> point de vue depuis lequel il visait. Le fait n'est pas pollué par la caméra, il est
-> constitué par elle.
+> **What it costs, and why it is the right price.** The written value depends on the camera at the
+> moment it was written. That was ADR-0014's objection to this path — and it is the **very content**
+> of the datum: "what the player is aiming at" means nothing without the point of view they were
+> aiming from. The fact is not polluted by the camera, it is constituted by it.
 
-### 3. Pour un serveur, c'est le monde qui est transportable — pas l'écran
+### 3. For a server, it is the world that is transportable — not the screen
 
-**VALIDÉ, et c'est ce qui renverse l'argument d'ADR-0014.**
+**SETTLED, and it is what reverses ADR-0014's argument.**
 
-| Ce que le client envoie | Ce que le serveur peut en faire |
+| What the client sends | What the server can do with it |
 |---|---|
-| « la souris était en (400, 300) » | rien, sans connaître la fenêtre et la caméra du client |
-| « le joueur visait (120, −45) » | valider, simuler, réconcilier |
+| "the mouse was at (400, 300)" | nothing, without knowing the client's window and camera |
+| "the player was aiming at (120, −45)" | validate, simulate, reconcile |
 
-Seul le client possède un viewport. C'est donc **au client** de résoudre la visée, et au
-serveur de recevoir la visée résolue. Exiger l'espace écran sur le fil obligerait le serveur à
-répliquer la caméra de chaque client pour interpréter quoi que ce soit — c'est-à-dire à faire
-entrer le point de vue dans la simulation autoritaire, précisément ce qu'on voulait éviter.
+Only the client owns a viewport. It is therefore **the client's** job to resolve the aim, and the
+server's to receive the resolved aim. Requiring screen space on the wire would force the server to
+replicate every client's camera to interpret anything — that is, to bring the point of view into the
+authoritative simulation, precisely what we wanted to avoid.
 
-### 4. La conversion vit dans le viewport, et elle est pure
+### 4. The conversion lives in the viewport, and it is pure
 
-**VALIDÉ.** `editor/viewport/surface.js` gagne `locatePointer()`, qui énonce la chaîne
-entière en un endroit lisible :
+**SETTLED.** `editor/viewport/surface.js` gains `locatePointer()`, which states the whole chain in one
+readable place:
 
 ```
-PointerEvent.clientX/Y  →  coin haut-gauche de la surface  →  pixels device  →  screenToWorld
+PointerEvent.clientX/Y  →  the surface's top-left corner  →  device pixels  →  screenToWorld
 ```
 
-Elle est **pure**, donc vérifiée sous Node contre les matrices mêmes avec lesquelles le
-renderer dessine — pan, zoom, décalage de la surface dans la page, et rapport device/CSS.
-C'est la seule partie du chemin du pointeur qui peut être fausse sans qu'aucune capture
-d'écran ne le montre.
+It is **pure**, and therefore checked under Node against the very matrices the renderer draws with —
+pan, zoom, the surface's offset in the page, and the device/CSS ratio. It is the only part of the
+pointer's path that can be wrong without any screenshot showing it.
 
-`Viewport.locate()` l'expose ; `PointerInput` l'appelle et **ne fait aucun calcul**.
+`Viewport.locate()` exposes it; `PointerInput` calls it and **does no computation**.
 
-### 5. Ce qui sort vers le Runtime est en pixels CSS et en unités monde, jamais en device
+### 5. What goes out to the Runtime is in CSS pixels and world units, never in device pixels
 
-**VALIDÉ.** Le pas « pixels device » est un fait sur le backing store du canvas, pas sur le
-jeu. Un `.px` doit lire les mêmes nombres sur un écran Retina et sur un écran ordinaire, sinon
-un jeu se comporterait différemment selon la machine qui l'édite.
+**SETTLED.** The "device pixels" step is a fact about the canvas's backing store, not about the game.
+A `.px` must read the same numbers on a Retina screen and on an ordinary one, otherwise a game would
+behave differently depending on which machine is editing it.
 
-### 6. Le pointeur est indexé par owner comme le reste
+### 6. The pointer is indexed by owner like everything else
 
-**VALIDÉ.** La position monde vit sur `InputState`, donc `input.of(owner)` la sépare déjà par
-joueur, sans une ligne de plus. Le navigateur n'a qu'une souris aujourd'hui ; ce n'est pas une
-raison pour que le modèle n'en ait qu'une (ADR-0014 §3).
+**SETTLED.** The world position lives on `InputState`, so `input.of(owner)` already separates it by
+player, with not one line more. The browser has one mouse today; that is no reason for the model to
+have only one (ADR-0014 §3).
 
-### 7. Les boutons ne gagnent aucune sémantique
+### 7. The buttons gain no semantics
 
-**VALIDÉ.** `isButtonDown()`, `buttonPressed()` et `buttonReleased()` existent déjà, bornés au
-même pas unique par le même `commit()` (ADR-0014 §5). `input.pointerButton` les expose sous les
-trois mêmes mots que `input.key`.
+**SETTLED.** `isButtonDown()`, `buttonPressed()` and `buttonReleased()` already exist, bounded to the
+same single step by the same `commit()` (ADR-0014 §5). `input.pointerButton` exposes them under the
+same three words as `input.key`.
 
-Ce que le `.px` **stocke** est en revanche un **nom** — `"left"`, `"middle"`, `"right"` — et
-non l'index. `InputState` indexe par numéro parce que c'est ce que rapporte chaque plateforme,
-mais un `.px` est un fichier qui survit à la plateforme qui l'a écrit : il porte donc un nom,
-comme `input.key` porte `"Space"`, et pour la raison qu'ADR-0014 §2 donne déjà. Il n'y a pas
-deux numérotations pour autant — **la position dans la liste des noms EST l'index**, donc une
-seule liste, lue par les deux bouts.
+What the `.px` **stores**, however, is a **name** — `"left"`, `"middle"`, `"right"` — and not the
+index. `InputState` indexes by number because that is what every platform reports, but a `.px` is a
+file that outlives the platform that wrote it: it therefore carries a name, as `input.key` carries
+`"Space"`, and for the reason ADR-0014 §2 already gives. There are not two numberings for all that —
+**the position in the list of names IS the index**, so one list, read from both ends.
 
-> **Mesuré dans l'Editor, et c'est ce qui a tranché.** Une première version stockait l'index
-> avec des `labels`. Le contrôle Choice du canvas convertit sa valeur en chaîne avant de
-> chercher son libellé (`ui/field.js`, `String(next ?? '')`), donc `0` ne retrouvait pas
-> `Left` et le nœud affichait `0`. Des valeurs nommées sont la forme que ce contrôle sait
-> déjà rendre — et, indépendamment de lui, la meilleure des deux pour le format.
+> **Measured in the Editor, and it is what settled it.** A first version stored the index with
+> `labels`. The canvas's Choice control converts its value to a string before looking up its label
+> (`ui/field.js`, `String(next ?? '')`), so `0` did not find `Left` and the node displayed `0`. Named
+> values are the shape that control already knows how to render — and, independently of it, the
+> better of the two for the format.
 
 ---
 
-## Ce qui n'est pas décidé ici
+## What is not decided here
 
-- **Le « game focus ».** Il n'a pas été nécessaire : l'adaptateur écoute la surface du jeu, donc
-  une pression dans l'Inspector ne lui parvient jamais. Le jour où le jeu occupera plus d'une
-  surface, ou une surface partagée, la question devra être posée pour de bon.
-- **Delta et molette.** `InputState` n'en a pas, et rien ne les réclame encore.
-- **Multitouch.** Un seul pointeur est suivi ; `pointerId` est ignoré.
+- **"Game focus".** It has not been necessary: the adapter listens on the game's surface, so a press
+  in the Inspector never reaches it. The day the game occupies more than one surface, or a shared
+  one, the question will have to be asked properly.
+- **Delta and wheel.** `InputState` has none, and nothing asks for them yet.
+- **Multitouch.** A single pointer is tracked; `pointerId` is ignored.
 
 ---
 
-## Contrats observables
+## Observable contracts
 
-| Contrat | Vérifiable par |
+| Contract | Verifiable by |
 |---|---|
-| Une coordonnée de page n'est pas une coordonnée monde | une surface décalée dans la page |
-| Le pan et le zoom composent | caméra déplacée **et** zoomée |
-| Le rapport device ne change aucune coordonnée de jeu | même clic, deux backing stores |
-| Les deux espaces sont indépendants | écrire l'un ne bouge pas l'autre |
-| Un graphe lit le monde, jamais l'écran | écrire l'écran seul ne déplace rien |
-| Une pression hors de la surface n'est pas un clic de jeu | `pointerup` seul, sur la fenêtre |
-| Un relâchement hors de la surface termine la pression | `pointerdown` surface, `pointerup` fenêtre |
+| A page coordinate is not a world coordinate | a surface offset in the page |
+| Pan and zoom compose | a camera both moved **and** zoomed |
+| The device ratio changes no game coordinate | the same click, two backing stores |
+| The two spaces are independent | writing one does not move the other |
+| A graph reads the world, never the screen | writing the screen alone moves nothing |
+| A press outside the surface is not a game click | a `pointerup` alone, on the window |
+| A release outside the surface ends the press | a `pointerdown` on the surface, a `pointerup` on the window |
 
 ---
 
-## Conséquences
+## Consequences
 
-### Positives
+### Positive
 
-- Un `.px` peut viser, suivre et cliquer dans la scène, sans rien savoir de la caméra.
-- Le Runtime reste sans DOM, sans `PointerEvent` et sans viewport ; le headless est intact.
-- La conversion est testée contre les matrices réelles, hors navigateur.
-- `pointerX` / `pointerY` cessent d'être une API morte sans que leur contrat bouge.
-- Le chemin serveur est ouvert par la même donnée, sans second format.
+- A `.px` can aim, follow and click inside the scene, knowing nothing about the camera.
+- The Runtime stays free of the DOM, of `PointerEvent` and of the viewport; headless is intact.
+- The conversion is tested against the real matrices, outside a browser.
+- `pointerX` / `pointerY` stop being a dead API without their contract moving.
+- The server path is opened by the same datum, with no second format.
 
-### Négatives
+### Negative
 
-- Deux positions au lieu d'une, donc deux choses qu'un adaptateur doit penser à écrire.
-- La position monde est datée de la caméra qui l'a produite. Un enregistrement rejoué sous une
-  autre caméra rejoue la visée, pas les pixels — ce qui est voulu, et qu'il faut savoir.
-- ADR-0014 §2 se lit désormais avec cet amendement à côté.
+- Two positions instead of one, and therefore two things an adapter has to remember to write.
+- The world position is dated by the camera that produced it. A recording replayed under another
+  camera replays the aim, not the pixels — which is intended, and worth knowing.
+- ADR-0014 §2 now reads with this amendment beside it.
 
 ---
 
-## Alternatives écartées
+## Rejected alternatives
 
-| Alternative | Pourquoi non |
+| Alternative | Why not |
 |---|---|
-| **Garder l'écran seul, et convertir dans le graphe** | Le nœud aurait besoin de la caméra et du viewport, donc de les faire entrer dans le pas de simulation. |
-| **Mettre la vue dans le contexte de pas** | La simulation dépendrait de la façon dont on la regarde ; le headless n'aurait rien à y mettre. |
-| **Remplacer l'écran par le monde** | Détruirait le fait brut du périphérique, seul utile à un futur curseur dessiné ou à une UI écran. |
-| **Convertir dans `InputState`** | Il lui faudrait une caméra ; c'est exactement ce qu'ADR-0014 §2 refuse, et à raison. |
-| **Un nœud `Screen To World` avec une caméra en entrée** | Reporte le problème : le nœud aurait toujours besoin d'un viewport, que le graphe n'a pas. |
-| **Faire porter la conversion par l'adaptateur lui-même** | Le pan, le zoom et le rapport device sont au Viewport ; une seconde copie de cette arithmétique est une seconde chance de diverger. |
-| **Un pointeur global hors `InputState`** | Un singleton, et la fin de l'indexation par owner (ADR-0014 §3). |
-| **Stocker l'index du bouton dans le `.px`** | Fait dépendre un fichier de la numérotation d'une plateforme, et le contrôle Choice ne sait pas afficher une valeur non textuelle. |
+| **Keeping the screen alone, and converting in the graph** | The node would need the camera and the viewport, and therefore bringing them into the simulation step. |
+| **Putting the view into the step context** | The simulation would depend on how you look at it; headless would have nothing to put there. |
+| **Replacing the screen with the world** | It would destroy the raw device fact, the only one useful to a future drawn cursor or a screen UI. |
+| **Converting inside `InputState`** | It would need a camera; that is exactly what ADR-0014 §2 refuses, and rightly. |
+| **A `Screen To World` node with a camera input** | It defers the problem: the node would still need a viewport, which the graph does not have. |
+| **Having the adapter carry the conversion** | Pan, zoom and the device ratio belong to the Viewport; a second copy of that arithmetic is a second chance to diverge. |
+| **A global pointer outside `InputState`** | A singleton, and the end of indexing by owner (ADR-0014 §3). |
+| **Storing the button index inside the `.px`** | It makes a file depend on a platform's numbering, and the Choice control cannot display a non-textual value. |

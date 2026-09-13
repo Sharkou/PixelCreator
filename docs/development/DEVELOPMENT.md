@@ -1,124 +1,122 @@
-# Développement
+# Development
 
-## Exécuter l'Editor v2
+## Running the v2 Editor
 
-`src/` utilise des imports **relatifs**, donc la racine servie n'a pas d'importance tant
-que `src/` en fait partie. Depuis la racine du dépôt :
+`src/` uses **relative** imports, so the served root does not matter as long as `src/` is
+inside it. From the repository root:
 
 ```bash
 tools/dev-server.sh 8099 .
 ```
 
-puis `http://localhost:8099/src/editor/index.html`.
+then `http://localhost:8099/src/editor/index.html`.
 
-Équivalent direct : `python -m http.server 8099`.
+The direct equivalent: `python -m http.server 8099`.
 
-Aucune dépendance, aucune étape de build : ce sont des modules ES chargés tels quels.
+No dependencies, no build step: these are ES modules loaded as they are.
 
-## Exécuter Legacy
+## Running Legacy
 
-`legacy/` utilise des imports absolus (`/src/core/object.js`, `/editor/...`).
-**Il doit donc être servi depuis `legacy/` comme racine**, pas depuis `engine/`.
+`legacy/` uses absolute imports (`/src/core/object.js`, `/editor/...`). **It must therefore be
+served with `legacy/` as the root**, not with `engine/`.
 
 ```bash
 cd legacy && python -m http.server 8099
 ```
 
-puis `http://localhost:8099/index.html`.
+then `http://localhost:8099/index.html`.
 
-`tools/dev-server.sh` sert désormais `legacy/` comme racine par défaut (port et racine
-paramétrables en arguments), ce qui revient au même que la commande ci-dessus.
+`tools/dev-server.sh` now serves `legacy/` as its default root (port and root are settable as
+arguments), which amounts to the same thing as the command above.
 
-### Objets de débogage exposés
+### Debugging objects exposed
 
-`app.js` publie `window.scene`, `window.project`, `window.loader`. C'est le point
-d'entrée pour inspecter l'état depuis la console — et c'est ainsi que les vérifications
-de `../migration/LEGACY_ANALYSIS.md` ont été faites.
+`app.js` publishes `window.scene`, `window.project`, `window.loader`. That is the entry point
+for inspecting state from the console — and it is how the checks in
+`../migration/LEGACY_ANALYSIS.md` were made.
 
 ```js
-scene.objects                        // tous les objets
-scene.current                        // objet sélectionné
+scene.objects                        // every object
+scene.current                        // the selected object
 scene.getObjectByName('Player')
 ```
 
-### Mode en ligne
+### Online mode
 
-`app.js` contient `const online = false`. Passer à `true` fait tenter une connexion à
-`apps.pixelcreator.io:443` (serveur privé) et le téléchargement des ressources du projet.
+`app.js` contains `const online = false`. Switching it to `true` makes it attempt a connection
+to `apps.pixelcreator.io:443` (the private server) and download the project's resources.
 
-**Attention :** hors ligne, le runtime est partiellement cassé (les composants qui lisent
-les entrées lèvent une erreur par frame — voir `../MIGRATION.md` §4.1).
+**Careful:** offline, the runtime is partly broken (components that read input throw once per
+frame — see `../MIGRATION.md` §4.1).
 
-## Structure du dépôt
+## Repository structure
 
 ```
 engine/
 ├── src/         Pixel Creator v2 — core/ project/ runtime/ editor/ preview/
-├── docs/        documentation — mémoire de projet, guide utilisateur, doc développeur
-├── legacy/      archive de référence, LECTURE SEULE
-├── tools/       outillage de développement et vérifications
-└── .github/     CI, modèles d'issues et de PR, instructions Copilot
+├── docs/        documentation — project memory, user guide, developer docs
+├── legacy/      the reference archive, READ-ONLY
+├── tools/       development tooling and checks
+└── .github/     CI, issue and PR templates, Copilot instructions
 ```
 
-Le détail complet, couche par couche, est dans
+The full detail, layer by layer, is in
 [`../developer/repository-structure.md`](../developer/repository-structure.md).
 
-### `legacy/` est en lecture seule
+### `legacy/` is read-only
 
-On peut lire, chercher, analyser, comparer, documenter.
-On ne refactore pas, on ne nettoie pas, on ne modernise pas, on ne supprime pas.
+You may read it, search it, analyse it, compare against it, document it.
+You do not refactor it, clean it up, modernize it or delete from it.
 
-Legacy répond à « comment Pixel Creator fonctionnait-il réellement ? ».
-Il ne définit pas « comment la v2 doit être implémentée ».
+Legacy answers "how did Pixel Creator actually work?".
+It does not define "how v2 must be implemented".
 
-### `docs/reference/` décrit une API souhaitée — et c'est celle de Legacy
+### `docs/reference/` describes an intended API — and it is Legacy's
 
-**Attention :** ces documents ne décrivent pas le code actuel. Exemples :
+**Careful:** those documents do not describe the current code. For example:
 
-- `docs/reference/core/object.md` documente `new Object({ name, x, y })` en objet d'options,
-  alors que le constructeur réel de Legacy est positionnel
-  `new Object(name, x, y, width, height, layer)` — et celui de la v2 est différent des deux ;
-- `docs/reference/editor/collab.md` documente un module `Collab` fondé sur Socket.IO,
-  **absent du code**.
+- `docs/reference/core/object.md` documents `new Object({ name, x, y })` with an options object,
+  while Legacy's real constructor is positional
+  `new Object(name, x, y, width, height, layer)` — and v2's differs from both;
+- `docs/reference/editor/collab.md` documents a `Collab` module based on Socket.IO, **absent
+  from the code**.
 
-À traiter comme une source d'intention, jamais comme une description du comportement. Chaque
-page porte désormais un bandeau qui le dit, et
-[`../reference/README.md`](../reference/README.md) explique où sont les réponses actuelles.
+Treat them as a source of intent, never as a description of behaviour. Every page now carries a
+banner saying so, and [`../reference/README.md`](../reference/README.md) explains where the
+current answers are.
 
-## Le serveur privé
+## The private server
 
-Il vit **hors** de ce dépôt :
+It lives **outside** this repository:
 
 ```
 PixelCreator/            (public)
 └── legacy/
 
-PixelCreator-private/    (privé)
+PixelCreator-private/    (private)
 └── legacy-server.js
 ```
 
-Il ne doit **jamais** être déplacé ni copié dans le dépôt public. Son analyse est dans
-`../architecture/NETWORK.md`, sans reproduction de code au-delà du strict nécessaire.
+It must **never** be moved or copied into the public repository. Its analysis is in
+`../architecture/NETWORK.md`, with no code reproduced beyond the strict minimum.
 
-Technologie : Deno, `std@0.117` pour WebSocket (API obsolète), TLS, écriture des
-ressources sur disque.
+Technology: Deno, `std@0.117` for WebSocket (an obsolete API), TLS, writing resources to disk.
 
-## Validation navigateur
+## Browser validation
 
-Pour tout changement d'UI, d'interaction, de rendu ou de runtime, valider dans le
-navigateur, proportionnellement à la taille du changement :
+For any change to UI, interaction, rendering or the runtime, validate in the browser, in
+proportion to the size of the change:
 
-1. servir `legacy/` (ou la v2, selon le cas) ;
-2. attacher des écouteurs `console` et `pageerror` ;
-3. tester **le comportement directement concerné** ;
-4. si cela fonctionne sans erreur pertinente, s'arrêter.
+1. serve `legacy/` (or v2, as the case may be);
+2. attach `console` and `pageerror` listeners;
+3. test **the behaviour directly concerned**;
+4. if it works with no relevant error, stop.
 
-Ne pas transformer un problème local en refonte architecturale.
+Do not turn a local problem into an architectural overhaul.
 
-## Avant d'implémenter la v2
+## Before implementing v2
 
-Les décisions d'architecture sont **validées** (`../ARCHITECTURE.md` §10).
+The architecture decisions are **accepted** (`../ARCHITECTURE.md` §10).
 
-La séquence est dans `../MIGRATION.md` §5. **L'étape 1 est l'outillage et le harnais de
-parité — avant toute migration de code.** Le risque R1 (rupture silencieuse du Property
-System) n'est détectable d'aucune autre manière.
+The sequence is in `../MIGRATION.md` §5. **Step 1 is the tooling and the parity harness — before
+any code migration.** Risk R1 (a silent Property System breakage) is detectable in no other way.

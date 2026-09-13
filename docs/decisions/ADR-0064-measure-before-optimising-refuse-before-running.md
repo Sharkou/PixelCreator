@@ -1,177 +1,172 @@
-# ADR-0064 — Mesurer avant d'optimiser, refuser avant d'exécuter
+# ADR-0064 — Measure before optimising, refuse before running
 
-- **Statut :** **accepté** (2026-09-12)
-- **Décide :** quelle partition remplace l'O(n²) ; ce qu'un broad phase n'a pas le droit de changer ; comment on le prouve ; où un graphe cassé est arrêté
-- **Dépend de :** ADR-0012 (isolation des erreurs), ADR-0015 (un `.px` est un comportement), ADR-0027 (modèle de graphe, `validateGraph`), ADR-0034 §3.1 (ordre canonique), ADR-0059 (se toucher est un fait de simulation)
-- **Amende :** ADR-0059 §7 — le broad phase arrive, avec le chiffre qui le justifiait
-- **Ne décide pas :** la résolution physique ; les couches de collision ; le collider polygonal ; l'OBB exact — ADR-0059 §9 est inchangé
-- **Amendé le 2026-09-12 (ADR-0072) :** « seules les ERREURS retiennent la liaison » vaut
-  aussi **pendant** l'exécution. Un nœud dont le validateur ne fait qu'un avertissement — une
-  propriété pas encore choisie — ne doit pas jeter à chaque pas : une exception déroule tout le
-  `walk`, donc elle arrêtait aussi tout ce qui était câblé après lui
-
----
-
-## 1. Deux dettes, une même forme
-
-ADR-0059 §7 disait que la boucle O(n²) serait remplacée « le jour où une mesure le demande ».
-`validateGraph()` savait depuis ADR-0027 dire qu'un fil nomme un port qui n'existe pas, et
-personne ne le lui demandait avant de jouer. Les deux dettes étaient déjà **nommées** ; il ne
-manquait qu'un chiffre pour la première et un appelant pour la seconde.
-
-```
-1000 colliders étalés         7,56 ms par pas   — 500 000 tests de boîte pour 0 contact
-1000 colliders superposés   760    ms par pas
-```
-
-Le second nombre n'est pas le problème d'un broad phase : mille choses qui se touchent
-vraiment **sont** un demi-million de paires. Le premier l'est entièrement.
+- **Status:** **accepted** (2026-09-12)
+- **Decides:** which partition replaces the O(n²) loop; what a broad phase is not allowed to change; how that is proved; where a broken graph is stopped
+- **Depends on:** ADR-0012 (error isolation), ADR-0015 (a `.px` is a behaviour), ADR-0027 (graph model, `validateGraph`), ADR-0034 §3.1 (canonical order), ADR-0059 (touching is a fact of simulation)
+- **Amends:** ADR-0059 §7 — the broad phase arrives, with the number that justified it
+- **Does not decide:** physical resolution; collision layers; the polygon collider; the exact OBB — ADR-0059 §9 is unchanged
+- **Amended on 2026-09-12 (ADR-0072):** "only ERRORS hold back binding" applies **during**
+  execution too. A node whose validator raises nothing but a warning — a property not yet
+  chosen — must not throw on every step: an exception unwinds the whole `walk`, so it also
+  stopped everything wired after it
 
 ---
 
-## 2. Un hachage spatial uniforme, pas un quadtree
+## 1. Two debts, one shape
 
-Le monde est 2D, les formes sont des AABB, et les objets d'un jeu sont surtout de taille
-comparable et surtout groupés — le cas exact où une grille est la meilleure et un arbre le
-pire. C'est aussi quarante lignes : **aucune structure à rééquilibrer, aucun nœud à découper,
-aucune profondeur à régler et rien à conserver entre deux pas.** Cela compte plus que
-l'asymptotique : un arbre qui doit rester correct à travers mille spawns et destructions par
-seconde est une seconde source de bugs, et ceci n'a aucun état.
+ADR-0059 §7 said the O(n²) loop would be replaced "the day a measurement asks for it".
+`validateGraph()` had known since ADR-0027 how to say that a wire names a port that does not
+exist, and nobody was asking it before playing. Both debts were already **named**; all that was
+missing was a number for the first and a caller for the second.
 
-| Décision | Raison |
+```
+1000 colliders spread out    7.56 ms per step   — 500,000 box tests for 0 contacts
+1000 colliders overlapping 760    ms per step
+```
+
+The second number is not a broad phase's problem: a thousand things genuinely touching **are** a
+half-million pairs. The first one is entirely its problem.
+
+---
+
+## 2. A uniform spatial hash, not a quadtree
+
+The world is 2D, the shapes are AABBs, and a game's objects are mostly of comparable size and
+mostly clustered — the exact case where a grid is best and a tree is worst. It is also forty
+lines: **no structure to rebalance, no node to split, no depth to tune and nothing to keep
+between two steps.** That matters more than the asymptotics: a tree that has to stay correct
+across a thousand spawns and destructions per second is a second source of bugs, and this has no
+state at all.
+
+| Decision | Reason |
 |---|---|
-| **taille de cellule = étendue moyenne** | une grille à la taille de ce qu'elle contient met un objet typique dans une à quatre cellules. Une taille fixe serait un réglage sans bonne valeur : un jeu de balles de 8 px et un jeu de plateformes de 256 px en veulent deux différentes, et aucun créateur ne devrait avoir à le savoir |
-| dérivée de l'état | deux machines calculent la même taille, donc les mêmes seaux |
-| **moins de 24 objets : aucune partition** | à deux douzaines de boîtes, toute la boucle brute coûte moins que l'allocation d'une `Map` — et une scène de cette taille est l'écrasante majorité |
-| **plus de 64 cellules pour un objet : liste « grands »** | un sol de 4000 unités serait inséré dans des centaines de cellules. Ce qui couvre tout est apparié avec tout, ce avec quoi il aurait été apparié de toute façon |
-| déduplication par `i * n + j` | deux boîtes partageant trois cellules sont **une** paire ; une clé arithmétique n'alloue rien là où une scène dense propose cent mille candidats |
-| **tri final en ordre canonique** | §3 |
+| **cell size = mean extent** | a grid sized to what it holds puts a typical object in one to four cells. A fixed size would be a setting with no good value: a game of 8 px balls and a platformer of 256 px tiles want two different ones, and no creator should have to know that |
+| derived from the state | two machines compute the same size, hence the same buckets |
+| **fewer than 24 objects: no partition** | at two dozen boxes, the whole brute-force loop costs less than allocating a `Map` — and a scene that size is the overwhelming majority |
+| **more than 64 cells for one object: the "large" list** | a 4000-unit floor would be inserted into hundreds of cells. Whatever covers everything is paired with everything, which is what it would have been paired with anyway |
+| deduplication by `i * n + j` | two boxes sharing three cells are **one** pair; an arithmetic key allocates nothing where a dense scene offers a hundred thousand candidates |
+| **final sort into canonical order** | §3 |
 
 ---
 
-## 3. Le contrat observable ne bouge pas — et c'est prouvé, pas affirmé
+## 3. The observable contract does not move — and that is proved, not asserted
 
-Ce qui change est **quelles paires sont testées**. Ce qui ne change pas :
+What changes is **which pairs are tested**. What does not change:
 
-- quelles paires se recouvrent ;
-- l'ordre dans lequel elles sont rapportées ;
-- `Enter`, `Stay`, `Exit` et leur disjonction (ADR-0059 §5) ;
-- la paire au niveau **Object** (ADR-0059 §5) ;
-- la réponse de `Is Overlapping` ;
-- le déterminisme.
+- which pairs overlap;
+- the order in which they are reported;
+- `Enter`, `Stay`, `Exit` and their disjointness (ADR-0059 §5);
+- the pair at the **Object** level (ADR-0059 §5);
+- what `Is Overlapping` answers;
+- determinism.
 
-Une `Map` itère dans l'ordre d'insertion, qui est un ordre que le hachage invente. Le contrat
-de l'appelant est celui de la scène (ADR-0034 §3.1), et deux machines doivent s'accorder
-dessus : **les candidats sont donc triés par `(i, j)` avant de sortir**. C'est ce qui fait du
-hachage un détail d'implémentation plutôt qu'un détail observable.
-
----
-
-## 4. La preuve est différentielle, pas unitaire
-
-Un changement de partition est le plus facile des régressions silencieuses : rien ne lève quand
-une paire candidate est manquée — une collision n'a simplement pas lieu, dans un coin d'un
-niveau, pour une disposition. Des tests unitaires de la grille ne trouvent pas cela, parce
-qu'une grille fausse reste cohérente avec elle-même.
-
-> **`Collisions` garde un mode `exhaustive`, et le test rejoue les mêmes scènes des deux
-> façons.**
-
-Huit distributions générées depuis une graine — étalées, groupées, empilées, minuscules,
-énormes, un objet géant parmi des petits — et les **séquences** de transitions doivent être
-identiques, pas seulement les ensembles. Plus six pas de mouvement, pour que `Enter`, `Stay` et
-`Exit` soient comparés et pas seulement les recouvrements d'un instant.
-
-Le mode `exhaustive` n'est utilisé par rien dans le produit : il existe pour que cette phrase
-soit vérifiable.
+A `Map` iterates in insertion order, which is an order the hash invents. The caller's contract is
+the scene's (ADR-0034 §3.1), and two machines have to agree on it: **candidates are therefore
+sorted by `(i, j)` before they leave**. That is what makes the hash an implementation detail
+rather than an observable one.
 
 ---
 
-## 5. Les chiffres, avant et après
+## 4. The proof is differential, not unit
+
+A change of partition is the easiest kind of silent regression: nothing throws when a candidate
+pair is missed — a collision simply does not happen, in one corner of one level, for one layout.
+Unit tests of the grid do not find that, because a wrong grid stays consistent with itself.
+
+> **`Collisions` keeps an `exhaustive` mode, and the test replays the same scenes both ways.**
+
+Eight distributions generated from a seed — spread out, clustered, stacked, tiny, huge, one giant
+object among small ones — and the **sequences** of transitions must be identical, not just the
+sets. Plus six steps of movement, so that `Enter`, `Stay` and `Exit` are compared and not just
+one instant's overlaps.
+
+Nothing in the product uses `exhaustive` mode: it exists so that this sentence can be verified.
+
+---
+
+## 5. The numbers, before and after
 
 `node tools/bench-collision.mjs`
 
-| disposition | n | brute | grille | gain | paires testées (brute → grille) | contacts réels |
+| layout | n | brute force | grid | gain | pairs tested (brute → grid) | real contacts |
 |---|---|---|---|---|---|---|
-| étalée | 1000 | 45,87 ms | **2,87 ms** | 16× | 499 500 → 0 | 0 |
-| étalée | 5000 | 1374,21 ms | **17,68 ms** | **78×** | 12 497 500 → 0 | 0 |
-| groupée | 1000 | 39,40 ms | **4,92 ms** | 8× | 499 500 → 2 700 | 1 700 |
-| groupée | 5000 | 1422,13 ms | **27,91 ms** | **51×** | 12 497 500 → 13 500 | 8 500 |
-| empilée | 1000 | 854,14 ms | 970,09 ms | **0,9×** | 499 500 → 499 500 | 499 500 |
+| spread out | 1000 | 45.87 ms | **2.87 ms** | 16× | 499,500 → 0 | 0 |
+| spread out | 5000 | 1374.21 ms | **17.68 ms** | **78×** | 12,497,500 → 0 | 0 |
+| clustered | 1000 | 39.40 ms | **4.92 ms** | 8× | 499,500 → 2,700 | 1,700 |
+| clustered | 5000 | 1422.13 ms | **27.91 ms** | **51×** | 12,497,500 → 13,500 | 8,500 |
+| stacked | 1000 | 854.14 ms | 970.09 ms | **0.9×** | 499,500 → 499,500 | 499,500 |
 
-**Le benchmark rapporte deux coûts et pas un.** `testées` est ce qu'un broad phase déplace ;
-`contacts` est ce que rien ne peut déplacer. Sans les deux, la dernière ligne se lirait comme
-un échec de la grille alors qu'elle est la mesure d'une scène pathologique : mille objets qui
-se recouvrent **tous** sont un demi-million de paires réelles, et la grille les paie **plus une
-taxe de 10 %** pour avoir proposé ce qu'elle ne pouvait pas écarter. C'est honnête et c'est le
-prix ; le cas n'existe pas dans un jeu.
+**The benchmark reports two costs, not one.** `tested` is what a broad phase moves; `contacts` is
+what nothing can move. Without both, the last row would read as a failure of the grid when it is
+the measurement of a pathological scene: a thousand objects that **all** overlap are a
+half-million real pairs, and the grid pays for them **plus a 10 % tax** for having proposed what
+it could not rule out. That is honest and it is the price; the case does not exist in a game.
 
 ---
 
-## 6. Un graphe cassé est arrêté à la porte, pas dans la boucle
+## 6. A broken graph is stopped at the door, not in the loop
 
-Un fil vers un port inexistant était rapporté par `validateGraph()` et **ignoré en silence** à
-l'exécution : l'interprète ne trouvait pas le port, l'entrée prenait sa valeur par défaut, et
-tous les nœuds continuaient de tourner. Rencontré pour de vrai en écrivant le jeu de
-démonstration — `time.delta` a un port `seconds`, pas `delta` — et le symptôme était « le
-joueur ne bouge pas », sans un mot nulle part.
+A wire to a non-existent port was reported by `validateGraph()` and **silently ignored** at
+runtime: the interpreter did not find the port, the input took its default value, and every node
+kept running. Met for real while writing the demo game — `time.delta` has a `seconds` port, not a
+`delta` one — and the symptom was "the player does not move", with not a word anywhere.
 
-> **La vérification est faite une fois, à la liaison, dans la couche Project.**
+> **The check is done once, at binding time, in the Project layer.**
 
-| Où | Pourquoi pas ailleurs |
+| Where | Why not elsewhere |
 |---|---|
-| `project/graphs.js` (`bindGraph`, `checkGraph`) | c'est **la** porte que tout `.px` franchit pour entrer dans un jeu : chargement d'un projet, installation d'une définition éditée, arrivée par le canal live |
-| pas dans l'interprète | valider à chaque lecture de port serait un coût par frame pour une question qui ne change jamais |
-| pas dans `Behaviors` | c'est un joint **duck-typé** : ses propres tests lient des objets faits main à des interprètes faits main. Un validateur là-dedans jugerait des choses qu'il ne gouverne pas |
+| `project/graphs.js` (`bindGraph`, `checkGraph`) | it is **the** door every `.px` goes through to enter a game: loading a project, installing an edited definition, arriving over the live channel |
+| not in the interpreter | validating on every port read would be a per-frame cost for a question that never changes |
+| not in `Behaviors` | that is a **duck-typed** seam: its own tests bind hand-made objects to hand-made interpreters. A validator in there would be judging things it does not govern |
 
-**Seules les ERREURS retiennent la liaison.** Un `Set Property` dont rien n'est choisi est un
-graphe **en cours**, et refuser de l'exécuter rendrait l'Editor inutilisable pendant qu'on le
-construit — c'est un avertissement, et ADR-0027 le disait déjà.
+**Only ERRORS hold back binding.** A `Set Property` with nothing chosen is a graph **in
+progress**, and refusing to run it would make the Editor unusable while you build it — it is a
+warning, and ADR-0027 already said so.
 
-**Un `.px` refusé n'est pas fatal (ADR-0012).** Son Component existe, s'attache et porte ses
-propriétés ; seul le comportement est retenu, et la raison est rapportée avec le nœud et le
-port. Un projet s'ouvre ; il dit ce qui ne tourne pas.
+**A refused `.px` is not fatal (ADR-0012).** Its Component exists, attaches and carries its
+properties; only the behaviour is withheld, and the reason is reported along with the node and
+the port. A project opens; it says what is not running.
 
 ---
 
-## 7. Contre-épreuves
+## 7. Counter-tests
 
-| Vérifié | Où |
+| Verified | Where |
 |---|---|
-| Grille et brute trouvent **exactement** les mêmes paires, sur huit distributions | `runtime/collision/broad-phase.test.js` |
-| Elles s'accordent sur `Enter`, `Stay`, `Exit` sur six pas de mouvement | idem |
-| Beaucoup moins de paires testées quand rien n'est près de rien | idem |
-| **Toutes** les paires testées quand tout se touche, et le dire | idem |
-| Une petite scène n'est pas partitionnée | idem |
-| Une paire trouvée dans plusieurs cellules est proposée une fois | idem |
-| Les candidats sortent en ordre canonique | idem |
-| Un objet immense est apparié avec tout plutôt que de remplir la grille | idem |
-| Des boîtes de taille nulle ne divisent pas par zéro | idem |
-| **Contre-épreuve** : rapporter les mêmes paires dans un autre ordre est une autre réponse | idem |
-| Un fil vers un port inexistant est une erreur, et l'était déjà | `project/graphs.test.js` |
-| Un type de nœud inconnu aussi | idem |
-| Un graphe en cours est un avertissement, et tourne | idem |
-| Un graphe non exécutable **n'est pas lié**, et la raison est rapportée | idem |
-| Le TYPE est quand même enregistré : seul le comportement est retenu | idem |
-| Un `.px` cassé n'empêche pas les autres de se charger | idem |
-| Lier directement passe par la même porte | idem |
-| **Contre-épreuve** : sans la porte, le fil est ignoré et rien n'est dit | idem |
+| Grid and brute force find **exactly** the same pairs, across eight distributions | `runtime/collision/broad-phase.test.js` |
+| They agree on `Enter`, `Stay`, `Exit` over six steps of movement | the same |
+| Far fewer pairs tested when nothing is near anything | the same |
+| **Every** pair tested when everything is touching, and saying so | the same |
+| A small scene is not partitioned | the same |
+| A pair found in several cells is proposed once | the same |
+| Candidates come out in canonical order | the same |
+| A huge object is paired with everything rather than filling the grid | the same |
+| Zero-sized boxes do not divide by zero | the same |
+| **Counter-test**: reporting the same pairs in a different order is a different answer | the same |
+| A wire to a non-existent port is an error, and already was | `project/graphs.test.js` |
+| An unknown node type too | the same |
+| A graph in progress is a warning, and runs | the same |
+| A non-runnable graph **is not bound**, and the reason is reported | the same |
+| The TYPE is registered all the same: only the behaviour is withheld | the same |
+| A broken `.px` does not stop the others from loading | the same |
+| Binding directly goes through the same door | the same |
+| **Counter-test**: without the door, the wire is ignored and nothing is said | the same |
 
 ---
 
-## 8. Conséquences
+## 8. Consequences
 
-### Positives
+### Positive
 
-- Une scène de mille colliders étalés passe de 45,87 ms à 2,87 ms par pas ; cinq mille, de 1,37 s à 17,7 ms.
-- Le contrat de collision est inchangé, et un test différentiel le garantit pour la prochaine implémentation aussi.
-- Un graphe cassé le dit, une fois, avec le nœud et le port — au lieu d'un objet qui a
-  silencieusement cessé de bouger.
+- A scene of a thousand spread-out colliders goes from 45.87 ms to 2.87 ms per step; five thousand, from 1.37 s to 17.7 ms.
+- The collision contract is unchanged, and a differential test guarantees it for the next
+  implementation too.
+- A broken graph says so, once, with the node and the port — instead of an object that has
+  silently stopped moving.
 
-### Négatives
+### Negative
 
-- Le cas « tout se touche » coûte 10 % de plus qu'avant. Il coûtait déjà 850 ms par pas.
-- `Collisions` gagne un mode qui n'existe que pour les tests ; il est documenté comme tel.
-- Un `.px` en cours d'écriture dont un fil a été cassé cesse de tourner jusqu'à réparation —
-  c'est le comportement voulu, et c'est un changement visible pour qui s'était habitué au
-  silence.
+- The "everything is touching" case costs 10 % more than before. It already cost 850 ms per step.
+- `Collisions` gains a mode that exists only for tests; it is documented as such.
+- A `.px` being written whose wire has been broken stops running until it is fixed — that is the
+  intended behaviour, and it is a visible change for anyone who had got used to the silence.

@@ -1,268 +1,263 @@
-# ADR-0068 — Un niveau se peint, il ne s'assemble pas
+# ADR-0068 — A level is painted, not assembled
 
-- **Statut :** **accepté** (2026-09-12)
-- **Décide :** où vit la grille d'un Tilemap ; ce qui rend ses cellules solides ; comment un Body est arrêté par elles sans qu'on fabrique une boîte par cellule ; comment on peint dans la Scene ; ce que redimensionner veut dire ; ce qu'un passage trop rapide pour un instantané est
-- **Dépend de :** ADR-0003 (une Operation par intention), ADR-0004 (un Component, un `update`), ADR-0023 (le Property System), ADR-0024 (undo par ressource), ADR-0025 (le panneau Project), ADR-0034 §3.1 (ordre canonique), ADR-0059 (se toucher est un fait de simulation), ADR-0064 (broad phase), ADR-0067 (Body, solide, balayage)
-- **Amende :** ADR-0059 §5 — le cycle de contact gagne une source de plus, et c'est §8 ici
-- **Ne décide pas :** autotiling, Wang tiles, rule tiles, génération procédurale, pathfinding, éclairage par tuile, pentes, plateformes à sens unique, tuiles animées, mondes infinis, pipeline de tileset — voir §10
-
----
-
-## 1. Le problème
-
-`tools/demo/platform.js` construit son monde avec quatre Objects portant quatre Box Colliders.
-Pour quatre, c'est honnête. Pour un niveau, c'est une armée : un mur de vingt cellules est vingt
-Objects dans la hiérarchie, vingt entrées dans la scène sérialisée, vingt choses à sélectionner
-par erreur. Et le `Tilemap` qui existait déjà — une grille qui **dessine** — ne pouvait rien
-arrêter.
-
-Trois manques, un seul geste : **peindre le décor, et que ce qui est peint bloque.**
+- **Status:** **accepted** (2026-09-12)
+- **Decides:** where a Tilemap's grid lives; what makes its cells solid; how a Body is stopped by them without manufacturing one box per cell; how you paint in the Scene; what resizing means; what a crossing too fast for a snapshot is
+- **Depends on:** ADR-0003 (one Operation per intention), ADR-0004 (one Component, one `update`), ADR-0023 (the Property System), ADR-0024 (per-resource undo), ADR-0025 (the Project panel), ADR-0034 §3.1 (canonical order), ADR-0059 (touching is a fact of simulation), ADR-0064 (broad phase), ADR-0067 (Body, solid, sweep)
+- **Amends:** ADR-0059 §5 — the contact cycle gains one more source, and that is §8 here
+- **Does not decide:** autotiling, Wang tiles, rule tiles, procedural generation, pathfinding, per-tile lighting, slopes, one-way platforms, animated tiles, infinite worlds, tileset pipeline — see §10
 
 ---
 
-## 2. Une seule vérité, et elle a déménagé
+## 1. The problem
 
-```
-src/runtime/tilemap/tilemap.js     la grille : cellules, taille, palette, dessin
-src/runtime/tilemap/collider.js    ce qui rend ses cellules solides
-```
+`tools/demo/platform.js` builds its world out of four Objects carrying four Box Colliders. For
+four, that is honest. For a level, it is an army: a twenty-cell wall is twenty Objects in the
+hierarchy, twenty entries in the serialised scene, twenty things to select by mistake. And the
+`Tilemap` that already existed — a grid that **draws** — could stop nothing.
 
-`Tilemap` vivait sous `rendering/`. Le jour où ses cellules arrêtent quelque chose, la physique
-aurait dû importer l'arbre du renderer pour savoir où est le sol — une dépendance
-`physics → rendering` qu'aucun `layers` n'aurait vue et que personne n'aurait voulue. Le
-fichier a donc bougé **à côté** de `collision/` et de `physics/`, et il n'importe rien du
-rendu : `draw()` appelle une méthode de ce qu'on lui passe, comme tout Component.
-
-> **Le tableau `tiles` est la seule vérité. Il n'existe ni copie graphique, ni copie
-> collision, ni grille d'Editor.**
-
-Le renderer lit les cellules, le solveur lit les cellules, l'outil de peinture écrit les
-cellules. Peindre une case la rend bloquante **au pas suivant**, sans reconstruction, parce
-qu'il n'y a rien à reconstruire — et c'est vérifié par un test qui peint pendant que le jeu
-tourne.
+Three things missing, one gesture: **paint the scenery, and let what is painted block.**
 
 ---
 
-## 3. Deux Components, parce qu'il y a deux phrases
+## 2. One truth, and it has moved
 
 ```
-Tilemap              cette grille se dessine
-Tilemap Collider     les cellules non vides de cette grille sont des murs
+src/runtime/tilemap/tilemap.js     the grid: cells, size, palette, drawing
+src/runtime/tilemap/collider.js    what makes its cells solid
 ```
 
-Un ciel étoilé, un décor de fond, un motif de sol : un Tilemap **décoratif** est une chose
-réelle, et il l'est en n'ajoutant pas le second Component. La démo en montre un de chaque.
+`Tilemap` lived under `rendering/`. The day its cells stop something, physics would have had to
+import the renderer's tree to find out where the floor is — a `physics → rendering` dependency no
+`layers` run would have seen and nobody would have wanted. So the file moved **next to**
+`collision/` and `physics/`, and it imports nothing from rendering: `draw()` calls a method on
+whatever it is handed, like every Component.
 
-| Décision | Raison |
+> **The `tiles` array is the only truth. There is no graphics copy, no collision copy, and no
+> Editor grid.**
+
+The renderer reads the cells, the solver reads the cells, the paint tool writes the cells.
+Painting a square makes it blocking **on the next step**, with no rebuild, because there is
+nothing to rebuild — and that is verified by a test that paints while the game is running.
+
+---
+
+## 3. Two Components, because there are two sentences
+
+```
+Tilemap              this grid draws itself
+Tilemap Collider     the non-empty cells of this grid are walls
+```
+
+A starry sky, a background, a floor pattern: a **decorative** Tilemap is a real thing, and it is
+one by not adding the second Component. The demo shows one of each.
+
+| Decision | Reason |
 |---|---|
-| **cellule 0 = vide, tout le reste = solide** | Un premier modèle qui sait dire « mur » et « pas mur » est un modèle qu'un débutant utilise. Un matériau par tuile est une décision sur ce **qu'est** une tuile, et elle n'est pas encore prise (§10) |
-| **aucun champ `solid` par cellule** | Ce serait quarante mille booléens pour dire ce qu'une seule case à cocher dit déjà |
-| **le collider ne porte aucune grille** | Une seconde structure à tenir en phase avec la première est le bug que ce dessin n'a pas |
-| **une entrée dans le broad phase, pas quarante mille** | Un Tilemap est **un** Object : le hachage spatial le partitionne comme il partitionne un Object à deux hitboxes (ADR-0064) |
-| **les cellules sont matérialisées pour un CORRIDOR** | `tileBoxes()` reçoit la région que le corps peut atteindre pendant ce pas et répond les cellules qui y sont. Le coût suit le personnage, pas la taille du niveau (§7) |
+| **cell 0 = empty, everything else = solid** | A first model that can say "wall" and "not a wall" is a model a beginner uses. A material per tile is a decision about what a tile **is**, and it has not been taken yet (§10) |
+| **no per-cell `solid` field** | It would be forty thousand booleans to say what a single checkbox already says |
+| **the collider carries no grid** | A second structure to keep in step with the first is the bug this design does not have |
+| **one entry in the broad phase, not forty thousand** | A Tilemap is **one** Object: the spatial hash partitions it the way it partitions an Object with two hitboxes (ADR-0064) |
+| **cells are materialised for a CORRIDOR** | `tileBoxes()` receives the region the body can reach during this step and answers with the cells in it. The cost follows the character, not the size of the level (§7) |
 
-Le contrat du solveur d'ADR-0067 est **inchangé** : X puis Y, le solide le plus proche, aucun
-tunneling. Une cellule est une boîte comme une autre — elle arrive simplement plus tard et
-seulement si on peut la toucher.
+ADR-0067's solver contract is **unchanged**: X then Y, the nearest solid, no tunnelling. A cell is
+a box like any other — it simply arrives later and only if it can be touched.
 
-**Un Tilemap ne produit pas d'`On Collision`.** Ses cellules bloquent ; elles ne se recouvrent
-avec rien. C'est la même phrase qu'ADR-0067 §3 dit du sol : ce qui **bloque** se demande avec
-`grounded`, ce qui **détecte** se demande avec un collider non solide.
+**A Tilemap produces no `On Collision`.** Its cells block; they overlap with nothing. It is the
+same sentence ADR-0067 §3 says about the floor: what **blocks** is asked with `grounded`, what
+**detects** is asked with a non-solid collider.
 
 ---
 
-## 4. Le Transform, et la rotation qu'on refuse d'approximer
+## 4. The Transform, and the rotation we refuse to approximate
 
-Position et échelle sont exactes : elles gardent la grille alignée sur les axes, et l'affichage,
-le picking, la peinture et la collision passent tous par la **même** matrice.
+Position and scale are exact: they keep the grid axis-aligned, and display, picking, painting and
+collision all go through the **same** matrix.
 
 ```
-BLOCKED: collision d'un Tilemap tourné
-Reason: une cellule est un carré dans l'espace local ; sous une rotation, sa forme dans le
-        monde est un carré tourné, et la seule chose que le solveur sait recevoir est une
-        AABB — jusqu'à 41 % trop grande. ADR-0059 §3 a accepté cette approximation pour UN
-        collider déclaré qu'un créateur voit et comprend ; l'accepter pour chaque cellule
-        rendrait un niveau entier subtilement faux, et « le joueur s'arrête à vingt
-        centimètres du mur » est un bug qu'on ne diagnostique jamais.
-        Un Tilemap tourné DESSINE tourné et ne bloque rien. Le jour où le balayage sait
-        traiter un OBB, c'est ici que ça se branche.
+BLOCKED: collision for a rotated Tilemap
+Reason: a cell is a square in local space; under a rotation its shape in the world is a rotated
+        square, and the only thing the solver knows how to receive is an AABB — up to 41 % too
+        large. ADR-0059 §3 accepted that approximation for ONE declared collider a creator sees
+        and understands; accepting it for every cell would make a whole level subtly wrong, and
+        "the player stops twenty centimetres short of the wall" is a bug nobody ever diagnoses.
+        A rotated Tilemap DRAWS rotated and blocks nothing. The day the sweep can handle an OBB,
+        this is where it plugs in.
 ```
 
 ---
 
-## 5. Peindre là où le niveau est
+## 5. Painting where the level is
 
-> **Le Tilemap sélectionné est le Tilemap qu'on peint. Un clic DANS sa grille peint ; un clic
-> ailleurs sélectionne.**
+> **The selected Tilemap is the Tilemap you paint. A click INSIDE its grid paints; a click
+> elsewhere selects.**
 
-Une phrase, aucun mode, aucun bouton, aucune fenêtre de plus — et toujours une sortie : cliquer
-à côté, c'est re-sélectionner. Le viewport route la pression vers l'un ou l'autre outil
-(`#toolFor`) ; il n'y a pas de seconde machine à états à tenir en phase avec la première.
+One sentence, no mode, no button, no extra window — and always a way out: clicking beside it
+selects again. The viewport routes the press to one tool or the other (`#toolFor`); there is no
+second state machine to keep in step with the first.
 
-| Ce qu'on voit | Comment |
+| What you see | How |
 |---|---|
-| la grille | son contour toujours, ses lignes intérieures tant qu'une cellule fait plus de cinq pixels |
-| la cellule visée | remplie de la couleur active, cerclée d'orange |
-| la tuile active | une bande de pastilles sur la surface, la case active cerclée |
-| effacer | la première pastille est **Empty** : la choisir et peindre efface |
-| ajouter une couleur | la dernière pastille est `+` ; **modifier** une couleur reste la liste de l'Inspector |
+| the grid | its outline always, its inner lines as long as a cell is more than five pixels |
+| the targeted cell | filled with the active colour, outlined in orange |
+| the active tile | a strip of swatches over the surface, the active one outlined |
+| erasing | the first swatch is **Empty**: pick it and paint to erase |
+| adding a colour | the last swatch is `+`; **editing** a colour is still the Inspector's list |
 
-**Les cellules entre deux événements de pointeur sont peintes aussi.** Un pointeur est
-échantillonné une fois par frame ; un glissé rapide saute des cases, et une ligne trouée n'est
-pas ce que quelqu'un a dessiné.
+**The cells between two pointer events are painted too.** A pointer is sampled once per frame; a
+fast drag skips squares, and a line full of gaps is not what someone drew.
 
-**Un glissé est UN undo** (ADR-0024) : toutes les écritures d'un stroke partagent un `batch`.
-Une cellule qui porte déjà la valeur peinte **n'est pas écrite** — repasser dessus ne produit
-rien, ce qui est ce qui empêche « un stroke, un undo » de vouloir dire « un stroke, cinquante
-opérations qui annulent vers la même grille ».
+**A drag is ONE undo** (ADR-0024): every write in a stroke shares a `batch`. A cell that already
+holds the painted value **is not written** — going back over it produces nothing, which is what
+stops "one stroke, one undo" from meaning "one stroke, fifty operations undoing toward the same
+grid".
 
-**`tiles` reste une grille, jamais des centaines de champs d'Inspector.** L'Inspector en dit le
-nombre ; ce qui l'édite est la Scene.
+**`tiles` stays a grid, never hundreds of Inspector fields.** The Inspector says how many there
+are; what edits them is the Scene.
 
 ---
 
-## 6. Redimensionner, sans cisailler
+## 6. Resizing, without shearing
 
-Une grille est adressée par `row * columns + column`. Écrire `columns` tout seul ne la
-redimensionne donc pas : **elle la cisaille** — chaque rangée après la première glisse
-latéralement, et un niveau peint pendant dix minutes revient en diagonale.
+A grid is addressed by `row * columns + column`. Writing `columns` on its own therefore does not
+resize it: **it shears it** — every row after the first slides sideways, and a level painted over
+ten minutes comes back diagonal.
 
-| Règle | |
+| Rule | |
 |---|---|
-| agrandir | ce qui était en (colonne, rangée) y reste ; le neuf est vide |
-| réduire | ce qui ne rentre plus est coupé |
-| annuler | **rend les dimensions ET le contenu** |
+| growing | what was at (column, row) stays there; the new space is empty |
+| shrinking | what no longer fits is cut |
+| undo | **gives back the dimensions AND the contents** |
 
-`Tilemap.remap()` est la règle, pure et testée. L'Inspector écrit `tiles` **et** la dimension
-dans un seul `batch` (`editor/tilemap.js`) : c'est ce qui donne à l'Operation la grille d'avant
-et la grille d'après. Une dimension écrite seule ne saurait annuler que vers « la même taille,
-et du vide là où était votre niveau ».
+`Tilemap.remap()` is the rule, pure and tested. The Inspector writes `tiles` **and** the dimension
+in a single `batch` (`editor/tilemap.js`): that is what gives the Operation the grid before and the
+grid after. A dimension written alone could only undo toward "the same size, and emptiness where
+your level was".
 
 ---
 
-## 7. Ce que ça coûte
+## 7. What it costs
 
-`node tools/bench-tilemap.mjs` — le même personnage dans le même coin, pendant que le niveau
-grandit dix mille fois :
+`node tools/bench-tilemap.mjs` — the same character in the same corner, while the level grows ten
+thousand times larger:
 
-| carte | cellules | corps | ms/pas |
+| map | cells | bodies | ms/step |
 |---|---|---|---|
-| 32 × 32 | 1 024 | 1 | 0,027 |
-| 100 × 100 | 10 000 | 1 | 0,013 |
-| 400 × 400 | 160 000 | 1 | 0,021 |
-| 1000 × 1000 | **1 000 000** | 1 | **0,017** |
-| 1000 × 1000 | 1 000 000 | 20 | 0,220 |
+| 32 × 32 | 1,024 | 1 | 0.027 |
+| 100 × 100 | 10,000 | 1 | 0.013 |
+| 400 × 400 | 160,000 | 1 | 0.021 |
+| 1000 × 1000 | **1,000,000** | 1 | **0.017** |
+| 1000 × 1000 | 1,000,000 | 20 | 0.220 |
 
-La colonne des millisecondes ne bouge pas. C'est §3 en chiffres : les cellules demandées sont
-celles que le corps peut atteindre.
+The millisecond column does not move. That is §3 in figures: the cells asked for are the ones the
+body can reach.
 
 ---
 
-## 8. Un passage n'est pas un recouvrement (contre-épreuve d'ADR-0067)
+## 8. A crossing is not an overlap (a counter-test for ADR-0067)
 
-Un corps qui traverse mille unités en un pas et croise un trigger de quatre unités ne le
-recouvre **ni avant ni après**. Deux instantanés ne peuvent pas voir ce passage — et une balle
-qui traverse une hitbox à trois mille unités par seconde est exactement cette forme.
+A body that travels a thousand units in one step and crosses a four-unit trigger overlaps it
+**neither before nor after**. Two snapshots cannot see that crossing — and a bullet passing through
+a hitbox at three thousand units per second is exactly that shape.
 
-> **Trois ensembles, trois questions :**
+> **Three sets, three questions:**
 >
-> | ensemble | question | qui le lit |
+> | set | question | who reads it |
 > |---|---|---|
-> | recouvrement | « ces deux-là partagent-ils de l'aire, maintenant ? » | `Is Overlapping` |
-> | passage | « ce corps a-t-il traversé ça pendant ce pas ? » | la passe de mouvement |
-> | **contact** = les deux | « qu'est-ce qui commence, continue, finit ? » | `Enter` / `Stay` / `Exit` |
+> | overlap | "do these two share any area, right now?" | `Is Overlapping` |
+> | crossing | "did this body pass through that during this step?" | the movement pass |
+> | **contact** = both | "what starts, continues, ends?" | `Enter` / `Stay` / `Exit` |
 
-La passe de mouvement balaie déjà le chemin ; elle rapporte les croisements, et
-`Collisions.update()` les ajoute au **contact** — jamais au recouvrement. `Is Overlapping`
-continue de répondre « non » pour une balle qui est déjà passée, parce que c'est vrai.
+The movement pass already sweeps the path; it reports the crossings, and `Collisions.update()` adds
+them to **contact** — never to overlap. `Is Overlapping` goes on answering "no" for a bullet that
+has already gone through, because that is true.
 
-Le chemin balayé est un **L** — X puis Y — donc chaque branche est un rectangle exact : rien
-n'est approximé. Et un croisement n'est rapporté que si le corps ne recouvrait la cible à
-aucun bout : un recouvrement au départ a déjà été rapporté par le pas qui commençait là, un
-recouvrement à l'arrivée le sera par le suivant.
-
----
-
-## 9. La démonstration
-
-`tools/demo/tiles.js` — un sol, deux murs, une corniche, un trou et le sol du trou, **peints
-dans une seule Tilemap**, plus une seconde Tilemap d'étoiles sans collider. La scène entière
-fait **six Objects** : une caméra, le ciel, le niveau, le joueur et deux nœuds de HUD. Il n'y a
-pas de `Wall Left` à trouver dedans.
-
-Vérifié dans le navigateur : le personnage tombe sur le sol peint, marche, saute par-dessus le
-trou, atterrit sur la plateforme peinte, se cogne sous elle quand il saute dessous, et s'arrête
-contre la colonne de cellules qui fait le mur. Et dans l'Editor : ajouter le Component, taper
-12 × 8, ajouter une couleur d'un clic, peindre une rangée entière d'un glissé.
+The swept path is an **L** — X then Y — so each branch is an exact rectangle: nothing is
+approximated. And a crossing is only reported if the body overlapped the target at neither end: an
+overlap at the start has already been reported by the step that began there, and an overlap at the
+end will be reported by the next one.
 
 ---
 
-## 10. Ce que cet ADR ne décide pas
+## 9. The demo
 
-| Refusé | Pourquoi |
+`tools/demo/tiles.js` — a floor, two walls, a ledge, a pit and the pit's floor, **painted into a
+single Tilemap**, plus a second Tilemap of stars with no collider. The whole scene is **six
+Objects**: a camera, the sky, the level, the player and two HUD nodes. There is no `Wall Left` to
+find in it.
+
+Verified in the browser: the character falls onto the painted floor, walks, jumps over the pit,
+lands on the painted platform, bumps into its underside when jumping from below, and stops against
+the column of cells that makes the wall. And in the Editor: add the Component, type 12 × 8, add a
+colour in one click, paint a whole row in one drag.
+
+---
+
+## 10. What this ADR does not decide
+
+| Refused | Why |
 |---|---|
-| **Autotiling, Wang tiles, rule tiles** | Ce sont des règles sur ce qu'une tuile devient selon ses voisines — un produit, pas une case à cocher |
-| **Génération procédurale, mondes infinis / chunkés** | Demandent de décider ce qu'est « une partie du monde », ce que rien n'a encore demandé |
-| **Tuiles animées, éclairage par tuile, pathfinding** | Trois systèmes, trois ADR |
-| **Pipeline de tileset (une planche au lieu de couleurs)** | La palette est une liste de COULEURS et le reste ainsi pour ce lot. `Sprite` et `animation` savent déjà découper une planche (ADR-0062) : le jour où une palette porte des `ResourceId` de frames, c'est cette liste qui change de type, pas le reste |
-| **Matériaux par tuile** | §3 : d'abord « mur » et « pas mur » |
-| **Pentes, plateformes à sens unique** | ADR-0067 §6, inchangé |
-| **Déplacer un Tilemap sélectionné au glissé** | Dans sa grille, le glissé **peint** (§5). On le déplace par sa Position dans l'Inspector, ou en le désélectionnant d'abord. C'est le prix d'un mode qui n'a pas de bouton |
-| **Un stroke sur une carte énorme, côté mémoire** | Une écriture de cellule est une écriture de `tiles`, donc une copie du tableau par cellule touchée : cinquante cases d'une carte de 200 × 200 sont cinquante copies de quarante mille entiers dans l'historique. C'est correct et c'est cher ; le rendre creux demande une Operation d'un genre nouveau (`setCell`), avec son inverse et sa réplication — et personne n'a encore peint une carte de cette taille |
+| **Autotiling, Wang tiles, rule tiles** | These are rules about what a tile becomes depending on its neighbours — a product, not a checkbox |
+| **Procedural generation, infinite / chunked worlds** | They require deciding what "a part of the world" is, which nothing has asked for yet |
+| **Animated tiles, per-tile lighting, pathfinding** | Three systems, three ADRs |
+| **A tileset pipeline (a sheet instead of colours)** | The palette is a list of COLOURS and stays one for this batch. `Sprite` and `animation` already know how to cut up a sheet (ADR-0062): the day a palette carries frame `ResourceId`s, it is that list that changes type, not the rest |
+| **Per-tile materials** | §3: "wall" and "not a wall" first |
+| **Slopes, one-way platforms** | ADR-0067 §6, unchanged |
+| **Dragging a selected Tilemap to move it** | Inside its grid, a drag **paints** (§5). You move it through its Position in the Inspector, or by deselecting it first. That is the price of a mode with no button |
+| **A stroke on a huge map, memory-wise** | A cell write is a write of `tiles`, so one copy of the array per cell touched: fifty squares on a 200 × 200 map are fifty copies of forty thousand integers in the history. That is correct and it is expensive; making it sparse needs an Operation of a new kind (`setCell`), with its inverse and its replication — and nobody has yet painted a map that size |
 
 ---
 
-## 11. Contre-épreuves
+## 11. Counter-tests
 
-| Vérifié | Où |
+| Verified | Where |
 |---|---|
-| Lire et écrire une cellule ; hors grille on ne lit ni n'écrit rien ; vide vaut 0 | `runtime/tilemap/tilemap.test.js` |
-| Un point local nomme sa cellule ; négatif est dehors, pas zéro | idem |
-| Agrandir garde tout en place ; réduire coupe ; `remap` est pure | idem |
-| Sans collider : on traverse. Avec : on se pose, et sans s'enfoncer en trois cents pas | idem |
-| Colonne de cellules = mur, avec glissement ; rangée du haut = plafond ; coin | idem |
-| Traverser toute la carte en un pas s'arrête à la première cellule pleine | idem |
-| Une cellule vide au milieu d'un mur est une porte | idem |
-| Au-delà du bord de la carte il n'y a rien | idem |
-| Déplacer la carte déplace ce qu'elle bloque ; la mettre à l'échelle met ses cellules à l'échelle | idem |
-| **Une carte tournée dessine et ne bloque rien, et le dit en ne répondant aucune boîte** | idem |
-| Deux Tilemaps bloquent, une troisième sans collider non | idem |
-| Détruire la carte, ajouter un corps en cours de route | idem |
-| **Peindre une cellule la rend bloquante au pas suivant : un seul tableau** | idem |
-| Headless, deux Runtime identiques, ordre d'insertion indifférent | idem |
-| Une carte de 160 000 cellules : le corridor, pas la carte | idem |
-| L'outil n'est vivant que si un Tilemap est sélectionné | `editor/viewport/tools/tile-tool.test.js` |
-| Dans la grille il peint, dehors il ne prend pas la pression | idem |
-| Une pression peint une cellule ; un glissé peint toutes celles qu'il croise | idem |
-| Repasser deux fois sur une cellule ne l'écrit qu'une fois ; repeindre la même valeur n'est pas une édition | idem |
-| L'entrée 0 efface ; une pastille choisit ; `+` crée une palette qui n'existait pas | idem |
-| Rien n'est jamais écrit hors de la grille | idem |
-| La carte se peint là où elle EST, à travers son Transform | idem |
-| **Un glissé de cinq cellules = UN undo, et redo remet tout le stroke** | idem |
-| **Deux strokes = deux undo** | idem |
-| Agrandir/réduire : undo rend la taille ET les cellules coupées ; un resize est une entrée, pas deux | idem |
-| Un niveau entier en six Objects, joué par la porte d'un client de jeu | `tools/demo/tiles.test.js` |
-| Le mur peint arrête, et il n'existe aucun Object `Wall Left` | idem |
-| Le trou est un trou, et les cellules du fond rattrapent la chute | idem |
-| La carte décorative n'arrête rien | idem |
-| Une cellule peinte pendant la partie devient un mur sans rien reconstruire | idem |
-| **Un trigger traversé entièrement en un pas est quand même un contact, et n'est PAS un recouvrement** | `runtime/physics/move.test.js` |
+| Reading and writing a cell; outside the grid nothing is read or written; empty is 0 | `runtime/tilemap/tilemap.test.js` |
+| A local point names its cell; negative is outside, not zero | the same |
+| Growing keeps everything in place; shrinking cuts; `remap` is pure | the same |
+| Without a collider: you pass through. With one: you land, and do not sink over three hundred steps | the same |
+| A column of cells = a wall, with sliding; the top row = a ceiling; a corner | the same |
+| Crossing the whole map in one step stops at the first filled cell | the same |
+| An empty cell in the middle of a wall is a door | the same |
+| Beyond the edge of the map there is nothing | the same |
+| Moving the map moves what it blocks; scaling it scales its cells | the same |
+| **A rotated map draws and blocks nothing, and says so by answering with no boxes** | the same |
+| Two Tilemaps block, a third without a collider does not | the same |
+| Destroying the map, adding a body mid-run | the same |
+| **Painting a cell makes it blocking on the next step: a single array** | the same |
+| Headless, two identical Runtimes, insertion order irrelevant | the same |
+| A map of 160,000 cells: the corridor, not the map | the same |
+| The tool is only alive when a Tilemap is selected | `editor/viewport/tools/tile-tool.test.js` |
+| Inside the grid it paints, outside it does not take the press | the same |
+| A press paints one cell; a drag paints every cell it crosses | the same |
+| Going over a cell twice writes it once; repainting the same value is not an edit | the same |
+| Entry 0 erases; a swatch selects; `+` creates a palette that did not exist | the same |
+| Nothing is ever written outside the grid | the same |
+| The map is painted where it IS, through its Transform | the same |
+| **A five-cell drag = ONE undo, and redo restores the whole stroke** | the same |
+| **Two strokes = two undos** | the same |
+| Growing/shrinking: undo restores the size AND the cut cells; a resize is one entry, not two | the same |
+| A whole level in six Objects, played through a game client's door | `tools/demo/tiles.test.js` |
+| The painted wall stops you, and there is no `Wall Left` Object | the same |
+| The pit is a pit, and the cells at the bottom catch the fall | the same |
+| The decorative map stops nothing | the same |
+| A cell painted during play becomes a wall with nothing rebuilt | the same |
+| **A trigger crossed entirely in one step is still a contact, and is NOT an overlap** | `runtime/physics/move.test.js` |
 
 ---
 
-## 12. Conséquences
+## 12. Consequences
 
-### Positives
+### Positive
 
-- Un niveau se peint dans la Scene, se joue dans Preview, et pèse un Object.
-- Rendu et collision restent deux phrases : un décor n'arrête personne.
-- Le coût de la collision suit le personnage, pas la taille du monde.
-- Redimensionner ne casse plus rien, et s'annule entièrement.
-- Une balle rapide ne traverse plus un trigger sans être vue (§8).
+- A level is painted in the Scene, played in Preview, and weighs one Object.
+- Rendering and collision stay two sentences: scenery stops nobody.
+- The cost of collision follows the character, not the size of the world.
+- Resizing no longer breaks anything, and undoes completely.
+- A fast bullet no longer passes through a trigger unseen (§8).
 
-### Négatives
+### Negative
 
-- Un Tilemap tourné ne bloque pas (§4).
-- Un Tilemap sélectionné ne se déplace plus au glissé (§10).
-- Un stroke sur une carte immense coûte cher en historique (§10).
-- La palette reste des couleurs : pas encore de vraies tuiles dessinées.
+- A rotated Tilemap does not block (§4).
+- A selected Tilemap can no longer be moved by dragging (§10).
+- A stroke on a huge map is expensive in history (§10).
+- The palette is still colours: no real drawn tiles yet.

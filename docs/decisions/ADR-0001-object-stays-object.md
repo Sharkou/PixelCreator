@@ -1,44 +1,42 @@
-# ADR-0001 — `Object` reste `Object`
+# ADR-0001 — `Object` stays `Object`
 
-- **Statut :** accepté (contrainte de projet)
+- **Status:** accepted (a project constraint)
 
-## Contexte
+## Context
 
-La terminologie des moteurs modernes emploie `Entity`. Legacy emploie `Object`, partout :
-code, protocole réseau, documentation, UI (« Add Object »), vocabulaire des utilisateurs.
+Modern engine terminology uses `Entity`. Legacy uses `Object`, everywhere: code, network
+protocol, documentation, UI ("Add Object"), and the users' vocabulary.
 
-## Décision
+## Decision
 
-Le terme reste **`Object`**. Aucun renommage en `Entity`, ni maintenant ni plus tard.
+The term stays **`Object`**. No rename to `Entity`, now or later.
 
-Le vocabulaire du produit est fixe :
+The product vocabulary is fixed:
 
 ```
 Project → Scene → Object → Component → Property
 ```
 
-## Justification
+## Rationale
 
-- Le terme est visible par l'utilisateur final. Le renommer change le produit, pas
-  seulement le code.
-- Il circule dans le protocole réseau et les projets sauvegardés.
-- Il est plus accessible qu'`Entity` pour un public débutant, qui est la cible.
-- Aucun bénéfice technique — uniquement un alignement sur une convention d'autres moteurs.
+- The term is visible to the end user. Renaming it changes the product, not just the code.
+- It travels through the network protocol and through saved projects.
+- It is more approachable than `Entity` for a beginner audience, which is the target.
+- There is no technical benefit — only alignment with a convention from other engines.
 
-## Conséquence pratique
+## Practical consequence
 
-`Object` masque le `Object` global de JavaScript dans les modules qui l'importent.
-Legacy vit déjà avec, y compris là où les deux se croisent :
+`Object` shadows JavaScript's global `Object` in the modules that import it. Legacy already
+lives with that, including where the two cross:
 
 ```js
-// legacy/src/core/renderer.js — ici Object est le global, pas le nôtre
+// legacy/src/core/renderer.js — here Object is the global, not ours
 for (let obj of Object.values(scene.objects).sort(...))
 ```
 
-`renderer.js` n'importe pas notre `Object`, donc `Object.values` fonctionne. Mais
-`legacy/src/core/scene.js` **importe** notre `Object` — un `Object.values()` y serait
-un bug silencieux.
+`renderer.js` does not import our `Object`, so `Object.values` works. But
+`legacy/src/core/scene.js` **does import** ours — an `Object.values()` there would be a silent
+bug.
 
-**Règle v2 :** un module qui importe `Object` n'utilise jamais les statiques du global
-(`Object.values`, `Object.keys`, `Object.assign`). Utiliser des helpers dédiés. Un test
-de lint vérifie la règle.
+**v2 rule:** a module that imports `Object` never uses the global's statics (`Object.values`,
+`Object.keys`, `Object.assign`). Use dedicated helpers. A lint test checks the rule.
