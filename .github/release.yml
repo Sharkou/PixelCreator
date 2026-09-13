@@ -1,0 +1,58 @@
+# Categories for GitHub's automatically generated release notes.
+#
+# These group the pull requests in a release by LABEL. The hand-written summary at the top of
+# a release — what a creator can now do, and anything that touches a saved format — is still
+# written by hand; see docs/developer/releases.md.
+
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+    authors:
+      - dependabot
+
+  categories:
+    - title: ⚠️ Saved formats and breaking changes
+      labels:
+        - breaking
+        - format-change
+
+    - title: ✨ New features
+      labels:
+        - enhancement
+        - feature
+
+    - title: 🎨 Editor and UX
+      labels:
+        - editor
+        - ux
+
+    - title: 🧩 Components and graph nodes
+      labels:
+        - component
+        - graph
+
+    - title: 🐛 Fixes
+      labels:
+        - bug
+
+    - title: ⚡ Performance
+      labels:
+        - performance
+
+    - title: 🏛 Architecture decisions
+      labels:
+        - adr
+
+    - title: 📝 Documentation
+      labels:
+        - documentation
+
+    - title: 🔧 Tooling and tests
+      labels:
+        - tooling
+        - test
+
+    - title: Other changes
+      labels:
+        - "*"

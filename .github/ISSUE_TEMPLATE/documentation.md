@@ -8,7 +8,7 @@ assignees: ''
 
 ## Page or Section
 
-Which page or section of the documentation is this about?
+Which page is this about? A path such as `docs/user/visual-scripting.md`, or a link.
 
 ## Issue Type
 

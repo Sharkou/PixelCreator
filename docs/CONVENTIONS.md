@@ -3,8 +3,19 @@
 ## Langue
 
 - **Code, identifiants, commentaires, JSDoc : anglais.**
-- **Documentation `docs/` : français.** Les identifiants techniques y restent en anglais
-  (`Object`, `Component`, `setProperty`).
+- **Mémoire de projet — `PROJECT.md`, `ARCHITECTURE.md`, ce fichier, `architecture/`,
+  `decisions/`, `development/`, `migration/`, `audit/`, `archive/` : français.** Les
+  identifiants techniques y restent en anglais (`Object`, `Component`, `setProperty`).
+- **Documentation publique : anglais.** `README.md`, `CONTRIBUTING.md`, `SECURITY.md`,
+  `CHANGELOG.md`, `.github/`, `docs/user/` et `docs/developer/` s'adressent aux utilisateurs
+  et aux contributeurs d'un dépôt public international, et l'étaient déjà pour les quatre
+  premiers. Le guide utilisateur et la documentation développeur sont la porte d'entrée du
+  dépôt (`docs/README.md`) : les écrire en français aurait rendu le projet inaccessible à la
+  majorité de ses lecteurs, et un dépôt dont le README est anglais et le guide français est
+  incohérent pour tout le monde.
+- **`docs/developer/` ne double pas la mémoire de projet.** Il l'oriente : quand un sujet est
+  spécifié dans `ARCHITECTURE.md` ou dans un ADR, la page anglaise y renvoie au lieu de le
+  réécrire. C'est ce qui empêche deux versions d'une même règle de diverger dans deux langues.
 
 **OBSERVÉ :** Legacy mélange les deux dans les commentaires (« Si l'objet est
 sélectionné », « annule l'interdiction de drop »). En v2, le code est en anglais sans

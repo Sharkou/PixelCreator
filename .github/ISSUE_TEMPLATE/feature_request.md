@@ -23,12 +23,18 @@ Any alternative solutions or features you've considered.
 
 How would this feature be used? Who would benefit from it?
 
-## Impact
-- [ ] UX
+## Area
+
+- [ ] Editor UI / UX
+- [ ] Components
+- [ ] Visual scripting (`.px` graphs)
+- [ ] Rendering
+- [ ] Physics / collision
+- [ ] Resources, projects, persistence
+- [ ] Preview / export
 - [ ] Performance
-- [ ] Multiplayer
-- [ ] Editor
-- [ ] Server
+- [ ] Documentation
+- [ ] Something else
 
 ## Additional Context
 

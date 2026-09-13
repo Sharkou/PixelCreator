@@ -1,0 +1,29 @@
+# Code owners — who is automatically asked to review a pull request.
+#
+# Pixel Creator is maintained by one person, so a single catch-all rule does the whole job:
+# every pull request requests a review from @Sharkou. The more specific rules below exist
+# because they document ownership of the areas that must not drift, and because they are
+# already correct on the day a second maintainer arrives — at which point the catch-all is
+# narrowed rather than rewritten.
+#
+# Later entries win: the last matching pattern is the one GitHub applies.
+#
+# This file only routes reviews. Requiring a review before merge is a branch-protection
+# setting, not something a file can enforce (see CONTRIBUTING.md).
+
+* @Sharkou
+
+# The read-only archive. Nothing should be committed here at all.
+/legacy/ @Sharkou
+
+# Architecture decisions and the project's specification.
+/docs/decisions/ @Sharkou
+/docs/ARCHITECTURE.md @Sharkou
+/docs/PROJECT.md @Sharkou
+/docs/CONVENTIONS.md @Sharkou
+/docs/PROJECT_MEMORY.md @Sharkou
+
+# Licence, security policy, and repository configuration.
+/LICENSE.md @Sharkou
+/SECURITY.md @Sharkou
+/.github/ @Sharkou

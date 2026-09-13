@@ -1,3 +1,9 @@
+> **Historical — Legacy API.** This page documents the *Legacy* engine's intended API,
+> not the current Pixel Creator v2 implementation. See
+> [docs/reference/README.md](../README.md) for what replaced it.
+
+---
+
 The **Gamepad** class provides complete controller support with button detection, analog sticks, triggers, and vibration feedback.
 
 ---
@@ -216,4 +222,4 @@ function onHit(damage) {
 
 - [Keyboard](keyboard.md) – Keyboard input handling
 - [Mouse](mouse.md) – Mouse input handling
-- [Controller](controller.md) – Movement physics
+- [Controller](../physics/controller.md) – Movement physics

@@ -4,7 +4,7 @@
 > bloquantes de la Phase 0 ont été tranchées, et `src/` tient aujourd'hui `core/`, `project/`,
 > `runtime/`, `editor/` et `preview/`. Ce document décrit l'architecture **en vigueur** ;
 > l'état d'avancement détaillé vit dans `migration/MIGRATION_STATUS.md` et les décisions
-> prises depuis dans `decisions/` — la table complète est dans `README.md`.
+> prises depuis dans `decisions/` — la table complète est dans `PROJECT_MEMORY.md`.
 >
 > Chaque décision structurante est justifiée par une observation de
 > `migration/LEGACY_ANALYSIS.md`. Le relevé des décisions de la Phase 0 est en §10.

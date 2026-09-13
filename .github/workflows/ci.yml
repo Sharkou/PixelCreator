@@ -1,0 +1,104 @@
+# Continuous integration.
+#
+# Pixel Creator has no dependencies, no package.json and no build step, so there is nothing to
+# install and nothing to cache. Every job below runs a tool that already exists in the
+# repository and is the same command a contributor runs locally
+# (CONTRIBUTING.md, docs/developer/testing.md).
+#
+# The unit tests run on two Node versions: 22 is the oldest the suite supports — `node --test`
+# needs glob support — and 24 is the current LTS. The four static checks and the parity harness
+# do not depend on the Node version, so they run once each rather than twice.
+#
+# The benchmarks in tools/bench-*.mjs are deliberately NOT here: they have no wired thresholds,
+# and a benchmark that fails a build on a noisy runner only teaches people to ignore the build
+# (ADR-0064).
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # Invoked through `sh` so the job does not depend on the file's executable bit.
+      - name: Unit tests
+        run: sh tools/test.sh
+
+  checks:
+    name: Static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # Layer direction, plus the dead-import check that a unit test cannot see.
+      - name: Layer rules and dead imports
+        run: node tools/layers/run.js
+
+      # Every module the entry points reach actually loads.
+      - name: Boot
+        run: node tools/check-boot.js
+
+      # Every named import designates an export that exists.
+      - name: Exports
+        run: node tools/check-exports.js
+
+      # A stray backtick truncates a stylesheet silently.
+      - name: CSS literals
+        run: node tools/check-css-literals.js
+
+  parity:
+    name: Legacy parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # 39 scenarios captured from legacy/, which is in the repository, so this needs nothing
+      # else. It is the only check that can notice a property quietly stopping to propagate.
+      - name: Parity harness
+        run: node tools/parity/run.js
+
+  links:
+    name: Documentation links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # Every relative Markdown link must resolve to a file that exists, so documentation
+      # cannot rot into dead links. legacy/ is excluded: it is a read-only archive.
+      - name: Relative Markdown links resolve
+        run: node tools/check-links.js

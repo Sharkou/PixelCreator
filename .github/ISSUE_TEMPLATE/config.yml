@@ -1,11 +1,17 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Pixel Creator Website
-    url: https://pixelcreator.io
-    about: Official website with demos and information
+  - name: Documentation
+    url: https://github.com/Sharkou/PixelCreator/tree/master/docs
+    about: The user guide and developer documentation, versioned with the code
+  - name: Launch Pixel Creator
+    url: https://editor.pixelcreator.io
+    about: The online editor — no installation, no account
   - name: Discord Community
     url: https://discord.gg/X8scDNX
-    about: Join our Discord for questions, discussions, and support
-  - name: Wiki Documentation
-    url: https://github.com/Sharkou/PixelCreator/wiki
-    about: Check the wiki for guides and documentation
+    about: Questions, discussion and support
+  - name: Report a security vulnerability
+    url: https://github.com/Sharkou/PixelCreator/blob/master/SECURITY.md
+    about: Please report privately — do not open a public issue
+  - name: Pixel Creator Website
+    url: https://pixelcreator.io
+    about: Official website

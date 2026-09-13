@@ -53,12 +53,15 @@ les entrées lèvent une erreur par frame — voir `../MIGRATION.md` §4.1).
 
 ```
 engine/
-├── docs/        documentation de projet — mémoire persistante
+├── src/         Pixel Creator v2 — core/ project/ runtime/ editor/ preview/
+├── docs/        documentation — mémoire de projet, guide utilisateur, doc développeur
 ├── legacy/      archive de référence, LECTURE SEULE
-├── reference/   documentation d'API (décrit une API souhaitée, pas l'actuelle)
-├── tools/       outillage de développement
-└── .github/     instructions Copilot, modèles d'issues
+├── tools/       outillage de développement et vérifications
+└── .github/     CI, modèles d'issues et de PR, instructions Copilot
 ```
+
+Le détail complet, couche par couche, est dans
+[`../developer/repository-structure.md`](../developer/repository-structure.md).
 
 ### `legacy/` est en lecture seule
 
@@ -68,16 +71,19 @@ On ne refactore pas, on ne nettoie pas, on ne modernise pas, on ne supprime pas.
 Legacy répond à « comment Pixel Creator fonctionnait-il réellement ? ».
 Il ne définit pas « comment la v2 doit être implémentée ».
 
-### `reference/` décrit une API souhaitée
+### `docs/reference/` décrit une API souhaitée — et c'est celle de Legacy
 
 **Attention :** ces documents ne décrivent pas le code actuel. Exemples :
 
-- `reference/core/object.md` documente `new Object({ name, x, y })` en objet d'options,
-  alors que le constructeur réel est positionnel `new Object(name, x, y, width, height, layer)` ;
-- `reference/editor/collab.md` documente un module `Collab` fondé sur Socket.IO,
+- `docs/reference/core/object.md` documente `new Object({ name, x, y })` en objet d'options,
+  alors que le constructeur réel de Legacy est positionnel
+  `new Object(name, x, y, width, height, layer)` — et celui de la v2 est différent des deux ;
+- `docs/reference/editor/collab.md` documente un module `Collab` fondé sur Socket.IO,
   **absent du code**.
 
-À traiter comme une source d'intention, jamais comme une description du comportement.
+À traiter comme une source d'intention, jamais comme une description du comportement. Chaque
+page porte désormais un bandeau qui le dit, et
+[`../reference/README.md`](../reference/README.md) explique où sont les réponses actuelles.
 
 ## Le serveur privé
 

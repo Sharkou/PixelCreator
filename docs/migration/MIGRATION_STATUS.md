@@ -186,7 +186,7 @@ Elles bloquent des éléments que la maquette dessine et que le code refuse d'in
 
 **La table ci-dessous s'arrête à ADR-0027, et c'est délibéré :** elle relève les décisions de
 la Phase 0 et de la première tranche d'implémentation. La liste **complète et à jour** des ADR
-est dans [`../README.md`](../README.md).
+est dans [`../PROJECT_MEMORY.md`](../PROJECT_MEMORY.md).
 
 | Sujet | Décision | Référence |
 |---|---|---|

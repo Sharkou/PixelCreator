@@ -1,341 +1,262 @@
 # Contributing to Pixel Creator
 
-Thank you for your interest in contributing to **Pixel Creator**! We welcome contributions from developers, artists, and other creatives. This guide will help you understand how to contribute effectively and responsibly.
+Thank you for wanting to help. Bug fixes, editor UX, new components, new graph nodes,
+documentation and demos are all welcome.
 
-**Note:** Pixel Creator uses a hybrid open source model. The **core engine and editor are open source** and available on GitHub, but the **server-side code handling multiplayer hosting is private** for security reasons. Contributions cannot include reverse engineering or attempts to replicate server functionality outside the official hosted system.
+**Before your first pull request, read two things:**
+
+1. [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) — the code and documentation rules. They are
+   short, specific, and a few of them are checked automatically.
+2. [`docs/developer/README.md`](docs/developer/README.md) — the developer documentation index,
+   including the four rules that catch newcomers first.
+
+> **A note on licensing.** Pixel Creator uses a **custom licence**
+> ([LICENSE.md](LICENSE.md)), not an OSI open-source licence. By contributing you agree that
+> your contribution is licensed under those same terms. The server is private and is not in
+> this repository; contributions must not attempt to reproduce or replace it.
 
 ---
 
-## Table of Contents
+## Getting set up
 
-1. [Architecture Overview](#architecture-overview)
-2. [How to Contribute](#how-to-contribute)
-3. [Reporting Issues](#reporting-issues)
-4. [Feature Requests](#feature-requests)
-5. [Marketplace Contributions](#marketplace-contributions)
-6. [Code of Conduct](#code-of-conduct)
-7. [Resources](#resources)
-8. [Contact & Support](#contact--support)
-
-## Architecture Overview
-
-### Project Structure
-
-```
-PixelCreator/
-├── src/                    # Engine core (runtime)
-│   ├── core/               # Core classes (Scene, Object, Renderer, Camera...)
-│   ├── graphics/           # Visual components (Texture, Sprite, Circle...)
-│   ├── physics/            # Physics components (Collider, Controller...)
-│   ├── input/              # Input handling (Mouse, Keyboard, Gamepad)
-│   ├── libs/               # Project librairies
-│   ├── network/            # Multiplayer (Network, Client, Socket...)
-│   ├── anim/               # Animation system
-│   ├── math/               # Math utilities (Vector, Random, Math...)
-│   ├── time/               # Time management
-│   └── ui/                 # UI components (Button...)
-│
-├── editor/                 # Visual editor (IDE)
-│   ├── windows/            # UI panels (Hierarchy, Properties, Project...)
-│   ├── graph/              # Visual scripting
-│   ├── scripting/          # Code editor integration
-│   ├── system/             # Editor systems (Handler, Manager...)
-│   ├── network/            # Collaboration features
-│   └── misc/               # Utilities (Grid, Tabs, Shortcuts...)
-│
-├── reference/              # Documentation (synced to wiki)
-├── css/                    # Editor stylesheets
-├── images/                 # Assets
-├── plugins/                # Modules plugins
-├── build/                  # Build entry point
-├── app.js                  # Engine entry point
-└── index.html              # Editor entry point
+```bash
+git clone https://github.com/Sharkou/PixelCreator.git
+cd PixelCreator
 ```
 
-### Two-Layer Separation
+There is **nothing to install**. No `package.json`, no dependencies, no build step.
 
-1. **Engine (`src/`)** — Runtime logic, rendering, physics, networking
-2. **Editor (`editor/`)** — Visual tools, UI panels, user interactions
-
-The editor **never mutates engine state directly**. All changes go through events.
-
-### Object-Component Pattern
-
-Pixel Creator uses an **Object-Component architecture**:
-
-- **Objects** are containers (position, size, name)
-- **Components** add behavior (rendering, physics, input...)
-
-```javascript
-// Create an object
-const player = new Object('Player', 100, 100, 32, 32);
-
-// Add components for behavior
-player.addComponent(new Texture('player.png'));
-player.addComponent(new Controller());
-player.addComponent(new Collider());
-
-// Add to scene
-scene.add(player);
+```bash
+tools/dev-server.sh 8080 .
+# then open http://localhost:8080/src/editor/index.html
 ```
 
-### Components
+You need **Node 22 or newer** to run the tests, and **Python 3** for that development server.
+Full detail: [`docs/developer/setup.md`](docs/developer/setup.md).
 
-Components are imported from `/src/core/mod.js`:
+## Verification — run this before every pull request
 
-```javascript
-import { Texture, Collider, Controller } from '/src/core/mod.js';
+```bash
+tools/test.sh                     # ~2300 unit tests (Node's built-in runner)
+node tools/layers/run.js          # layer rules + dead imports
+node tools/check-boot.js          # every module the entry points reach loads
+node tools/check-exports.js       # every named import designates a real export
+node tools/check-css-literals.js  # no stray backtick in a CSS literal
+node tools/parity/run.js          # 39 scenarios captured from the Legacy engine
+node tools/check-links.js         # every relative Markdown link resolves
 ```
 
-Common components:
-- `Texture` — Display an image
-- `CircleRenderer` / `RectangleRenderer` — Draw shapes
-- `Collider` — Collision detection
-- `Controller` — Player movement
-- `Camera` — Viewport control
-- `Animator` — Animation playback
+The whole set runs in well under a minute. CI runs exactly these seven.
 
-### Properties
+A subset while you work:
 
-Objects expose properties that can be modified:
-
-```javascript
-// Local update (editor only)
-obj.setProperty('x', 100);
-
-// Network sync (multiplayer)
-obj.syncProperty('x', 100);
+```bash
+tools/test.sh src/core/scene.test.js
+tools/test.sh "src/editor/**/*.test.js"
 ```
 
-### Scenes
+What each check protects, and why it exists:
+[`docs/developer/testing.md`](docs/developer/testing.md).
 
-Scenes contain all objects:
+### If your change is visible
 
-```javascript
-const scene = new Scene('Main Scene');
+Anything touching UI, interaction, rendering or the runtime also needs **browser validation**,
+proportional to the change: serve the repository, open the editor, attach `console` and
+`pageerror` listeners, exercise the behaviour directly concerned, and stop when it works.
 
-// Add objects
-scene.add(player);
-scene.add(enemy);
+Say in your pull request what you checked in the browser. That is the part a reviewer cannot
+re-derive from the diff.
 
-// Access objects
-const obj = scene.get('Player');
+---
 
-// Remove objects
-scene.remove(player);
+## The workflow
+
+The default branch is **`master`**. Everything starts from it and everything comes back to it
+through a pull request.
+
+```
+master  ──►  topic branch  ──►  verification  ──►  Pull Request  ──►  master
 ```
 
-### Event-Driven Communication
+### If you are an external contributor
 
-All state changes go through a global event system:
-
-```javascript
-// Dispatch an event
-System.dispatchEvent('setProperty', { object: obj, key: 'x', value: 100 });
-
-// Listen to events
-System.addEventListener('setProperty', (data) => {
-    console.log(`${data.key} changed to ${data.value}`);
-});
-```
-
-**Key events:**
-
-- `add`, `remove` — Object lifecycle
-- `setProperty` — Local property change
-- `syncProperty` — Network-synchronized change
-- `addComponent`, `removeComponent` — Component lifecycle
-
-### Multiplayer Basics
-
-Pixel Creator handles networking automatically:
-
-```javascript
-// Properties sync automatically when using syncProperty
-obj.syncProperty('x', newX);
-obj.syncProperty('health', 100);
-
-// Access other players' input
-const keys = Keyboard.keys(uid);
-const mouse = Mouse.get(uid);
-```
-
-Key principles:
-
-- Server is authoritative
-- Use deterministic logic when possible
-- Avoid RNG-driven advantages
-
-## How to Contribute
-
-### What to Contribute
-
-- 🐛 **Bug fixes** — Check [Issues](https://github.com/Sharkou/PixelCreator/issues)
-- 📝 **Documentation** — Improve wiki pages
-- 🎨 **UI improvements** — Editor usability
-- ⚙️ **New components** — Extend engine capabilities
-- 🧪 **Examples** — Sample projects and demos
-
-### Prerequisites
-
-- Basic JavaScript knowledge (ES6 modules)
-- A modern browser
-- Git basics
-
-You are welcome to:
-
-- Submit bug fixes  
-- Suggest or implement enhancements in the editor  
-- Improve documentation or examples
-
-**Important:**  
-All code contributions must target the **`sandbox` branch**.
-
-- `sandbox` is used for development, testing, and experimentation  
-- `master` is reserved for stable releases and is maintained by the project owner  
-
-A **Pull Request (PR)** is a request to merge your changes into the project.
-Pull Requests targeting `master` directly will be closed or redirected to `sandbox`.
-
-### Step-by-step
-
-1. **Fork the repository**  
-   https://github.com/Sharkou/PixelCreator
-
-2. **Create a branch from `sandbox`**:
-
+1. **Fork** the repository on GitHub.
+2. **Branch** from `master`:
    ```bash
-   git checkout sandbox
-   git checkout -b feature/awesome-feature
+   git switch master
+   git pull
+   git switch -c feat/particle-burst-node
    ```
+3. Make your change, with focused commits.
+4. **Run the verification suite** above.
+5. **Push** to your fork and open a **pull request against `Sharkou/PixelCreator:master`**.
 
-3. Make your changes with clear, concise commits:
+### If you have write access
 
-   ```bash
-   git commit -m "Add feature XYZ"
-   ```
+The same, without the fork: branch from `master`, push the branch to `origin`, open a pull
+request into `master`. Do not commit directly to `master`.
 
-4. Push your branch and open a Pull Request.
+### Branch names
 
-   ```bash
-   git push origin feature/awesome-feature
-   ```
+| Prefix | For |
+|---|---|
+| `feat/…` | A new capability |
+| `fix/…` | A defect |
+| `docs/…` | Documentation only |
+| `refactor/…` | Structure, with no behaviour change |
+| `test/…` | Tests or tooling only |
 
-Include a clear description of your changes and why they are useful.
+Then a short kebab-case description: `fix/inspector-slider-rounding`.
 
-5. Open a Pull Request on GitHub:
+> **Do not target `sandbox`.** An earlier version of this guide asked contributors to base
+> their work on a permanent `sandbox` branch. That branch is **obsolete**: it is 145 commits
+> behind `master`, holds nothing `master` does not, and was last touched in March 2026. Work
+> from `master`. The old `reference` branch is historical too, and the documentation that lived
+> on it now lives in [`docs/`](docs/README.md).
 
-- Base branch: sandbox
-- Compare branch: your feature branch
-- Clearly explain what you changed and why
+### Commits
 
-Tip: Smaller, focused PRs are easier to review and more likely to be merged quickly.
+Match the existing history, which is conventional-commit style with an optional scope:
 
-### Code Style
-
-Follow these conventions:
-
-| Element | Convention | Example |
-|---------|------------|---------|
-| Variables | camelCase | `playerSpeed`, `getPosition()` |
-| Classes | PascalCase | `Player`, `CircleRenderer` |
-| Files | lowercase, single word | `renderer.js`, `camera.js` |
-| Language | English | Comments, variables, everything |
-
-### JSDoc Guidelines
-
-- **DO**: Document constructors with class description
-- **DON'T**: Add class-level comments before `export class`
-- **DON'T**: Verbose JSDoc on self-explanatory properties
-
-```javascript
-// ✅ Good
-export class Vector {
-    
-    /**
-     * Create a new vector for physics and transformations
-     * @param {number} x - The x component
-     * @param {number} y - The y component
-     */
-    constructor(x = 0, y = 0) {
-        this.x = x;
-        this.y = y;
-    }
-}
-
-// ❌ Bad - class-level comment
-/**
- * 2D Vector mathematics class
- */
-export class Vector {
+```
+feat(tilemap): add paintable levels and collision-aware tiles
+fix(editor): restore reliable undo and compact tilemap history
+refactor(editor): consolidate workflows, duplication and legacy cleanup
+docs: document the resource inspector
 ```
 
-### File Structure
+| Prefix | For |
+|---|---|
+| `feat:` | New behaviour |
+| `fix:` | A defect |
+| `refactor:` | No behaviour change |
+| `docs:` | Documentation |
+| `test:` | Tests and tooling |
 
-First line must be `import` or `export class`:
+- **English**, imperative, lower case after the colon, no trailing full stop.
+- A scope in parentheses when one is obvious: `core`, `runtime`, `editor`, `graph`, `inspector`,
+  `tilemap`, `transform`, `physics`, `project`.
+- Prefer a handful of meaningful commits over either one giant commit or forty
+  "wip" ones. Nothing is squashed automatically, so what you push is what the history keeps.
 
-```javascript
-// ✅ Good
-import { Component } from '/src/core/mod.js';
+That is the whole convention. No commit-message linter, no sign-off requirement, no ticket
+prefix.
 
-export class MyComponent extends Component {
-    // ...
-}
+### Pull requests
 
-// ❌ Bad - comment before export
-/**
- * My component description
- */
-export class MyComponent {
-```
+Smaller and focused reviews faster. [The template](.github/PULL_REQUEST_TEMPLATE.md) asks for
+what a reviewer actually needs:
 
-## Reporting Issues
+- what changed and why;
+- which checks you ran;
+- what you validated in the browser, if anything;
+- whether an ADR is involved.
 
-If you find a bug or unexpected behavior:
+A pull request that fails CI will not be reviewed until it is green.
 
-- Check existing issues first
-- If none match, open a new issue with:
-  
-     - A clear description of the problem
-     - Steps to reproduce
-     - Screenshots or examples if applicable
- 
-## Feature Requests
+---
 
-We love ideas! To suggest a new feature:
+## Conventions that will be checked
 
-- Open an issue with the label `enhancement`
-- Include the problem you want to solve, your proposed solution, and any references
-- Keep requests realistic to the scope of the project
+The full list is in [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md). The four that trip people up:
 
-## Marketplace Contributions
+1. **Layer direction.** `editor/` and `preview/` are the two tops of the graph, they may each
+   reach `project/`, `runtime/` and `core/`, and **neither may reach the other**. `core/` imports
+   nothing at all — no DOM, no runtime, no editor, not even `project/`.
+   `node tools/layers/run.js` enforces it.
+2. **No dependencies, no build step.** No npm packages, no `package.json`, no transpilation, no
+   framework. Native ES modules, Web Components, DOM, classes. This is a project constraint, not
+   an accident ([`docs/PROJECT.md`](docs/PROJECT.md) §7).
+3. **`Object` shadows the global.** A module that imports our `Object` reaches the real global
+   through `globalThis.Object`. Same for `Element`, `Window` and `Viewport` in the editor.
+4. **Two ways of writing a property, and they are not interchangeable.** `object.x = v` is a
+   simulation result; `object.setProperty('x', v)` is an intention and produces an Operation. A
+   component never calls `setProperty()`; the editor never writes without it. Getting this wrong
+   produces a change that does not replicate and does not undo — silently.
 
-Pixel Creator allows creators to submit assets (sprites, sounds, templates) for the official marketplace:
+Style, briefly: 4-space indent, single quotes, semicolons, `camelCase` / `PascalCase`, lowercase
+filenames, one file = one class = one responsibility, JSDoc on constructors and public methods
+(not on classes), English throughout the code.
 
-- Ensure you own the rights to your submissions
-- Provide clear previews and descriptions
-- High-quality contributions are more likely to be featured
+A unit test lives beside the module it covers: `x.js` / `x.test.js`.
 
-## Code of Conduct
+## Architectural changes need an ADR
 
-We aim to maintain a friendly and inclusive community. Please:
+Pixel Creator keeps [72 Architecture Decision Records](docs/PROJECT_MEMORY.md). They are why the
+codebase is coherent, and they are authoritative.
 
-- Be respectful in discussions
-- Avoid spam or self-promotion unrelated to Pixel Creator
-- Follow GitHub guidelines and use constructive feedback
+**Do not reverse, weaken or replace a documented decision because another design looks more
+conventional.** If your change would do that — or would introduce a new structural concept, or
+change a contract other code relies on — it needs an ADR. Open an issue and discuss it *before*
+writing the code.
 
-Anyone violating the code of conduct may have their contributions or access revoked.
+How to write one: [`docs/developer/decisions.md`](docs/developer/decisions.md).
 
-## Resources
+Most contributions need no ADR at all. A new component, a new graph node, a new editor panel or a
+bug fix all sit comfortably inside the existing decisions.
 
-- [Wiki Documentation](https://github.com/Sharkou/PixelCreator/wiki)
-- [API Reference](https://github.com/Sharkou/PixelCreator/wiki/Reference)
-- [Discord Community](https://discord.gg/X8scDNX)
+## Two areas that are off limits
 
-## Contact & Support
+- **`legacy/` is read-only.** It is the previous engine, kept because it answers *"how did Pixel
+  Creator actually behave?"*. Read it, search it, compare against it — never refactor, tidy,
+  modernise or delete from it. Never commit into it.
+- **The server is private.** It is not in this repository and must never be copied into it.
+  Contributions must not reverse-engineer it or replicate its functionality outside the official
+  hosted system.
 
-If you have questions about contributing, you can reach out on our [Discord](https://discord.gg/X8scDNX) or open an issue with the label `help wanted`.
+## What to work on
 
-For subscription and monetization inquiries, please contact us by email at contact@pixelcreator.io
+- **Bugs**: [open issues](https://github.com/Sharkou/PixelCreator/issues).
+- **Components and graph nodes**: the recipes are in
+  [`docs/developer/extending.md`](docs/developer/extending.md) — this is the easiest place to
+  make a real difference.
+- **Editor UX**: plenty of rough edges. Read
+  [`docs/architecture/EDITOR.md`](docs/architecture/EDITOR.md) first.
+- **Documentation**: [`docs/user/`](docs/user/README.md) especially. If something confused you,
+  that is the thing to fix.
+- **Demos**: `tools/demo/` holds small hand-written games that use the engine without the editor.
 
-Enjoy taking part in this adventure!
+One principle across all of it: **never document or ship a feature that does not exist.** An
+empty panel that says what is missing is better than a fake one; a refusal that explains itself
+is better than a silent no-op. The codebase is consistent about this and pull requests are
+reviewed for it.
+
+## Reporting problems
+
+| | |
+|---|---|
+| 🐛 [Bug report](https://github.com/Sharkou/PixelCreator/issues/new?template=bug_report.md) | Include browser, OS, and steps to reproduce |
+| 💡 [Feature request](https://github.com/Sharkou/PixelCreator/issues/new?template=feature_request.md) | The problem first, then your proposed solution |
+| 📝 [Documentation](https://github.com/Sharkou/PixelCreator/issues/new?template=documentation.md) | Which page, and what was wrong |
+| 🔒 **Security** | **Do not open a public issue.** See [SECURITY.md](SECURITY.md) |
+
+Search existing issues first.
+
+## Community
+
+Be respectful and constructive. Keep discussion on the project. Anyone acting otherwise may have
+their contributions or access revoked, at the maintainer's discretion.
+
+Questions: [Discord](https://discord.gg/X8scDNX), or an issue labelled `help wanted`.
+For licensing or commercial enquiries: <contact@pixelcreator.io>.
+
+---
+
+## Repository settings (maintainers)
+
+These cannot be configured from files in the repository, and are listed here so they are not
+forgotten:
+
+- **Branch protection / ruleset on `master`** — require a pull request, require the `ci` checks
+  to pass, and disallow force pushes.
+- **Required status checks** — select the CI jobs once the workflow has run at least once.
+- **About panel** — description, website (`https://editor.pixelcreator.io`), and topics.
+- **GitHub Pages** — see
+  [`docs/developer/documentation-website.md`](docs/developer/documentation-website.md).
+- **Wiki** — point its front page at [`docs/`](docs/README.md); it is no longer the source of
+  truth.
+- **Stale branches** — `sandbox`, `reference` and `copilot/add-editor-documentation` are all
+  superseded by `master` and can be archived or deleted.
+- **Releases** — see [`docs/developer/releases.md`](docs/developer/releases.md).
+
+Thank you, and enjoy taking part in this adventure.

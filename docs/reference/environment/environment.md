@@ -1,3 +1,9 @@
+> **Historical — Legacy API.** This page documents the *Legacy* engine's intended API,
+> not the current Pixel Creator v2 implementation. See
+> [docs/reference/README.md](../README.md) for what replaced it.
+
+---
+
 The **Environment** class provides runtime detection, platform identification, and capability checking for cross-platform compatibility.
 
 ```javascript
@@ -256,5 +262,5 @@ function saveData(data) {
 
 ## See Also
 
-- [System](system.md) – Core engine system
-- [Performance](performance.md) – Performance monitoring
+- [System](../core/system.md) – Core engine system
+- [Performance](../time/performance.md) – Performance monitoring

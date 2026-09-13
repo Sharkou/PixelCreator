@@ -1,3 +1,9 @@
+> **Historical — Legacy API.** This page documents the *Legacy* engine's intended API,
+> not the current Pixel Creator v2 implementation. See
+> [docs/reference/README.md](../README.md) for what replaced it.
+
+---
+
 Core `System` static class synchronizing the engine
 
 ```javascript
